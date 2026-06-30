@@ -1,0 +1,9 @@
+﻿#!/bin/bash
+
+export DEM=${DEM:-/rp/dem/ldem_80n_20m.img}
+export QUEUE=${QUEUE:-horizon_queue.json}
+export MAP_ROOT=${MAP_ROOT:-/rp/tiles/np}
+export HORIZONS_ROOT=${HORIZONS_ROOT:-/rp/tiles/np/horizons}
+export PARALLEL=${PARALLEL:-6}
+
+exec mono lunar_horizon.exe --dem $DEM --map-root $MAP_ROOT --horizons-root $HORIZONS_ROOT --queue $QUEUE --parallel $PARALLEL

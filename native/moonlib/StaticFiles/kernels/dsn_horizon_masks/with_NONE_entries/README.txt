@@ -1,0 +1,1 @@
+These files contain the value NONE wherever the corresponding elevation number is highlighted in the source file. These may not be useful anymore.
