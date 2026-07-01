@@ -1,0 +1,443 @@
+{
+  "schema_version": 1,
+  "regions": [
+    {
+      "name": "south_pole",
+      "overview_geotiff": "/e/projects/lunarscout/data/product_overview.tif"
+    },
+    {
+      "name": "north_pole",
+      "overview_geotiff": ""
+    },
+    {
+      "name": "nearside",
+      "overview_geotiff": ""
+    },
+    {
+      "name": "farside",
+      "overview_geotiff": ""
+    }
+  ],
+  "products": [
+    {
+      "name": "Site01: Connecting ridge",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site01/Site01_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        -19000.0,
+        -20000.0,
+        -3000.0,
+        -4000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Site04: Shackleton rim",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site04/Site04_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        -9000.0,
+        -15000.0,
+        7000.0,
+        1000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Site06: Nobile rim 1",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site06/Site06_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        74000.0,
+        100000.0,
+        94000.0,
+        120000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Site07: Peak near Shackleton",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site07/Site07_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        22000.0,
+        -28000.0,
+        38000.0,
+        -12000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Site11: de Gerlache rim",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site11/Site11_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        -45000.0,
+        7000.0,
+        -29000.0,
+        23000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Site20: Leibnitz beta plateau",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site20/Site20_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        65000.0,
+        110000.0,
+        81000.0,
+        126000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Site20v2: Leibnitz beta plateau, extended boundaries",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site20v2/Site20v2_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        60000.0,
+        105000.0,
+        86000.0,
+        131000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Site23: Malapert massif",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site23/Site23_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        -11000.0,
+        111000.0,
+        10000.0,
+        132000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Site42: de Gerlache-Kocher massif",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site42/Site42_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        -123400.0,
+        -66100.0,
+        -103400.0,
+        -46100.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Haworth",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Haworth/Haworth_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        -52900.0,
+        75600.0,
+        -23100.0,
+        105400.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "Shoemaker",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Shoemaker/Shoemaker_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        66000.0,
+        29000.0,
+        86000.0,
+        49000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "DM1: Amundsen rim",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/DM1/DM1_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        154000.0,
+        51500.0,
+        174000.0,
+        71500.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "DM2: Nobile rim 2",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/DM2/DM2_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        147000.0,
+        85000.0,
+        167000.0,
+        105000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "SL2: de Gerlache rim",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/SL2/SL2_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        -58500.0,
+        13000.0,
+        -38500.0,
+        33000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "SL3: Connecting ridge extension",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/SL3/SL3_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        -38700.0,
+        -16100.0,
+        -18700.0,
+        3900.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "NPA: Cabeus exterior wall 1",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/NPA/NPA_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        -98500.0,
+        19500.0,
+        -78500.0,
+        39500.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "NPB: Amundsen 1",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/NPB/NPB_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        175000.0,
+        -8500.0,
+        195000.0,
+        11500.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "NPC: Idel'son L crater 1",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/NPC/NPC_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        122500.0,
+        -109500.0,
+        142500.0,
+        -89500.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "NPD: Malapert crater 1",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/NPD/NPD_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        13000.0,
+        146000.0,
+        33000.0,
+        166000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LM1: Shackleton Rim B",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/LM1/LM1_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        2000.0,
+        -2000.0,
+        22000.0,
+        18000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LM2: Shoemaker Rim A",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/LM2/LM2_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        2000.0,
+        47000.0,
+        22000.0,
+        67000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LM3: Shoemaker Rim B",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/LM3/LM3_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        4000.0,
+        37000.0,
+        24000.0,
+        57000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LM4: Shoemaker Rim C",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/LM4/LM4_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        9000.0,
+        15000.0,
+        29000.0,
+        35000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LM5: Shoemaker Rim D",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/LM5/LM5_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        30000.0,
+        1000.0,
+        50000.0,
+        21000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LM6: Shoemaker Rim E",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/LM6/LM6_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        49000.0,
+        10000.0,
+        69000.0,
+        30000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LM7: Faustini Rim A",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/LM7/LM7_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        54000.0,
+        -10000.0,
+        74000.0,
+        10000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LM8: Shoemaker Rim F",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/LM8/LM8_final_adj_5mpp_surf.tif",
+      "description": "",
+      "bounds": [
+        60000.0,
+        30000.0,
+        80000.0,
+        50000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LDEM_60S_240MPP_ADJ.TIF",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_60S_240MPP_ADJ.TIF",
+      "description": "",
+      "bounds": [
+        -931200.0,
+        -931200.0,
+        931200.0,
+        931200.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LDEM_60S_120MPP_ADJ.TIF",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_60S_120MPP_ADJ.TIF",
+      "description": "",
+      "bounds": [
+        -931200.0,
+        -931200.0,
+        931200.0,
+        931200.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LDEM_60S_60MPP_ADJ.TIF",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_60S_60MPP_ADJ.TIF",
+      "description": "",
+      "bounds": [
+        -931200.0,
+        -931200.0,
+        931200.0,
+        931200.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LDEM_75S_30MPP_ADJ.TIF",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_75S_30MPP_ADJ.TIF",
+      "description": "",
+      "bounds": [
+        -457440.0,
+        -457440.0,
+        457440.0,
+        457440.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LDEM_80S_80MPP_ADJ.TIF",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_80MPP_ADJ.TIF",
+      "description": "",
+      "bounds": [
+        -304000.0,
+        -304000.0,
+        304000.0,
+        304000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LDEM_80S_40MPP_ADJ.TIF",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_40MPP_ADJ.TIF",
+      "description": "",
+      "bounds": [
+        -304000.0,
+        -304000.0,
+        304000.0,
+        304000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LDEM_80S_20MPP_ADJ.TIF",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_20MPP_ADJ.TIF",
+      "description": "",
+      "bounds": [
+        -304000.0,
+        -304000.0,
+        304000.0,
+        304000.0
+      ],
+      "region": "south_pole"
+    },
+    {
+      "name": "LDEM_83S_10MPP_ADJ.TIF",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_83S_10MPP_ADJ.TIF",
+      "description": "",
+      "bounds": [
+        -216400.0,
+        -216400.0,
+        216400.0,
+        216400.0
+      ],
+      "region": "south_pole"
+    }
+  ]
+}

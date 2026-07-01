@@ -85,6 +85,10 @@ class ScenarioStateError(ScenarioError):
     default_code = "scenario_state_error"
 
 
+class ProductCatalogError(LunarscoutError):
+    default_code = "product_catalog_error"
+
+
 class NativeError(LunarscoutError):
     default_code = "native_error"
 

@@ -259,6 +259,10 @@ from .native_temporal import (  # noqa: E402 - keeps backend/pythonnet loading l
     generate_temporal_signal,
     stream_lightmap_buffers,
 )
+from .native_horizon import (  # noqa: E402 - keeps backend/pythonnet loading lazy
+    GenerateHorizons,
+    NativeHorizonProgress,
+)
 from .native_product import (  # noqa: E402 - keeps backend/pythonnet loading lazy
     NativeProductProgress,
 )

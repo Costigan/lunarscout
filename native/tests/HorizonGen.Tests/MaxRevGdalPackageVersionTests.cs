@@ -10,7 +10,9 @@ public class MaxRevGdalPackageVersionTests
     {
         var repoRoot = FindRepoRoot();
         var projectFiles = Directory
-            .EnumerateFiles(Path.Combine(repoRoot, "native", "new_horizon"), "*.csproj", SearchOption.AllDirectories)
+            .EnumerateFiles(Path.Combine(repoRoot, "native"), "*.csproj", SearchOption.AllDirectories)
+            .Where(path => !path.Split(Path.DirectorySeparatorChar).Contains("bin")
+                && !path.Split(Path.DirectorySeparatorChar).Contains("obj"))
             .ToArray();
 
         Assert.IsTrue(projectFiles.Length > 0, "Expected to find native .csproj files.");
@@ -39,8 +41,8 @@ public class MaxRevGdalPackageVersionTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "requirements.txt"))
-                && Directory.Exists(Path.Combine(directory.FullName, "native", "new_horizon")))
+            if (File.Exists(Path.Combine(directory.FullName, "pyproject.toml"))
+                && Directory.Exists(Path.Combine(directory.FullName, "native", "moonlib")))
             {
                 return directory.FullName;
             }
