@@ -89,6 +89,18 @@ class ProductCatalogError(LunarscoutError):
     default_code = "product_catalog_error"
 
 
+class SpiceError(LunarscoutError):
+    default_code = "spice_error"
+
+
+class SpiceKernelError(SpiceError):
+    default_code = "spice_kernel_error"
+
+
+class SpiceGeometryError(SpiceError):
+    default_code = "spice_geometry_error"
+
+
 class NativeError(LunarscoutError):
     default_code = "native_error"
 

@@ -17,3 +17,9 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 - Added `scripts/run_generate_horizons.py` as an editable local runner for manually validating native horizon generation.
 - Added `AGENTS.md` with project-specific guidance for future coding agents.
 - Updated the native MaxRev GDAL package-version test to locate the extracted Lunarscout repository layout and scan `native/` projects.
+- Added SPICE-backed lunar local-frame APIs for `LonLat`, inclusive datetime iteration, Sun/Earth NED vectors, azimuth/elevation histories, pandas DataFrames, and matplotlib elevation plots.
+- Added `ls.spice` kernel helpers for furnishing, lazy default loading, reload/unload/clear state, NAIF kernel download/cache, generated meta-kernels, and SHA-256 verification from the checked-in default kernel manifest.
+- Added default SPICE kernel manifests under `data/spice/` and package data, plus implementation tracking in `docs/spice-local-frame-api-plan.md`.
+- Updated the user guide with SPICE kernel setup, local NED frame conventions, vector/angle APIs, DataFrame helpers, and plotting examples.
+- Added `scripts/get_link_tree.py` for recursive same-site HTML link discovery.
+- Updated the lunar map product GUI to display overview-map CRS and longitude/latitude mouse coordinates and copy either coordinate pair to the clipboard with keyboard shortcuts.

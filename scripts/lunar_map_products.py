@@ -95,6 +95,7 @@ def _cmd_gui(args: argparse.Namespace) -> int:  # pragma: no cover - GUI
             QPen,
             QPixmap,
         )
+        from pyproj import CRS, Transformer
         from PySide6.QtWidgets import (
             QApplication,
             QAbstractItemView,
@@ -121,11 +122,15 @@ def _cmd_gui(args: argparse.Namespace) -> int:  # pragma: no cover - GUI
         )
     except ImportError as exc:
         raise SystemExit(
-            "The gui verb requires PySide6, rasterio, and numpy in the active "
-            f"Python environment. Missing import: {exc}"
+            "The gui verb requires PySide6, rasterio, pyproj, and numpy in "
+            f"the active Python environment. Missing import: {exc}"
         ) from exc
 
     class MapView(QGraphicsView):
+        mouse_scene_changed = Signal(float, float)
+        mouse_left = Signal()
+        copy_requested = Signal(str)
+
         def __init__(self) -> None:
             super().__init__()
             self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -133,6 +138,30 @@ def _cmd_gui(args: argparse.Namespace) -> int:  # pragma: no cover - GUI
             self.setTransformationAnchor(
                 QGraphicsView.ViewportAnchor.AnchorUnderMouse
             )
+            self.setMouseTracking(True)
+            self.viewport().setMouseTracking(True)
+            self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        def mouseMoveEvent(self, event) -> None:
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            position = self.mapToScene(event.position().toPoint())
+            self.mouse_scene_changed.emit(position.x(), position.y())
+            super().mouseMoveEvent(event)
+
+        def leaveEvent(self, event) -> None:
+            self.mouse_left.emit()
+            super().leaveEvent(event)
+
+        def keyPressEvent(self, event) -> None:
+            if event.key() == Qt.Key.Key_L:
+                self.copy_requested.emit("lonlat")
+                event.accept()
+                return
+            if event.key() == Qt.Key.Key_C:
+                self.copy_requested.emit("crs")
+                event.accept()
+                return
+            super().keyPressEvent(event)
 
         def wheelEvent(self, event) -> None:
             factor = 1.25 if event.angleDelta().y() > 0 else 0.8
@@ -188,8 +217,11 @@ def _cmd_gui(args: argparse.Namespace) -> int:  # pragma: no cover - GUI
             self.view = MapView()
             self.view.setScene(self.scene)
             self.bounds: tuple[float, float, float, float] | None = None
+            self.overview_transformer: Transformer | None = None
             self.pixmap_width = 1
             self.pixmap_height = 1
+            self.last_crs_coordinates: tuple[float, float] | None = None
+            self.last_lonlat_coordinates: tuple[float, float] | None = None
             self.outline_items: dict[int, list] = {}
             self.worker_thread: QThread | None = None
             self.worker: DownloadWorker | None = None
@@ -216,6 +248,7 @@ def _cmd_gui(args: argparse.Namespace) -> int:  # pragma: no cover - GUI
             self.progress = QProgressBar()
             self.progress.setRange(0, 100)
             self.progress_label = QLabel("0%")
+            self.coordinate_label = QLabel("Move over overview map for coordinates")
 
             self.table = QTableWidget(0, 3)
             self.table.setHorizontalHeaderLabels(["id", "name", "description"])
@@ -256,8 +289,12 @@ def _cmd_gui(args: argparse.Namespace) -> int:  # pragma: no cover - GUI
             splitter.setStretchFactor(0, 2)
             splitter.setStretchFactor(1, 3)
             self.setCentralWidget(splitter)
+            self.statusBar().addPermanentWidget(self.coordinate_label, 1)
             self.resize(1300, 800)
             self.setWindowTitle("Lunarscout Map Products")
+            self.view.mouse_scene_changed.connect(self._mouse_scene_changed)
+            self.view.mouse_left.connect(self._mouse_left)
+            self.view.copy_requested.connect(self._copy_coordinates)
 
             self._load_region(self.region_combo.currentText())
 
@@ -271,6 +308,10 @@ def _cmd_gui(args: argparse.Namespace) -> int:  # pragma: no cover - GUI
         def _load_region(self, region_name: str) -> None:
             self.scene.clear()
             self.outline_items.clear()
+            self.overview_transformer = None
+            self.last_crs_coordinates = None
+            self.last_lonlat_coordinates = None
+            self.coordinate_label.setText("Move over overview map for coordinates")
             region = self.catalog.regions[region_name]
             if region.overview_geotiff is None:
                 self.bounds = None
@@ -294,8 +335,17 @@ def _cmd_gui(args: argparse.Namespace) -> int:  # pragma: no cover - GUI
                             dataset.bounds.right,
                             dataset.bounds.top,
                         )
+                        if dataset.crs is not None:
+                            crs = CRS.from_wkt(dataset.crs.to_wkt())
+                            geographic_crs = crs.geodetic_crs or crs
+                            self.overview_transformer = Transformer.from_crs(
+                                crs,
+                                geographic_crs,
+                                always_xy=True,
+                            )
                 except Exception as exc:
                     self.bounds = None
+                    self.overview_transformer = None
                     self.scene.addText(f"Could not load overview map: {exc}")
                 else:
                     if data.ndim == 3:
@@ -376,6 +426,78 @@ def _cmd_gui(args: argparse.Namespace) -> int:  # pragma: no cover - GUI
             scene_x = (x - left) * self.pixmap_width / (right - left)
             scene_y = (top - y) * self.pixmap_height / (top - bottom)
             return scene_x, scene_y
+
+        def _scene_to_map(
+            self,
+            scene_x: float,
+            scene_y: float,
+        ) -> tuple[float, float] | None:
+            if self.bounds is None:
+                return None
+            if not (
+                0.0 <= scene_x <= self.pixmap_width
+                and 0.0 <= scene_y <= self.pixmap_height
+            ):
+                return None
+            left, bottom, right, top = self.bounds
+            x = left + scene_x * (right - left) / self.pixmap_width
+            y = top - scene_y * (top - bottom) / self.pixmap_height
+            return x, y
+
+        @staticmethod
+        def _format_coordinate_pair(first: float, second: float) -> str:
+            return f"{first:.12g}, {second:.12g}"
+
+        @Slot(float, float)
+        def _mouse_scene_changed(self, scene_x: float, scene_y: float) -> None:
+            coordinates = self._scene_to_map(scene_x, scene_y)
+            if coordinates is None:
+                self.last_crs_coordinates = None
+                self.last_lonlat_coordinates = None
+                self.coordinate_label.setText("Outside overview map")
+                return
+
+            self.last_crs_coordinates = coordinates
+            self.last_lonlat_coordinates = None
+            lonlat_text = "unavailable"
+            if self.overview_transformer is not None:
+                try:
+                    longitude, latitude = self.overview_transformer.transform(
+                        coordinates[0],
+                        coordinates[1],
+                    )
+                except Exception:
+                    lonlat_text = "unavailable"
+                else:
+                    self.last_lonlat_coordinates = (float(longitude), float(latitude))
+                    lonlat_text = self._format_coordinate_pair(
+                        float(longitude),
+                        float(latitude),
+                    )
+
+            crs_text = self._format_coordinate_pair(coordinates[0], coordinates[1])
+            self.coordinate_label.setText(f"CRS: {crs_text} | lon/lat: {lonlat_text}")
+
+        @Slot()
+        def _mouse_left(self) -> None:
+            self.coordinate_label.setText("Move over overview map for coordinates")
+
+        @Slot(str)
+        def _copy_coordinates(self, coordinate_kind: str) -> None:
+            if coordinate_kind == "lonlat":
+                coordinates = self.last_lonlat_coordinates
+                label = "longitude/latitude"
+            else:
+                coordinates = self.last_crs_coordinates
+                label = "CRS coordinates"
+
+            if coordinates is None:
+                self.statusBar().showMessage(f"No {label} under the mouse.", 2500)
+                return
+
+            text = self._format_coordinate_pair(coordinates[0], coordinates[1])
+            QApplication.clipboard().setText(text)
+            self.statusBar().showMessage(f"Copied {label}: {text}", 2500)
 
         def _selected_product_ids(self) -> set[int]:
             ids: set[int] = set()

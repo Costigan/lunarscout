@@ -23,7 +23,8 @@ The current package includes:
 - connected-region labeling and filtering;
 - filesystem-safe scenario paths;
 - UTC-aware temporal arrays;
-- file-backed timestamped GeoTIFF series; and
+- file-backed timestamped GeoTIFF series;
+- SPICE-backed Sun and Earth local-frame histories; and
 - optional native lighting and permanent-shadow products.
 
 Lunarscout was split from Lunar Analyst so the calculation library can mature
@@ -241,6 +242,158 @@ The writer validates each layer, writes into a staging directory, and publishes
 the completed series only after the manifest, VRT, and completion digest are
 ready.
 
+## SPICE Local-Frame Histories
+
+Lunarscout can calculate Sun and Earth position histories at a lunar surface
+point using SpiceyPy and NAIF kernels. The notebook-facing API uses
+planetocentric lunar longitude/latitude in degrees:
+
+```python
+from datetime import timedelta
+
+point = ls.LonLat(longitude=0.0, latitude=-89.0)
+sample_times = list(
+    ls.iter_times(
+        "2027-01-01T00:00:00Z",
+        "2027-01-02T00:00:00Z",
+        timedelta(hours=1),
+    )
+)
+```
+
+`iter_times` returns timezone-aware UTC `datetime` values and includes the stop
+time when it is aligned to the step.
+
+### Kernel Loading
+
+SPICE kernels are not loaded at package import time. By default, SPICE-backed
+functions call `ls.spice.ensure_default_kernels()`, which downloads any missing
+default NAIF kernels, verifies their SHA-256 checksums from the checked-in
+manifest, generates a temporary meta-kernel, and furnishes it through
+SpiceyPy.
+
+Default kernels are cached under:
+
+```text
+$LUNARSCOUT_SPICE_KERNEL_DIR
+```
+
+or, when that is unset:
+
+```text
+$XDG_DATA_HOME/lunarscout/spice/kernels
+```
+
+with fallback:
+
+```text
+~/.local/share/lunarscout/spice/kernels
+```
+
+Download explicitly when desired:
+
+```python
+downloaded = ls.spice.download_default_kernels()
+```
+
+Use `overwrite=True` to refresh cached files:
+
+```python
+ls.spice.download_default_kernels(overwrite=True)
+```
+
+If you manage kernels yourself, furnish a path or list of paths. By default,
+this disables default autoloading for the current Python process:
+
+```python
+ls.spice.furnish("/data/spice/my_project.tm")
+ls.spice.furnish(["/data/spice/a.bsp", "/data/spice/b.tpc"])
+```
+
+You can also set `LUNARSCOUT_SPICE_META_KERNEL` before Python starts to use a
+specific meta-kernel as Lunarscout's default. Kernel state helpers are available
+under `ls.spice`, including:
+
+```python
+ls.spice.ensure_default_kernels()
+ls.spice.reload_default_kernels()
+ls.spice.unload_default_kernels()
+ls.spice.clear_kernels()
+ls.spice.default_kernels_loaded()
+ls.spice.autoload_enabled()
+ls.spice.set_autoload_enabled(True)
+```
+
+### Vectors and Angles
+
+The local Cartesian frame is lunar NED:
+
+- `x`: north, tangent to increasing planetocentric latitude;
+- `y`: east, tangent to increasing longitude; and
+- `z`: down, toward the Moon center and opposite local up.
+
+Returned vectors are position/range vectors in kilometers, not unit vectors.
+Supported body names are currently `"sun"` and `"earth"`.
+
+```python
+vectors = ls.body_vectors_ned(point, "sun", sample_times)
+```
+
+`vectors` is a `float64` NumPy array shaped `(time, 3)` with columns `x`, `y`,
+and `z`.
+
+DataFrame output is also available:
+
+```python
+df = ls.body_vectors_ned_dataframe(point, "earth", sample_times)
+```
+
+The azimuth/elevation convention is:
+
+- azimuth `0 deg` is north;
+- azimuth `90 deg` is east; and
+- elevation increases upward, with `+90 deg` straight up.
+
+```python
+angles = ls.body_azimuth_elevation(point, "sun", sample_times)
+angle_df = ls.body_azimuth_elevation_dataframe(point, "sun", sample_times)
+```
+
+`angles` is a `float64` NumPy array shaped `(time, 2)` with columns `azimuth`
+and `elevation`, in degrees. DataFrame columns are `time`, `azimuth`, and
+`elevation`.
+
+Pass `ensure_kernels=False` to SPICE-backed functions when you have already
+furnished kernels and do not want Lunarscout to check defaults:
+
+```python
+vectors = ls.body_vectors_ned(
+    point,
+    "sun",
+    sample_times,
+    ensure_kernels=False,
+)
+```
+
+### Plotting
+
+Matplotlib helpers return `(fig, ax)` for notebook customization:
+
+```python
+fig, ax = ls.plot_body_elevation(point, "sun", sample_times, grid=True)
+```
+
+Overlay multiple bodies:
+
+```python
+fig, ax = ls.plot_body_elevations(
+    point,
+    ["sun", "earth"],
+    sample_times,
+    grid=True,
+)
+```
+
 ## Optional Native Features
 
 Native compute is optional. Pure-Python imports and pure-Python functionality
@@ -324,11 +477,13 @@ More mature areas:
 - grid alignment;
 - region operations;
 - UTC temporal ranges and `TemporalCube`;
-- file-backed temporal GeoTIFF series; and
+- file-backed temporal GeoTIFF series;
+- SPICE-backed local Sun/Earth histories; and
 - source boundary separation from Lunar Analyst application code.
 
 Less mature or explicitly provisional areas:
 
+- default SPICE kernel selection and descriptions;
 - high-level native temporal APIs;
 - native binary packaging;
 - public native product contracts;
@@ -363,6 +518,8 @@ Core modules:
 - `regions.py`: connected-region analysis.
 - `temporal.py`: UTC time ranges and in-memory temporal cubes.
 - `temporal_store.py`: file-backed temporal GeoTIFF series.
+- `spice.py`: SPICE kernel download, cache, and furnishing helpers.
+- `spice_geometry.py`: local-frame Sun/Earth vector and angle histories.
 - `scenario.py`: filesystem-safe scenario path helpers only.
 - `native.py`: native capability discovery and public native entry points.
 - `native_temporal.py`: native temporal and lightmap-buffer APIs.

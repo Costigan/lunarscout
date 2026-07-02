@@ -1,0 +1,105 @@
+# Lunarscout default SPICE kernel manifest.
+#
+# This file is configuration, not a SPICE meta-kernel. Lunarscout should use it
+# to download kernels, generate a local meta-kernel, and furnish kernels in the
+# order specified by load_order.
+#
+# Load-order convention:
+# - Load lower load_order values first.
+# - Put broad support kernels before ephemeris and frame kernels.
+# - Put broad date range / lower specificity kernels before narrower,
+#   more-specific, or higher-accuracy kernels that should take precedence.
+# - Keep load_order values spaced so later entries can be inserted without
+#   renumbering the whole file.
+
+version = 1
+
+[[kernels]]
+id = "naif0012"
+filename = "naif0012.tls.pc"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls.pc"
+kind = "lsk"
+load_order = 10
+description = "naif0012.tls.pc"
+sha256 = "f15293b0747e5fb01a865596281cb0534f7c77274e78184bd64260cc92be3706"
+
+[[kernels]]
+id = "pck00011"
+filename = "pck00011.tpc"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc"
+kind = "pck"
+load_order = 20
+description = "pck00011.tpc"
+sha256 = "3dff7b1dbeceaa01f25467767d3fa25816051c85d162d1edf04acb310ee28bb1"
+
+[[kernels]]
+id = "de440s"
+filename = "de440s.bsp"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp"
+kind = "spk"
+load_order = 30
+description = "de440s.bsp"
+sha256 = "c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2"
+
+[[kernels]]
+id = "earth_070425_370426_predict"
+filename = "earth_070425_370426_predict.bpc"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/a_old_versions/earth_070425_370426_predict.bpc"
+kind = "pck"
+load_order = 40
+description = "earth_070425_370426_predict.bpc"
+sha256 = "0e5b9108a86c1d23894578cfd31c952e16c3b6712960208d1d3aa01d090f5062"
+
+[[kernels]]
+id = "earth_assoc_itrf93"
+filename = "earth_assoc_itrf93.tf"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_assoc_itrf93.tf"
+kind = "fk"
+load_order = 50
+description = "earth_assoc_itrf93.tf"
+sha256 = "aab7bbc19b8a69bad11988ee1b4812a3963812a03a029c2776863e680719b336"
+
+[[kernels]]
+id = "earth_topo_050714_v2"
+filename = "earth_topo_050714_v2.tf"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/stations/a_old_versions/earth_topo_050714_v2.tf"
+kind = "fk"
+load_order = 60
+description = "earth_topo_050714_v2.tf"
+sha256 = "0ab0c24e8e1abb878ec336caf681586c52a8a4b83880a2da4f5460011564c4b0"
+
+[[kernels]]
+id = "earthstns_fx_050714"
+filename = "earthstns_fx_050714.bsp"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/stations/a_old_versions/earthstns_fx_050714.bsp"
+kind = "spk"
+load_order = 70
+description = "earthstns_fx_050714.bsp"
+sha256 = "9dfd43c7c110a8e2c89ad68f59b57671dabccdf840d0e1dae26eba120f446255"
+
+[[kernels]]
+id = "moon_assoc_me"
+filename = "moon_assoc_me.tf"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/moon_assoc_me.tf"
+kind = "fk"
+load_order = 80
+description = "moon_assoc_me.tf"
+sha256 = "52c622043ce0447d575e59ee01642f1894921e68c10f934ceff065f362da6c1c"
+
+[[kernels]]
+id = "moon_de440_220930"
+filename = "moon_de440_220930.tf"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/a_old_versions/moon_de440_220930.tf"
+kind = "fk"
+load_order = 90
+description = "moon_de440_220930.tf"
+sha256 = "73eb6b216c06a27c3419c4cfeaded7ffce46a714e3d4f9f5142dda51c0710f76"
+
+[[kernels]]
+id = "moon_pa_de440_200625"
+filename = "moon_pa_de440_200625.bpc"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/moon_pa_de440_200625.bpc"
+kind = "pck"
+load_order = 100
+description = "moon_pa_de440_200625.bpc"
+sha256 = "60cd55aa401ea2ea97360636f567554bfe4e37bb829f901b4460a455dfaf783f"
