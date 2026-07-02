@@ -1,6 +1,6 @@
 """Generate file-backed native Sun and Earth horizon-margin time series.
 
-Inputs: --scenario with dem.tif, lighting/horizons, SPICE, and native runtime.
+Inputs: --scenario with dem.tif, horizons, SPICE, and native runtime.
 Outputs: two timestamped series under analysis/ in the supplied scenario.
 Resources: temporary uncompressed disk scratch plus final compressed outputs.
 """

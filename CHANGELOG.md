@@ -23,3 +23,17 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 - Updated the user guide with SPICE kernel setup, local NED frame conventions, vector/angle APIs, DataFrame helpers, and plotting examples.
 - Added `scripts/get_link_tree.py` for recursive same-site HTML link discovery.
 - Updated the lunar map product GUI to display overview-map CRS and longitude/latitude mouse coordinates and copy either coordinate pair to the clipboard with keyboard shortcuts.
+- Changed the canonical Scenario horizon directory from `lighting/horizons` to root-level `horizons`, with matching tests, examples, README, and guide updates.
+- Added Scenario canonical path helpers for `root_path()`, `hillshade_path()`, `slope_path()`, `aspect_path()`, and `roughness_path()`.
+- Added native GDAL-backed terrain product generation through `Scenario.create_hillshade()`, `create_slope()`, `create_aspect()`, and `create_roughness()`, backed by a new `moonlib.TerrainProducts` static helper.
+- Added `Scenario.generate_horizons()` as a scenario-aware wrapper around native horizon generation, including `dem_paths` and `surrounding_dems` handling with scenario-relative DEM resolution.
+- Added Python horizon tile access helpers on `Scenario`, including patch coordinate conversion, horizon file lookup, `.bin`/`.cbin` single-pixel horizon reads, one-file handle caching, and cache close support.
+- Added Scenario longitude/latitude DEM pixel lookup and horizon plotting helpers, including centered azimuth windows and empty azimuth/elevation axes.
+- Added Scenario Sun/Earth horizon plot overlays for center points, apparent limb markers, center paths, and upper/lower limb paths; Sun defaults to gold and Earth defaults to blue.
+- Suppressed the noisy pyproj WKT-to-PROJ.4 information-loss warning during Lunarscout GeoTIFF metadata reads.
+- Expanded `docs/USER_GUIDE.md` with Scenario path, native terrain, horizon generation/access, horizon plotting, and Sun/Earth overlay examples.
+- Updated SPICE body geometry helpers and plotting helpers to accept `TimeRange` values returned by `ls.times(...)` directly.
+- Changed body path limb rendering from upper/lower dashed lines to a translucent filled limb band, while preserving explicit Matplotlib style overrides.
+- Added `ls.body_azimuth_elevation_over_horizon(...)` and `Scenario.body_azimuth_elevation_over_horizon(...)` for azimuth plus elevation over an interpolated 1440-sample horizon.
+- Added `horizon=` support to `ls.plot_body_elevations(...)` and added `Scenario.plot_body_elevations(...)` with `over_horizon=True` to fetch scenario horizons automatically.
+- Expanded `docs/USER_GUIDE.md` with a succinct function overview table covering root functions, Scenario methods, and file-backed temporal object methods.

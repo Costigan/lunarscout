@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -166,6 +167,24 @@ def test_read_populates_complete_georeference(make_geotiff, lunar_projection, af
     assert georef.nodata == -9999.0
     assert georef.projection_wkt
     assert "+proj=stere" in georef.projection_proj4
+
+
+def test_read_suppresses_pyproj_proj4_information_loss_warning(make_geotiff) -> None:
+    path = make_geotiff(
+        "complete-warning-free.tif",
+        [np.ones((2, 3), dtype=np.float32)],
+    )
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        _result, georef = read_geotiff(path)
+
+    assert georef is not None
+    messages = [str(item.message) for item in captured]
+    assert not any(
+        "You will likely lose important projection information" in message
+        for message in messages
+    )
 
 
 def test_read_rejects_complex_geotiff(make_geotiff) -> None:

@@ -46,7 +46,7 @@ already complete.
 ## Native Examples
 
 Native examples require a real scenario containing `dem.tif` and
-`lighting/horizons`, plus the configured Python.NET, .NET, moonlib, CSPICE,
+`horizons`, plus the configured Python.NET, .NET, moonlib, CSPICE,
 GDAL, and SPICE data runtime.
 
 The current source-tree native runtime bundles a newer GDAL dependency set

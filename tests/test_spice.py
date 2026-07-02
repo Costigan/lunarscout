@@ -407,6 +407,58 @@ def test_body_azimuth_elevation_uses_ned_convention(fake_spiceypy) -> None:
     np.testing.assert_allclose(result, [[45.0, 45.0]])
 
 
+def test_body_azimuth_elevation_accepts_time_range(fake_spiceypy) -> None:
+    time_range = ls.times(
+        "2027-01-01T00:00:00Z",
+        "2027-01-01T04:00:00Z",
+        step_hours=2,
+    )
+
+    result = ls.body_azimuth_elevation(
+        ls.LonLat(0.0, 0.0),
+        "earth",
+        time_range,
+        ensure_kernels=False,
+    )
+
+    assert result.shape == (3, 2)
+
+
+def test_body_azimuth_elevation_over_horizon_interpolates_horizon(fake_spiceypy) -> None:
+    azimuth = math.radians(45.125)
+    fake_spiceypy.positions = [
+        np.asarray([1.0, math.sin(azimuth), math.cos(azimuth)], dtype=np.float64)
+    ]
+    horizon = np.zeros(1440, dtype=np.float32)
+    horizon[180] = 10.0
+    horizon[181] = 14.0
+
+    result = ls.body_azimuth_elevation_over_horizon(
+        ls.LonLat(0.0, 0.0),
+        "sun",
+        [datetime(2027, 1, 1, tzinfo=timezone.utc)],
+        horizon,
+        ensure_kernels=False,
+    )
+
+    assert result.shape == (1, 2)
+    assert result[0, 0] == pytest.approx(45.125)
+    assert result[0, 1] == pytest.approx(-12.0)
+
+
+def test_body_azimuth_elevation_over_horizon_rejects_bad_horizon(fake_spiceypy) -> None:
+    with pytest.raises(ls.SpiceGeometryError) as exc:
+        ls.body_azimuth_elevation_over_horizon(
+            ls.LonLat(0.0, 0.0),
+            "sun",
+            [datetime(2027, 1, 1, tzinfo=timezone.utc)],
+            np.zeros(1439, dtype=np.float32),
+            ensure_kernels=False,
+        )
+
+    assert exc.value.code == "spice_invalid_horizon"
+
+
 def test_body_name_validation_happens_before_spice_call(fake_spiceypy) -> None:
     with pytest.raises(ls.SpiceGeometryError) as exc:
         ls.body_vectors_ned(
@@ -459,6 +511,71 @@ def test_plot_helper_returns_figure_and_axis(fake_spiceypy) -> None:
     assert fig is not None
     assert ax.get_ylabel() == "Elevation (deg)"
     assert not any(line.get_visible() for line in ax.get_xgridlines())
+    plt.close(fig)
+
+
+def test_plot_body_elevations_can_plot_over_horizon(fake_spiceypy) -> None:
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+
+    azimuth = math.radians(45.125)
+    fake_spiceypy.positions = [
+        np.asarray([1.0, math.sin(azimuth), math.cos(azimuth)], dtype=np.float64)
+    ]
+    horizon = np.zeros(1440, dtype=np.float32)
+    horizon[180] = 10.0
+    horizon[181] = 14.0
+
+    fig, ax = ls.plot_body_elevations(
+        ls.LonLat(0.0, 0.0),
+        ["sun"],
+        [datetime(2027, 1, 1, tzinfo=timezone.utc)],
+        horizon=horizon,
+        ensure_kernels=False,
+    )
+
+    assert ax.get_ylabel() == "Elevation over horizon (deg)"
+    np.testing.assert_allclose(ax.lines[0].get_ydata(), [-12.0])
+    plt.close(fig)
+
+
+def test_plot_body_elevations_applies_horizon_to_each_body(
+    fake_spiceypy,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+    import lunarscout.spice_geometry as spice_geometry
+
+    horizon = np.zeros(1440, dtype=np.float32)
+    calls = []
+
+    def fake_over_horizon(point, body, times, provided_horizon, *, ensure_kernels):
+        calls.append((point, body, list(times), provided_horizon, ensure_kernels))
+        elevation = 1.0 if body == "sun" else 2.0
+        return np.asarray([[0.0, elevation]], dtype=np.float64)
+
+    monkeypatch.setattr(
+        spice_geometry,
+        "body_azimuth_elevation_over_horizon",
+        fake_over_horizon,
+    )
+
+    fig, ax = ls.plot_body_elevations(
+        ls.LonLat(0.0, 0.0),
+        ["sun", "earth"],
+        [datetime(2027, 1, 1, tzinfo=timezone.utc)],
+        horizon=horizon,
+        ensure_kernels=False,
+    )
+
+    assert [call[1] for call in calls] == ["sun", "earth"]
+    assert all(call[3] is horizon for call in calls)
+    assert [line.get_label() for line in ax.lines] == ["sun", "earth"]
+    np.testing.assert_allclose(ax.lines[0].get_ydata(), [1.0])
+    np.testing.assert_allclose(ax.lines[1].get_ydata(), [2.0])
     plt.close(fig)
 
 

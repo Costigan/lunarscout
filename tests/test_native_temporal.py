@@ -28,7 +28,7 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
     root.mkdir()
     dem = root / "dem.tif"
     dem.touch()
-    horizons = root / "lighting" / "horizons"
+    horizons = root / "horizons"
     horizons.mkdir(parents=True)
     return root, dem, horizons
 
@@ -489,7 +489,7 @@ def test_scenario_sun_fraction_uses_standard_paths_and_safe_output(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "scenario"
-    (root / "lighting" / "horizons").mkdir(parents=True)
+    (root / "horizons").mkdir(parents=True)
     georef = _georef()
     ls.write_geotiff(root / "dem.tif", np.zeros((2, 2), dtype=np.float32), georef)
     scenario = ls.open_scenario(root)

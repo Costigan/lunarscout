@@ -26,7 +26,7 @@ def _georef() -> ls.GeoReference:
 
 def _scenario(tmp_path: Path) -> ls.Scenario:
     root = tmp_path / "scenario"
-    (root / "lighting" / "horizons").mkdir(parents=True)
+    (root / "horizons").mkdir(parents=True)
     ls.write_geotiff(
         root / "dem.tif",
         np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),

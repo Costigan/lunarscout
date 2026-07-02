@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 
 from . import spice as _kernel_state
 from .errors import SpiceGeometryError, TimeRangeError
-from .temporal import TimeInput, _parse_time
+from .temporal import TimeInput, TimeRange, _parse_time
 
 
 BodyName: TypeAlias = Literal["sun", "earth"]
@@ -19,6 +19,7 @@ _BODY_TARGETS = {
     "sun": "SUN",
     "earth": "EARTH",
 }
+_HORIZON_SAMPLES = 1440
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,9 +106,39 @@ def _body_target(body: BodyName | str) -> str:
         ) from exc
 
 
-def _time_list(times: Iterable[datetime]) -> list[datetime]:
+def _time_list(times: Iterable[datetime] | TimeRange) -> list[datetime]:
+    if isinstance(times, TimeRange):
+        times = times.values
     values = [_parse_time(time, source_timezone=None) for time in times]
     return values
+
+
+def _interpolate_horizon_elevations(
+    horizon: NDArray[np.floating],
+    azimuths: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    horizon_values = np.asarray(horizon, dtype=np.float64)
+    if horizon_values.shape != (_HORIZON_SAMPLES,):
+        raise SpiceGeometryError(
+            "Horizon must be a one-dimensional array with 1440 samples.",
+            code="spice_invalid_horizon",
+            details={"shape": list(horizon_values.shape)},
+        )
+    if np.any(~np.isfinite(horizon_values)):
+        raise SpiceGeometryError(
+            "Horizon samples must be finite numbers.",
+            code="spice_invalid_horizon",
+        )
+    sample_positions = (azimuths.astype(np.float64) % 360.0) * (
+        _HORIZON_SAMPLES / 360.0
+    )
+    lower_indices = np.floor(sample_positions).astype(np.int64) % _HORIZON_SAMPLES
+    upper_indices = (lower_indices + 1) % _HORIZON_SAMPLES
+    fractions = sample_positions - np.floor(sample_positions)
+    return (
+        horizon_values[lower_indices] * (1.0 - fractions)
+        + horizon_values[upper_indices] * fractions
+    )
 
 
 def _spice_utc(time: datetime) -> str:
@@ -172,7 +203,7 @@ def _vectors_to_azimuth_elevation(
 def body_vectors_ned(
     point: LonLat,
     body: BodyName,
-    times: Iterable[datetime],
+    times: Iterable[datetime] | TimeRange,
     *,
     ensure_kernels: bool = True,
 ) -> NDArray[np.float64]:
@@ -223,7 +254,7 @@ def body_vectors_ned(
 def body_vectors_ned_dataframe(
     point: LonLat,
     body: BodyName,
-    times: Iterable[datetime],
+    times: Iterable[datetime] | TimeRange,
     *,
     ensure_kernels: bool = True,
 ):
@@ -249,7 +280,7 @@ def body_vectors_ned_dataframe(
 def body_azimuth_elevation(
     point: LonLat,
     body: BodyName,
-    times: Iterable[datetime],
+    times: Iterable[datetime] | TimeRange,
     *,
     ensure_kernels: bool = True,
 ) -> NDArray[np.float64]:
@@ -262,10 +293,32 @@ def body_azimuth_elevation(
     return _vectors_to_azimuth_elevation(vectors)
 
 
+def body_azimuth_elevation_over_horizon(
+    point: LonLat,
+    body: BodyName,
+    times: Iterable[datetime] | TimeRange,
+    horizon: NDArray[np.floating],
+    *,
+    ensure_kernels: bool = True,
+) -> NDArray[np.float64]:
+    """Return body azimuth and elevation above the interpolated local horizon."""
+
+    angles = body_azimuth_elevation(
+        point,
+        body,
+        times,
+        ensure_kernels=ensure_kernels,
+    )
+    output = angles.copy()
+    horizon_elevations = _interpolate_horizon_elevations(horizon, output[:, 0])
+    output[:, 1] = output[:, 1] - horizon_elevations
+    return output
+
+
 def body_azimuth_elevation_dataframe(
     point: LonLat,
     body: BodyName,
-    times: Iterable[datetime],
+    times: Iterable[datetime] | TimeRange,
     *,
     ensure_kernels: bool = True,
 ):
@@ -290,7 +343,7 @@ def body_azimuth_elevation_dataframe(
 def plot_body_elevation(
     point: LonLat,
     body: BodyName,
-    times: Iterable[datetime],
+    times: Iterable[datetime] | TimeRange,
     *,
     grid: bool = True,
     ensure_kernels: bool = True,
@@ -315,8 +368,9 @@ def plot_body_elevation(
 def plot_body_elevations(
     point: LonLat,
     bodies: Sequence[BodyName],
-    times: Iterable[datetime],
+    times: Iterable[datetime] | TimeRange,
     *,
+    horizon: NDArray[np.floating] | None = None,
     grid: bool = True,
     ensure_kernels: bool = True,
 ):
@@ -325,15 +379,25 @@ def plot_body_elevations(
     time_values = _time_list(times)
     fig, ax = plt.subplots()
     for body in bodies:
-        angles = body_azimuth_elevation(
-            point,
-            body,
-            time_values,
-            ensure_kernels=ensure_kernels,
-        )
+        if horizon is None:
+            angles = body_azimuth_elevation(
+                point,
+                body,
+                time_values,
+                ensure_kernels=ensure_kernels,
+            )
+        else:
+            angles = body_azimuth_elevation_over_horizon(
+                point,
+                body,
+                time_values,
+                horizon,
+                ensure_kernels=ensure_kernels,
+            )
         ax.plot(time_values, angles[:, 1], label=str(body).lower())
     ax.set_xlabel("Time (UTC)")
-    ax.set_ylabel("Elevation (deg)")
+    ylabel = "Elevation over horizon (deg)" if horizon is not None else "Elevation (deg)"
+    ax.set_ylabel(ylabel)
     ax.grid(bool(grid))
     if bodies:
         ax.legend()

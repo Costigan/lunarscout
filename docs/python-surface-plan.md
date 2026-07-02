@@ -1190,7 +1190,7 @@ Locked and completed:
 - [x] Keep `Scenario` filesystem-only and free of FastAPI, database, and
   native-runtime imports.
 - [x] Use the active canonical primary DEM path `dem.tif`.
-- [x] Use the canonical horizon directory `lighting/horizons`.
+- [x] Use the canonical horizon directory `horizons`.
 - [x] Resolve arbitrary input and output paths relative to the scenario root.
 - [x] Reject absolute paths, parent traversal, and existing symlink escapes.
 - [x] Return normalized paths without creating directories or files.

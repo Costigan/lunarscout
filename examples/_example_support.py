@@ -45,7 +45,7 @@ def example_parser(description: str, *, native: bool = False) -> argparse.Argume
                 if "LUNARSCOUT_EXAMPLE_SCENARIO" in os.environ
                 else None
             ),
-            help="Real scenario containing dem.tif and lighting/horizons.",
+            help="Real scenario containing dem.tif and horizons.",
         )
         parser.add_argument("--start", default="2027-01-01T00:00:00Z")
         parser.add_argument("--stop", default="2027-01-01T02:00:00Z")

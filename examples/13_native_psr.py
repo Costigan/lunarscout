@@ -1,6 +1,6 @@
 """Generate a native permanent-shadow byte mask.
 
-Inputs: --scenario with dem.tif, lighting/horizons, SPICE, and native runtime.
+Inputs: --scenario with dem.tif, horizons, SPICE, and native runtime.
 Outputs: analysis/native_psr.tif in the supplied scenario.
 Semantics: 255 is permanent shadow; 0 receives direct Sun in the native period.
 """

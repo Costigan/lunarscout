@@ -1,6 +1,6 @@
 """Generate native solar visibility as an explicitly in-memory cube.
 
-Inputs: --scenario with dem.tif, lighting/horizons, SPICE, and native runtime.
+Inputs: --scenario with dem.tif, horizons, SPICE, and native runtime.
 Outputs: analysis/native_mean_sun_fraction.tif in the supplied scenario.
 Resources: preflighted float32 cube; default limit is 2 GiB.
 """

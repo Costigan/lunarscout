@@ -316,7 +316,7 @@ dem, georef = ls.read_geotiff(dem_path)
 This filesystem-only form can resolve standard paths and create output files.
 It cannot register products or publish layers. The canonical paths in the
 active scenario contract are `dem.tif` for the primary DEM and
-`lighting/horizons` for horizon tiles.
+`horizons` for horizon tiles.
 
 An attached notebook uses FastAPI as the state owner:
 
@@ -871,7 +871,7 @@ PSR initially remains an explicit product-producing native operation:
 scenario.psr(
     "analysis/psr.tif",
     *,
-    horizons="lighting/horizons",
+    horizons="horizons",
     overwrite=False,
 ) -> Path
 ```

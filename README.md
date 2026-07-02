@@ -39,7 +39,7 @@ slope_deg, slope_georef = ls.slope(
 ```
 
 `Scenario` currently provides naming and containment only. Its standard paths
-are `dem.tif` and `lighting/horizons`; it does not read `scenario.db`, register
+are `dem.tif` and `horizons`; it does not read `scenario.db`, register
 products, publish layers, or create directories.
 
 Grid compatibility is never inferred from array shape alone. Verify it or

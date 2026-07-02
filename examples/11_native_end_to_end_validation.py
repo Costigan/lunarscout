@@ -1,6 +1,6 @@
 """Validate native solar-fraction memory/file parity and series lifecycle.
 
-Inputs: --scenario with dem.tif, lighting/horizons, SPICE, and native runtime.
+Inputs: --scenario with dem.tif, horizons, SPICE, and native runtime.
 Outputs: analysis/native_validation_sun_fraction.temporal and a JSON report.
 Resources: one float32 memory cube, one float32 scratch cube, and final TIFFs.
 """

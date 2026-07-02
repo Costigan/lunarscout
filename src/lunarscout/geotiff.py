@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import warnings
 from numbers import Integral, Real
 from pathlib import Path
 
@@ -38,7 +39,13 @@ _SUPPORTED_GEOTIFF_DTYPES = {
 
 def _projection_proj4(projection_wkt: str) -> str:
     try:
-        proj4 = str(CRS.from_wkt(projection_wkt).to_proj4() or "").strip()
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"You will likely lose important projection information.*",
+                category=UserWarning,
+            )
+            proj4 = str(CRS.from_wkt(projection_wkt).to_proj4() or "").strip()
     except Exception as exc:
         raise GeoTiffMetadataError(
             "Unable to convert the GeoTIFF projection from WKT to PROJ.4.",

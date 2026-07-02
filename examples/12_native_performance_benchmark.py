@@ -1,6 +1,6 @@
 """Benchmark a representative file-backed native temporal series.
 
-Inputs: --scenario with dem.tif, lighting/horizons, SPICE, and native runtime.
+Inputs: --scenario with dem.tif, horizons, SPICE, and native runtime.
 Outputs: a timestamped series and JSON report under the scenario analysis folder.
 Resources: defaults to 3,800 float32 512 x 512 layers (about 3.7 GiB scratch).
 """
