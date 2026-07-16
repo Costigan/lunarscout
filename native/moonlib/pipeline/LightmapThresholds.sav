@@ -236,7 +236,7 @@ namespace moonlib.pipeline
         {
             ValidateInputs(
                 timestamps,
-                outputFile,
+                outputFilePattern,
                 elevationMap,
                 horizonDir,
                 sunThresholdsDeg,
@@ -304,14 +304,14 @@ namespace moonlib.pipeline
 	    byte mask = 1;
 	    var (col, row) = (result.PatchCol, result.PatchRow);
 	    
-	    
+	    throw new Exception("Not implemented yet");
 	}
 
         /// <summary>
         /// Write a 128×128 patch of flat pixel data into band 1 of <paramref name="dataset"/>
         /// at the given upper‑left column / row.
         /// </summary>
-        public static void WritePatch<T>(this Dataset dataset, int col, int row, T[] data) where T : unmanaged
+        public static void WritePatch<T>(Dataset dataset, int col, int row, T[] data) where T : unmanaged
         {
             var band = dataset.GetRasterBand(1);
             var handle = GCHandle.Alloc(data, GCHandleType.Pinned);

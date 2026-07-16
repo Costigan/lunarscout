@@ -11,6 +11,7 @@ using Serilog;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
@@ -612,6 +613,7 @@ namespace moonlib.horizon
         /// Ensure the GPU accelerator, reusable patch-DEM buffers, stream
         /// pool, and pre-compiled kernel are initialised.  Idempotent.
         /// </summary>
+        [MemberNotNull(nameof(_accelerator))]
         void EnsureInitialized()
         {
             if (_accelerator is not null)
@@ -815,6 +817,8 @@ namespace moonlib.horizon
             Console.WriteLine($"Generated reduced sun vector list for permanent shadow calculation. From {all_sunvecs_me.Count} to {sunvecs_me.Count}");
 
             var session = PrepareSession(dem: dem, sunVecsD: sunvecs_me);
+            var accelerator = _accelerator
+                ?? throw new InvalidOperationException("GPU accelerator initialization failed.");
             var queue = new BlockingCollection<PatchElevationResult>(boundedCapacity: 32);
 
             var workerThread = new Thread(() =>
@@ -835,7 +839,8 @@ namespace moonlib.horizon
                     pipeline.AddStep(ProcessElevationPatch, maxDegreeOfParallelism: _maxConcurrentStreams);
                     pipeline.AddTerminalStep(async token =>
                     {
-                        var data = token.float_results;
+                        var data = token.float_results
+                            ?? throw new InvalidOperationException("Elevation patch completed without output data.");
                         queue.Add(new PatchElevationResult { PatchCol = token.col, PatchRow = token.row, Data = data });
 
                         if (progress != null)
@@ -854,7 +859,7 @@ namespace moonlib.horizon
                         int tileColBase = token.col * PatchSize;
                         int tileRowBase = token.row * PatchSize;
 
-                        float[] patchDem = TiledGeotiffWriter.ExtractPatchDem(session.Dem.Elevation, tileColBase, tileRowBase);
+                        float[] patchDem = TiledGeotiffWriter.ExtractPatchDem(session.DemElevation, tileColBase, tileRowBase);
 
                         var stream = GetStreamFromPool();
                         var gpuPatchDem = GetDemBufferFromPool();
@@ -863,7 +868,7 @@ namespace moonlib.horizon
                         {
                             gpuPatchDem.CopyFromCPU(patchDem);
 
-                            using var gpuOutput = _accelerator.Allocate1D<float>(session.PerPatchOutputSize);
+                            using var gpuOutput = accelerator.Allocate1D<float>(session.PerPatchOutputSize);
 
                             _elevationKernel!(
                                 stream,
@@ -904,7 +909,7 @@ namespace moonlib.horizon
                 }
                 finally
                 {
-                    session.GpuEarthVectors.Dispose();
+                    session.GpuEarthVectors?.Dispose();
                     session.GpuSunVectors.Dispose();
                     queue.CompleteAdding();
                 }
@@ -932,6 +937,8 @@ namespace moonlib.horizon
             var queue = new BlockingCollection<PatchElevationResult>(boundedCapacity: 32);
             EnsureHorizonBuffers();
             var session = PrepareSession(demPath: demPath, times: times);
+            var accelerator = _accelerator
+                ?? throw new InvalidOperationException("GPU accelerator initialization failed.");
 
             var horizon_filenames = new HorizonTileStore(horizonPath)
                 .EnumerateFiles(observerElevationMeters: 0f)
@@ -950,7 +957,8 @@ namespace moonlib.horizon
                     pipeline.AddStep(ProcessPatch, maxDegreeOfParallelism: _maxConcurrentStreams);
                     pipeline.AddTerminalStep(async token =>
                     {
-                        var data = token.float_results;
+                        var data = token.float_results
+                            ?? throw new InvalidOperationException("Terrain-relative elevation patch completed without output data.");
                         queue.Add(new PatchElevationResult { PatchCol = token.col, PatchRow = token.row, Data = data });
 
                         if (progress != null)
@@ -969,7 +977,7 @@ namespace moonlib.horizon
                         int tileColBase = token.col;
                         int tileRowBase = token.row;
 
-                        float[] patchDem = TiledGeotiffWriter.ExtractPatchDem(session.Dem.Elevation, tileColBase, tileRowBase);
+                        float[] patchDem = TiledGeotiffWriter.ExtractPatchDem(session.DemElevation, tileColBase, tileRowBase);
 
                         var stream = GetStreamFromPool();
                         var gpuPatchDem = GetDemBufferFromPool();
@@ -980,7 +988,7 @@ namespace moonlib.horizon
                             gpuPatchDem.CopyFromCPU(patchDem);
                             gpuHorizons.CopyFromCPU(token.horizons);
 
-                            using var gpuOutput = _accelerator.Allocate1D<float>(session.PerPatchOutputSize);
+                            using var gpuOutput = accelerator.Allocate1D<float>(session.PerPatchOutputSize);
 
                             _elevationAboveHorizonKernel!(
                                 stream,
@@ -1023,7 +1031,7 @@ namespace moonlib.horizon
                 }
                 finally
                 {
-                    session.GpuEarthVectors.Dispose();
+                    session.GpuEarthVectors?.Dispose();
                     session.GpuSunVectors.Dispose();
                     queue.CompleteAdding();
                 }
@@ -1103,8 +1111,15 @@ namespace moonlib.horizon
                     pipeline.AddStep(ProcessPatch, maxDegreeOfParallelism: _maxConcurrentStreams);
                     pipeline.AddTerminalStep(async token =>
                     {
-                        var data = token.byte_results!;
-                        queue.Add(new PatchPSRResult { PatchCol = token.col, PatchRow = token.row, Data = data });
+                        if (token.byte_results is not null)
+                        {
+                            queue.Add(new PatchPSRResult
+                            {
+                                PatchCol = token.col,
+                                PatchRow = token.row,
+                                Data = token.byte_results,
+                            });
+                        }
 
                         if (progress != null)
                         {
@@ -1128,7 +1143,7 @@ namespace moonlib.horizon
                         int tileColBase = token.col;
                         int tileRowBase = token.row;
 
-                        float[] patchDem = TiledGeotiffWriter.ExtractPatchDem(session.Dem.Elevation, tileColBase, tileRowBase);
+                        float[] patchDem = TiledGeotiffWriter.ExtractPatchDem(session.DemElevation, tileColBase, tileRowBase);
 
                         var stream = GetStreamFromPool();
                         var gpuPatchDem = GetDemBufferFromPool();
@@ -1192,7 +1207,7 @@ namespace moonlib.horizon
                 finally
                 {
                     session.GpuEarthVectors?.Dispose();
-                    session.GpuSunVectors?.Dispose();
+                    session.GpuSunVectors.Dispose();
                     if (_patchByteOutputBuffers != null)
                         foreach (var buffer in _patchByteOutputBuffers)
                             buffer?.Dispose();
@@ -1238,6 +1253,8 @@ namespace moonlib.horizon
                 earthVecsD: earthVectorsMe,
                 sunThresholdsDeg: sunThresholdsDeg,
                 earthThresholdsDeg: earthThresholdsDeg);
+            var gpuEarthVectors = session.GpuEarthVectors
+                ?? throw new InvalidOperationException("Threshold generation requires Earth vectors.");
             EnsureHorizonBuffers();
             EnsureByteOutputBuffers(session.PerPatchOutputSize);
 
@@ -1292,7 +1309,7 @@ namespace moonlib.horizon
 
                         int tileColBase = token.col;
                         int tileRowBase = token.row;
-                        float[] patchDem = TiledGeotiffWriter.ExtractPatchDem(session.Dem.Elevation, tileColBase, tileRowBase);
+                        float[] patchDem = TiledGeotiffWriter.ExtractPatchDem(session.DemElevation, tileColBase, tileRowBase);
 
                         var stream = GetStreamFromPool();
                         var gpuPatchDem = GetDemBufferFromPool();
@@ -1313,7 +1330,7 @@ namespace moonlib.horizon
                                 session.Gt,
                                 session.ProjD,
                                 session.GpuSunVectors.View,
-                                session.GpuEarthVectors.View,
+                                gpuEarthVectors.View,
                                 gpuHorizons.View,
                                 session.GpuSunThresholds!.View,
                                 session.GpuEarthThresholds!.View,
@@ -1349,7 +1366,7 @@ namespace moonlib.horizon
                 finally
                 {
                     session.GpuEarthVectors?.Dispose();
-                    session.GpuSunVectors?.Dispose();
+                    session.GpuSunVectors.Dispose();
                     session.GpuEarthThresholds?.Dispose();
                     session.GpuSunThresholds?.Dispose();
                     queue.CompleteAdding();
@@ -1401,12 +1418,13 @@ namespace moonlib.horizon
         private sealed class LightmapSession
         {
             public ElevationMap Dem = null!;
+            public float[,] DemElevation = null!;
             public int TimeCount;
             public int PerPatchOutputSize;
             public GeoTransformD Gt;
             public ProjectionParamsDouble ProjD;
             public MemoryBuffer1D<float, Stride1D.Dense> GpuSunVectors = null!;
-            public MemoryBuffer1D<float, Stride1D.Dense> GpuEarthVectors = null!;
+            public MemoryBuffer1D<float, Stride1D.Dense>? GpuEarthVectors;
             public MemoryBuffer1D<float, Stride1D.Dense>? GpuSunThresholds;
             public MemoryBuffer1D<float, Stride1D.Dense>? GpuEarthThresholds;
         }
@@ -1435,8 +1453,8 @@ namespace moonlib.horizon
                 dem = new ElevationMap(demPath, loadRaster: true);
             }
 
-            if (dem.Elevation is null)
-                throw new InvalidOperationException("DEM raster data is null.");
+            float[,] demElevation = dem.Elevation
+                ?? throw new InvalidOperationException("DEM raster data is null.");
 
             if (dem.Width % PatchSize != 0 || dem.Height % PatchSize != 0)
                 throw new ArgumentException(
@@ -1457,31 +1475,29 @@ namespace moonlib.horizon
                 }
             }
 
-            float[] sunVecsFlat = null;
-            float[] earthVecsFlat = null;
+            if (sunVecsD is null || sunVecsD.Count != timeCount)
+                throw new ArgumentException("Sun vector count must match the session time count.", nameof(sunVecsD));
+            if (earthVecsD is not null && earthVecsD.Count != timeCount)
+                throw new ArgumentException("Earth vector count must match the session time count.", nameof(earthVecsD));
 
-            MemoryBuffer1D<float, Stride1D.Dense> gpuSunVectors = null;
-            MemoryBuffer1D<float, Stride1D.Dense> gpuEarthVectors = null;
+            var sunVecsFlat = new float[timeCount * 3];
+            for (int t = 0; t < timeCount; t++)
+            {
+                int off = t * 3;
+                sunVecsFlat[off + 0] = (float)sunVecsD[t].X;
+                sunVecsFlat[off + 1] = (float)sunVecsD[t].Y;
+                sunVecsFlat[off + 2] = (float)sunVecsD[t].Z;
+            }
+            var gpuSunVectors = _accelerator.Allocate1D<float>(sunVecsFlat.Length);
+            gpuSunVectors.CopyFromCPU(sunVecsFlat);
+
+            MemoryBuffer1D<float, Stride1D.Dense>? gpuEarthVectors = null;
             MemoryBuffer1D<float, Stride1D.Dense>? gpuSunThresholds = null;
             MemoryBuffer1D<float, Stride1D.Dense>? gpuEarthThresholds = null;
 
-            if (sunVecsD != null)
-            {
-                sunVecsFlat = new float[timeCount * 3];
-                for (int t = 0; t < timeCount; t++)
-                {
-                    int off = t * 3;
-                    sunVecsFlat[off + 0] = (float)sunVecsD[t].X;
-                    sunVecsFlat[off + 1] = (float)sunVecsD[t].Y;
-                    sunVecsFlat[off + 2] = (float)sunVecsD[t].Z;
-                }
-                gpuSunVectors = _accelerator!.Allocate1D<float>(sunVecsFlat.Length);
-                gpuSunVectors.CopyFromCPU(sunVecsFlat);
-            }
-
             if (earthVecsD != null)
             {
-                earthVecsFlat = new float[timeCount * 3];
+                var earthVecsFlat = new float[timeCount * 3];
                 for (int t = 0; t < timeCount; t++)
                 {
                     int off = t * 3;
@@ -1489,25 +1505,26 @@ namespace moonlib.horizon
                     earthVecsFlat[off + 1] = (float)earthVecsD[t].Y;
                     earthVecsFlat[off + 2] = (float)earthVecsD[t].Z;
                 }
-                gpuEarthVectors = _accelerator!.Allocate1D<float>(earthVecsFlat.Length);
+                gpuEarthVectors = _accelerator.Allocate1D<float>(earthVecsFlat.Length);
                 gpuEarthVectors.CopyFromCPU(earthVecsFlat);
             }
 
             if (sunThresholdsDeg != null)
             {
-                gpuSunThresholds = _accelerator!.Allocate1D<float>(sunThresholdsDeg.Length);
+                gpuSunThresholds = _accelerator.Allocate1D<float>(sunThresholdsDeg.Length);
                 gpuSunThresholds.CopyFromCPU(sunThresholdsDeg);
             }
 
             if (earthThresholdsDeg != null)
             {
-                gpuEarthThresholds = _accelerator!.Allocate1D<float>(earthThresholdsDeg.Length);
+                gpuEarthThresholds = _accelerator.Allocate1D<float>(earthThresholdsDeg.Length);
                 gpuEarthThresholds.CopyFromCPU(earthThresholdsDeg);
             }
 
             return new LightmapSession
             {
                 Dem = dem,
+                DemElevation = demElevation,
                 TimeCount = timeCount,
                 PerPatchOutputSize = PatchSize * PatchSize * timeCount,
                 Gt = new GeoTransformD
@@ -1537,14 +1554,16 @@ namespace moonlib.horizon
 
         static Task<LightmapProcessingToken> ReadHorizons(LightmapProcessingToken token)
         {
-            (token.col, token.row, token.observer_elevation) = QuadTreeHorizonGenerator.ParseHorizonFilename(token.filename);
+            string filename = token.filename
+                ?? throw new InvalidOperationException("Horizon processing token has no filename.");
+            (token.col, token.row, token.observer_elevation) = QuadTreeHorizonGenerator.ParseHorizonFilename(filename);
             try
             {
-                token.horizons = HorizonFile.ReadHorizonFile(token.filename);
+                token.horizons = HorizonFile.ReadHorizonFile(filename);
             }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Failed to read horizon file: {token.filename}");
+                Log.Error(ex, "Failed to read horizon file: {Filename}", filename);
                 token.horizons = null;
             }
             return Task.FromResult(token);
