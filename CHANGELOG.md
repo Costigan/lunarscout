@@ -6,6 +6,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Defined the private Python/NumPy horizon host/device data contract, including
+  checked precision conversions, dense segment tensors, flattened pyramid
+  storage, kernel/configuration validation, slope-buffer semantics, verified
+  oracle loading, and Phase 1 artifact round-trip tests. CUDA and horizon
+  algorithm implementation remain deferred to later evaluation phases.
 - Established Phase 0 and Phase 1 evidence for evaluating a full Python/Numba
   horizon-generator port: reproducible C# production baselines and warm
   multi-patch benchmarks, GPU-memory sampling, independent reference-ray

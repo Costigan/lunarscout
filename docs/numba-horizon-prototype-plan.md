@@ -257,31 +257,31 @@ in `docs/numba-horizon-phase-1-real-terrain-fixtures.json`.
 Translate C# structs into device-friendly arrays rather than attempting to
 mirror an object graph.
 
-- [ ] Define NumPy dtypes and shapes for map parameters, projection parameters,
+- [x] Define NumPy dtypes and shapes for map parameters, projection parameters,
       pyramid level metadata, kernel parameters, and outputs.
-- [ ] Evaluate a structured dtype versus structure-of-arrays storage for ray
+- [x] Evaluate a structured dtype versus structure-of-arrays storage for ray
       segments; benchmark both only if the choice is not clear from generated
       memory access.
-- [ ] Preserve `float64` for host geometry and polynomial fitting where the C#
+- [x] Preserve `float64` for host geometry and polynomial fitting where the C#
       implementation uses `double`.
-- [ ] Make every conversion to `float32` at the device boundary explicit and
+- [x] Make every conversion to `float32` at the device boundary explicit and
       tested.
-- [ ] Define the segment layout equivalent to
+- [x] Define the segment layout equivalent to
       `[azimuth][subpatch][DEM]` and test index calculations independently.
-- [ ] Define flattened pyramid storage and offsets without relying on C#
+- [x] Define flattened pyramid storage and offsets without relying on C#
       `ArrayView` semantics.
-- [ ] Define slope-buffer sentinels and the single conversion point from slope
+- [x] Define slope-buffer sentinels and the single conversion point from slope
       to degrees.
-- [ ] Add validation for contiguity, dtype, dimensions, bounds, and supported
+- [x] Add validation for contiguity, dtype, dimensions, bounds, and supported
       configuration before CUDA initialization.
-- [ ] Round-trip all reference artifacts through the Python contract.
+- [x] Round-trip all reference artifacts through the Python contract.
 
 ### Contract Gate
 
-- [ ] Python can load every reference artifact without Python.NET.
-- [ ] Indexing and interpolation select the same segments and pyramid cells as
+- [x] Python can load every reference artifact without Python.NET.
+- [x] Indexing and interpolation select the same segments and pyramid cells as
       C# for targeted diagnostic cases.
-- [ ] Units and precision boundaries are documented and covered by tests.
+- [x] Units and precision boundaries are documented and covered by tests.
 
 ## 9. Phase 3: Port and Test Host-Side Geometry
 
@@ -755,7 +755,7 @@ public API. Select the backend internally only after Gate E passes.
 
 - [x] Phase 0: baseline inventoried and frozen.
 - [x] Phase 1: independent oracles and fixtures established.
-- [ ] Phase 2: Python/device data contract validated.
+- [x] Phase 2: Python/device data contract validated.
 - [ ] Phase 3: host geometry and segment generation validated.
 - [ ] Phase 4: CUDA kernel passes correctness gates.
 - [ ] Phase 5: performance and resource evaluation passes.
