@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-16T15:56:14.197810+00:00",
+  "capture_script": "scripts/numba_horizon/capture_phase0_baseline.py",
+  "repository": {
+    "baseline_commit": "f3b21b5a7d510162783c8e6a1aa01ca2edc61277",
+    "capture_head": "f3b21b5a7d510162783c8e6a1aa01ca2edc61277",
+    "branch": "spike/numba-horizon",
+    "working_tree_clean": false,
+    "status": [
+      "## spike/numba-horizon",
+      " M docs/numba-horizon-prototype-plan.md",
+      " M native/moonlib/horizon/QuadTreeHorizonGenerator.cs",
+      " M native/tests/HorizonGen.Tests/QuadTreeProductionRegressionTests.cs",
+      "?? docs/numba-horizon-phase-0-baseline.json",
+      "?? docs/numba-horizon-phase-0-inventory.md",
+      "?? docs/numba-horizon-phase-0-production-baseline.json",
+      "?? native/tests/HorizonGen.Tests/QuadTreeGpuBaselineTests.cs",
+      "?? scripts/numba_horizon/"
+    ],
+    "baseline_commit_details": [
+      "f3b21b5a7d510162783c8e6a1aa01ca2edc61277",
+      "2026-07-16T08:15:48-07:00",
+      "Snapshot of moonlib with incomplete work on pipeline/LightmapThresholds.cs moved to a .sav file"
+    ]
+  },
+  "host": {
+    "platform": "Linux-6.18.7-76061807-generic-x86_64-with-glibc2.39",
+    "uname": {
+      "system": "Linux",
+      "node": "pop-os",
+      "release": "6.18.7-76061807-generic",
+      "version": "#202601231045~1778249322~24.04~b44a3c3 SMP PREEMPT_DYNAMIC Fri M",
+      "machine": "x86_64"
+    },
+    "os_release": {
+      "NAME": "Pop!_OS",
+      "VERSION": "24.04 LTS",
+      "ID": "pop",
+      "ID_LIKE": "ubuntu debian",
+      "PRETTY_NAME": "Pop!_OS 24.04 LTS",
+      "VERSION_ID": "24.04",
+      "HOME_URL": "https://pop.system76.com",
+      "SUPPORT_URL": "https://support.system76.com",
+      "BUG_REPORT_URL": "https://github.com/pop-os/pop/issues",
+      "PRIVACY_POLICY_URL": "https://system76.com/privacy",
+      "VERSION_CODENAME": "noble",
+      "UBUNTU_CODENAME": "noble",
+      "LOGO": "distributor-logo-pop-os"
+    },
+    "cpu_model": "Intel(R) Core(TM) Ultra 9 275HX",
+    "logical_cpu_count": 24,
+    "memory_total_kib": 98282184
+  },
+  "gpu": {
+    "probe_context": "The result describes only the environment in which this script ran. A sandbox may hide a host GPU.",
+    "query": {
+      "command": [
+        "nvidia-smi",
+        "--query-gpu=name,uuid,driver_version,memory.total,compute_cap",
+        "--format=csv,noheader,nounits"
+      ],
+      "available": true,
+      "exit_code": 0,
+      "duration_seconds": 3.217827,
+      "stdout": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-af0214a8-2b36-e02e-5c5d-cacb95f862c3, 580.159.03, 24463, 12.0",
+      "stderr": ""
+    },
+    "driver_reported_cuda_compatibility": "13.0"
+  },
+  "toolchain": {
+    "python": {
+      "executable": "/usr/bin/python3",
+      "version": "3.12.3 (main, Mar 23 2026, 19:04:32) [GCC 13.3.0]"
+    },
+    "dotnet": {
+      "command": [
+        "dotnet",
+        "--info"
+      ],
+      "available": true,
+      "exit_code": 0,
+      "duration_seconds": 0.106828,
+      "stdout": ".NET SDK:\n Version:           10.0.107\n Commit:            b16286c228\n Workload version:  10.0.100-manifests.ef86bccd\n MSBuild version:   18.0.11+b16286c22\n\nRuntime Environment:\n OS Name:     pop\n OS Version:  24.04\n OS Platform: Linux\n RID:         ubuntu.24.04-x64\n Base Path:   /usr/lib/dotnet/sdk/10.0.107/\n\n.NET workloads installed:\nThere are no installed workloads to display.\nConfigured to use workload sets when installing new manifests.\nNo workload sets are installed. Run \"dotnet workload restore\" to install a workload set.\n\nHost:\n  Version:      10.0.7\n  Architecture: x64\n  Commit:       b16286c228\n\n.NET SDKs installed:\n  9.0.116 [/usr/lib/dotnet/sdk]\n  10.0.107 [/usr/lib/dotnet/sdk]\n\n.NET runtimes installed:\n  Microsoft.AspNetCore.App 9.0.15 [/usr/lib/dotnet/shared/Microsoft.AspNetCore.App]\n  Microsoft.AspNetCore.App 10.0.7 [/usr/lib/dotnet/shared/Microsoft.AspNetCore.App]\n  Microsoft.NETCore.App 9.0.15 [/usr/lib/dotnet/shared/Microsoft.NETCore.App]\n  Microsoft.NETCore.App 10.0.7 [/usr/lib/dotnet/shared/Microsoft.NETCore.App]\n\nOther architectures found:\n  None\n\nEnvironment variables:\n  DOTNET_BUNDLE_EXTRACT_BASE_DIR           [/home/mhs/.cache/dotnet_bundle_extract]\n\nglobal.json file:\n  Not found\n\nLearn more:\n  https://aka.ms/dotnet/info\n\nDownload .NET:\n  https://aka.ms/dotnet/download",
+      "stderr": ""
+    },
+    "nvcc_path": "/usr/local/cuda/bin/nvcc",
+    "nvcc": {
+      "command": [
+        "/usr/local/cuda/bin/nvcc",
+        "--version"
+      ],
+      "available": true,
+      "exit_code": 0,
+      "duration_seconds": 0.001764,
+      "stdout": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:12:51_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0",
+      "stderr": ""
+    },
+    "cuda_and_nvidia_deb_packages": {
+      "cuda-cccl-13-2": "13.2.75-1",
+      "cuda-command-line-tools-13-2": "13.2.1-1",
+      "cuda-compiler-13-2": "13.2.1-1",
+      "cuda-crt-13-2": "13.2.78-1",
+      "cuda-cudart-13-2": "13.2.75-1",
+      "cuda-cudart-dev-13-2": "13.2.75-1",
+      "cuda-culibos-dev-13-2": "13.2.75-1",
+      "cuda-cuobjdump-13-2": "13.2.78-1",
+      "cuda-cupti-13-2": "13.2.75-1",
+      "cuda-cupti-dev-13-2": "13.2.75-1",
+      "cuda-cuxxfilt-13-2": "13.2.78-1",
+      "cuda-documentation-13-2": "13.2.75-1",
+      "cuda-driver-dev-13-2": "13.2.75-1",
+      "cuda-gdb-13-2": "13.2.75-1",
+      "cuda-keyring": "1.1-1",
+      "cuda-libraries-13-2": "13.2.1-1",
+      "cuda-libraries-dev-13-2": "13.2.1-1",
+      "cuda-nsight-13-2": "13.2.75-1",
+      "cuda-nsight-compute-13-2": "13.2.1-1",
+      "cuda-nsight-systems-13-2": "13.2.1-1",
+      "cuda-nvcc-13-2": "13.2.78-1",
+      "cuda-nvdisasm-13-2": "13.2.78-1",
+      "cuda-nvml-dev-13-2": "13.2.82-1",
+      "cuda-nvprune-13-2": "13.2.78-1",
+      "cuda-nvrtc-13-2": "13.2.78-1",
+      "cuda-nvrtc-dev-13-2": "13.2.78-1",
+      "cuda-nvtx-13-2": "13.2.75-1",
+      "cuda-opencl-13-2": "13.2.75-1",
+      "cuda-profiler-api-13-2": "13.2.75-1",
+      "cuda-sandbox-dev-13-2": "13.2.82-1",
+      "cuda-sanitizer-13-2": "13.2.76-1",
+      "cuda-tileiras-13-2": "13.2.78-1",
+      "cuda-toolkit-13-2": "13.2.1-1",
+      "cuda-toolkit-13-2-config-common": "13.2.75-1",
+      "cuda-toolkit-13-config-common": "13.3.29-1",
+      "cuda-toolkit-config-common": "13.3.29-1",
+      "cuda-tools-13-2": "13.2.1-1",
+      "cuda-visual-tools-13-2": "13.2.1-1",
+      "libnvidia-cfg1-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "libnvidia-common-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "libnvidia-compute-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "libnvidia-container-tools": "1.19.0-1",
+      "libnvidia-container1": "1.19.0-1",
+      "libnvidia-decode-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "libnvidia-egl-wayland1": "1:1.1.20-1pop1~1759419563~24.04~6d277c8",
+      "libnvidia-encode-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "libnvidia-extra-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "libnvidia-fbc1-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "libnvidia-gl-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "nvidia-compute-utils-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "nvidia-container-toolkit": "1.19.0-1",
+      "nvidia-container-toolkit-base": "1.19.0-1",
+      "nvidia-dkms-580-open": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "nvidia-driver-580-open": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "nvidia-firmware-580-580.119.02": "580.119.02-1pop1~1767727139~24.04~87c43f0",
+      "nvidia-firmware-580-580.159.03": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "nvidia-kernel-common-580": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "nvidia-kernel-source-580-open": "580.159.03-1pop1~1777480649~24.04~5a62809",
+      "nvidia-prime": "0.8.17.2",
+      "nvidia-settings": "510.47.03-0ubuntu4.24.04.1",
+      "nvidia-utils-580": "580.159.03-1pop1~1777480649~24.04~5a62809"
+    }
+  },
+  "native_checks": {
+    "moonlib_rebuild": {
+      "command": [
+        "dotnet",
+        "build",
+        "native/moonlib/moonlib.csproj",
+        "-t:Rebuild",
+        "-v",
+        "minimal"
+      ],
+      "available": true,
+      "exit_code": 0,
+      "duration_seconds": 2.868884,
+      "stdout": "  Determining projects to restore...\n  All projects are up-to-date for restore.\n  moonlib -> /e/projects/lunarscout-numba-horizon/native/moonlib/bin/Debug/net10.0/linux-x64/moonlib.dll\n\nBuild succeeded.\n    0 Warning(s)\n    0 Error(s)\n\nTime Elapsed 00:00:02.72",
+      "stderr": ""
+    },
+    "fast_native_tests": {
+      "command": [
+        "dotnet",
+        "test",
+        "native/tests/HorizonGen.Tests/HorizonGen.Tests.csproj",
+        "--no-restore",
+        "-v",
+        "minimal",
+        "--filter",
+        "TestCategory=Fast"
+      ],
+      "available": true,
+      "exit_code": 0,
+      "duration_seconds": 6.963137,
+      "stdout": "  moonlib -> /e/projects/lunarscout-numba-horizon/native/moonlib/bin/Debug/net10.0/linux-x64/moonlib.dll\n  HorizonGen.Tests -> /e/projects/lunarscout-numba-horizon/native/tests/HorizonGen.Tests/bin/Debug/net10.0/linux-x64/HorizonGen.Tests.dll\nTest run for /e/projects/lunarscout-numba-horizon/native/tests/HorizonGen.Tests/bin/Debug/net10.0/linux-x64/HorizonGen.Tests.dll (.NETCoreApp,Version=v10.0)\nVSTest version 18.0.2 (x64)\n\nStarting test execution, please wait...\nA total of 1 test files matched the specified pattern.\n  Skipped PureHdfChunkedDeflateDataset_IsReadableByPythonH5py\n\nPassed!  - Failed:     0, Passed:   122, Skipped:     1, Total:   123, Duration: 5 s - HorizonGen.Tests.dll (net10.0)",
+      "stderr": ""
+    },
+    "ilgpu_cuda_probe": {
+      "command": [
+        "dotnet",
+        "test",
+        "native/tests/HorizonGen.Tests/HorizonGen.Tests.csproj",
+        "--no-restore",
+        "-v",
+        "minimal",
+        "--filter",
+        "TestCategory=GpuBaseline"
+      ],
+      "available": true,
+      "exit_code": 0,
+      "duration_seconds": 1.588365,
+      "stdout": "  moonlib -> /e/projects/lunarscout-numba-horizon/native/moonlib/bin/Debug/net10.0/linux-x64/moonlib.dll\n  HorizonGen.Tests -> /e/projects/lunarscout-numba-horizon/native/tests/HorizonGen.Tests/bin/Debug/net10.0/linux-x64/HorizonGen.Tests.dll\nTest run for /e/projects/lunarscout-numba-horizon/native/tests/HorizonGen.Tests/bin/Debug/net10.0/linux-x64/HorizonGen.Tests.dll (.NETCoreApp,Version=v10.0)\nVSTest version 18.0.2 (x64)\n\nStarting test execution, please wait...\nA total of 1 test files matched the specified pattern.\n\nPassed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 526 ms - HorizonGen.Tests.dll (net10.0)",
+      "stderr": ""
+    }
+  },
+  "limitations": [
+    "GPU visibility is scoped to the process that ran this capture.",
+    "The Fast test tier does not require CUDA; the separate GpuBaseline test does.",
+    "This manifest does not claim Numba compatibility or contain a Numba environment.",
+    "Driver-reported CUDA compatibility is not the installed CUDA toolkit version."
+  ]
+}

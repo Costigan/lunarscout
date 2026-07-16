@@ -149,32 +149,35 @@ scheduling, caches, and file production in one large class. These must be
 separated conceptually before deciding what belongs in CPU code, CUDA code, or
 later integration work.
 
-- [ ] Trace the production call path from Python `GenerateHorizons` through
+- [x] Trace the production call path from Python `GenerateHorizons` through
       patch enumeration, segment generation, GPU launch, degree conversion,
       compression, and file writing.
-- [ ] Inventory every host function called directly or indirectly by
+- [x] Inventory every host function called directly or indirectly by
       `CalculateSubpatchRaySegments` and `SubpatchSegmentCache`.
-- [ ] Inventory every device helper called by
+- [x] Inventory every device helper called by
       `QuadTreeSubpatchRayCastKernel`.
-- [ ] Record the array layouts, dimensions, units, types, sentinels, nodata
+- [x] Record the array layouts, dimensions, units, types, sentinels, nodata
       rules, coordinate conventions, and azimuth orientation.
-- [ ] Record all algorithm constants and environment-controlled behavior,
+- [x] Record all algorithm constants and environment-controlled behavior,
       including subpatch size, fixed-step mode, hierarchy mode, near-field
       merge, traversal profiling, and pipeline concurrency.
-- [ ] Determine which modes are production requirements and which exist only
+- [x] Determine which modes are production requirements and which exist only
       for diagnosis or historical compatibility.
-- [ ] Confirm the production Python path uses `disableHierarchy: false` and
+- [x] Confirm the production Python path uses `disableHierarchy: false` and
       preserve that as the final parity target.
-- [ ] Capture current C# build and focused test results.
-- [ ] Capture baseline output and timing before making diagnostic changes to
+- [x] Capture current C# build and focused test results.
+- [x] Capture baseline output and timing before making diagnostic changes to
       the C# implementation.
 
 ### Baseline Deliverable
 
-- [ ] Commit an algorithm inventory describing the host/device boundary and
+- [x] Commit an algorithm inventory describing the host/device boundary and
       the data passed across it.
-- [ ] Commit a machine-readable baseline manifest containing source commit,
+- [x] Commit a machine-readable baseline manifest containing source commit,
       parameters, environment, inputs, output hashes, timings, and test results.
+
+The inventory, baseline manifests, and bounded cold/warm production benchmark
+are complete and included on the dedicated evaluation branch.
 
 ## 7. Phase 1: Establish Independent Oracles and Fixtures
 
@@ -189,47 +192,65 @@ evidence:
 
 ### Synthetic Fixture Matrix
 
-- [ ] Flat spherical terrain at multiple map resolutions.
-- [ ] One obstacle in each cardinal and intercardinal direction.
-- [ ] Multiple peaks along one ray, including a near lower peak and a far
+- [x] Flat spherical terrain at multiple map resolutions.
+- [x] One obstacle in each cardinal and intercardinal direction.
+- [x] Multiple peaks along one ray, including a near lower peak and a far
       higher peak.
-- [ ] Ridge crossing several adjacent azimuth bins.
-- [ ] Negative elevations and an elevated observer.
-- [ ] Nodata holes, nodata borders, and an entirely nodata ray segment.
-- [ ] Observer and obstacle near DEM, tile, and subpatch boundaries.
-- [ ] Partial tiles and DEM dimensions that are not powers of four.
-- [ ] Multi-DEM coverage with different resolutions and a horizon-setting
+- [x] Ridge crossing several adjacent azimuth bins.
+- [x] Negative elevations and an elevated observer.
+- [x] Nodata holes, nodata borders, and an entirely nodata ray segment.
+- [x] Observer and obstacle near DEM, tile, and subpatch boundaries.
+- [x] Partial tiles and DEM dimensions that are not powers of four.
+- [x] Multi-DEM coverage with different resolutions and a horizon-setting
       feature in an outer DEM.
-- [ ] Locations where grid convergence is materially nonzero.
-- [ ] Cases just below and above near/far calculation thresholds.
+- [x] Locations where grid convergence is materially nonzero.
+- [x] Cases just below and above near/far calculation thresholds.
 
 ### Real-Terrain Fixture Matrix
 
-- [ ] Select a small, redistributable real lunar DEM subset for committed or
+- [x] Select a small, redistributable real lunar DEM subset for committed or
       automatically acquired validation.
-- [ ] Select at least one larger local scenario representing normal production
+- [x] Select at least one larger local scenario representing normal production
       terrain, range, and multi-DEM use.
-- [ ] Include smooth, rugged, boundary, and high-latitude observers.
-- [ ] Record provenance and hashes for every external DEM.
-- [ ] Ensure tests skip external fixtures explicitly rather than silently
+- [x] Include smooth, rugged, boundary, and high-latitude observers.
+- [x] Record provenance and hashes for every external DEM.
+- [x] Ensure tests skip external fixtures explicitly rather than silently
       substituting synthetic data.
 
 ### Reference Artifacts
 
 For each fixture, capture applicable intermediate and final arrays:
 
-- [ ] DEM level 0 and all max-pyramid levels.
-- [ ] Level offsets, widths, heights, transforms, and projection parameters.
-- [ ] Subpatch centers and grid-convergence values.
-- [ ] Ray samples before fitting.
-- [ ] Quartic pixel-path coefficients and planar-to-chord coefficients.
-- [ ] Per-DEM slope buffers before merging.
-- [ ] Final slope and degree buffers.
-- [ ] Selected traversal traces showing levels, cells, samples, and advances.
+- [x] DEM level 0 and all max-pyramid levels.
+- [x] Level offsets, widths, heights, transforms, and projection parameters.
+- [x] Subpatch centers and grid-convergence values.
+- [x] Ray samples before fitting.
+- [x] Quartic pixel-path coefficients and planar-to-chord coefficients.
+- [x] Per-DEM slope buffers before merging.
+- [x] Final slope and degree buffers.
+- [x] Selected traversal traces showing levels, cells, samples, and advances.
 
 Use a documented, language-neutral format such as `.npz` plus JSON metadata.
 Every artifact schema needs a version and explicit units. Do not parse C# log
 text as a data interchange format.
+
+The completed Phase 1 artifact is recorded in
+`tests/data/numba_horizon/phase1_reference_rays.npz` with versioned JSON
+metadata and schema documentation in
+`docs/numba-horizon-phase-1-oracle-schema.md`. It covers 27 compact
+independent-reference cases spanning the synthetic matrix, plus nominal-bin
+production `BuildRaySamples` inputs and fitted `RaySegment` coefficients. It is
+byte-reproducible across repeated captures.
+It also captures every max-pyramid level, level offset/dimension record, map
+parameter vector, and projection parameter vector for the current DEM fixtures
+through the production CUDA path, including an odd-sized NaN, infinity, cutoff,
+and all-invalid-block fixture. A bounded corner fixture also captures a complete
+halo-inclusive subpatch grid for 16 azimuths and two DEMs, including boundary
+clamping and grid convergence. A one-pixel, 1,440-bin, two-DEM CUDA fixture
+captures each pass before merge, final slopes and degrees, and 925 selected
+hierarchy traversal steps across levels zero and one. Real-terrain selections,
+provenance, acquisition, hashes, and explicit external-test gating are recorded
+in `docs/numba-horizon-phase-1-real-terrain-fixtures.json`.
 
 ## 8. Phase 2: Define the Python Data Contract
 
@@ -732,8 +753,8 @@ public API. Select the backend internally only after Gate E passes.
 
 ## 20. Overall Progress Checklist
 
-- [ ] Phase 0: baseline inventoried and frozen.
-- [ ] Phase 1: independent oracles and fixtures established.
+- [x] Phase 0: baseline inventoried and frozen.
+- [x] Phase 1: independent oracles and fixtures established.
 - [ ] Phase 2: Python/device data contract validated.
 - [ ] Phase 3: host geometry and segment generation validated.
 - [ ] Phase 4: CUDA kernel passes correctness gates.

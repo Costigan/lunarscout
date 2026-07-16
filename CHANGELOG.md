@@ -6,6 +6,12 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Established Phase 0 and Phase 1 evidence for evaluating a full Python/Numba
+  horizon-generator port: reproducible C# production baselines and warm
+  multi-patch benchmarks, GPU-memory sampling, independent reference-ray
+  oracles, synthetic and real-terrain fixture manifests, immutable NPZ test
+  artifacts, per-DEM and final horizon buffers, and selected CUDA hierarchy
+  traversal traces. No horizon algorithm has been ported yet.
 - Created standalone Lunarscout repository skeleton from Lunar Analyst packages/lunarscout.
 - Replaced the internal architecture guide with a draft user guide covering purpose, installation, usage, maturity, architecture, examples, and roadmap stubs.
 - Added a Lunarscout-specific `requirements.in` and removed inherited Lunar Analyst application dependencies.

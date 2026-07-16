@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "small_automatically_acquired_fixture": {
+    "id": "nasa_lola_south_pole_512",
+    "source_product": "LDEM_80S_20MPP_ADJ.TIF",
+    "source_url": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_20MPP_ADJ.TIF",
+    "product_page": "https://pgda.gsfc.nasa.gov/products/90",
+    "data_doi": "10.60903/gsfcpgda-lola-spole",
+    "source_dimensions": [30400, 30400],
+    "source_pixel_size_m": 20.0,
+    "source_window": [14944, 14944, 512, 512],
+    "output_dimensions": [512, 512],
+    "output_geo_transform": [-5120.0, 20.0, 0.0, 5120.0, 0.0, -20.0],
+    "output_raster_float32_sha256": "7a7f86c29ede9d4a07cab706327c3030affb77e5f1afec89101840863b4c163c",
+    "output_gdal_checksum": 9883,
+    "observer_classes": ["smooth", "boundary", "high-latitude"],
+    "acquisition_script": "scripts/numba_horizon/acquire_phase1_real_fixture.py"
+  },
+  "larger_local_scenario": {
+    "id": "viper_four_dem_production_stack",
+    "observer_classes": ["smooth", "rugged", "boundary", "high-latitude"],
+    "patch": {"x": 0, "y": 0, "width": 128, "height": 128},
+    "azimuth_count": 1440,
+    "dems": [
+      {"path": "/d/lunar_analyst_scenarios/test_scenario/dem.tif", "size_bytes": 1050162, "sha256": "8f041cb7dba79bce23dd38de3de7a34a5a179b8c3e5455df197684e0aec2c6e6", "role": "boundary primary"},
+      {"path": "/d/datasets/viper_v71_2024_medium/other/dem.tif", "size_bytes": 104824370, "sha256": "1b5cdb5c9d656cd6ff84dd3671ffd40ef8eeee99e85d0020b8d5b3e9e62d3497", "role": "normal production coverage"},
+      {"path": "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif", "size_bytes": 108192905, "sha256": "0e96c40987c0814eadd4f94f85dacbb33bcab5388dd0b1dc99dc59bf987f072f", "role": "rugged high-resolution terrain"},
+      {"path": "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif", "size_bytes": 618310074, "sha256": "b250e94730fcbcf387e0a5494ce23fe7a17e00932982cab903d1bdff602b30e6", "role": "smooth regional high-latitude coverage"}
+    ],
+    "baseline_report": "docs/numba-horizon-phase-0-production-baseline.json"
+  },
+  "external_test_gate": "LUNARSCOUT_RUN_PHASE1_EXTERNAL_TERRAIN=1"
+}

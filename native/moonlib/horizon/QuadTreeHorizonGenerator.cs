@@ -329,6 +329,9 @@ namespace moonlib.horizon
         /// Optional callback for reporting diagnostic horizon buffers. If set, will be called when diagnostic buffers are available.
         /// </summary>
         public HorizonDiagnosticsCallback? DiagnosticsCallback { get; set; }
+
+        internal AcceleratorType SelectedAcceleratorType => _accelerator.AcceleratorType;
+        internal string SelectedAcceleratorName => _accelerator.Name;
         
         /// <summary>
         /// Buffer pool for managing GPU memory reuse in pipeline processing.
@@ -1671,6 +1674,30 @@ namespace moonlib.horizon
             public static GridConvergenceInfo Zero => new(0f, 0f, 0f);
         }
 
+        internal readonly record struct SubpatchCenterDiagnostic(
+            int Index,
+            int GridRow,
+            int GridColumn,
+            int RequestedCenterColumn,
+            int RequestedCenterRow,
+            int SegmentCenterColumn,
+            int SegmentCenterRow);
+
+        internal readonly record struct TraversalStepDiagnostic(
+            int Sequence,
+            float ParameterDistanceKm,
+            float TrueDistanceMeters,
+            int Level,
+            int CellX,
+            int CellY,
+            float PixelX,
+            float PixelY,
+            float MaximumElevationMeters,
+            float SampleElevationMeters,
+            float SampleSlope,
+            float AdvanceKm,
+            int Action);
+
         private readonly struct DemSegmentContext
         {
             public ElevationMap Dem { get; init; }
@@ -2092,6 +2119,22 @@ namespace moonlib.horizon
             };
         }
 
+        internal static RaySegment FitRaySegmentForDiagnostics(
+            ReadOnlySpan<RaySample> samples,
+            double mapRes,
+            Vector3d observerVec,
+            double correctionSphereRadius,
+            ElevationMap dem,
+            double fallbackStartMeters,
+            int demId) => FitRaySegment(
+                samples,
+                mapRes,
+                observerVec,
+                correctionSphereRadius,
+                dem,
+                fallbackStartMeters,
+                demId);
+
         /// <summary>
         /// Calculates subpatch ray segments for improved polynomial approximation accuracy.
         /// Instead of fitting one polynomial per azimuth at the 128x128 patch center,
@@ -2186,6 +2229,227 @@ namespace moonlib.horizon
 
             Log.Debug("Subpatch segment creation took {ElapsedSeconds:F2} sec", compactStopwatch.Elapsed.TotalSeconds);
             return (segments, gcInfo);
+        }
+
+        internal (
+            RaySegment[] Segments,
+            GridConvergenceInfo GridConvergence,
+            SubpatchCenterDiagnostic[] Centers) CalculateSubpatchRaySegmentsForDiagnostics(
+                List<ElevationMap> dems,
+                int tileColumn,
+                int tileRow,
+                int tileWidth,
+                int tileHeight,
+                int numAzimuths,
+                float maxDistanceMeters,
+                float observerElevationMeters,
+                int subpatchSize)
+        {
+            var pyramids = dems.Select(BuildOrLoadPyramid).ToList();
+            try
+            {
+                var primary = pyramids[0];
+                var primaryView = new PyramidView
+                {
+                    DataLevel0 = primary.DataLevel0!.View,
+                    DataMips = primary.DataMips!.View,
+                    Infos = primary.Infos!.View,
+                    Map = primary.Map,
+                    Proj = primary.Proj,
+                    Levels = primary.CpuInfos!.Length,
+                };
+                var (segments, gridConvergence) = CalculateSubpatchRaySegments(
+                    pyramids,
+                    primaryView,
+                    tileColumn,
+                    tileRow,
+                    tileWidth,
+                    tileHeight,
+                    numAzimuths,
+                    maxDistanceMeters,
+                    observerElevationMeters,
+                    subpatchSize);
+
+                int interiorPerDimension = tileWidth / subpatchSize;
+                int centersPerDimension = interiorPerDimension + 2;
+                var centers = new SubpatchCenterDiagnostic[
+                    centersPerDimension * centersPerDimension];
+                for (int index = 0; index < centers.Length; index++)
+                {
+                    int gridRow = index / centersPerDimension;
+                    int gridColumn = index % centersPerDimension;
+                    int requestedColumn = tileColumn +
+                        (gridColumn - 1) * subpatchSize + subpatchSize / 2;
+                    int requestedRow = tileRow +
+                        (gridRow - 1) * subpatchSize + subpatchSize / 2;
+                    centers[index] = new SubpatchCenterDiagnostic(
+                        index,
+                        gridRow,
+                        gridColumn,
+                        requestedColumn,
+                        requestedRow,
+                        ClampSubpatchCenter(
+                            requestedColumn, dems[0].Width, subpatchSize),
+                        ClampSubpatchCenter(
+                            requestedRow, dems[0].Height, subpatchSize));
+                }
+                return (segments, gridConvergence, centers);
+            }
+            finally
+            {
+                foreach (var pyramid in pyramids)
+                    pyramid.Dispose();
+            }
+        }
+
+        internal (
+            float[][] PerDemSlopes,
+            float[] FinalSlopes,
+            float[] FinalDegrees,
+            GridConvergenceInfo GridConvergence,
+            int TraversalTraceDemPass,
+            int TraversalTraceAzimuthIndex,
+            TraversalStepDiagnostic[] TraversalTrace) CaptureSubpatchBuffersForDiagnostics(
+                List<ElevationMap> dems,
+                int tileColumn,
+                int tileRow,
+                int tileWidth,
+                int tileHeight,
+                float observerElevationMeters,
+                int subpatchSize)
+        {
+            const int numAzimuths = 1440;
+            const float maxDistanceMeters = 1000000f;
+            const int traceDemPass = 1;
+            const int traceAzimuthIndex = 360;
+            const int traceFieldCount = 12;
+            const int traceCapacity = 16384;
+            var pyramids = dems.Select(BuildOrLoadPyramid).ToList();
+            try
+            {
+                PyramidView View(Pyramid pyramid) => new()
+                {
+                    DataLevel0 = pyramid.DataLevel0!.View,
+                    DataMips = pyramid.DataMips!.View,
+                    Infos = pyramid.Infos!.View,
+                    Map = pyramid.Map,
+                    Proj = pyramid.Proj,
+                    Levels = pyramid.CpuInfos!.Length,
+                };
+
+                var primaryView = View(pyramids[0]);
+                var (segments, gridConvergence) = CalculateSubpatchRaySegments(
+                    pyramids,
+                    primaryView,
+                    tileColumn,
+                    tileRow,
+                    tileWidth,
+                    tileHeight,
+                    numAzimuths,
+                    maxDistanceMeters,
+                    observerElevationMeters,
+                    subpatchSize);
+                int outputLength = tileWidth * tileHeight * numAzimuths;
+                var reset = Enumerable.Repeat(float.NegativeInfinity, outputLength).ToArray();
+                var perDemSlopes = new float[dems.Count][];
+                using var gpuSegments = _accelerator.Allocate1D(segments);
+                using var gpuOutput = _accelerator.Allocate1D(reset);
+                using var debugBuffer = _accelerator.Allocate1D<float>(
+                    1 + traceCapacity * traceFieldCount);
+                using var stream = _accelerator.CreateStream();
+#if QUADTREE_TRAVERSAL_PROFILE
+                using var traversalCounters = _accelerator.Allocate1D<long>(
+                    dems.Count * TRAVERSAL_COUNTERS_PER_DEM);
+#endif
+                float[]? traceBuffer = null;
+
+                for (int demPass = 0; demPass < dems.Count; demPass++)
+                {
+                    gpuOutput.CopyFromCPU(reset);
+                    debugBuffer.MemSetToZero();
+#if QUADTREE_TRAVERSAL_PROFILE
+                    traversalCounters.CopyFromCPU(
+                        new long[dems.Count * TRAVERSAL_COUNTERS_PER_DEM]);
+#endif
+                    var kernelParameters = new KernelParams(
+                        observerElevationMeters,
+                        0f,
+                        demPass == traceDemPass ? traceAzimuthIndex : -1,
+                        gridConvergence.GammaCenter,
+                        gridConvergence.DGammaDx,
+                        gridConvergence.DGammaDy,
+                        GetSubpatchDebugFlags(),
+                        pyramids[0].CpuInfos![0].Width,
+                        pyramids[0].CpuInfos![0].Height);
+                    _subpatchKernel!(
+                        stream,
+                        new Index2D(tileWidth * tileHeight, numAzimuths),
+                        primaryView,
+                        View(pyramids[demPass]),
+                        gpuOutput.View,
+                        gpuSegments.View,
+                        demPass,
+                        dems.Count,
+                        tileColumn,
+                        tileRow,
+                        tileWidth,
+                        tileHeight,
+                        subpatchSize,
+                        kernelParameters,
+                        debugBuffer.View
+#if QUADTREE_TRAVERSAL_PROFILE
+                        , traversalCounters.View
+#endif
+                        );
+                    stream.Synchronize();
+                    perDemSlopes[demPass] = gpuOutput.GetAsArray1D();
+                    if (demPass == traceDemPass)
+                        traceBuffer = debugBuffer.GetAsArray1D();
+                }
+
+                if (traceBuffer is null)
+                    throw new InvalidOperationException(
+                        "Traversal trace DEM pass was not executed.");
+                int traceCount = Math.Min((int)traceBuffer[0], traceCapacity);
+                var traversalTrace = new TraversalStepDiagnostic[traceCount];
+                for (int index = 0; index < traceCount; index++)
+                {
+                    int offset = 1 + index * traceFieldCount;
+                    traversalTrace[index] = new TraversalStepDiagnostic(
+                        index,
+                        traceBuffer[offset],
+                        traceBuffer[offset + 1],
+                        (int)traceBuffer[offset + 2],
+                        (int)traceBuffer[offset + 3],
+                        (int)traceBuffer[offset + 4],
+                        traceBuffer[offset + 5],
+                        traceBuffer[offset + 6],
+                        traceBuffer[offset + 7],
+                        traceBuffer[offset + 8],
+                        traceBuffer[offset + 9],
+                        traceBuffer[offset + 10],
+                        (int)traceBuffer[offset + 11]);
+                }
+
+                var finalSlopes = Enumerable.Repeat(
+                    float.NegativeInfinity, outputLength).ToArray();
+                foreach (var pass in perDemSlopes)
+                    for (int index = 0; index < outputLength; index++)
+                        finalSlopes[index] = Math.Max(finalSlopes[index], pass[index]);
+                return (
+                    perDemSlopes,
+                    finalSlopes,
+                    HorizonAngles.FromSlopes((float[])finalSlopes.Clone()).Degrees,
+                    gridConvergence,
+                    traceDemPass,
+                    traceAzimuthIndex,
+                    traversalTrace);
+            }
+            finally
+            {
+                foreach (var pyramid in pyramids)
+                    pyramid.Dispose();
+            }
         }
 
         private static double ClampDouble(double value, double min, double max)
@@ -2336,6 +2600,22 @@ namespace moonlib.horizon
             pyramid.SourceDem = dem;
 
             return pyramid;
+        }
+
+        internal (
+            float[] Level0,
+            float[] Mips,
+            LevelInfo[] Levels,
+            MapParams Map,
+            ProjectionParams Projection) BuildPyramidForDiagnostics(ElevationMap dem)
+        {
+            using var pyramid = BuildOrLoadPyramid(dem);
+            return (
+                pyramid.DataLevel0!.GetAsArray1D(),
+                pyramid.DataMips!.GetAsArray1D(),
+                (LevelInfo[])pyramid.CpuInfos!.Clone(),
+                pyramid.Map,
+                pyramid.Proj);
         }
 
         static ProjectionParams BuildProjectionParams(ElevationMap dem)
@@ -3777,6 +4057,10 @@ namespace moonlib.horizon
 
             bool disableHierarchy = (kernelParams.DebugFlags & DEBUG_FLAG_DISABLE_HIERARCHY) != 0;
             const float CLOSE_DISTANCE_THRESHOLD_KM = 0.5f; // 500 meters
+            bool traceTraversal = pixelIdx == 0 &&
+                kernelParams.DebugAzimuthIndex >= 0 &&
+                azIdx == kernelParams.DebugAzimuthIndex;
+            int traceCount = 0;
 #if QUADTREE_TRAVERSAL_PROFILE
             bool profileTraversal = (kernelParams.DebugFlags & DEBUG_FLAG_PROFILE_TRAVERSAL) != 0;
 #endif
@@ -3901,6 +4185,32 @@ namespace moonlib.horizon
                     int scale = 1 << shift;
                     int lx = (int)px >> shift;
                     int ly = (int)py >> shift;
+                    int traceOffset = -1;
+                    if (traceTraversal)
+                    {
+                        traceOffset = 1 + traceCount * 12;
+                        if (traceOffset + 11 < debugBuffer.Length)
+                        {
+                            debugBuffer[traceOffset] = s;
+                            debugBuffer[traceOffset + 1] = trueDistMeters;
+                            debugBuffer[traceOffset + 2] = level;
+                            debugBuffer[traceOffset + 3] = lx;
+                            debugBuffer[traceOffset + 4] = ly;
+                            debugBuffer[traceOffset + 5] = px;
+                            debugBuffer[traceOffset + 6] = py;
+                            debugBuffer[traceOffset + 7] = float.NaN;
+                            debugBuffer[traceOffset + 8] = float.NaN;
+                            debugBuffer[traceOffset + 9] = float.NaN;
+                            debugBuffer[traceOffset + 10] = 0f;
+                            debugBuffer[traceOffset + 11] = -1f;
+                            traceCount++;
+                            debugBuffer[0] = traceCount;
+                        }
+                        else
+                        {
+                            traceOffset = -1;
+                        }
+                    }
 
                     if (lx < 0 || ly < 0 || lx >= lW || ly >= lH) {
 #if QUADTREE_TRAVERSAL_PROFILE
@@ -3908,7 +4218,13 @@ namespace moonlib.horizon
                             AddTraversalCounter(traversalCounters, passIndex, TRAVERSAL_COUNTER_OUT_OF_BOUNDS);
 #endif
                         float stepKm = (scale * activeMapRes) * METERS_TO_KILOMETERS;
-                        s += XMath.Max(0.001f, stepKm);
+                        float advance = XMath.Max(0.001f, stepKm);
+                        if (traceOffset >= 0)
+                        {
+                            debugBuffer[traceOffset + 10] = advance;
+                            debugBuffer[traceOffset + 11] = 3f;
+                        }
+                        s += advance;
                         rayIsOutOfBounds = true;
                         break;
                     }
@@ -3916,6 +4232,8 @@ namespace moonlib.horizon
                     float maxH = (level == 0)
                         ? activePV.DataLevel0[info.Offset + ly * lW + lx]
                         : activePV.DataMips[info.Offset + ly * lW + lx];
+                    if (traceOffset >= 0)
+                        debugBuffer[traceOffset + 7] = maxH;
                         
                     float minX = lx * scale;
                     float minY = ly * scale;
@@ -3943,6 +4261,11 @@ namespace moonlib.horizon
                             AddTraversalCounter(traversalCounters, passIndex, TRAVERSAL_COUNTER_NODATA_SKIPS);
 #endif
                         float advance = (distToExit > 0) ? distToExit + 0.0001f : fallbackDist;
+                        if (traceOffset >= 0)
+                        {
+                            debugBuffer[traceOffset + 10] = advance;
+                            debugBuffer[traceOffset + 11] = 2f;
+                        }
                         s += advance;
                         break;
                     }
@@ -3976,6 +4299,11 @@ namespace moonlib.horizon
                             AddTraversalCounter(traversalCounters, passIndex, TRAVERSAL_COUNTER_CULLED_BLOCKS);
 #endif
                         float advance = useFixedSteps ? DEBUG_FIXED_STEP_KM : ((distToExit > 0) ? (distToExit + 0.0001f) : fallbackDist);
+                        if (traceOffset >= 0)
+                        {
+                            debugBuffer[traceOffset + 10] = advance;
+                            debugBuffer[traceOffset + 11] = 1f;
+                        }
                         s += advance;
                         break;
                     }
@@ -4009,6 +4337,11 @@ namespace moonlib.horizon
                                 if (sampleSlope > currentHorizonSlope)
                                     currentHorizonSlope = sampleSlope;
                             }
+                            if (traceOffset >= 0)
+                            {
+                                debugBuffer[traceOffset + 8] = bilinearH;
+                                debugBuffer[traceOffset + 9] = sampleSlope;
+                            }
                             
                             var tan2 = EvalCubicTangent(seg.A1, seg.A2, seg.A3, seg.A4, seg.B1, seg.B2, seg.B3, seg.B4, s - sStart);
                             float mag = XMath.Sqrt(tan2.dxds * tan2.dxds + tan2.dyds * tan2.dyds);
@@ -4032,11 +4365,18 @@ namespace moonlib.horizon
                                     : minAdaptiveStepKm;
                                 ds = XMath.Max(ds, stepFloorKm);
                             }
+                            if (traceOffset >= 0)
+                            {
+                                debugBuffer[traceOffset + 10] = ds;
+                                debugBuffer[traceOffset + 11] = 4f;
+                            }
                             s += ds;
                             break;
                         }
                         else
                         {
+                            if (traceOffset >= 0)
+                                debugBuffer[traceOffset + 11] = 0f;
                             level--;
                         }
                     }

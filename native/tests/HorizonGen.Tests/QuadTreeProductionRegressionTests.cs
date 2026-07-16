@@ -14,7 +14,7 @@ namespace moonlib.tests
         public void GenerateHorizons_FlatSyntheticDem_ReturnsCompleteFiniteSinglePixelHorizon()
         {
             var dem = CreateStereographicDem(129, 129, (_, _) => 0f);
-            using var generator = new QuadTreeHorizonGenerator();
+            using var generator = new QuadTreeHorizonGenerator(disableHierarchy: false);
 
             var horizons = generator.GenerateHorizons(
                 new List<ElevationMap> { dem },
@@ -36,7 +36,7 @@ namespace moonlib.tests
             const int center = size / 2;
             var dem = CreateStereographicDem(size, size, (row, col) =>
                 row == center && col == center + 20 ? 150f : 0f);
-            using var generator = new QuadTreeHorizonGenerator();
+            using var generator = new QuadTreeHorizonGenerator(disableHierarchy: false);
 
             var horizons = generator.GenerateHorizons(
                 new List<ElevationMap> { dem },
@@ -60,7 +60,7 @@ namespace moonlib.tests
         public void GenerateHorizons_NearTileBoundary_ReturnsCompleteFiniteBlock()
         {
             var dem = CreateStereographicDem(130, 130, (_, _) => 0f);
-            using var generator = new QuadTreeHorizonGenerator();
+            using var generator = new QuadTreeHorizonGenerator(disableHierarchy: false);
 
             var horizons = generator.GenerateHorizons(
                 new List<ElevationMap> { dem },
@@ -86,7 +86,7 @@ namespace moonlib.tests
                 row == outerCenter && col == outerCenter + 45 ? 250f : 0f);
 
             int innerCenter = inner.Width / 2;
-            using var generator = new QuadTreeHorizonGenerator();
+            using var generator = new QuadTreeHorizonGenerator(disableHierarchy: false);
 
             var innerOnly = generator.GenerateHorizons(
                 new List<ElevationMap> { inner },

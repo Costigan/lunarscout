@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-16T15:49:33.8901401Z",
+  "baseline_commit": "f3b21b5a7d510162783c8e6a1aa01ca2edc61277",
+  "configuration": {
+    "tile_x": 0,
+    "tile_y": 0,
+    "patch_width": 128,
+    "patch_height": 128,
+    "azimuth_bins": 1440,
+    "observer_elevation_m": 0,
+    "hierarchy_enabled": true,
+    "compression_requested": true,
+    "concurrent_gpu_operations": 1,
+    "segment_queue_size": 1
+  },
+  "inputs": [
+    {
+      "index": 0,
+      "source_path": "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+      "source_size_bytes": 1050162,
+      "sha256": "8f041cb7dba79bce23dd38de3de7a34a5a179b8c3e5455df197684e0aec2c6e6",
+      "copied_path": "/tmp/lunarscout-numba-horizon-baseline-f3b21b5-run2/inputs/dem-00.tif"
+    },
+    {
+      "index": 1,
+      "source_path": "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+      "source_size_bytes": 104824370,
+      "sha256": "1b5cdb5c9d656cd6ff84dd3671ffd40ef8eeee99e85d0020b8d5b3e9e62d3497",
+      "copied_path": "/tmp/lunarscout-numba-horizon-baseline-f3b21b5-run2/inputs/dem-01.tif"
+    },
+    {
+      "index": 2,
+      "source_path": "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+      "source_size_bytes": 108192905,
+      "sha256": "0e96c40987c0814eadd4f94f85dacbb33bcab5388dd0b1dc99dc59bf987f072f",
+      "copied_path": "/tmp/lunarscout-numba-horizon-baseline-f3b21b5-run2/inputs/dem-02.tif"
+    },
+    {
+      "index": 3,
+      "source_path": "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif",
+      "source_size_bytes": 618310074,
+      "sha256": "b250e94730fcbcf387e0a5494ce23fe7a17e00932982cab903d1bdff602b30e6",
+      "copied_path": "/tmp/lunarscout-numba-horizon-baseline-f3b21b5-run2/inputs/dem-03.tif"
+    }
+  ],
+  "pyramids": [
+    {
+      "dem_index": 0,
+      "path": "/tmp/lunarscout-numba-horizon-baseline-f3b21b5-run2/inputs/dem-00.pyr.bin",
+      "exists": true,
+      "size_bytes": 69908,
+      "sha256": "a32dc464e843f7b57fdccf9108d1e0ae0d55c4b20e00e95524fc88c043ffe11d"
+    },
+    {
+      "dem_index": 1,
+      "path": "/tmp/lunarscout-numba-horizon-baseline-f3b21b5-run2/inputs/dem-01.pyr.bin",
+      "exists": true,
+      "size_bytes": 6986252,
+      "sha256": "38a002d4e4d8f6035507f2d33b9f456fa9d1037fa01d5089b61eb5b6aa5bd00e"
+    },
+    {
+      "dem_index": 2,
+      "path": "/tmp/lunarscout-numba-horizon-baseline-f3b21b5-run2/inputs/dem-02.pyr.bin",
+      "exists": true,
+      "size_bytes": 7211324,
+      "sha256": "77f7e233163115ba392e23b2f48055011d8b51a894f0a71cfd649587ba79f860"
+    },
+    {
+      "dem_index": 3,
+      "path": "/tmp/lunarscout-numba-horizon-baseline-f3b21b5-run2/inputs/dem-03.pyr.bin",
+      "exists": true,
+      "size_bytes": 246443020,
+      "sha256": "8d4a037540853e572144a4220950a8eacbc2c063a506e97542e174b0514b0767"
+    }
+  ],
+  "output": {
+    "path": "/tmp/lunarscout-numba-horizon-baseline-f3b21b5-run2/outputs/00000/horizon_00000_00000_000.cbin",
+    "size_bytes": 23787796,
+    "sha256": "d8b6cff735fb7a244a80993aefbef7080e7d8007c0bcca96ff2c098a4dd9b666",
+    "value_count": 23592960,
+    "finite_count": 23592960,
+    "non_finite_count": 0,
+    "minimum_degrees": -4.1505175,
+    "maximum_degrees": 21.965696,
+    "mean_degrees": 1.4703438632146584
+  },
+  "runtime": {
+    "generation_elapsed_seconds": 10.5602221,
+    "total_process_elapsed_seconds": 18.3624937,
+    "process_peak_working_set_bytes": 10060210176,
+    "generation_timing_scope": "Generator construction, fresh pyramid construction, segment generation, GPU traversal, compression, and output write. Excludes input copying, input hashing, DEM loading, output hashing, and output statistics."
+  },
+  "repeatability": {
+    "run_count": 2,
+    "pyramid_hashes_equal": true,
+    "output_hashes_equal": true
+  },
+  "limitations": [
+    "The capture records process peak host working set but not peak GPU memory.",
+    "One patch does not establish sustained multi-patch throughput.",
+    "The copied DEMs force pyramid reconstruction and do not use external pyramid caches."
+  ]
+}
