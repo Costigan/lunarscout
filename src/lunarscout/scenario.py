@@ -127,6 +127,41 @@ def _body_plot_color(body: BodyName | str) -> str | None:
     return _BODY_PLOT_COLORS.get(str(body).strip().lower())
 
 
+def _body_sequence(bodies: Sequence[BodyName] | BodyName) -> tuple[BodyName, ...]:
+    if isinstance(bodies, str):
+        normalized = (bodies,)
+    else:
+        normalized = tuple(bodies)
+    if not normalized:
+        raise ScenarioPathError(
+            "At least one body must be provided.",
+            code="scenario_body_list_empty",
+        )
+    return normalized
+
+
+def _minimal_wrapped_azimuths(azimuths: np.ndarray) -> tuple[float, float, float]:
+    values = np.asarray(azimuths, dtype=np.float64).ravel() % 360.0
+    if values.size == 0:
+        raise ScenarioPathError(
+            "At least one body position is required for zoomed body path plotting.",
+            code="scenario_body_path_empty",
+        )
+    if values.size == 1:
+        center = float(values[0])
+        wrapped = _wrap_azimuths_to_window(values, center=center)
+        return center, float(wrapped[0]), float(wrapped[0])
+
+    sorted_values = np.sort(values)
+    gaps = np.diff(np.concatenate([sorted_values, sorted_values[:1] + 360.0]))
+    gap_index = int(np.argmax(gaps))
+    start = float(sorted_values[(gap_index + 1) % values.size])
+    span = float(360.0 - gaps[gap_index])
+    center = start + span / 2.0
+    wrapped = _wrap_azimuths_to_window(values, center=center)
+    return center, float(np.min(wrapped)), float(np.max(wrapped))
+
+
 def _resolved_scenario_root(path: str | Path) -> Path:
     try:
         root = Path(path).expanduser().resolve(strict=True)
@@ -922,6 +957,158 @@ class Scenario:
                 details={"style": style},
             )
         return artists[0] if len(artists) == 1 else tuple(artists)
+
+    def plot_zoomed_body_path(
+        self,
+        point: LonLat,
+        bodies: Sequence[BodyName] | BodyName,
+        times: Any,
+        *,
+        observer_height_decimeters: int = 0,
+        grid: bool = True,
+        ensure_kernels: bool = True,
+        margin_degrees: float = 1.0,
+    ):
+        """Plot body limb paths against the local horizon in a zoomed equal-scale view."""
+
+        body_values = _body_sequence(bodies)
+        try:
+            margin = float(margin_degrees)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ScenarioPathError(
+                "Margin must be a finite non-negative number of degrees.",
+                code="scenario_invalid_zoom_margin",
+                details={"margin_degrees": margin_degrees},
+            ) from exc
+        if not np.isfinite(margin) or margin < 0.0:
+            raise ScenarioPathError(
+                "Margin must be a finite non-negative number of degrees.",
+                code="scenario_invalid_zoom_margin",
+                details={"margin_degrees": margin_degrees},
+            )
+
+        dem_x, dem_y = self.lonlat_to_dem_pixel(point)
+        pixel_x = int(round(dem_x))
+        pixel_y = int(round(dem_y))
+        horizon = self.horizon_for_pixel(
+            pixel_x,
+            pixel_y,
+            observer_height_decimeters,
+        )
+        if horizon is None:
+            raise NativeProductError(
+                "No horizon file exists for the requested lon/lat point.",
+                code="scenario_horizon_file_missing",
+                details={
+                    "longitude": point.longitude,
+                    "latitude": point.latitude,
+                    "x": dem_x,
+                    "y": dem_y,
+                    "pixel_x": pixel_x,
+                    "pixel_y": pixel_y,
+                    "observer_height_decimeters": observer_height_decimeters,
+                },
+            )
+
+        body_angles: list[tuple[BodyName, np.ndarray]] = []
+        all_azimuths = []
+        y_mins = []
+        y_maxs = []
+        for body in body_values:
+            angles = body_azimuth_elevation(
+                point,
+                body,
+                times,
+                ensure_kernels=ensure_kernels,
+            )
+            if angles.shape[0] < 1:
+                raise ScenarioPathError(
+                    "Body path plotting requires at least one time sample.",
+                    code="scenario_body_path_empty",
+                )
+            radius = self._body_angular_diameter(body) / 2.0
+            body_angles.append((body, angles))
+            all_azimuths.append(angles[:, 0])
+            y_mins.append(float(np.min(angles[:, 1] - radius)))
+            y_maxs.append(float(np.max(angles[:, 1] + radius)))
+
+        center, x_min, x_max = _minimal_wrapped_azimuths(np.concatenate(all_azimuths))
+        sample_azimuth_degrees = np.arange(_HORIZON_SAMPLES, dtype=np.float64) * (
+            360.0 / _HORIZON_SAMPLES
+        )
+        horizon_x = _wrap_azimuths_to_window(sample_azimuth_degrees, center=center)
+        x_left = x_min - margin
+        x_right = x_max + margin
+        if x_left == x_right:
+            x_left -= max(margin, 1.0)
+            x_right += max(margin, 1.0)
+
+        horizon_mask = (horizon_x >= x_left) & (horizon_x <= x_right)
+        if not np.any(horizon_mask):
+            nearest_index = int(
+                np.argmin(np.abs(horizon_x - (x_left + x_right) / 2.0))
+            )
+            horizon_values_in_frame = np.asarray(
+                [horizon[nearest_index]],
+                dtype=np.float64,
+            )
+        else:
+            horizon_values_in_frame = horizon[horizon_mask].astype(np.float64)
+        y_bottom = float(np.min(horizon_values_in_frame)) - margin
+        y_top = max(
+            float(np.max(y_maxs)) + margin,
+            float(np.max(horizon_values_in_frame)) + margin,
+        )
+        if y_bottom == y_top:
+            y_bottom -= max(margin, 1.0)
+            y_top += max(margin, 1.0)
+        y_bottom = min(y_bottom, float(np.min(y_mins)) - margin)
+
+        fig, ax = self.plot_azimuth_elevation_axes(
+            center_azimuth=center,
+            elevation_limits=None,
+            grid=grid,
+        )
+        order = np.argsort(horizon_x)
+        ax.plot(horizon_x[order], horizon[order], color="black", label="Horizon")
+        ax.set_xlim(x_left, x_right)
+        ax.set_ylim(y_bottom, y_top)
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_ylabel("Elevation (deg)")
+
+        from matplotlib.patches import Ellipse
+
+        for body, angles in body_angles:
+            color = _body_plot_color(body)
+            x_values = _wrap_azimuths_to_window(angles[:, 0], center=center)
+            radius = self._body_angular_diameter(body) / 2.0
+            lower = angles[:, 1] - radius
+            upper = angles[:, 1] + radius
+            x_plot, lower_plot = _with_wrap_breaks(x_values, lower.astype(np.float64))
+            _x_plot, upper_plot = _with_wrap_breaks(x_values, upper.astype(np.float64))
+            fill_kwargs: dict[str, Any] = {"alpha": 0.5, "linewidth": 0}
+            if color is not None:
+                fill_kwargs["color"] = color
+            ax.fill_between(
+                x_plot,
+                lower_plot,
+                upper_plot,
+                label=str(body),
+                **fill_kwargs,
+            )
+
+            limb_kwargs: dict[str, Any] = {"fill": False, "alpha": 1.0}
+            if color is not None:
+                limb_kwargs["edgecolor"] = color
+            initial_limb = Ellipse(
+                (float(x_values[0]), float(angles[0, 1])),
+                width=radius * 2.0,
+                height=radius * 2.0,
+                **limb_kwargs,
+            )
+            ax.add_patch(initial_limb)
+
+        return fig, ax
 
     def _native_temporal(
         self,

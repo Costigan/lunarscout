@@ -68,6 +68,25 @@ namespace moonlib.horizon
     }
 
     /// <summary>
+    /// Result of processing one 128x128 threshold-bit patch.
+    /// </summary>
+    public readonly struct PatchThresholdResult
+    {
+        /// <summary>Absolute sample offset of the patch within the DEM grid.</summary>
+        public int PatchCol { get; init; }
+
+        /// <summary>Absolute line offset of the patch within the DEM grid.</summary>
+        public int PatchRow { get; init; }
+
+        /// <summary>
+        /// Threshold bitset for every pixel and every time step.
+        /// Dimensions: [128, 128, timeCount].
+        /// Bits 0-3 are Sun thresholds; bits 4-7 are Earth thresholds.
+        /// </summary>
+        public byte[] Data { get; init; }
+    }
+
+    /// <summary>
     /// GPU-accelerated computation of solar elevation angles (and eventually
     /// Earth visibility) across patches of a lunar DEM.
     /// </summary>
@@ -133,6 +152,25 @@ namespace moonlib.horizon
         int,                                  // tileRowBase  (absolute line)
         ArrayView<float>                      // output        (128*128*timeCount)
         >? _elevationAboveHorizonKernel;
+
+        private Action<
+        AcceleratorStream,
+        Index2D,
+        ArrayView<float>,                     // demElevation  (128*128 patch)
+        int,                                  // demWidth      (always 128)
+        int,                                  // demHeight     (always 128)
+        GeoTransformD,                        // geotransform
+        ProjectionParamsDouble,               // projection parameters
+        ArrayView<float>,                     // sunVectors    (flat, 3*timeCount)
+        ArrayView<float>,                     // earthVectors  (flat, 3*timeCount)
+        ArrayView<float>,                     // horizons      (flat, 1440 * 128 * 128)
+        ArrayView<float>,                     // sunThresholds (4)
+        ArrayView<float>,                     // earthThresholds (4)
+        int,                                  // timeCount
+        int,                                  // tileColBase  (absolute sample)
+        int,                                  // tileRowBase  (absolute line)
+        ArrayView<byte>                       // output        (128*128*timeCount)
+        >? _thresholdBitsKernel;
 
         // -----------------------------------------------------------------
         // Pre-compiled kernel delegate (stream-based).
@@ -373,6 +411,115 @@ namespace moonlib.horizon
         }
 
         // -----------------------------------------------------------------
+        // Kernel: compute one threshold bitset byte per pixel per time step.
+        // Bits 0-3 encode Sun margin >= sunThresholds[0..3].
+        // Bits 4-7 encode Earth margin >= earthThresholds[0..3].
+        // -----------------------------------------------------------------
+        static void ComputeThresholdBitsKernel(
+            Index2D index,
+            ArrayView<float> demElevation,
+            int demWidth,
+            int demHeight,
+            GeoTransformD geotransform,
+            ProjectionParamsDouble proj,
+            ArrayView<float> sunVectors,
+            ArrayView<float> earthVectors,
+            ArrayView<float> horizons,
+            ArrayView<float> sunThresholds,
+            ArrayView<float> earthThresholds,
+            int timeCount,
+            int tileColBase,
+            int tileRowBase,
+            ArrayView<byte> output)
+        {
+            int sampleInPatch = index.X;
+            int lineInPatch = index.Y;
+
+            if (sampleInPatch >= PatchSize || lineInPatch >= PatchSize)
+                return;
+
+            var frame = ComputePixelEnuFrame(
+                tileColBase + sampleInPatch, tileRowBase + lineInPatch,
+                sampleInPatch, lineInPatch,
+                geotransform, proj, demElevation, demWidth);
+
+            int horizonOffset = frame.pixelIdx * 1440;
+
+            for (int t = 0; t < timeCount; t++)
+            {
+                float svX = sunVectors[t * 3 + 0];
+                float svY = sunVectors[t * 3 + 1];
+                float svZ = sunVectors[t * 3 + 2];
+
+                float sunEnuX = svX * frame.r00 + svY * frame.r10 + svZ * frame.r20 + frame.tX;
+                float sunEnuY = svX * frame.r01 + svY * frame.r11 + svZ * frame.r21 + frame.tY;
+                float sunEnuZ = svX * frame.r02 + svY * frame.r12 + svZ * frame.r22 + frame.tZ;
+
+                float sunHorizontal = XMath.Sqrt(sunEnuX * sunEnuX + sunEnuY * sunEnuY);
+                float sunElevationDeg = XMath.Atan2(sunEnuZ, sunHorizontal) * RadiansToDegrees;
+
+                float sunAzimuthRad = XMath.Atan2(sunEnuX, sunEnuY);
+                if (sunAzimuthRad < 0f) sunAzimuthRad += XMath.PI * 2f;
+                float sunAzimuthDeg = sunAzimuthRad * RadiansToDegrees;
+
+                float sunAzimuthIndexF = sunAzimuthDeg * 4f;
+                if (sunAzimuthIndexF >= 1440f)
+                    sunAzimuthIndexF = 0f;
+                int sunHorizonIndex1 = (int)sunAzimuthIndexF;
+                float sunHorizonFrac = sunAzimuthIndexF - (float)sunHorizonIndex1;
+                int sunHorizonIndex2 = sunHorizonIndex1 + 1;
+                if (sunHorizonIndex2 >= 1440)
+                    sunHorizonIndex2 = 0;
+
+                float sunH1 = horizons[horizonOffset + sunHorizonIndex1];
+                float sunH2 = horizons[horizonOffset + sunHorizonIndex2];
+                float sunHorizonElev = sunH1 + sunHorizonFrac * (sunH2 - sunH1);
+                float sunMarginDeg = sunElevationDeg - sunHorizonElev;
+
+                float evX = earthVectors[t * 3 + 0];
+                float evY = earthVectors[t * 3 + 1];
+                float evZ = earthVectors[t * 3 + 2];
+
+                float earthEnuX = evX * frame.r00 + evY * frame.r10 + evZ * frame.r20 + frame.tX;
+                float earthEnuY = evX * frame.r01 + evY * frame.r11 + evZ * frame.r21 + frame.tY;
+                float earthEnuZ = evX * frame.r02 + evY * frame.r12 + evZ * frame.r22 + frame.tZ;
+
+                float earthHorizontal = XMath.Sqrt(earthEnuX * earthEnuX + earthEnuY * earthEnuY);
+                float earthElevationDeg = XMath.Atan2(earthEnuZ, earthHorizontal) * RadiansToDegrees;
+
+                float earthAzimuthRad = XMath.Atan2(earthEnuX, earthEnuY);
+                if (earthAzimuthRad < 0f) earthAzimuthRad += XMath.PI * 2f;
+                float earthAzimuthDeg = earthAzimuthRad * RadiansToDegrees;
+
+                float earthAzimuthIndexF = earthAzimuthDeg * 4f;
+                if (earthAzimuthIndexF >= 1440f)
+                    earthAzimuthIndexF = 0f;
+                int earthHorizonIndex1 = (int)earthAzimuthIndexF;
+                float earthHorizonFrac = earthAzimuthIndexF - (float)earthHorizonIndex1;
+                int earthHorizonIndex2 = earthHorizonIndex1 + 1;
+                if (earthHorizonIndex2 >= 1440)
+                    earthHorizonIndex2 = 0;
+
+                float earthH1 = horizons[horizonOffset + earthHorizonIndex1];
+                float earthH2 = horizons[horizonOffset + earthHorizonIndex2];
+                float earthHorizonElev = earthH1 + earthHorizonFrac * (earthH2 - earthH1);
+                float earthMarginDeg = earthElevationDeg - earthHorizonElev;
+
+                byte bits = 0;
+                if (sunMarginDeg >= sunThresholds[0]) bits |= (byte)1;
+                if (sunMarginDeg >= sunThresholds[1]) bits |= (byte)2;
+                if (sunMarginDeg >= sunThresholds[2]) bits |= (byte)4;
+                if (sunMarginDeg >= sunThresholds[3]) bits |= (byte)8;
+                if (earthMarginDeg >= earthThresholds[0]) bits |= (byte)16;
+                if (earthMarginDeg >= earthThresholds[1]) bits |= (byte)32;
+                if (earthMarginDeg >= earthThresholds[2]) bits |= (byte)64;
+                if (earthMarginDeg >= earthThresholds[3]) bits |= (byte)128;
+
+                output[frame.pixelIdx * timeCount + t] = bits;
+            }
+        }
+
+        // -----------------------------------------------------------------
         // Kernel: one byte per pixel — 255 if never lit (PSR), 0 otherwise.
         // -----------------------------------------------------------------
         static void ComputePSRKernel(
@@ -527,6 +674,23 @@ namespace moonlib.horizon
                 int,
                 ArrayView<float>>(ComputeElevationAnglesAboveHorizonKernel);
 
+            _thresholdBitsKernel = _accelerator.LoadAutoGroupedKernel<
+                Index2D,
+                ArrayView<float>,
+                int,
+                int,
+                GeoTransformD,
+                ProjectionParamsDouble,
+                ArrayView<float>,
+                ArrayView<float>,
+                ArrayView<float>,
+                ArrayView<float>,
+                ArrayView<float>,
+                int,
+                int,
+                int,
+                ArrayView<byte>>(ComputeThresholdBitsKernel);
+
             _PSRKernel = _accelerator.LoadAutoGroupedKernel<
                     Index1D,
                     ArrayView<float>,
@@ -604,6 +768,14 @@ namespace moonlib.horizon
         void EnsureByteOutputBuffers(int buffer_size)
         {
             EnsureInitialized();
+            if (_patchByteOutputBuffers != null)
+            {
+                if (_patchByteOutputBuffers.TryPeek(out var existing) && existing.Length == buffer_size)
+                    return;
+                while (_patchByteOutputBuffers.TryPop(out var oldBuffer))
+                    oldBuffer.Dispose();
+                _patchByteOutputBuffers = null;
+            }
             if (_patchByteOutputBuffers != null)
                 return;
             _patchByteOutputBuffers = new ConcurrentStack<MemoryBuffer1D<byte, Stride1D.Dense>>();
@@ -1031,6 +1203,162 @@ namespace moonlib.horizon
             return queue;
         }
 
+        /// <summary>
+        /// Compute one threshold bitset byte per pixel and time for every
+        /// available 128x128 horizon patch. The supplied timestamps/vectors
+        /// are assumed by callers to represent an evenly spaced time range.
+        /// </summary>
+        public BlockingCollection<PatchThresholdResult> StreamThresholdPatches(
+            ElevationMap dem,
+            string horizonPath,
+            List<Vector3d> sunVectorsMe,
+            List<Vector3d> earthVectorsMe,
+            float[] sunThresholdsDeg,
+            float[] earthThresholdsDeg,
+            IProgress<float>? progress = null,
+            Func<bool>? isCancellationRequested = null)
+        {
+            if (dem == null) throw new ArgumentNullException(nameof(dem));
+            if (string.IsNullOrWhiteSpace(horizonPath))
+                throw new ArgumentException("Horizon directory path must be non-empty.", nameof(horizonPath));
+            if (sunVectorsMe.Count == 0)
+                throw new ArgumentException("At least one Sun vector is required.", nameof(sunVectorsMe));
+            if (earthVectorsMe.Count != sunVectorsMe.Count)
+                throw new ArgumentException("Earth vector count must match Sun vector count.", nameof(earthVectorsMe));
+            if (sunThresholdsDeg.Length != 4)
+                throw new ArgumentException("Exactly four Sun thresholds are required.", nameof(sunThresholdsDeg));
+            if (earthThresholdsDeg.Length != 4)
+                throw new ArgumentException("Exactly four Earth thresholds are required.", nameof(earthThresholdsDeg));
+
+            var queue = new BlockingCollection<PatchThresholdResult>(boundedCapacity: 32);
+
+            var session = PrepareSession(
+                dem: dem,
+                sunVecsD: sunVectorsMe,
+                earthVecsD: earthVectorsMe,
+                sunThresholdsDeg: sunThresholdsDeg,
+                earthThresholdsDeg: earthThresholdsDeg);
+            EnsureHorizonBuffers();
+            EnsureByteOutputBuffers(session.PerPatchOutputSize);
+
+            var horizonFilenames = new HorizonTileStore(horizonPath)
+                .EnumerateFiles(observerElevationMeters: 0f)
+                .ToList();
+
+            int totalCount = horizonFilenames.Count;
+            Log.Information("Found {Count} horizon files for threshold-bit generation.", totalCount);
+
+            var workerThread = new Thread(() =>
+            {
+                try
+                {
+                    int patchesProcessed = 0;
+
+                    var pipeline = new Pipeline<LightmapProcessingToken>();
+                    pipeline.AddStep(ReadHorizons, maxDegreeOfParallelism: 8);
+                    pipeline.AddStep(ProcessPatch, maxDegreeOfParallelism: _maxConcurrentStreams);
+                    pipeline.AddTerminalStep(token =>
+                    {
+                        if (token.byte_results != null)
+                        {
+                            queue.Add(new PatchThresholdResult
+                            {
+                                PatchCol = token.col,
+                                PatchRow = token.row,
+                                Data = token.byte_results,
+                            });
+                        }
+
+                        int current = Interlocked.Increment(ref patchesProcessed);
+                        progress?.Report(totalCount == 0 ? 1f : (float)current / totalCount);
+                        return Task.CompletedTask;
+                    }, maxDegreeOfParallelism: _maxConcurrentStreams);
+
+                    pipeline.ProcessAsync(horizonFilenames.Select(f => new LightmapProcessingToken { filename = f })).GetAwaiter().GetResult();
+
+                    return;
+
+                    Task<LightmapProcessingToken> ProcessPatch(LightmapProcessingToken token)
+                    {
+                        if (token.horizons is null || token.horizons.Length != PatchSize * PatchSize * 1440)
+                        {
+                            Log.Warning(
+                                "Skipping threshold generation for {Filename}: horizon data invalid (null={IsNull}, length={Length}).",
+                                token.filename,
+                                token.horizons is null,
+                                token.horizons?.Length ?? 0);
+                            return Task.FromResult(token);
+                        }
+
+                        int tileColBase = token.col;
+                        int tileRowBase = token.row;
+                        float[] patchDem = TiledGeotiffWriter.ExtractPatchDem(session.Dem.Elevation, tileColBase, tileRowBase);
+
+                        var stream = GetStreamFromPool();
+                        var gpuPatchDem = GetDemBufferFromPool();
+                        var gpuHorizons = GetHorizonBufferFromPool();
+                        var gpuOutput = GetByteOutputBufferFromPool(session.PerPatchOutputSize);
+
+                        try
+                        {
+                            gpuPatchDem.CopyFromCPU(patchDem);
+                            gpuHorizons.CopyFromCPU(token.horizons);
+
+                            _thresholdBitsKernel!(
+                                stream,
+                                new Index2D(PatchSize, PatchSize),
+                                gpuPatchDem.View,
+                                PatchSize,
+                                PatchSize,
+                                session.Gt,
+                                session.ProjD,
+                                session.GpuSunVectors.View,
+                                session.GpuEarthVectors.View,
+                                gpuHorizons.View,
+                                session.GpuSunThresholds!.View,
+                                session.GpuEarthThresholds!.View,
+                                session.TimeCount,
+                                tileColBase,
+                                tileRowBase,
+                                gpuOutput.View);
+
+                            stream.Synchronize();
+
+                            byte[] flat = new byte[session.PerPatchOutputSize];
+                            gpuOutput.CopyToCPU(flat);
+                            token.byte_results = flat;
+
+                            ThrowIfCancelled(isCancellationRequested);
+
+                            return Task.FromResult(token);
+                        }
+                        finally
+                        {
+                            _streamPool!.Push(stream);
+                            _patchDemBuffers!.Push(gpuPatchDem);
+                            _patchHorizonBuffers!.Push(gpuHorizons);
+                            _patchByteOutputBuffers!.Push(gpuOutput);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    BackgroundTaskError = ex;
+                    Log.Fatal(ex, "StreamThresholdPatches background task failed");
+                }
+                finally
+                {
+                    session.GpuEarthVectors?.Dispose();
+                    session.GpuSunVectors?.Dispose();
+                    session.GpuEarthThresholds?.Dispose();
+                    session.GpuSunThresholds?.Dispose();
+                    queue.CompleteAdding();
+                }
+            });
+            workerThread.Start();
+            return queue;
+        }
+
         public static void GeneratePSRGeotiff(string DEM_path, string HorizonDirectory, string psr_path)
         {
             var dem = new ElevationMap(DEM_path, loadRaster: false);
@@ -1079,6 +1407,8 @@ namespace moonlib.horizon
             public ProjectionParamsDouble ProjD;
             public MemoryBuffer1D<float, Stride1D.Dense> GpuSunVectors = null!;
             public MemoryBuffer1D<float, Stride1D.Dense> GpuEarthVectors = null!;
+            public MemoryBuffer1D<float, Stride1D.Dense>? GpuSunThresholds;
+            public MemoryBuffer1D<float, Stride1D.Dense>? GpuEarthThresholds;
         }
 
         /// <summary>
@@ -1086,7 +1416,14 @@ namespace moonlib.horizon
         /// and returns a LightmapSession with everything needed by per‑patch
         /// processing.  The caller must dispose GpuSunVectors / GpuEarthVectors.
         /// </summary>
-        LightmapSession PrepareSession(string? demPath = null, ElevationMap? dem = null, List<DateTime>? times = null, List<Vector3d>? sunVecsD = null, List<Vector3d>? earthVecsD = null)
+        LightmapSession PrepareSession(
+            string? demPath = null,
+            ElevationMap? dem = null,
+            List<DateTime>? times = null,
+            List<Vector3d>? sunVecsD = null,
+            List<Vector3d>? earthVecsD = null,
+            float[]? sunThresholdsDeg = null,
+            float[]? earthThresholdsDeg = null)
         {
             EnsureInitialized();
             EnsureStreamPool();
@@ -1106,7 +1443,8 @@ namespace moonlib.horizon
                     $"DEM dimensions ({dem.Width}×{dem.Height}) must be multiples of {PatchSize}.");
 
             int timeCount = times != null ? times.Count : sunVecsD != null ? sunVecsD.Count : earthVecsD != null ? earthVecsD.Count : 0;
-            if (timeCount == 0) new ArgumentException("One of times, sunVecsD or earthVecsD must be non-null");
+            if (timeCount == 0)
+                throw new ArgumentException("One of times, sunVecsD or earthVecsD must be non-null");
 
             if (times != null)
             {
@@ -1124,6 +1462,8 @@ namespace moonlib.horizon
 
             MemoryBuffer1D<float, Stride1D.Dense> gpuSunVectors = null;
             MemoryBuffer1D<float, Stride1D.Dense> gpuEarthVectors = null;
+            MemoryBuffer1D<float, Stride1D.Dense>? gpuSunThresholds = null;
+            MemoryBuffer1D<float, Stride1D.Dense>? gpuEarthThresholds = null;
 
             if (sunVecsD != null)
             {
@@ -1153,6 +1493,18 @@ namespace moonlib.horizon
                 gpuEarthVectors.CopyFromCPU(earthVecsFlat);
             }
 
+            if (sunThresholdsDeg != null)
+            {
+                gpuSunThresholds = _accelerator!.Allocate1D<float>(sunThresholdsDeg.Length);
+                gpuSunThresholds.CopyFromCPU(sunThresholdsDeg);
+            }
+
+            if (earthThresholdsDeg != null)
+            {
+                gpuEarthThresholds = _accelerator!.Allocate1D<float>(earthThresholdsDeg.Length);
+                gpuEarthThresholds.CopyFromCPU(earthThresholdsDeg);
+            }
+
             return new LightmapSession
             {
                 Dem = dem,
@@ -1178,6 +1530,8 @@ namespace moonlib.horizon
                 },
                 GpuSunVectors = gpuSunVectors,
                 GpuEarthVectors = gpuEarthVectors,
+                GpuSunThresholds = gpuSunThresholds,
+                GpuEarthThresholds = gpuEarthThresholds,
             };
         }
 
@@ -1213,6 +1567,20 @@ namespace moonlib.horizon
                 while (_patchDemBuffers.TryPop(out var buf))
                     buf.Dispose();
                 _patchDemBuffers = null;
+            }
+
+            if (_patchHorizonBuffers is not null)
+            {
+                while (_patchHorizonBuffers.TryPop(out var buf))
+                    buf.Dispose();
+                _patchHorizonBuffers = null;
+            }
+
+            if (_patchByteOutputBuffers is not null)
+            {
+                while (_patchByteOutputBuffers.TryPop(out var buf))
+                    buf.Dispose();
+                _patchByteOutputBuffers = null;
             }
 
             if (_streamPool is not null)

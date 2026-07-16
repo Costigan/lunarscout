@@ -759,3 +759,112 @@ def test_plot_body_path_overlays_center_and_filled_limb_band(
     assert limb_band.get_facecolors()[0] == pytest.approx(to_rgba("gold", 0.5))
     assert limb_band.get_label().startswith("_")
     plt.close(fig)
+
+
+def test_plot_zoomed_body_path_frames_equal_scale_horizon_and_limbs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg", force=True)
+    from matplotlib.collections import FillBetweenPolyCollection
+    from matplotlib.colors import to_rgba
+    from matplotlib.patches import Ellipse
+    import matplotlib.pyplot as plt
+
+    root = tmp_path / "scenario"
+    root.mkdir()
+    scenario = ls.open_scenario(root)
+    horizon = np.linspace(0.0, 1.0, 1440, dtype=np.float32)
+    horizon[320:401] = -2.0
+    calls: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(
+        scenario_module.Scenario,
+        "lonlat_to_dem_pixel",
+        lambda _self, _point: (1.2, 2.4),
+    )
+
+    def fake_horizon_for_pixel(_self, x, y, observer_height_decimeters):
+        calls.append(("horizon", x, y, observer_height_decimeters))
+        return horizon
+
+    def fake_angles(_point, body, times, *, ensure_kernels):
+        calls.append((body, times, ensure_kernels))
+        if body == "sun":
+            return np.asarray(
+                [
+                    [80.0, 3.0],
+                    [90.0, 4.0],
+                    [100.0, 5.0],
+                ],
+                dtype=np.float64,
+            )
+        return np.asarray(
+            [
+                [85.0, 6.0],
+                [95.0, 7.0],
+                [105.0, 8.0],
+            ],
+            dtype=np.float64,
+        )
+
+    monkeypatch.setattr(
+        scenario_module.Scenario,
+        "horizon_for_pixel",
+        fake_horizon_for_pixel,
+    )
+    monkeypatch.setattr(scenario_module, "body_azimuth_elevation", fake_angles)
+
+    fig, ax = scenario.plot_zoomed_body_path(
+        ls.LonLat(0.0, 0.0),
+        ["sun", "earth"],
+        ["t0", "t1", "t2"],
+        observer_height_decimeters=3,
+        grid=False,
+        ensure_kernels=False,
+        margin_degrees=1.0,
+    )
+
+    assert calls[0] == ("horizon", 1, 2, 3)
+    assert calls[1] == ("sun", ["t0", "t1", "t2"], False)
+    assert calls[2] == ("earth", ["t0", "t1", "t2"], False)
+    assert ax.get_aspect() == pytest.approx(1.0)
+    assert ax.get_xlim() == pytest.approx((79.0, 106.0))
+    assert ax.get_ylim()[0] <= -3.0
+    assert ax.get_ylim()[1] >= 10.0
+    assert not any(gridline.get_visible() for gridline in ax.get_xgridlines())
+
+    limb_bands = [
+        collection
+        for collection in ax.collections
+        if isinstance(collection, FillBetweenPolyCollection)
+    ]
+    assert len(limb_bands) == 2
+    assert limb_bands[0].get_alpha() == pytest.approx(0.5)
+    assert limb_bands[0].get_facecolors()[0] == pytest.approx(to_rgba("gold", 0.5))
+    assert limb_bands[1].get_facecolors()[0] == pytest.approx(to_rgba("blue", 0.5))
+
+    limb_patches = [patch for patch in ax.patches if isinstance(patch, Ellipse)]
+    assert len(limb_patches) == 2
+    assert limb_patches[0].center == pytest.approx((80.0, 3.0))
+    assert limb_patches[0].width == pytest.approx(0.536)
+    assert limb_patches[0].get_alpha() == pytest.approx(1.0)
+    assert limb_patches[1].center == pytest.approx((85.0, 6.0))
+    assert limb_patches[1].width == pytest.approx(2.0)
+    plt.close(fig)
+
+
+def test_plot_zoomed_body_path_rejects_empty_body_list(tmp_path: Path) -> None:
+    root = tmp_path / "scenario"
+    root.mkdir()
+    scenario = ls.open_scenario(root)
+
+    with pytest.raises(ls.ScenarioPathError) as raised:
+        scenario.plot_zoomed_body_path(
+            ls.LonLat(0.0, 0.0),
+            [],
+            ["t0"],
+        )
+
+    assert raised.value.code == "scenario_body_list_empty"

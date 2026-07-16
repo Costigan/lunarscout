@@ -1,0 +1,3 @@
+* In plots of body paths, show the position at times during the TimeRange, label them
+* Add support for relay satellites
+
