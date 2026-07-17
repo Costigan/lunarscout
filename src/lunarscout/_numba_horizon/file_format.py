@@ -19,7 +19,9 @@ TOTAL_SAMPLES = PIXEL_COUNT * AZIMUTH_COUNT
 RAW_FILE_BYTES = TOTAL_SAMPLES * np.dtype("<f4").itemsize
 MAX_COMPRESSED_BLOCK_BYTES = 2 * AZIMUTH_COUNT
 _SHORT_SCALE = np.float32(32767.0) / np.float32(50.0)
+_ELEVATION_SCALE = np.float32(50.0) / np.float32(32767.0)
 _COMPILED_ENCODER = None
+_COMPILED_DECODER = None
 
 
 def _encode_horizons_python(
@@ -118,6 +120,99 @@ def _write_compressed(handle: BinaryIO, degrees: npt.NDArray[np.float32]) -> Non
         handle.write(encoded[index, :length].tobytes())
 
 
+def _decode_compressed_payload_python(
+    payload: npt.NDArray[np.uint8],
+) -> npt.NDArray[np.float32]:
+    """Decode and structurally validate a complete C# ``.cbin`` payload."""
+    output = np.empty((PIXEL_COUNT, AZIMUTH_COUNT), dtype=np.float32)
+    offset = 0
+    payload_size = payload.size
+    for pixel_index in range(PIXEL_COUNT):
+        if offset + 2 > payload_size:
+            raise ValueError("compressed horizon ended while reading a block length")
+        length = int(payload[offset]) | (int(payload[offset + 1]) << 8)
+        offset += 2
+        if length < 2 or length > MAX_COMPRESSED_BLOCK_BYTES:
+            raise ValueError("compressed horizon block length is invalid")
+        block_end = offset + length
+        if block_end > payload_size:
+            raise ValueError("compressed horizon ended inside a block")
+
+        accumulator = (int(payload[offset]) << 8) | int(payload[offset + 1])
+        if accumulator >= 32768:
+            accumulator -= 65536
+        offset += 2
+        output[pixel_index, 0] = np.float32(accumulator) * _ELEVATION_SCALE
+        sample_index = 1
+        while offset < block_end and sample_index < AZIMUTH_COUNT:
+            first = int(payload[offset])
+            offset += 1
+            if first & 0x80:
+                if offset >= block_end:
+                    raise ValueError("compressed horizon ended inside a two-byte delta")
+                high = ((first << 1) & 0x80) | (first & 0x7F)
+                delta = (high << 8) | int(payload[offset])
+                offset += 1
+                if delta >= 32768:
+                    delta -= 65536
+            else:
+                delta = first & 0x7F
+                if delta & 0x40:
+                    delta -= 0x80
+            accumulator = ((accumulator + delta + 32768) % 65536) - 32768
+            output[pixel_index, sample_index] = (
+                np.float32(accumulator) * _ELEVATION_SCALE
+            )
+            sample_index += 1
+        if sample_index != AZIMUTH_COUNT or offset != block_end:
+            raise ValueError("compressed horizon block did not decode to 1440 samples")
+    if offset != payload_size:
+        raise ValueError("compressed horizon contains trailing bytes")
+    return output
+
+
+def _decode_compressed_payload(
+    payload: npt.NDArray[np.uint8],
+) -> npt.NDArray[np.float32]:
+    """Decode a complete payload, compiling the bounded loop when available."""
+    global _COMPILED_DECODER
+    if _COMPILED_DECODER is None:
+        try:
+            from numba import njit
+        except ImportError:
+            _COMPILED_DECODER = _decode_compressed_payload_python
+        else:
+            _COMPILED_DECODER = njit(cache=False)(_decode_compressed_payload_python)
+    return _COMPILED_DECODER(payload)
+
+
+def read_horizon_tile(path: str | Path) -> npt.NDArray[np.float32]:
+    """Read one complete production horizon tile as ``float32[y, x, azimuth]``."""
+    candidate = Path(path)
+    suffix = candidate.suffix.lower()
+    if suffix == ".bin":
+        try:
+            size = candidate.stat().st_size
+            if size not in (RAW_FILE_BYTES, RAW_FILE_BYTES + 28):
+                raise ValueError("uncompressed horizon file size is invalid")
+            with candidate.open("rb") as handle:
+                payload = handle.read(RAW_FILE_BYTES)
+        except OSError as exc:
+            raise ValueError(f"unable to read horizon tile: {candidate}") from exc
+        values = np.frombuffer(payload, dtype="<f4", count=TOTAL_SAMPLES).copy()
+    elif suffix == ".cbin":
+        try:
+            payload = np.frombuffer(candidate.read_bytes(), dtype=np.uint8)
+        except OSError as exc:
+            raise ValueError(f"unable to read horizon tile: {candidate}") from exc
+        values = _decode_compressed_payload(payload)
+    else:
+        raise ValueError("horizon tile must have a .bin or .cbin extension")
+    return np.ascontiguousarray(
+        values.reshape(PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), dtype=np.float32
+    )
+
+
 class HorizonTileStore:
     """Private Python equivalent of the production C# ``HorizonTileStore``."""
 
@@ -205,6 +300,13 @@ class HorizonTileStore:
             if path.is_file() and (not require_complete or self.is_complete(path)):
                 return path
         return None
+
+    def read(
+        self, tile_y: int, tile_x: int, observer_elevation_m: float
+    ) -> npt.NDArray[np.float32] | None:
+        """Read the preferred complete tile, or return ``None`` when absent."""
+        path = self.find_existing_path(tile_y, tile_x, observer_elevation_m)
+        return None if path is None else read_horizon_tile(path)
 
     def write(
         self,

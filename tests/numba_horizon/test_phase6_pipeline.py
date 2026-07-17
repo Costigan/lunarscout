@@ -16,6 +16,7 @@ from lunarscout._numba_horizon.file_format import (
     RAW_FILE_BYTES,
     _encode_horizons,
     _encode_horizons_python,
+    read_horizon_tile,
 )
 from lunarscout._numba_horizon.pipeline import (
     HorizonPipelineCancelled,
@@ -166,6 +167,56 @@ def test_compressed_tile_is_readable_by_existing_scenario_reader(tmp_path: Path)
     with path.open("rb") as handle:
         actual = Scenario.horizon_from_open_file(handle, 0, 0)
     np.testing.assert_allclose(actual, degrees[0], atol=0.002)
+
+
+@pytest.mark.parametrize("compress", [False, True])
+def test_full_tile_reader_returns_fixed_pixel_major_cube(
+    tmp_path: Path, compress: bool
+) -> None:
+    store = HorizonTileStore(tmp_path)
+    degrees = np.stack(
+        (
+            np.linspace(-10.0, 10.0, AZIMUTH_COUNT, dtype=np.float32),
+            np.linspace(5.0, -5.0, AZIMUTH_COUNT, dtype=np.float32),
+        )
+    )
+    path = store.write(
+        0,
+        0,
+        0.0,
+        degrees,
+        compress=compress,
+        valid_width=2,
+        valid_height=1,
+    )
+
+    actual = read_horizon_tile(path)
+
+    assert actual.shape == (128, 128, AZIMUTH_COUNT)
+    assert actual.dtype == np.float32
+    tolerance = 0.002 if compress else 0.0
+    np.testing.assert_allclose(actual[0, :2], degrees, atol=tolerance)
+    np.testing.assert_allclose(actual[0, 2], -50.0, atol=tolerance)
+    np.testing.assert_allclose(actual[1, 0], -50.0, atol=tolerance)
+    np.testing.assert_allclose(store.read(0, 0, 0.0), actual)
+
+
+def test_full_tile_reader_rejects_trailing_compressed_data(tmp_path: Path) -> None:
+    store = HorizonTileStore(tmp_path)
+    path = store.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+    with path.open("ab") as handle:
+        handle.write(b"trailing")
+
+    with pytest.raises(ValueError, match="trailing bytes"):
+        read_horizon_tile(path)
 
 
 def test_bounded_pipeline_skips_complete_tiles_streams_and_flushes_progress() -> None:

@@ -609,9 +609,9 @@ times, vectors, thresholds, and reductions before release.
       For products without one, define independent synthetic expected results
       for local-frame construction, horizon interpolation, solar-disk fraction,
       Sun/Earth thresholds, safe-haven duration, and mission-duration reduction.
-- [ ] Implement a private full-patch `.bin`/`.cbin` reader that returns the
+- [x] Implement a private full-patch `.bin`/`.cbin` reader that returns the
       existing pixel-major `(128, 128, 1440)` horizon contract without moonlib.
-- [ ] Provide two vector-input levels. The high-level path accepts UTC times or
+- [x] Provide two vector-input levels. The high-level path accepts UTC times or
       a start/stop/step specification and lazily uses Lunarscout/SpiceyPy to
       generate Sun and, when required, Earth positions in the Moon-ME frame.
       The low-level path accepts explicit `(time, 3)` vectors for controlled
@@ -643,7 +643,7 @@ times, vectors, thresholds, and reductions before release.
 
 ### GeoTIFF output contract
 
-- [ ] Implement a private staged patch-window writer supporting one or many
+- [x] Implement a private staged patch-window writer supporting one or many
       bands, 128 by 128 internal tiles, compression, predictor selection,
       BigTIFF, arbitrary supported NumPy/GDAL dtypes, nodata or validity masks,
       georeferencing, and per-band time metadata. Band `t` must represent the
@@ -653,22 +653,22 @@ times, vectors, thresholds, and reductions before release.
       interleaving so each band consists of independently compressed 128 by 128
       pixel tiles. Write window `(patch_x, patch_y, 128, 128)` to band `t` as
       soon as that patch/time result reaches the writer.
-- [ ] Write partial right/bottom windows without retaining a full raster or
+- [x] Write partial right/bottom windows without retaining a full raster or
       regional time cube.
-- [ ] Cover the full DEM even when horizon tiles are missing or invalid. Write
+- [x] Cover the full DEM even when horizon tiles are missing or invalid. Write
       a validity mask of 255 for computed pixels and 0 for invalid pixels. The
       deterministic invalid data value is configurable and defaults to zero;
       initialize invalid or absent regions to that value for every band.
-- [ ] Validate the requested time count against the TIFF band-count limit. The
+- [x] Validate the requested time count against the TIFF band-count limit. The
       intended mission products (normally no more than about two years at a
       six-hour step) fit within the limit; a full Metonic lightmap cube is not
       a supported output requirement.
-- [ ] Make resume the default for incomplete staged products and provide an
+- [x] Make resume the default for incomplete staged products and provide an
       explicit start-from-scratch option. Bind resumability to a durable job
       manifest containing the grid, dtype, bands/times, vector/configuration
       identity, invalid value, horizon inventory, and algorithm version; reject
       incompatible partial products rather than silently mixing results.
-- [ ] Keep final validity separate from temporary completion state. Maintain a
+- [x] Keep final validity separate from temporary completion state. Maintain a
       durable per-patch completion journal beside the staged GeoTIFF. Mark a
       patch complete only after all of its bands/products have been written and
       the dataset has been flushed; then persist and synchronize the journal.
@@ -706,10 +706,10 @@ times, vectors, thresholds, and reductions before release.
 
 ### Downstream no-.NET gate
 
-- [ ] Run representative products from a fresh Python process after DEM arrays,
+- [x] Run representative products from a fresh Python process after DEM arrays,
       georeferencing, timestamps, and vectors are supplied; verify that `clr`,
       `pythonnet`, and `moonlib` are not loaded.
-- [ ] Verify output grids, bands/times, compression, masks/nodata, dtypes,
+- [x] Verify output grids, bands/times, compression, masks/nodata, dtypes,
       metadata, edge tiles, and values with existing Lunarscout readers and
       independent GDAL/Rasterio inspection.
 - [ ] Measure kernel, decompression, transfer, compression/write, end-to-end

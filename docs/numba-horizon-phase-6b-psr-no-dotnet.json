@@ -1,0 +1,24 @@
+{
+  "block_shape": [
+    128,
+    128
+  ],
+  "compressed_csharp_oracle_mismatch_count": 0,
+  "compressed_csharp_oracle_sha256": "88808ad33690119e955997622d0608e30d9c6e7496d16955367ab2e007a9cc0f",
+  "compression": "deflate",
+  "cuda_session_seconds": 0.33479972199711483,
+  "decoded_reference_sha256": "88808ad33690119e955997622d0608e30d9c6e7496d16955367ab2e007a9cc0f",
+  "dtype": "uint8",
+  "exact_decoded_reference_match": true,
+  "forbidden_modules_loaded": [],
+  "horizon_file_bytes": 23642112,
+  "horizon_write_seconds": 0.5024612529996375,
+  "mask_invalid_pixels": 0,
+  "mask_valid_pixels": 16384,
+  "output_file_bytes": 1816,
+  "output_sha256": "88808ad33690119e955997622d0608e30d9c6e7496d16955367ab2e007a9cc0f",
+  "pipeline_seconds": 0.3370831989996077,
+  "schema": "lunarscout-numba-phase6b-psr-no-dotnet-v1",
+  "uncompressed_csharp_oracle_mismatch_count": 17,
+  "uncompressed_csharp_oracle_sha256": "43871042aae101ecc38d54a813c0e346355b3775c006f3f85306cb86d14a0fac"
+}

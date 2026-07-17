@@ -610,6 +610,61 @@ namespace moonlib.horizon
         }
 
         /// <summary>
+        /// Launch the production PSR kernel on one caller-supplied patch.
+        /// This diagnostic boundary exists only to capture cross-language
+        /// parity fixtures; normal product generation uses StreamPSRPatches.
+        /// </summary>
+        public byte[] ComputePSRPatchForDiagnostics(
+            float[] patchDem,
+            GeoTransformD geotransform,
+            ProjectionParamsDouble projection,
+            float[] sunVectorsMe,
+            float[] horizons,
+            int tileColBase = 0,
+            int tileRowBase = 0)
+        {
+            ArgumentNullException.ThrowIfNull(patchDem);
+            ArgumentNullException.ThrowIfNull(sunVectorsMe);
+            ArgumentNullException.ThrowIfNull(horizons);
+            if (patchDem.Length != PatchSize * PatchSize)
+                throw new ArgumentException("Patch DEM must contain 128*128 values.", nameof(patchDem));
+            if (sunVectorsMe.Length == 0 || sunVectorsMe.Length % 3 != 0)
+                throw new ArgumentException("Sun vectors must contain a non-empty flat xyz array.", nameof(sunVectorsMe));
+            if (horizons.Length != PatchSize * PatchSize * 1440)
+                throw new ArgumentException("Horizons must contain 128*128*1440 values.", nameof(horizons));
+
+            EnsureInitialized();
+            using var stream = _accelerator.CreateStream();
+            using var gpuPatchDem = _accelerator.Allocate1D<float>(patchDem.Length);
+            using var gpuSunVectors = _accelerator.Allocate1D<float>(sunVectorsMe.Length);
+            using var gpuHorizons = _accelerator.Allocate1D<float>(horizons.Length);
+            using var gpuOutput = _accelerator.Allocate1D<byte>(PatchSize * PatchSize);
+            gpuPatchDem.CopyFromCPU(patchDem);
+            gpuSunVectors.CopyFromCPU(sunVectorsMe);
+            gpuHorizons.CopyFromCPU(horizons);
+
+            _PSRKernel!(
+                stream,
+                new Index1D(PatchSize * PatchSize),
+                gpuPatchDem.View,
+                PatchSize,
+                PatchSize,
+                geotransform,
+                projection,
+                gpuSunVectors.View,
+                gpuHorizons.View,
+                sunVectorsMe.Length / 3,
+                tileColBase,
+                tileRowBase,
+                gpuOutput.View);
+            stream.Synchronize();
+
+            var output = new byte[PatchSize * PatchSize];
+            gpuOutput.CopyToCPU(output);
+            return output;
+        }
+
+        /// <summary>
         /// Ensure the GPU accelerator, reusable patch-DEM buffers, stream
         /// pool, and pre-compiled kernel are initialised.  Idempotent.
         /// </summary>

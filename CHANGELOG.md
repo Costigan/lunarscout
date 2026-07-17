@@ -6,6 +6,20 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added the first private Phase 6B downstream-product vertical slice. Python
+  now reads complete `.bin`/`.cbin` horizon tiles, accepts explicit timestamped
+  Moon-ME vectors or lazily generates geometric SpiceyPy vectors, reproduces
+  the five-viewpoint PSR reduction, and computes PSR with CPU-reference and
+  reusable-buffer Numba CUDA paths. A dtype-generic staged BigTIFF store writes
+  128 by 128 band-interleaved tiles with UTC band metadata, configurable
+  invalid payloads, validity masks, durable per-patch restart journals, and
+  partial-edge support. Deterministic Python CPU and Numba CUDA outputs match
+  the actual C#/ILGPU PSR kernel byte-for-byte, including compressed-horizon
+  quantization. A fresh-process compressed-horizon-to-GeoTIFF run loads no
+  Python.NET, CLR, or moonlib modules. The downstream scheduler is still
+  serial, real SPICE vector parity and sustained resource measurements remain
+  open, and lightmap, safe-haven, and mission-duration products are not yet
+  implemented.
 - Expanded the Python/Numba replacement evaluation to require a shared bounded
   downstream product pipeline for time-series lightmaps, optimized Metonic PSR,
   safe-haven maps, landed mission-duration maps, and dtype-generic
