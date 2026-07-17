@@ -121,6 +121,7 @@ foreach (string runName in new[] { "cold_fresh_pyramids", "warm_cached_pyramids"
     string[] outputHashes = outputRecords.Select(record => record.sha256).ToArray();
     outputHashesByRun.Add(outputHashes);
     var patchProfiles = logSink.CapturePatchProfiles(logStart);
+    var selectedTraversalProfiles = logSink.CaptureSelectedTraversalProfiles(logStart);
     if (patchProfiles.Count != patchCount)
         throw new InvalidOperationException(
             $"Expected {patchCount} pipeline profiles for {runName}, found {patchProfiles.Count}.");
@@ -138,6 +139,7 @@ foreach (string runName in new[] { "cold_fresh_pyramids", "warm_cached_pyramids"
         patches_per_second = patchCount / runStopwatch.Elapsed.TotalSeconds,
         host_peak_working_set_bytes = memorySampler.Peak(runName),
         per_patch_profiles = patchProfiles,
+        selected_traversal_profiles = selectedTraversalProfiles,
         stage_aggregates = AggregateProfiles(patchProfiles),
         outputs = outputRecords,
         combined_output_sha256 = CombinedOutputSha256(outputRecords),
@@ -434,6 +436,36 @@ sealed class CollectingSink : ILogEventSink
             .ToList();
     }
 
+    public List<Dictionary<string, object>> CaptureSelectedTraversalProfiles(int startIndex)
+    {
+        LogEvent[] events;
+        lock (_lock) events = _events.Skip(startIndex).ToArray();
+        return events
+            .Where(item => item.MessageTemplate.Text.StartsWith("SelectedTraversalProfile ", StringComparison.Ordinal))
+            .Select(item => new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["patch_index"] = ScalarInt(item, "PatchIndex"),
+                ["tile_x"] = ScalarInt(item, "TileX"),
+                ["tile_y"] = ScalarInt(item, "TileY"),
+                ["pixel"] = ScalarInt(item, "Pixel"),
+                ["azimuth"] = ScalarInt(item, "Azimuth"),
+                ["dem_pass"] = ScalarInt(item, "DemPass"),
+                ["iterations"] = ScalarLong(item, "Iterations"),
+                ["descents"] = ScalarLong(item, "Descents"),
+                ["culled_blocks"] = ScalarLong(item, "CulledBlocks"),
+                ["nodata_skips"] = ScalarLong(item, "NodataSkips"),
+                ["out_of_bounds"] = ScalarLong(item, "OutOfBounds"),
+                ["level0_samples"] = ScalarLong(item, "Level0Samples"),
+                ["maximum_level"] = ScalarInt(item, "MaximumLevel"),
+                ["group_x"] = ScalarInt(item, "GroupX"),
+                ["group_y"] = ScalarInt(item, "GroupY"),
+                ["group_z"] = ScalarInt(item, "GroupZ"),
+            })
+            .OrderBy(profile => Convert.ToInt32(profile["patch_index"], CultureInfo.InvariantCulture))
+            .ThenBy(profile => Convert.ToInt32(profile["dem_pass"], CultureInfo.InvariantCulture))
+            .ToList();
+    }
+
     private static object Scalar(LogEvent logEvent, string propertyName) =>
         logEvent.Properties.TryGetValue(propertyName, out LogEventPropertyValue? value) && value is ScalarValue scalar
             ? scalar.Value ?? throw new InvalidOperationException($"Log property {propertyName} is null.")
@@ -444,6 +476,8 @@ sealed class CollectingSink : ILogEventSink
         ?? throw new InvalidOperationException($"Log property {propertyName} is not a string.");
     private static int ScalarInt(LogEvent logEvent, string propertyName) =>
         Convert.ToInt32(Scalar(logEvent, propertyName), CultureInfo.InvariantCulture);
+    private static long ScalarLong(LogEvent logEvent, string propertyName) =>
+        Convert.ToInt64(Scalar(logEvent, propertyName), CultureInfo.InvariantCulture);
     private static double ScalarDouble(LogEvent logEvent, string propertyName) =>
         Convert.ToDouble(Scalar(logEvent, propertyName), CultureInfo.InvariantCulture);
 }

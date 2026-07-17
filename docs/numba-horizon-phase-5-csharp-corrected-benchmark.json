@@ -1,0 +1,756 @@
+{
+  "schema_version": 1,
+  "report_kind": "csharp_phase_0_multi_patch_benchmark",
+  "captured_at_utc": "2026-07-17T03:19:01.0486202Z",
+  "baseline_commit": "phase5-corrected-uncommitted",
+  "process_id": 212169,
+  "configuration": {
+    "patch_count": 4,
+    "patch_selection": "First N patches in GeneratePatchList row-major order.",
+    "patches": [
+      {
+        "Index": 0,
+        "tile_x": 0,
+        "tile_y": 0,
+        "patch_x": 0,
+        "patch_y": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 1,
+        "tile_x": 128,
+        "tile_y": 0,
+        "patch_x": 1,
+        "patch_y": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 2,
+        "tile_x": 256,
+        "tile_y": 0,
+        "patch_x": 2,
+        "patch_y": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 3,
+        "tile_x": 384,
+        "tile_y": 0,
+        "patch_x": 3,
+        "patch_y": 0,
+        "width": 128,
+        "height": 128
+      }
+    ],
+    "azimuth_bins": 1440,
+    "observer_elevation_m": 0,
+    "hierarchy_enabled": true,
+    "compression_requested": true,
+    "concurrent_gpu_operations": 4,
+    "segment_queue_size": 6,
+    "shared_subpatch_segment_cache": false,
+    "dem_pass_count": 4
+  },
+  "accelerator": {
+    "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "type": "Cuda"
+  },
+  "inputs": [
+    {
+      "index": 0,
+      "source_path": "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+      "source_size_bytes": 1050162,
+      "sha256": "8f041cb7dba79bce23dd38de3de7a34a5a179b8c3e5455df197684e0aec2c6e6",
+      "copied_path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-00.tif"
+    },
+    {
+      "index": 1,
+      "source_path": "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+      "source_size_bytes": 104824370,
+      "sha256": "1b5cdb5c9d656cd6ff84dd3671ffd40ef8eeee99e85d0020b8d5b3e9e62d3497",
+      "copied_path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-01.tif"
+    },
+    {
+      "index": 2,
+      "source_path": "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+      "source_size_bytes": 108192905,
+      "sha256": "0e96c40987c0814eadd4f94f85dacbb33bcab5388dd0b1dc99dc59bf987f072f",
+      "copied_path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-02.tif"
+    },
+    {
+      "index": 3,
+      "source_path": "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif",
+      "source_size_bytes": 618310074,
+      "sha256": "b250e94730fcbcf387e0a5494ce23fe7a17e00932982cab903d1bdff602b30e6",
+      "copied_path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-03.tif"
+    }
+  ],
+  "runtime": {
+    "generator_initialization_seconds": 0.436015,
+    "process_peak_working_set_bytes": 14104416256,
+    "sampled_host_peak_working_set_bytes": 14104408064,
+    "total_process_elapsed_seconds": 42.9840289,
+    "host_memory_sample_interval_ms": 25
+  },
+  "runs": [
+    {
+      "name": "cold_fresh_pyramids",
+      "timing_class": "Cold benchmark scope with copied DEMs and no pyramid cache files.",
+      "pyramid_cache_present_before": false,
+      "pyramids_before": [
+        {
+          "dem_index": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-00.pyr.bin",
+          "exists": false,
+          "size_bytes": 0,
+          "sha256": null,
+          "last_write_utc": null
+        },
+        {
+          "dem_index": 1,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-01.pyr.bin",
+          "exists": false,
+          "size_bytes": 0,
+          "sha256": null,
+          "last_write_utc": null
+        },
+        {
+          "dem_index": 2,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-02.pyr.bin",
+          "exists": false,
+          "size_bytes": 0,
+          "sha256": null,
+          "last_write_utc": null
+        },
+        {
+          "dem_index": 3,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-03.pyr.bin",
+          "exists": false,
+          "size_bytes": 0,
+          "sha256": null,
+          "last_write_utc": null
+        }
+      ],
+      "pyramids_after": [
+        {
+          "dem_index": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-00.pyr.bin",
+          "exists": true,
+          "size_bytes": 69908,
+          "sha256": "a32dc464e843f7b57fdccf9108d1e0ae0d55c4b20e00e95524fc88c043ffe11d",
+          "last_write_utc": "2026-07-17T03:18:26.1814720Z"
+        },
+        {
+          "dem_index": 1,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-01.pyr.bin",
+          "exists": true,
+          "size_bytes": 6986252,
+          "sha256": "38a002d4e4d8f6035507f2d33b9f456fa9d1037fa01d5089b61eb5b6aa5bd00e",
+          "last_write_utc": "2026-07-17T03:18:26.2254722Z"
+        },
+        {
+          "dem_index": 2,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-02.pyr.bin",
+          "exists": true,
+          "size_bytes": 7211324,
+          "sha256": "77f7e233163115ba392e23b2f48055011d8b51a894f0a71cfd649587ba79f860",
+          "last_write_utc": "2026-07-17T03:18:26.2274722Z"
+        },
+        {
+          "dem_index": 3,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-03.pyr.bin",
+          "exists": true,
+          "size_bytes": 246443020,
+          "sha256": "8d4a037540853e572144a4220950a8eacbc2c063a506e97542e174b0514b0767",
+          "last_write_utc": "2026-07-17T03:18:27.7324785Z"
+        }
+      ],
+      "elapsed_seconds": 17.3702469,
+      "patches_per_second": 0.2302788223465033,
+      "host_peak_working_set_bytes": 9965068288,
+      "per_patch_profiles": [
+        {
+          "patch_index": 0,
+          "tile_x": 0,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 1,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.524579582,
+          "patch_enqueue_wait_seconds": 7.643e-05,
+          "buffer_wait_seconds": 0.007515043,
+          "stream_wait_seconds": 4.4513e-05,
+          "buffer_reset_seconds": 0.05062137,
+          "segment_upload_seconds": 0.012571107,
+          "kernel_launch_seconds": 0.002383893,
+          "stream_sync_seconds": 3.041707762,
+          "copy_back_seconds": 0.015894304,
+          "degree_conversion_seconds": 0.218176232,
+          "compression_and_write_seconds": 0.44214851,
+          "gpu_worker_total_seconds": 3.344754038
+        },
+        {
+          "patch_index": 1,
+          "tile_x": 128,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.788338622,
+          "patch_enqueue_wait_seconds": 2.3018e-05,
+          "buffer_wait_seconds": 0.008243472,
+          "stream_wait_seconds": 1.204e-06,
+          "buffer_reset_seconds": 0.061867714,
+          "segment_upload_seconds": 0.011742774,
+          "kernel_launch_seconds": 4.1444e-05,
+          "stream_sync_seconds": 3.317180912,
+          "copy_back_seconds": 0.015218597,
+          "degree_conversion_seconds": 0.217241815,
+          "compression_and_write_seconds": 0.425679335,
+          "gpu_worker_total_seconds": 3.623383197
+        },
+        {
+          "patch_index": 2,
+          "tile_x": 256,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.569076646,
+          "patch_enqueue_wait_seconds": 1.0627e-05,
+          "buffer_wait_seconds": 0.000197234,
+          "stream_wait_seconds": 1.571e-06,
+          "buffer_reset_seconds": 0.064898217,
+          "segment_upload_seconds": 0.013217765,
+          "kernel_launch_seconds": 4.4322e-05,
+          "stream_sync_seconds": 4.325858404,
+          "copy_back_seconds": 0.014135289,
+          "degree_conversion_seconds": 0.135540167,
+          "compression_and_write_seconds": 0.254824594,
+          "gpu_worker_total_seconds": 4.553768376
+        },
+        {
+          "patch_index": 3,
+          "tile_x": 384,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 0,
+          "segment_generation_seconds": 2.470457844,
+          "patch_enqueue_wait_seconds": 1.0473e-05,
+          "buffer_wait_seconds": 5.163e-06,
+          "stream_wait_seconds": 1.443e-06,
+          "buffer_reset_seconds": 0.051687693,
+          "segment_upload_seconds": 0.011061042,
+          "kernel_launch_seconds": 2.9765e-05,
+          "stream_sync_seconds": 4.877013449,
+          "copy_back_seconds": 0.014593423,
+          "degree_conversion_seconds": 0.138075531,
+          "compression_and_write_seconds": 0.249362127,
+          "gpu_worker_total_seconds": 5.092515264
+        }
+      ],
+      "selected_traversal_profiles": [],
+      "stage_aggregates": {
+        "buffer_reset_seconds": {
+          "samples": 4,
+          "total_seconds": 0.229074994,
+          "average_seconds": 0.0572687485,
+          "minimum_seconds": 0.05062137,
+          "maximum_seconds": 0.064898217
+        },
+        "buffer_wait_seconds": {
+          "samples": 4,
+          "total_seconds": 0.015960912,
+          "average_seconds": 0.003990228,
+          "minimum_seconds": 5.163e-06,
+          "maximum_seconds": 0.008243472
+        },
+        "compression_and_write_seconds": {
+          "samples": 4,
+          "total_seconds": 1.3720145659999998,
+          "average_seconds": 0.34300364149999996,
+          "minimum_seconds": 0.249362127,
+          "maximum_seconds": 0.44214851
+        },
+        "copy_back_seconds": {
+          "samples": 4,
+          "total_seconds": 0.059841613,
+          "average_seconds": 0.01496040325,
+          "minimum_seconds": 0.014135289,
+          "maximum_seconds": 0.015894304
+        },
+        "degree_conversion_seconds": {
+          "samples": 4,
+          "total_seconds": 0.709033745,
+          "average_seconds": 0.17725843625,
+          "minimum_seconds": 0.135540167,
+          "maximum_seconds": 0.218176232
+        },
+        "gpu_worker_total_seconds": {
+          "samples": 4,
+          "total_seconds": 16.614420875,
+          "average_seconds": 4.15360521875,
+          "minimum_seconds": 3.344754038,
+          "maximum_seconds": 5.092515264
+        },
+        "kernel_launch_seconds": {
+          "samples": 4,
+          "total_seconds": 0.002499424,
+          "average_seconds": 0.000624856,
+          "minimum_seconds": 2.9765e-05,
+          "maximum_seconds": 0.002383893
+        },
+        "patch_enqueue_wait_seconds": {
+          "samples": 4,
+          "total_seconds": 0.000120548,
+          "average_seconds": 3.0137e-05,
+          "minimum_seconds": 1.0473e-05,
+          "maximum_seconds": 7.643e-05
+        },
+        "segment_generation_seconds": {
+          "samples": 4,
+          "total_seconds": 10.352452694,
+          "average_seconds": 2.5881131735,
+          "minimum_seconds": 2.470457844,
+          "maximum_seconds": 2.788338622
+        },
+        "segment_upload_seconds": {
+          "samples": 4,
+          "total_seconds": 0.048592688,
+          "average_seconds": 0.012148172,
+          "minimum_seconds": 0.011061042,
+          "maximum_seconds": 0.013217765
+        },
+        "stream_sync_seconds": {
+          "samples": 4,
+          "total_seconds": 15.561760527,
+          "average_seconds": 3.89044013175,
+          "minimum_seconds": 3.041707762,
+          "maximum_seconds": 4.877013449
+        },
+        "stream_wait_seconds": {
+          "samples": 4,
+          "total_seconds": 4.8731e-05,
+          "average_seconds": 1.218275e-05,
+          "minimum_seconds": 1.204e-06,
+          "maximum_seconds": 4.4513e-05
+        }
+      },
+      "outputs": [
+        {
+          "patch_index": 0,
+          "tile_x": 0,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/outputs-cold_fresh_pyramids/00000/horizon_00000_00000_000.cbin",
+          "size_bytes": 23672772,
+          "sha256": "eb4876bb678316cdb9926845d801120d03639ef770cd1ae3670ed70d3bf97ef1"
+        },
+        {
+          "patch_index": 1,
+          "tile_x": 128,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/outputs-cold_fresh_pyramids/00000/horizon_00000_00128_000.cbin",
+          "size_bytes": 23656625,
+          "sha256": "8b5c247cb4efc9d3c9d50b16faaf29d7cc6bd089541f86c430b3c54bf8e2ed23"
+        },
+        {
+          "patch_index": 2,
+          "tile_x": 256,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/outputs-cold_fresh_pyramids/00000/horizon_00000_00256_000.cbin",
+          "size_bytes": 23651112,
+          "sha256": "a10b1dd47a684a3d324e19e291dbdbe78ca852ef11b270fe827eb3e2c0684ef4"
+        },
+        {
+          "patch_index": 3,
+          "tile_x": 384,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/outputs-cold_fresh_pyramids/00000/horizon_00000_00384_000.cbin",
+          "size_bytes": 23647011,
+          "sha256": "7f5fdea3555dc8a95ea2d270bf9d0250e0b111cccc61baa2d9782d6dec8e51c2"
+        }
+      ],
+      "combined_output_sha256": "6c400c62df83439b0408e4643f0c845e0284572bcf1a00da065b05798fed6bd5"
+    },
+    {
+      "name": "warm_cached_pyramids",
+      "timing_class": "Warm benchmark scope in the same process and generator, with pyramid cache files and reusable pipeline resources retained from the cold run.",
+      "pyramid_cache_present_before": true,
+      "pyramids_before": [
+        {
+          "dem_index": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-00.pyr.bin",
+          "exists": true,
+          "size_bytes": 69908,
+          "sha256": "a32dc464e843f7b57fdccf9108d1e0ae0d55c4b20e00e95524fc88c043ffe11d",
+          "last_write_utc": "2026-07-17T03:18:26.1814720Z"
+        },
+        {
+          "dem_index": 1,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-01.pyr.bin",
+          "exists": true,
+          "size_bytes": 6986252,
+          "sha256": "38a002d4e4d8f6035507f2d33b9f456fa9d1037fa01d5089b61eb5b6aa5bd00e",
+          "last_write_utc": "2026-07-17T03:18:26.2254722Z"
+        },
+        {
+          "dem_index": 2,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-02.pyr.bin",
+          "exists": true,
+          "size_bytes": 7211324,
+          "sha256": "77f7e233163115ba392e23b2f48055011d8b51a894f0a71cfd649587ba79f860",
+          "last_write_utc": "2026-07-17T03:18:26.2274722Z"
+        },
+        {
+          "dem_index": 3,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-03.pyr.bin",
+          "exists": true,
+          "size_bytes": 246443020,
+          "sha256": "8d4a037540853e572144a4220950a8eacbc2c063a506e97542e174b0514b0767",
+          "last_write_utc": "2026-07-17T03:18:27.7324785Z"
+        }
+      ],
+      "pyramids_after": [
+        {
+          "dem_index": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-00.pyr.bin",
+          "exists": true,
+          "size_bytes": 69908,
+          "sha256": "a32dc464e843f7b57fdccf9108d1e0ae0d55c4b20e00e95524fc88c043ffe11d",
+          "last_write_utc": "2026-07-17T03:18:26.1814720Z"
+        },
+        {
+          "dem_index": 1,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-01.pyr.bin",
+          "exists": true,
+          "size_bytes": 6986252,
+          "sha256": "38a002d4e4d8f6035507f2d33b9f456fa9d1037fa01d5089b61eb5b6aa5bd00e",
+          "last_write_utc": "2026-07-17T03:18:26.2254722Z"
+        },
+        {
+          "dem_index": 2,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-02.pyr.bin",
+          "exists": true,
+          "size_bytes": 7211324,
+          "sha256": "77f7e233163115ba392e23b2f48055011d8b51a894f0a71cfd649587ba79f860",
+          "last_write_utc": "2026-07-17T03:18:26.2274722Z"
+        },
+        {
+          "dem_index": 3,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/inputs/dem-03.pyr.bin",
+          "exists": true,
+          "size_bytes": 246443020,
+          "sha256": "8d4a037540853e572144a4220950a8eacbc2c063a506e97542e174b0514b0767",
+          "last_write_utc": "2026-07-17T03:18:27.7324785Z"
+        }
+      ],
+      "elapsed_seconds": 17.2064838,
+      "patches_per_second": 0.23247050626345864,
+      "host_peak_working_set_bytes": 14104403968,
+      "per_patch_profiles": [
+        {
+          "patch_index": 0,
+          "tile_x": 0,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 1,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.355958853,
+          "patch_enqueue_wait_seconds": 2.569e-05,
+          "buffer_wait_seconds": 4.323e-06,
+          "stream_wait_seconds": 1.087e-06,
+          "buffer_reset_seconds": 0.04945286,
+          "segment_upload_seconds": 0.012575325,
+          "kernel_launch_seconds": 3.2618e-05,
+          "stream_sync_seconds": 3.087371115,
+          "copy_back_seconds": 0.015187658,
+          "degree_conversion_seconds": 0.243498087,
+          "compression_and_write_seconds": 0.452929535,
+          "gpu_worker_total_seconds": 3.408161076
+        },
+        {
+          "patch_index": 1,
+          "tile_x": 128,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.871565865,
+          "patch_enqueue_wait_seconds": 1.3815e-05,
+          "buffer_wait_seconds": 4.964e-06,
+          "stream_wait_seconds": 1.739e-06,
+          "buffer_reset_seconds": 0.059528552,
+          "segment_upload_seconds": 0.011435833,
+          "kernel_launch_seconds": 4.2304e-05,
+          "stream_sync_seconds": 3.317185128,
+          "copy_back_seconds": 0.019349232,
+          "degree_conversion_seconds": 0.237639375,
+          "compression_and_write_seconds": 0.384882719,
+          "gpu_worker_total_seconds": 3.645229578
+        },
+        {
+          "patch_index": 2,
+          "tile_x": 256,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.632793893,
+          "patch_enqueue_wait_seconds": 1.1818e-05,
+          "buffer_wait_seconds": 5.797e-06,
+          "stream_wait_seconds": 1.84e-06,
+          "buffer_reset_seconds": 0.072744367,
+          "segment_upload_seconds": 0.011557152,
+          "kernel_launch_seconds": 4.9156e-05,
+          "stream_sync_seconds": 4.283906832,
+          "copy_back_seconds": 0.032845763,
+          "degree_conversion_seconds": 0.138221269,
+          "compression_and_write_seconds": 0.260155931,
+          "gpu_worker_total_seconds": 4.539366369
+        },
+        {
+          "patch_index": 3,
+          "tile_x": 384,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 0,
+          "segment_generation_seconds": 2.492641858,
+          "patch_enqueue_wait_seconds": 1.3332e-05,
+          "buffer_wait_seconds": 5.449e-06,
+          "stream_wait_seconds": 1.282e-06,
+          "buffer_reset_seconds": 0.06795341,
+          "segment_upload_seconds": 0.010458074,
+          "kernel_launch_seconds": 2.6995e-05,
+          "stream_sync_seconds": 4.825132243,
+          "copy_back_seconds": 0.033351449,
+          "degree_conversion_seconds": 0.13524887,
+          "compression_and_write_seconds": 0.249664693,
+          "gpu_worker_total_seconds": 5.072204444
+        }
+      ],
+      "selected_traversal_profiles": [],
+      "stage_aggregates": {
+        "buffer_reset_seconds": {
+          "samples": 4,
+          "total_seconds": 0.24967918900000002,
+          "average_seconds": 0.062419797250000006,
+          "minimum_seconds": 0.04945286,
+          "maximum_seconds": 0.072744367
+        },
+        "buffer_wait_seconds": {
+          "samples": 4,
+          "total_seconds": 2.0533e-05,
+          "average_seconds": 5.13325e-06,
+          "minimum_seconds": 4.323e-06,
+          "maximum_seconds": 5.797e-06
+        },
+        "compression_and_write_seconds": {
+          "samples": 4,
+          "total_seconds": 1.347632878,
+          "average_seconds": 0.3369082195,
+          "minimum_seconds": 0.249664693,
+          "maximum_seconds": 0.452929535
+        },
+        "copy_back_seconds": {
+          "samples": 4,
+          "total_seconds": 0.10073410199999999,
+          "average_seconds": 0.025183525499999998,
+          "minimum_seconds": 0.015187658,
+          "maximum_seconds": 0.033351449
+        },
+        "degree_conversion_seconds": {
+          "samples": 4,
+          "total_seconds": 0.754607601,
+          "average_seconds": 0.18865190025,
+          "minimum_seconds": 0.13524887,
+          "maximum_seconds": 0.243498087
+        },
+        "gpu_worker_total_seconds": {
+          "samples": 4,
+          "total_seconds": 16.664961466999998,
+          "average_seconds": 4.166240366749999,
+          "minimum_seconds": 3.408161076,
+          "maximum_seconds": 5.072204444
+        },
+        "kernel_launch_seconds": {
+          "samples": 4,
+          "total_seconds": 0.00015107300000000002,
+          "average_seconds": 3.7768250000000006e-05,
+          "minimum_seconds": 2.6995e-05,
+          "maximum_seconds": 4.9156e-05
+        },
+        "patch_enqueue_wait_seconds": {
+          "samples": 4,
+          "total_seconds": 6.4655e-05,
+          "average_seconds": 1.616375e-05,
+          "minimum_seconds": 1.1818e-05,
+          "maximum_seconds": 2.569e-05
+        },
+        "segment_generation_seconds": {
+          "samples": 4,
+          "total_seconds": 10.352960469,
+          "average_seconds": 2.58824011725,
+          "minimum_seconds": 2.355958853,
+          "maximum_seconds": 2.871565865
+        },
+        "segment_upload_seconds": {
+          "samples": 4,
+          "total_seconds": 0.046026384,
+          "average_seconds": 0.011506596,
+          "minimum_seconds": 0.010458074,
+          "maximum_seconds": 0.012575325
+        },
+        "stream_sync_seconds": {
+          "samples": 4,
+          "total_seconds": 15.513595318,
+          "average_seconds": 3.8783988295,
+          "minimum_seconds": 3.087371115,
+          "maximum_seconds": 4.825132243
+        },
+        "stream_wait_seconds": {
+          "samples": 4,
+          "total_seconds": 5.948e-06,
+          "average_seconds": 1.487e-06,
+          "minimum_seconds": 1.087e-06,
+          "maximum_seconds": 1.84e-06
+        }
+      },
+      "outputs": [
+        {
+          "patch_index": 0,
+          "tile_x": 0,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/outputs-warm_cached_pyramids/00000/horizon_00000_00000_000.cbin",
+          "size_bytes": 23672772,
+          "sha256": "eb4876bb678316cdb9926845d801120d03639ef770cd1ae3670ed70d3bf97ef1"
+        },
+        {
+          "patch_index": 1,
+          "tile_x": 128,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/outputs-warm_cached_pyramids/00000/horizon_00000_00128_000.cbin",
+          "size_bytes": 23656625,
+          "sha256": "8b5c247cb4efc9d3c9d50b16faaf29d7cc6bd089541f86c430b3c54bf8e2ed23"
+        },
+        {
+          "patch_index": 2,
+          "tile_x": 256,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/outputs-warm_cached_pyramids/00000/horizon_00000_00256_000.cbin",
+          "size_bytes": 23651112,
+          "sha256": "a10b1dd47a684a3d324e19e291dbdbe78ca852ef11b270fe827eb3e2c0684ef4"
+        },
+        {
+          "patch_index": 3,
+          "tile_x": 384,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4/outputs-warm_cached_pyramids/00000/horizon_00000_00384_000.cbin",
+          "size_bytes": 23647011,
+          "sha256": "7f5fdea3555dc8a95ea2d270bf9d0250e0b111cccc61baa2d9782d6dec8e51c2"
+        }
+      ],
+      "combined_output_sha256": "6c400c62df83439b0408e4643f0c845e0284572bcf1a00da065b05798fed6bd5"
+    }
+  ],
+  "repeatability": {
+    "cold_and_warm_output_hashes_equal": true
+  },
+  "timing_notes": [
+    "Each run elapsed scope is GenerateHorizonsForPatches, including pyramid build/load, segment generation, GPU work, compression, and writes.",
+    "The cold run excludes input copying, input hashing, DEM loading, generator construction/kernel compilation, and output hashing.",
+    "The warm run uses the same process and generator after the cold run; pyramid files and reusable pipeline buffers/streams may be reused.",
+    "Stage totals overlap across producer and GPU workers and must not be summed to estimate wall time.",
+    "kernel_launch_sec measures asynchronous enqueue time; stream_sync_sec includes waiting for queued CUDA work to complete."
+  ],
+  "limitations": [
+    "The production shared SubpatchSegmentCache is hard-coded off, so neighboring patches recompute segment centers.",
+    "The first-N selection is a bounded contiguous row-major batch, not a whole-region throughput claim.",
+    "Peak GPU memory is sampled rather than an allocation-level high-water mark."
+  ],
+  "gpu_memory": {
+    "method": "Repeated nvidia-smi --query-compute-apps sampling matched to the benchmark process PID.",
+    "sample_interval_seconds": 0.05,
+    "units": "MiB as reported by nvidia-smi",
+    "phases": {
+      "between_runs": {
+        "sample_count": 5,
+        "peak_process_gpu_memory_mib": 890,
+        "minimum_process_gpu_memory_mib": 890
+      },
+      "cold_fresh_pyramids": {
+        "sample_count": 246,
+        "peak_process_gpu_memory_mib": 4872,
+        "minimum_process_gpu_memory_mib": 478
+      },
+      "startup": {
+        "sample_count": 5,
+        "peak_process_gpu_memory_mib": 258,
+        "minimum_process_gpu_memory_mib": 10
+      },
+      "warm_cached_pyramids": {
+        "sample_count": 244,
+        "peak_process_gpu_memory_mib": 4872,
+        "minimum_process_gpu_memory_mib": 1110
+      }
+    },
+    "error_count": 0,
+    "errors": [],
+    "limitations": [
+      "Sampled peaks can understate allocations shorter than the polling interval.",
+      "Per-process nvidia-smi memory is CUDA context/allocation accounting, not device-wide memory.used."
+    ],
+    "device_before": {
+      "command": [
+        "nvidia-smi",
+        "--query-gpu=index,uuid,name,driver_version,memory.total,memory.used",
+        "--format=csv,noheader,nounits"
+      ],
+      "exit_code": 0,
+      "stdout": "0, GPU-af0214a8-2b36-e02e-5c5d-cacb95f862c3, NVIDIA GeForce RTX 5090 Laptop GPU, 580.159.03, 24463, 2",
+      "stderr": ""
+    },
+    "device_after": {
+      "command": [
+        "nvidia-smi",
+        "--query-gpu=index,uuid,name,driver_version,memory.total,memory.used",
+        "--format=csv,noheader,nounits"
+      ],
+      "exit_code": 0,
+      "stdout": "0, GPU-af0214a8-2b36-e02e-5c5d-cacb95f862c3, NVIDIA GeForce RTX 5090 Laptop GPU, 580.159.03, 24463, 2",
+      "stderr": ""
+    }
+  },
+  "launcher": {
+    "script": "scripts/numba_horizon/run_phase0_production_benchmark.py",
+    "command": [
+      "dotnet",
+      "run",
+      "--project",
+      "scripts/numba_horizon/CSharpMultiPatchBenchmark.csproj",
+      "--",
+      "/tmp/lunarscout-numba-horizon-phase5-csharp-corrected-4",
+      "4",
+      "0.0",
+      "4",
+      "6",
+      "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+      "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+      "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+      "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif"
+    ],
+    "elapsed_seconds": 46.055166251004266
+  }
+}

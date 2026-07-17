@@ -19,9 +19,10 @@ passes. Against the immutable C# hierarchy-enabled buffers:
 The GPU kernel performs the C# order of operations: select four halo-inclusive
 subpatch centers, clamp requested centers against the primary DEM, shift each
 segment into the current pixel and active-DEM resolution, bilinearly
-interpolate all 18 fields, and traverse one active DEM. Each DEM pass starts
-from negative infinity; completed pass buffers merge by maximum slope. Degrees
-are calculated once after every DEM pass has been merged.
+interpolate all 18 fields, and traverse one active DEM. The first DEM starts
+from negative infinity; each later pass reads and updates the same accumulated
+slope buffer so existing horizons participate in hierarchy culling. Degrees
+are calculated once after every DEM pass.
 
 ## Patch and DEM Coverage
 
@@ -42,13 +43,11 @@ A separate 16 by 16 LOLA fixture compares every one of its 368,640 outputs
 with C# and is byte-for-byte exact. See
 `docs/numba-horizon-phase-4-real-terrain.md`.
 
-A bounded two-DEM real-terrain fixture has one merged result at `7.391e-6`
-degrees error with Python-generated segments and is byte-for-byte exact with
-captured C# segments. It localizes the remaining discrepancy to host segment
-generation amplified by a hierarchy branch and remains about 676 times below
-the accepted `0.005` degree limit. The fixture also verifies that
-DEM passes are independent before merging; seeding later hierarchy traversal
-with an earlier pass is not equivalent to the C# production algorithm.
+A bounded two-DEM real-terrain fixture has maximum error `4.0412e-5` degrees
+with both Python-generated and captured C# segments. It remains about 124
+times below the accepted `0.005` degree limit. The fixture also verifies that
+later DEM passes inherit earlier horizon slopes for production hierarchy
+culling.
 
 ## Near-Field Reference Merge
 
@@ -65,8 +64,11 @@ and degree buffers that match the selected C# fixture. It does not yet provide
 patch scheduling, streams and queues, cancellation, progress, persistent
 caches, compression, or horizon-file output. The inherited hierarchy
 bilinear-boundary defect documented in Phase 4D is corrected in C# and Numba.
-Broader culling-safety evidence and a direct sunlight-fraction comparison
-remain open, so the overall Phase 4 correctness gate is not complete.
+A ten-case dense-bilinear matrix characterizes the intentional adaptive terrain
+approximation without gating it. The uniform-solar-disk model gives a maximum
+sunlight-fraction difference of `1.0291e-4`. Broader fitted-ray and actual
+temporal Sun-geometry coverage remain adoption evidence rather than kernel-port
+blockers.
 
 Regenerate the machine-readable report with:
 

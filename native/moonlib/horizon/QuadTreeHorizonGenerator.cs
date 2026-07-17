@@ -1,5 +1,6 @@
 using ILGPU;
 using ILGPU.Algorithms;
+using ILGPU.Backends.PTX;
 using ILGPU.Runtime;
 using moonlib.math;
 using OSGeo.GDAL;
@@ -318,9 +319,12 @@ namespace moonlib.horizon
         private readonly float _nearFieldClampMeters;
         private readonly bool _forceFixedStepDebug;
         private readonly bool _enablePipelineProfiling;
+        private readonly int _selectedTraversalAzimuth;
+        private readonly int _selectedTraversalPixel;
         private readonly PipelineProfiler _pipelineProfiler = new();
         private readonly int _pipelineSubpatchSize;
         private const float DEBUG_FIXED_STEP_METERS = 1.2f;
+        private const float HIERARCHY_SAMPLE_BOUNDARY_NUDGE_KM = 0.000001f;
         private const float NEARFIELD_BORDER_MARGIN_METERS = 5f;
         internal const float METERS_TO_KILOMETERS = 1f / 1000f;
         internal const float KILOMETERS_TO_METERS = 1000f;
@@ -334,6 +338,9 @@ namespace moonlib.horizon
         public HorizonDiagnosticsCallback? DiagnosticsCallback { get; set; }
 
         internal AcceleratorType SelectedAcceleratorType => _accelerator.AcceleratorType;
+        internal string SelectedSubpatchKernelPtx =>
+            (KernelUtil.GetCompiledKernel(_subpatchKernel!) as PTXCompiledKernel)?.PTXAssembly
+            ?? throw new InvalidOperationException("Selected subpatch kernel is not a PTX kernel.");
         internal string SelectedAcceleratorName => _accelerator.Name;
         
         /// <summary>
@@ -422,6 +429,7 @@ namespace moonlib.horizon
             public long StreamSyncTicks { get; init; }
             public long OutputCopyTicks { get; init; }
             public long ConvertTicks { get; init; }
+            public float[]? SelectedTraversalCounters { get; init; }
 #if QUADTREE_TRAVERSAL_PROFILE
             public long[]? TraversalCounters { get; init; }
 #endif
@@ -455,6 +463,10 @@ namespace moonlib.horizon
             _forceFixedStepDebug = dbgEnv == "1" || dbgEnv?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
             var profileEnv = Environment.GetEnvironmentVariable("QUADTREE_PIPELINE_PROFILE");
             _enablePipelineProfiling = profileEnv == "1" || profileEnv?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+            _selectedTraversalAzimuth = ReadOptionalIndexEnvironment(
+                "QUADTREE_PROFILE_AZIMUTH", 1440);
+            _selectedTraversalPixel = ReadOptionalIndexEnvironment(
+                "QUADTREE_PROFILE_PIXEL", 128 * 128);
             _pipelineSubpatchSize = ReadPipelineSubpatchSizeFromEnvironment();
             _context = Context.Create(builder => builder.Default().DebugSymbols(DebugSymbolsMode.Kernel).EnableAlgorithms());
             // Prefer CUDA; then NVIDIA OpenCL; then any OpenCL; then CPU
@@ -533,6 +545,7 @@ namespace moonlib.horizon
         public const int DEFAULT_SUBPATCH_SIZE = 8; // Subpatch size in pixels for polynomial approximation (8, 16, 32, or 64) - used by both pipeline and standalone methods
         private const int DEBUG_FLAG_DISABLE_HIERARCHY = 0x1;
         private const int DEBUG_FLAG_FORCE_FIXED_STEPS = 0x2;
+        private const int SELECTED_TRAVERSAL_VALUES_PER_DEM = 10;
 #if QUADTREE_TRAVERSAL_PROFILE
         private const int DEBUG_FLAG_PROFILE_TRAVERSAL = 0x4;
         private const int TRAVERSAL_COUNTERS_PER_DEM = 5;
@@ -575,6 +588,16 @@ namespace moonlib.horizon
             }
             Log.Warning("Ignoring invalid QUADTREE_PIPELINE_SUBPATCH_SIZE={SubpatchSize}; using {DefaultSubpatchSize}.", raw, DEFAULT_SUBPATCH_SIZE);
             return DEFAULT_SUBPATCH_SIZE;
+        }
+
+        private static int ReadOptionalIndexEnvironment(string name, int exclusiveMaximum)
+        {
+            var raw = Environment.GetEnvironmentVariable(name);
+            return int.TryParse(
+                raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) &&
+                parsed >= 0 && parsed < exclusiveMaximum
+                ? parsed
+                : -1;
         }
 
         private int GetSubpatchDebugFlags()
@@ -1378,6 +1401,8 @@ namespace moonlib.horizon
             var cpuHorizons = new float[numPixels * numAzimuths];
             for (int i = 0; i < cpuHorizons.Length; i++) cpuHorizons[i] = float.NegativeInfinity;
             buffers.HorizonsAccum.CopyFromCPU(cpuHorizons);
+            if (_selectedTraversalAzimuth >= 0 && _selectedTraversalPixel >= 0)
+                buffers.Debug.MemSetToZero();
             long bufferResetElapsed = Stopwatch.GetTimestamp() - bufferResetStart;
             RecordPipelineStage(PipelineStageNames.BufferResetHorizonsAccum, bufferResetElapsed);
 
@@ -1402,13 +1427,14 @@ namespace moonlib.horizon
             var kernelParams = new KernelParams(
                 observerElevation,
                 minTraverseDistanceMeters * METERS_TO_KILOMETERS,
-                -1, // debugTargetAzIdx - disabled for pipeline
+                _selectedTraversalAzimuth,
                 gcInfo.GammaCenter,
                 gcInfo.DGammaDx,
                 gcInfo.DGammaDy,
                 GetSubpatchDebugFlags(),
                 pyramids[0].CpuInfos![0].Width,
-                pyramids[0].CpuInfos![0].Height);
+                pyramids[0].CpuInfos![0].Height,
+                _selectedTraversalPixel);
 
             // 3. Create pyramid views for ALL DEMs (like original working version)
             var primaryPV = new PyramidView
@@ -1478,6 +1504,15 @@ namespace moonlib.horizon
 
                     long copyStart = Stopwatch.GetTimestamp();
                     var output = buffers.HorizonsAccum.GetAsArray1D();
+                    float[]? selectedTraversalCounters = null;
+                    if (_selectedTraversalAzimuth >= 0 && _selectedTraversalPixel >= 0)
+                    {
+                        var debugValues = buffers.Debug.GetAsArray1D();
+                        selectedTraversalCounters = debugValues
+                            .Skip(debugValues.Length - 18 - numDems * SELECTED_TRAVERSAL_VALUES_PER_DEM)
+                            .Take(numDems * SELECTED_TRAVERSAL_VALUES_PER_DEM)
+                            .ToArray();
+                    }
 #if QUADTREE_TRAVERSAL_PROFILE
                     long[]? traversalCounters = _enablePipelineProfiling
                         ? buffers.TraversalCounters.GetAsArray1D()
@@ -1503,6 +1538,7 @@ namespace moonlib.horizon
                             StreamSyncTicks = syncElapsed,
                             OutputCopyTicks = copyElapsed,
                             ConvertTicks = convertElapsed,
+                            SelectedTraversalCounters = selectedTraversalCounters,
 #if QUADTREE_TRAVERSAL_PROFILE
                             TraversalCounters = traversalCounters
 #endif
@@ -1571,6 +1607,33 @@ namespace moonlib.horizon
                 StopwatchTicksToSeconds(launchProfile.ConvertTicks),
                 StopwatchTicksToSeconds(fileWriteTicks),
                 StopwatchTicksToSeconds(totalGpuWorkerPatchTicks));
+
+            if (launchProfile.SelectedTraversalCounters is { Length: > 0 } selected)
+            {
+                int numDems = selected.Length / SELECTED_TRAVERSAL_VALUES_PER_DEM;
+                for (int demPass = 0; demPass < numDems; demPass++)
+                {
+                    int offset = demPass * SELECTED_TRAVERSAL_VALUES_PER_DEM;
+                    Log.Information(
+                        "SelectedTraversalProfile patch_index={PatchIndex} tile_x={TileX} tile_y={TileY} pixel={Pixel} azimuth={Azimuth} dem_pass={DemPass} iterations={Iterations} descents={Descents} culled_blocks={CulledBlocks} nodata_skips={NodataSkips} out_of_bounds={OutOfBounds} level0_samples={Level0Samples} maximum_level={MaximumLevel} group_x={GroupX} group_y={GroupY} group_z={GroupZ}",
+                        patch.Index,
+                        patch.TileX,
+                        patch.TileY,
+                        _selectedTraversalPixel,
+                        _selectedTraversalAzimuth,
+                        demPass,
+                        (long)selected[offset],
+                        (long)selected[offset + 1],
+                        (long)selected[offset + 2],
+                        (long)selected[offset + 3],
+                        (long)selected[offset + 4],
+                        (long)selected[offset + 5],
+                        (int)selected[offset + 6],
+                        (int)selected[offset + 7],
+                        (int)selected[offset + 8],
+                        (int)selected[offset + 9]);
+                }
+            }
 
 #if QUADTREE_TRAVERSAL_PROFILE
             LogTraversalProfiling(patch, launchProfile.TraversalCounters);
@@ -3770,7 +3833,9 @@ namespace moonlib.horizon
                                     ? primaryDemFarMinAdaptiveStepKm
                                     : minAdaptiveStepKm;
                                 ds = XMath.Max(ds, stepFloorKm);
-                                float boundaryAdvance = (distToExit > 0f) ? distToExit + 0.0001f : fallbackDist;
+                                float boundaryAdvance = (distToExit > 0f)
+                                    ? distToExit + HIERARCHY_SAMPLE_BOUNDARY_NUDGE_KM
+                                    : fallbackDist;
                                 ds = XMath.Min(ds, boundaryAdvance);
                             }
                             s += ds;
@@ -4125,6 +4190,18 @@ namespace moonlib.horizon
             bool traceTraversal = pixelIdx == kernelParams.DebugPixelIndex &&
                 kernelParams.DebugAzimuthIndex >= 0 &&
                 azIdx == kernelParams.DebugAzimuthIndex;
+            // The final 18 values are reserved for the selected interpolated
+            // RaySegment diagnostic above.  Keep counters immediately before it.
+            int selectedCounterBase = (int)debugBuffer.Length - 18 -
+                numDems * SELECTED_TRAVERSAL_VALUES_PER_DEM +
+                passIndex * SELECTED_TRAVERSAL_VALUES_PER_DEM;
+            bool countSelectedTraversal = traceTraversal && selectedCounterBase >= 0;
+            if (countSelectedTraversal)
+            {
+                debugBuffer[selectedCounterBase + 7] = ILGPU.Group.DimX;
+                debugBuffer[selectedCounterBase + 8] = ILGPU.Group.DimY;
+                debugBuffer[selectedCounterBase + 9] = ILGPU.Group.DimZ;
+            }
             int traceCount = 0;
 #if QUADTREE_TRAVERSAL_PROFILE
             bool profileTraversal = (kernelParams.DebugFlags & DEBUG_FLAG_PROFILE_TRAVERSAL) != 0;
@@ -4133,6 +4210,8 @@ namespace moonlib.horizon
 
             while (s <= sEnd)
             {
+                if (countSelectedTraversal)
+                    debugBuffer[selectedCounterBase] += 1f;
 #if QUADTREE_TRAVERSAL_PROFILE
                 if (profileTraversal)
                     AddTraversalCounter(traversalCounters, passIndex, TRAVERSAL_COUNTER_ITERATIONS);
@@ -4146,6 +4225,8 @@ namespace moonlib.horizon
                 if (XMath.IsNaN(px) || XMath.IsNaN(py) || px < 0f || py < 0f || 
                     px >= activePV.Infos[0].Width - 1f || py >= activePV.Infos[0].Height - 1f)
                 {
+                    if (countSelectedTraversal)
+                        debugBuffer[selectedCounterBase + 4] += 1f;
 #if QUADTREE_TRAVERSAL_PROFILE
                     if (profileTraversal)
                         AddTraversalCounter(traversalCounters, passIndex, TRAVERSAL_COUNTER_OUT_OF_BOUNDS);
@@ -4251,10 +4332,13 @@ namespace moonlib.horizon
                     int lx = (int)px >> shift;
                     int ly = (int)py >> shift;
                     int traceOffset = -1;
+                    if (countSelectedTraversal && level > debugBuffer[selectedCounterBase + 6])
+                        debugBuffer[selectedCounterBase + 6] = level;
                     if (traceTraversal)
                     {
                         traceOffset = 1 + traceCount * 12;
-                        if (traceOffset + 11 < debugBuffer.Length)
+                        if (traceOffset + 11 < debugBuffer.Length - 18 -
+                            numDems * SELECTED_TRAVERSAL_VALUES_PER_DEM)
                         {
                             debugBuffer[traceOffset] = s;
                             debugBuffer[traceOffset + 1] = trueDistMeters;
@@ -4278,6 +4362,8 @@ namespace moonlib.horizon
                     }
 
                     if (lx < 0 || ly < 0 || lx >= lW || ly >= lH) {
+                        if (countSelectedTraversal)
+                            debugBuffer[selectedCounterBase + 4] += 1f;
 #if QUADTREE_TRAVERSAL_PROFILE
                         if (profileTraversal)
                             AddTraversalCounter(traversalCounters, passIndex, TRAVERSAL_COUNTER_OUT_OF_BOUNDS);
@@ -4319,6 +4405,8 @@ namespace moonlib.horizon
 
                     if (maxH < -20000.0f)
                     {
+                        if (countSelectedTraversal)
+                            debugBuffer[selectedCounterBase + 3] += 1f;
 #if QUADTREE_TRAVERSAL_PROFILE
                         if (profileTraversal)
                             AddTraversalCounter(traversalCounters, passIndex, TRAVERSAL_COUNTER_NODATA_SKIPS);
@@ -4357,6 +4445,8 @@ namespace moonlib.horizon
 
                     if (possibleSlope <= (currentHorizonSlope + COMPARISON_EPSILON + eps))
                     {
+                        if (countSelectedTraversal)
+                            debugBuffer[selectedCounterBase + 2] += 1f;
 #if QUADTREE_TRAVERSAL_PROFILE
                         if (profileTraversal)
                             AddTraversalCounter(traversalCounters, passIndex, TRAVERSAL_COUNTER_CULLED_BLOCKS);
@@ -4374,6 +4464,8 @@ namespace moonlib.horizon
                     {
                         if (level == 0)
                         {
+                            if (countSelectedTraversal)
+                                debugBuffer[selectedCounterBase + 5] += 1f;
 #if QUADTREE_TRAVERSAL_PROFILE
                             if (profileTraversal)
                                 AddTraversalCounter(traversalCounters, passIndex, TRAVERSAL_COUNTER_LEVEL0_SAMPLES);
@@ -4427,7 +4519,9 @@ namespace moonlib.horizon
                                     ? primaryDemFarMinAdaptiveStepKm
                                     : minAdaptiveStepKm;
                                 ds = XMath.Max(ds, stepFloorKm);
-                                float boundaryAdvance = (distToExit > 0f) ? distToExit + 0.0001f : fallbackDist;
+                                float boundaryAdvance = (distToExit > 0f)
+                                    ? distToExit + HIERARCHY_SAMPLE_BOUNDARY_NUDGE_KM
+                                    : fallbackDist;
                                 ds = XMath.Min(ds, boundaryAdvance);
                             }
                             if (traceOffset >= 0)
@@ -4440,6 +4534,8 @@ namespace moonlib.horizon
                         }
                         else
                         {
+                            if (countSelectedTraversal)
+                                debugBuffer[selectedCounterBase + 1] += 1f;
                             if (traceOffset >= 0)
                                 debugBuffer[traceOffset + 11] = 0f;
                             level--;

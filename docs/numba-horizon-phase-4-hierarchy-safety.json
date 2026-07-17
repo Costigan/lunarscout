@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "scope": "hierarchy approximation versus 1.2 m dense bilinear level-0 traversal",
+  "diagnostic_comparison": {
+    "angular_threshold_degrees": 0.005,
+    "all_cases_within_threshold": false,
+    "is_acceptance_gate": false
+  },
+  "configuration": {
+    "map_resolution_m": 30.0,
+    "moon_radius_m": 1737400.0,
+    "direction_count": 8,
+    "case_count": 10
+  },
+  "cases": [
+    {
+      "id": "level0_boundary_east",
+      "shape_y_x": [
+        129,
+        129
+      ],
+      "dense_fixed_step_degrees": 10.800964277241226,
+      "hierarchy_degrees": 10.917101710706746,
+      "dense_minus_hierarchy_degrees": -0.11613743346551963,
+      "within_scientific_comparison_threshold": true,
+      "hierarchy_trace_rows": 58,
+      "hierarchy_maximum_level": 0,
+      "counters": {
+        "iterations": 58,
+        "level0_samples": 3,
+        "culled_blocks": 55,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    },
+    {
+      "id": "level0_boundary_west",
+      "shape_y_x": [
+        129,
+        129
+      ],
+      "dense_fixed_step_degrees": 10.541956372184636,
+      "hierarchy_degrees": 10.644309185785243,
+      "dense_minus_hierarchy_degrees": -0.1023528136006071,
+      "within_scientific_comparison_threshold": true,
+      "hierarchy_trace_rows": 58,
+      "hierarchy_maximum_level": 0,
+      "counters": {
+        "iterations": 58,
+        "level0_samples": 3,
+        "culled_blocks": 55,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    },
+    {
+      "id": "level0_boundary_south",
+      "shape_y_x": [
+        129,
+        129
+      ],
+      "dense_fixed_step_degrees": 10.800964277241226,
+      "hierarchy_degrees": 10.917101710706746,
+      "dense_minus_hierarchy_degrees": -0.11613743346551963,
+      "within_scientific_comparison_threshold": true,
+      "hierarchy_trace_rows": 58,
+      "hierarchy_maximum_level": 0,
+      "counters": {
+        "iterations": 58,
+        "level0_samples": 3,
+        "culled_blocks": 55,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    },
+    {
+      "id": "level0_boundary_north",
+      "shape_y_x": [
+        129,
+        129
+      ],
+      "dense_fixed_step_degrees": 10.541956372184636,
+      "hierarchy_degrees": 10.644309185785243,
+      "dense_minus_hierarchy_degrees": -0.1023528136006071,
+      "within_scientific_comparison_threshold": true,
+      "hierarchy_trace_rows": 58,
+      "hierarchy_maximum_level": 0,
+      "counters": {
+        "iterations": 58,
+        "level0_samples": 3,
+        "culled_blocks": 55,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    },
+    {
+      "id": "level0_boundary_southeast",
+      "shape_y_x": [
+        129,
+        129
+      ],
+      "dense_fixed_step_degrees": 10.1351140414542,
+      "hierarchy_degrees": 10.2863075145901,
+      "dense_minus_hierarchy_degrees": -0.15119347313589948,
+      "within_scientific_comparison_threshold": true,
+      "hierarchy_trace_rows": 44,
+      "hierarchy_maximum_level": 0,
+      "counters": {
+        "iterations": 44,
+        "level0_samples": 4,
+        "culled_blocks": 40,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    },
+    {
+      "id": "level0_boundary_southwest",
+      "shape_y_x": [
+        129,
+        129
+      ],
+      "dense_fixed_step_degrees": 5.686813795160442,
+      "hierarchy_degrees": 5.115335436160165,
+      "dense_minus_hierarchy_degrees": 0.5714783590002774,
+      "within_scientific_comparison_threshold": false,
+      "hierarchy_trace_rows": 81,
+      "hierarchy_maximum_level": 0,
+      "counters": {
+        "iterations": 81,
+        "level0_samples": 4,
+        "culled_blocks": 77,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    },
+    {
+      "id": "level0_boundary_northeast",
+      "shape_y_x": [
+        129,
+        129
+      ],
+      "dense_fixed_step_degrees": 5.686813795160442,
+      "hierarchy_degrees": 5.115335436160165,
+      "dense_minus_hierarchy_degrees": 0.5714783590002774,
+      "within_scientific_comparison_threshold": false,
+      "hierarchy_trace_rows": 81,
+      "hierarchy_maximum_level": 0,
+      "counters": {
+        "iterations": 81,
+        "level0_samples": 4,
+        "culled_blocks": 77,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    },
+    {
+      "id": "level0_boundary_northwest",
+      "shape_y_x": [
+        129,
+        129
+      ],
+      "dense_fixed_step_degrees": 9.995030616034386,
+      "hierarchy_degrees": 10.029260438418898,
+      "dense_minus_hierarchy_degrees": -0.03422982238451233,
+      "within_scientific_comparison_threshold": true,
+      "hierarchy_trace_rows": 43,
+      "hierarchy_maximum_level": 0,
+      "counters": {
+        "iterations": 43,
+        "level0_samples": 4,
+        "culled_blocks": 39,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    },
+    {
+      "id": "coarse_mip_boundary_east",
+      "shape_y_x": [
+        2051,
+        2051
+      ],
+      "dense_fixed_step_degrees": 6.552363308201312,
+      "hierarchy_degrees": 6.691899058340603,
+      "dense_minus_hierarchy_degrees": -0.13953575013929065,
+      "within_scientific_comparison_threshold": true,
+      "hierarchy_trace_rows": 959,
+      "hierarchy_maximum_level": 1,
+      "counters": {
+        "iterations": 951,
+        "level0_samples": 3,
+        "culled_blocks": 948,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    },
+    {
+      "id": "coarse_mip_boundary_north",
+      "shape_y_x": [
+        2051,
+        2051
+      ],
+      "dense_fixed_step_degrees": 6.682754496892603,
+      "hierarchy_degrees": 6.688040580254228,
+      "dense_minus_hierarchy_degrees": -0.00528608336162506,
+      "within_scientific_comparison_threshold": true,
+      "hierarchy_trace_rows": 961,
+      "hierarchy_maximum_level": 1,
+      "counters": {
+        "iterations": 952,
+        "level0_samples": 4,
+        "culled_blocks": 948,
+        "out_of_bounds": 0,
+        "nodata_skips": 0
+      }
+    }
+  ],
+  "edge_and_invalid_neighbor_bounds_m": {
+    "top_left_with_nan": 4.0,
+    "right_edge": 9.0,
+    "bottom_right_corner": 9.0
+  },
+  "maximum_dense_minus_hierarchy_degrees": 0.5714783590002774,
+  "qualification": "The dense bilinearly interpolated surface is not treated as terrain ground truth. Differences in this deliberately adversarial synthetic matrix characterize the hierarchy approximation but do not gate the port. C#/Numba parity and downstream illumination error are the gates."
+}

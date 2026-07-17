@@ -17,14 +17,22 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   and boundary-capped level-0 steps. Production-shaped device subpatch
   interpolation, full and partial patches, multi-resolution DEM accumulation,
   and final degree buffers now match the selected C# fixtures. A
-  hierarchy-enabled 16 by 16 LOLA patch is byte-for-byte identical across all
-  368,640 C# and Numba degree values; a
-  bounded real two-DEM stack has one Python-segment-sensitive value at
-  `7.391e-6` degrees while exact C# segments remain byte-identical. This is
-  about 676 times below the adopted `0.005` degree angular acceptance limit.
-  The fixture also exposed a prototype bug, now corrected, where later passes
-  were seeded with prior horizons instead of being merged after independent
-  traversal. Scheduling, file output, and product integration remain
+  hierarchy-enabled 16 by 16 LOLA patch differs by at most `5.9605e-8`
+  degrees across 368,640 values. A bounded real two-DEM stack differs by at
+  most `4.0412e-5` degrees, about 124 times below the adopted `0.005` degree
+  angular acceptance limit; a uniform solar-disk model bounds the corresponding
+  sunlight-fraction difference at `1.0291e-4`. The fixture also exposed a
+  prototype orchestration bug, now corrected, where later passes did not carry
+  prior horizon slopes into hierarchy culling as production C# does.
+  Phase 5 preserves ILGPU's pixel-fast warp organization in a 256-thread Numba
+  launch, removes local interpolation storage and most unintended float64 PTX,
+  retains immutable pyramids on the GPU, and overlaps CPU segment preparation
+  with CUDA execution. On a matched four-patch RTX 5090 Laptop benchmark, warm
+  CUDA latency is `5.146` seconds, pipelined throughput is `0.1635` patches per
+  second, peak GPU memory is `5,558` MiB, and peak host memory is `8.95` GB.
+  These are respectively 1.196 times C# bounded wall time per patch, 70.3% of
+  C# throughput, 1.141 times C# GPU memory, and 63.4% of C# host memory, passing
+  all provisional Phase 5 gates. File output and product integration remain
   unimplemented.
 - Ported the experimental horizon host-side geometry to Python/NumPy and an
   optional Numba CPU path, with C# oracle parity for sampling, polynomial ray

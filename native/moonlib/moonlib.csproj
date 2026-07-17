@@ -17,6 +17,7 @@
     <InternalsVisibleTo Include="CSharpPhase3RealTerrainCapture" />
     <InternalsVisibleTo Include="CSharpPhase4DHierarchyCapture" />
     <InternalsVisibleTo Include="CSharpPhase4RealTerrainCapture" />
+    <InternalsVisibleTo Include="CSharpPhase5LdemDiagnostic" />
   </ItemGroup>
 
   <ItemGroup>

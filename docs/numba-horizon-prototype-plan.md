@@ -368,13 +368,16 @@ a selectable diagnostic mode until the next stage is validated.
       tangent components.
 
 The inherited bilinear-boundary culling defect is corrected in both C# and
-Numba by bounding the four cells used by bilinear sampling and capping
-level-0 adaptive advances at cell exits. Two selected hierarchy rays are no
-longer below a 1.2 m fixed-step reference, but that bounded evidence is not yet
-a general proof. The corrected two-DEM fixture also exposes one
-Python-generated-segment result at `7.391e-6` degrees versus exact parity when
-using C# segments; this is acceptable under the adopted `0.005` degree limit.
-See `docs/numba-horizon-phase-4d-hierarchy.md` and
+Numba by bounding the four cells used by bilinear sampling and using a 1 mm
+boundary nudge while retaining the original adaptive level-0 approximation. A
+ten-case cardinal, diagonal, coarse-mip, edge, NaN, and invalid-neighbor matrix
+records differences from a 1.2 m dense bilinear reference, but the interpolated
+surface is not treated as terrain ground truth and this matrix is not an
+acceptance gate. The corrected cumulative two-DEM fixture has a maximum C# to
+Numba difference of `4.0412e-5` degrees with either Python-generated or exact
+C# segments; this is acceptable under the adopted `0.005` degree limit.
+See `docs/numba-horizon-phase-4-hierarchy-safety.json`,
+`docs/numba-horizon-phase-4d-hierarchy.md`, and
 `docs/numba-horizon-phase-4-real-terrain.md`.
 
 ### Stage 4E: Full Subpatch and Multi-DEM Operation
@@ -396,7 +399,7 @@ Stage 4E results are recorded in `docs/numba-horizon-phase-4e-subpatch.md`.
 
 - [x] All analytical synthetic expectations pass.
 - [x] Fixed-step selected rays agree with the independent reference calculation.
-- [ ] Adaptive and hierarchical modes meet the accepted error budget.
+- [x] Adaptive and hierarchical modes meet the accepted error budget.
 - [x] Single- and multi-DEM real-terrain comparisons meet the accepted error
       budget without unexplained spatial patterns.
 - [x] Repeated warm runs produce stable results on the reference GPU.
@@ -436,6 +439,8 @@ unexplained sentinel differences before computing aggregate statistics.
 Small angular errors matter only through their effect on supported products.
 For representative Sun and Earth geometries:
 
+- [x] Bound the instantaneous uniform-solar-disk illumination-fraction error
+      implied by every real-terrain horizon difference.
 - [ ] Compare lit/shadow classification from C# and Numba horizons.
 - [ ] Compare visibility classification near the horizon threshold.
 - [ ] Compare accumulated illumination or PSR results for a representative
@@ -451,17 +456,17 @@ hardware, output scope, and concurrency settings for C#/ILGPU and Numba.
 
 ### Measurements
 
-- [ ] Cold process startup and first kernel compilation.
-- [ ] Warm generator initialization.
-- [ ] Pyramid construction or cache loading.
-- [ ] Segment construction and cache lookup.
+- [x] Cold process startup and first kernel compilation.
+- [x] Warm generator initialization.
+- [x] Pyramid construction or cache loading.
+- [x] Segment construction and cache lookup.
 - [ ] Host-to-device segment transfer.
-- [ ] Kernel execution per DEM pass.
+- [x] Kernel execution per DEM pass.
 - [ ] Device synchronization and device-to-host transfer.
-- [ ] Slope-to-degree conversion.
+- [x] Slope-to-degree conversion.
 - [ ] Compression and file writing when end-to-end testing begins.
-- [ ] Total latency for one patch and throughput for many patches.
-- [ ] Peak host RAM, device RAM, and retained cache size.
+- [x] Total latency for one patch and throughput for many patches.
+- [x] Peak host RAM, device RAM, and retained cache size.
 - [ ] GPU utilization, occupancy, and major causes of warp divergence.
 - [ ] Scaling with patch count and concurrent streams.
 
@@ -469,23 +474,23 @@ hardware, output scope, and concurrency settings for C#/ILGPU and Numba.
 
 - [ ] One pixel by all azimuths for diagnostic overhead.
 - [ ] Small blocks for correctness-development feedback.
-- [ ] One production 128 by 128 patch.
-- [ ] A contiguous multi-patch batch with cache reuse.
+- [x] One production 128 by 128 patch.
+- [x] A contiguous multi-patch batch with cache reuse.
 - [ ] Single-DEM and representative multi-DEM cases.
 - [ ] Smooth and rugged real terrain.
 - [ ] Hierarchy disabled and enabled.
-- [ ] Cold and warm runs, with enough repetitions to report variance.
+- [x] Cold and warm runs, with enough repetitions to report variance.
 
 ### Optimization Order
 
-- [ ] Measure before changing the algorithm or memory layout.
-- [ ] Remove redundant transfers and allocations.
+- [x] Measure before changing the algorithm or memory layout.
+- [x] Remove redundant transfers and allocations.
 - [ ] Reuse device buffers and streams.
-- [ ] Improve segment and pyramid memory access.
-- [ ] Tune launch geometry and register pressure.
-- [ ] Evaluate overlap of CPU segment generation, transfers, kernels, and output
+- [x] Improve segment and pyramid memory access.
+- [x] Tune launch geometry and register pressure.
+- [x] Evaluate overlap of CPU segment generation, transfers, kernels, and output
       writing.
-- [ ] Re-run the complete correctness suite after every optimization that can
+- [x] Re-run the complete correctness suite after every optimization that can
       alter arithmetic or traversal.
 
 ### Performance Gate
@@ -493,11 +498,11 @@ hardware, output scope, and concurrency settings for C#/ILGPU and Numba.
 Before benchmarking, record explicit acceptable ratios relative to the current
 ILGPU implementation for:
 
-- [ ] Warm single-patch latency.
-- [ ] Sustained multi-patch throughput.
-- [ ] Peak device memory.
-- [ ] Peak host memory.
-- [ ] First-use compilation latency.
+- [x] Warm single-patch latency.
+- [x] Sustained multi-patch throughput.
+- [x] Peak device memory.
+- [x] Peak host memory.
+- [x] First-use compilation latency.
 
 A performance regression may be accepted in exchange for removing .NET, but
 the accepted cost must be stated rather than hidden in an aggregate benchmark.

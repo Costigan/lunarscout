@@ -48,6 +48,19 @@ def _hash_array(array: np.ndarray) -> str:
     return hashlib.sha256(array.tobytes(order="C")).hexdigest()
 
 
+def _solar_visible_fraction(
+    center_above_horizon_degrees: np.ndarray,
+    radius_degrees: float = REFERENCE_SOLAR_DIAMETER_DEGREES / 2.0,
+) -> np.ndarray:
+    """Visible fraction of a uniform circular solar disk above a straight horizon."""
+    normalized = np.asarray(center_above_horizon_degrees, dtype=np.float64) / radius_degrees
+    clipped = np.clip(normalized, -1.0, 1.0)
+    partial = 0.5 + (
+        np.arcsin(clipped) + clipped * np.sqrt(np.maximum(0.0, 1.0 - clipped**2))
+    ) / np.pi
+    return np.where(normalized <= -1.0, 0.0, np.where(normalized >= 1.0, 1.0, partial))
+
+
 def _load_dem(path: Path) -> tuple[DemGrid, np.ndarray]:
     with rasterio.open(path) as dataset:
         elevation = np.ascontiguousarray(dataset.read(1), dtype=np.float32)
@@ -286,6 +299,15 @@ def main() -> int:
     finite = np.isfinite(degrees) & np.isfinite(csharp_degrees)
     signed = degrees.astype(np.float64) - csharp_degrees.astype(np.float64)
     absolute = np.abs(signed[finite])
+    finite_angular_delta = signed[finite].astype(np.float64)
+    half_delta = np.abs(finite_angular_delta) / 2.0
+    worst_solar_fraction_by_bin = (
+        _solar_visible_fraction(half_delta)
+        - _solar_visible_fraction(-half_delta)
+    )
+    csharp_horizon_solar_fraction_error = np.abs(
+        0.5 - _solar_visible_fraction(-finite_angular_delta)
+    )
     flat_index = int(np.argmax(np.where(finite, np.abs(signed), -1.0)))
     pixel, azimuth = np.unravel_index(flat_index, degrees.shape)
     rows, columns = np.divmod(np.arange(config["tile_width"] * config["tile_height"]), config["tile_width"])
@@ -328,6 +350,17 @@ def main() -> int:
             "angular_margin_factor": float(
                 ACCEPTED_ANGULAR_ERROR_DEGREES / np.max(absolute)
             ) if np.max(absolute) > 0 else None,
+            "solar_disk_model": "uniform circular disk and locally straight horizon",
+            "maximum_possible_absolute_sunlight_fraction_error": float(
+                np.max(worst_solar_fraction_by_bin)
+            ),
+            "maximum_absolute_sunlight_fraction_error_when_center_on_csharp_horizon": float(
+                np.max(csharp_horizon_solar_fraction_error)
+            ),
+            "observed_maximum_within_sunlight_fraction_criterion": bool(
+                np.max(worst_solar_fraction_by_bin)
+                <= ACCEPTED_SUNLIGHT_FRACTION_ERROR
+            ),
         },
         "csharp": {
             "selected_accelerator_name": metadata["selected_accelerator_name"],

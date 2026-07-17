@@ -19,12 +19,12 @@
     "azimuth_index": 360,
     "dem_pass": 1,
     "python_host_segment_maximum_absolute_difference": 2.7284841053187847e-12,
-    "csharp_maximum_slope": 0.16533692,
-    "cpu_maximum_slope": 0.16533693671226501,
-    "gpu_maximum_slope": 0.16533692181110382,
+    "csharp_maximum_slope": 0.1659298,
+    "cpu_maximum_slope": 0.16592980921268463,
+    "gpu_maximum_slope": 0.16592979431152344,
     "adaptive_level0_maximum_slope": 0.10548652708530426,
     "fixed_step_level0_maximum_slope": 0.1638278216123581,
-    "hierarchy_minus_fixed_step_slope": 0.0015091001987457275,
+    "hierarchy_minus_fixed_step_slope": 0.0021019726991653442,
     "cpu_trace": {
       "rows": 932,
       "same_shape": true,
@@ -35,7 +35,7 @@
       "maximum_sample_elevation_difference_m": 0.0,
       "maximum_sample_slope_difference": 1.4901161193847656e-08,
       "maximum_advance_difference_km": 3.6619603633880615e-06,
-      "sha256": "7f94c59b4e0467a72dcfaca5bb4b521446f3917facc9d7cf4a67c61c8071da12"
+      "sha256": "a0429c6bd90e891128b579f8a20dd8c6406bd28df1014f24f0d13d105b908f05"
     },
     "gpu_trace": {
       "rows": 932,
@@ -47,7 +47,7 @@
       "maximum_sample_elevation_difference_m": 0.0,
       "maximum_sample_slope_difference": 0.0,
       "maximum_advance_difference_km": 0.0,
-      "sha256": "13796ca5bc51cb3dc4e662dcbbf0db0f7e1ecf3014f7dbd99917ddf326b9646c"
+      "sha256": "914207d523a0fbf615e7a83eabccc8cda92c6b41db8d64633b3952b4e30f7ad1"
     },
     "counters": {
       "iterations": 924,
@@ -58,12 +58,12 @@
     }
   },
   "bilinear_boundary_case": {
-    "csharp_hierarchy_maximum_slope": 0.2570572,
-    "cpu_hierarchy_maximum_slope": 0.2570571303367615,
-    "gpu_hierarchy_maximum_slope": 0.25705718994140625,
+    "csharp_hierarchy_maximum_slope": 0.25802016,
+    "cpu_hierarchy_maximum_slope": 0.25802016258239746,
+    "gpu_hierarchy_maximum_slope": 0.25802016258239746,
     "adaptive_level0_maximum_slope": 0.22021982073783875,
     "fixed_step_level0_maximum_slope": 0.2562785744667053,
-    "hierarchy_minus_fixed_step_slope": 0.0007786154747009277,
+    "hierarchy_minus_fixed_step_slope": 0.0017415881156921387,
     "cpu_trace": {
       "rows": 61,
       "same_shape": true,
@@ -71,10 +71,10 @@
       "maximum_s_difference_km": 1.1920928955078125e-07,
       "maximum_true_distance_difference_m": 0.0001220703125,
       "maximum_pixel_difference": 5.7220458984375e-06,
-      "maximum_sample_elevation_difference_m": 0.0005645751953125,
-      "maximum_sample_slope_difference": 5.960464477539063e-08,
+      "maximum_sample_elevation_difference_m": 0.0,
+      "maximum_sample_slope_difference": 0.0,
       "maximum_advance_difference_km": 1.7136335372924805e-07,
-      "sha256": "9cf596b84f7248e8f6012f9b952f5b4061bac20646ae806b5bc906433c2bd24e"
+      "sha256": "6b35780d43566dec0814e08eaec61c1351f24e56fc1b4836a71f252998286a8a"
     },
     "gpu_trace": {
       "rows": 61,
@@ -86,7 +86,7 @@
       "maximum_sample_elevation_difference_m": 0.0,
       "maximum_sample_slope_difference": 0.0,
       "maximum_advance_difference_km": 0.0,
-      "sha256": "8cf37939d8b342570aee356ffc96db913bede0e12a4cc65292c2c4214c3241e7"
+      "sha256": "500b151cc961b418348e06df87550afd5afdb817dd33b732ddb676f31657dffa"
     },
     "counters": {
       "iterations": 61,
@@ -95,12 +95,12 @@
       "out_of_bounds": 0,
       "nodata_skips": 0
     },
-    "classification": "corrected in C# and Numba: culling bounds include the four-cell bilinear footprint and adaptive level-0 steps stop at cell exits"
+    "classification": "corrected in C# and Numba: culling bounds include the four-cell bilinear footprint; non-cullable level-0 cells retain adaptive sampling and use a 1 mm boundary nudge"
   },
   "boundary_mechanics": {
     "east_ray_absolute_dy_ds": 0.0,
     "north_ray_absolute_dx_ds": 0.0,
     "captured_exact_integer_pixel_x": 42.0
   },
-  "conclusion": "Numba CPU and CUDA reproduce the corrected C# hierarchy decisions and slopes. On both selected rays the hierarchy result is not below the 1.2 m fixed-step level-0 reference; broader terrain evidence remains necessary before treating this bounded result as a general proof."
+  "conclusion": "Numba CPU and CUDA reproduce the corrected C# hierarchy decisions and slopes. A separate ten-case directional and coarse-mip matrix records differences from dense bilinear sampling as a non-gating approximation diagnostic; C#/Numba parity and downstream illumination error are the correctness gates."
 }

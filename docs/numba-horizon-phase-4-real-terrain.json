@@ -28,17 +28,21 @@
     "accepted_sunlight_fraction_error": 0.01,
     "basis": "User-approved conservative angular proxy: one percent of an approximately 0.5-degree solar diameter. A downstream solar-limb illumination comparison remains required.",
     "observed_maximum_within_angular_criterion": true,
-    "angular_margin_factor": null
+    "angular_margin_factor": 83886.08,
+    "solar_disk_model": "uniform circular disk and locally straight horizon",
+    "maximum_possible_absolute_sunlight_fraction_error": 1.5178198159437883e-07,
+    "maximum_absolute_sunlight_fraction_error_when_center_on_csharp_horizon": 1.5178198153886768e-07,
+    "observed_maximum_within_sunlight_fraction_criterion": true
   },
   "csharp": {
     "selected_accelerator_name": "NVIDIA GeForce RTX 5090 Laptop GPU",
     "selected_accelerator_type": "Cuda",
-    "slope_sha256": "4772be4dfe45efbb3acbcb10ee41ebea80389240a3ee4eaeea6c5608f6f0f715",
-    "degree_sha256": "385bd7a01923f7f338945b4fd8b2caf6feca43d189adbd53dc1cb67d912a2d86",
+    "slope_sha256": "63465f37ff5b6c1e80c4e9f72bf078dc664a6b5a8cebbe836499afb73c74e5b9",
+    "degree_sha256": "aa7c0d4671b77faf539c7f6b3fb848a0932f9ab2ef062dd60b1b8e020f17e431",
     "per_dem_slope_sha256": [
-      "4772be4dfe45efbb3acbcb10ee41ebea80389240a3ee4eaeea6c5608f6f0f715"
+      "63465f37ff5b6c1e80c4e9f72bf078dc664a6b5a8cebbe836499afb73c74e5b9"
     ],
-    "capture_elapsed_seconds": 0.0747511
+    "capture_elapsed_seconds": 0.0755423
   },
   "numba": {
     "device_name": "NVIDIA GeForce RTX 5090 Laptop GPU",
@@ -46,23 +50,23 @@
       12,
       0
     ],
-    "slope_sha256": "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf",
-    "degree_sha256": "385bd7a01923f7f338945b4fd8b2caf6feca43d189adbd53dc1cb67d912a2d86",
+    "slope_sha256": "8195c94ad6007eac9528a29476d8c245431ec8044a41099d1a8d86ac29a5faec",
+    "degree_sha256": "0cd75d802982afa7cf8ef52f1b20aa0e13590d595ca0a049348cd46496eff8b9",
     "per_dem_slope_sha256": [
-      "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf"
+      "8195c94ad6007eac9528a29476d8c245431ec8044a41099d1a8d86ac29a5faec"
     ],
-    "host_segment_seconds": 8.218833801998699,
-    "cuda_call_seconds_including_transfers": 1.090933742998459,
+    "host_segment_seconds": 7.899441620000289,
+    "cuda_call_seconds_including_transfers": 1.428740741997899,
     "warm_repeat_count": 3,
     "warm_repeat_seconds_including_transfers": [
-      0.015465320997464005,
-      0.014775016003113706,
-      0.014729308997630142
+      0.009727702003146987,
+      0.009058318995812442,
+      0.00913911999668926
     ],
     "warm_slope_sha256": [
-      "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf",
-      "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf",
-      "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf"
+      "8195c94ad6007eac9528a29476d8c245431ec8044a41099d1a8d86ac29a5faec",
+      "8195c94ad6007eac9528a29476d8c245431ec8044a41099d1a8d86ac29a5faec",
+      "8195c94ad6007eac9528a29476d8c245431ec8044a41099d1a8d86ac29a5faec"
     ],
     "warm_outputs_stable": true
   },
@@ -70,8 +74,8 @@
     "per_dem_python_generated_segments": [
       {
         "slope_sentinel_mismatches": 0,
-        "maximum_absolute_angular_error_degrees": 0.0,
-        "mean_absolute_angular_error_degrees": 0.0,
+        "maximum_absolute_angular_error_degrees": 5.960464477539063e-08,
+        "mean_absolute_angular_error_degrees": 3.0316490059097606e-13,
         "p95_absolute_angular_error_degrees": 0.0,
         "p99_absolute_angular_error_degrees": 0.0,
         "p99_9_absolute_angular_error_degrees": 0.0,
@@ -97,8 +101,8 @@
     },
     "python_generated_segments": {
       "slope_sentinel_mismatches": 0,
-      "maximum_absolute_angular_error_degrees": 0.0,
-      "mean_absolute_angular_error_degrees": 0.0,
+      "maximum_absolute_angular_error_degrees": 5.960464477539063e-08,
+      "mean_absolute_angular_error_degrees": 3.0316490059097606e-13,
       "p95_absolute_angular_error_degrees": 0.0,
       "p99_absolute_angular_error_degrees": 0.0,
       "p99_9_absolute_angular_error_degrees": 0.0,
@@ -114,13 +118,13 @@
     "csharp_nonfinite_count": 0,
     "numba_nonfinite_count": 0,
     "slope_sentinel_mismatches": 0,
-    "maximum_absolute_angular_error_degrees": 0.0,
-    "mean_absolute_angular_error_degrees": 0.0,
+    "maximum_absolute_angular_error_degrees": 5.960464477539063e-08,
+    "mean_absolute_angular_error_degrees": 3.0316490059097606e-13,
     "median_absolute_angular_error_degrees": 0.0,
     "p95_absolute_angular_error_degrees": 0.0,
     "p99_absolute_angular_error_degrees": 0.0,
     "p99_9_absolute_angular_error_degrees": 0.0,
-    "mean_signed_angular_error_degrees": 0.0,
+    "mean_signed_angular_error_degrees": 2.021099337273174e-14,
     "counts_above_degrees": {
       "1e-6": 0,
       "1e-5": 0,
@@ -128,13 +132,13 @@
       "5e-3_accepted": 0
     },
     "largest_error_location": {
-      "pixel_index": 0,
-      "tile_column": 0,
-      "tile_row": 0,
-      "azimuth_index": 0,
-      "azimuth_degrees": 0.0,
-      "csharp_degrees": -3.0605075359344482,
-      "numba_degrees": -3.0605075359344482
+      "pixel_index": 184,
+      "tile_column": 8,
+      "tile_row": 11,
+      "azimuth_index": 389,
+      "azimuth_degrees": 97.25,
+      "csharp_degrees": -0.4784162640571594,
+      "numba_degrees": -0.47841620445251465
     },
     "spatial_groups": {
       "tile_edge": {
@@ -144,25 +148,25 @@
       },
       "subpatch_seam": {
         "count": 161280,
-        "mean_signed_degrees": 0.0,
-        "maximum_absolute_degrees": 0.0
+        "mean_signed_degrees": 3.695724502442375e-13,
+        "maximum_absolute_degrees": 5.960464477539063e-08
       },
       "other": {
         "count": 207360,
-        "mean_signed_degrees": 0.0,
-        "maximum_absolute_degrees": 0.0
+        "mean_signed_degrees": -2.5151458419399495e-13,
+        "maximum_absolute_degrees": 5.21540641784668e-08
       }
     },
     "azimuth_quadrants": {
       "0": {
         "count": 92160,
-        "mean_signed_degrees": 0.0,
-        "maximum_absolute_degrees": 0.0
+        "mean_signed_degrees": -5.659078144364887e-13,
+        "maximum_absolute_degrees": 5.21540641784668e-08
       },
       "1": {
         "count": 92160,
-        "mean_signed_degrees": 0.0,
-        "maximum_absolute_degrees": 0.0
+        "mean_signed_degrees": 6.467517879274157e-13,
+        "maximum_absolute_degrees": 5.960464477539063e-08
       },
       "2": {
         "count": 92160,
@@ -181,10 +185,10 @@
       "azimuth_index": 1160,
       "csharp_rows": 117,
       "numba_gpu_rows": 117,
-      "csharp_output_slope": 0.20358288288116455,
-      "numba_gpu_direct_slope": 0.20358288288116455,
-      "numpy_cpu_direct_slope": 0.20358288288116455,
-      "numba_device_interpolated_segment_direct_slope": 0.20358288288116455,
+      "csharp_output_slope": 0.2027614414691925,
+      "numba_gpu_direct_slope": 0.2027614414691925,
+      "numpy_cpu_direct_slope": 0.2027614563703537,
+      "numba_device_interpolated_segment_direct_slope": 0.2027614414691925,
       "device_interpolated_segment_maximum_field_difference": 0.0,
       "device_interpolated_segment": [
         254.98867797851562,
@@ -234,31 +238,31 @@
       "numba_row_before_first_parameter_distance_difference": null,
       "csharp_maximum_sample_row_index": 32,
       "csharp_maximum_sample_row": [
-        0.6184585690498352,
-        155.36221313476562,
+        0.6183597445487976,
+        155.3376007080078,
         0.0,
         247.0,
         258.0,
-        247.99887084960938,
-        258.26458740234375,
+        247.99998474121094,
+        258.2640686035156,
         1326.0174560546875,
-        1322.4376220703125,
-        0.20358288288116455,
+        1322.4337158203125,
+        0.2027614414691925,
         0.08006086945533752,
         4.0
       ],
       "numba_maximum_sample_row_index": 32,
       "numba_maximum_sample_row": [
-        0.6184585690498352,
-        155.36221313476562,
+        0.6183597445487976,
+        155.3376007080078,
         0.0,
         247.0,
         258.0,
-        247.99887084960938,
-        258.26458740234375,
+        247.99998474121094,
+        258.2640686035156,
         1326.0174560546875,
-        1322.4376220703125,
-        0.20358288288116455,
+        1322.4337158203125,
+        0.2027614414691925,
         0.08006086945533752,
         4.0
       ],

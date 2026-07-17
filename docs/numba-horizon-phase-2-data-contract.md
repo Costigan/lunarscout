@@ -74,8 +74,8 @@ initialization. Subpatch-grid dimensions deliberately reproduce the current C#
 rule, including its use of tile width for both grid axes; Phase 2 does not
 silently correct production behavior.
 
-Slope buffers initialize to negative infinity. DEM passes merge in slope
-space. `HorizonBuffers.degrees()` is the only device-contract conversion to
+Slope buffers initialize to negative infinity. DEM passes update a common
+accumulated slope buffer. `HorizonBuffers.degrees()` is the only device-contract conversion to
 degrees and is called after merging; it returns a new `float32` array using the
 same `MathF.Atan`-equivalent precision as C# and preserves negative-infinity
 sentinels.

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-import numpy as np
 
 from .contract import HorizonBuffers, PyramidArrays, SegmentTensor
 from .cuda_backend import CudaSession
@@ -22,25 +21,16 @@ def generate_patch_horizons(
     configuration = segments.configuration
     if len(pyramids) != configuration.dem_count:
         raise ValueError("pyramid count must match the segment DEM axis")
-    slopes = None
-    for pass_index, pyramid in enumerate(pyramids):
-        pass_slopes = session.subpatch_hierarchical_pass(
-            segments.values,
-            pyramids[0],
-            pyramid,
-            tile_column=tile_column,
-            tile_row=tile_row,
-            tile_width=configuration.tile_width,
-            tile_height=configuration.tile_height,
-            subpatch_size=configuration.subpatch_size,
-            pass_index=pass_index,
-            observer_elevation_m=observer_elevation_m,
-        )
-        slopes = (
-            pass_slopes
-            if slopes is None
-            else np.maximum(slopes, pass_slopes)
-        )
-    if slopes is None:
+    if not pyramids:
         raise ValueError("at least one DEM pyramid is required")
+    slopes, _ = session.subpatch_hierarchical_all_passes(
+        segments.values,
+        pyramids,
+        tile_column=tile_column,
+        tile_row=tile_row,
+        tile_width=configuration.tile_width,
+        tile_height=configuration.tile_height,
+        subpatch_size=configuration.subpatch_size,
+        observer_elevation_m=observer_elevation_m,
+    )
     return HorizonBuffers(slopes)

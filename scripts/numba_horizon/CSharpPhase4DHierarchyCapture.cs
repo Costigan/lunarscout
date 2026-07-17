@@ -79,6 +79,9 @@ static object CaptureProductionHierarchyCase(
     {
         description = "Corrected four-cell bilinear hierarchy bound on the Phase 1 production fixture.",
         csharp_hierarchy_maximum_slope = snapshot.PerDemSlopes[1][360],
+        per_dem_slopes = snapshot.PerDemSlopes,
+        final_slopes = snapshot.FinalSlopes,
+        final_degrees = snapshot.FinalDegrees,
         trace = TraceValues(snapshot.TraversalTrace),
     };
 }

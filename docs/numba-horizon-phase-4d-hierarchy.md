@@ -12,20 +12,20 @@ invalid-block sentinel.
 
 The C# and Numba implementations now use the maximum valid elevation from the
 current, right, bottom, and bottom-right pyramid cells for hierarchy culling.
-When that bound requires a level-0 sample, the adaptive advance is capped at
-the estimated cell exit so it cannot jump across the protected bilinear
-boundary.
+When that bound prevents culling at level zero, traversal retains the original
+adaptive sampling approximation and uses a 1 mm cell-exit nudge. The dense
+bilinearly interpolated surface is not treated as terrain ground truth.
 
 For the corrected production outer-DEM ray at azimuth index 360:
 
-- C# and Numba CUDA both return slope `0.1653369218`;
+- C# and Numba CUDA both return slope `0.1659297943`;
 - the NumPy CPU oracle differs by `1.49e-8` slope;
 - all 932 CPU and CUDA trace rows choose the same level, cell, and action as
   C#;
 - all recorded values in all 932 CUDA trace rows match C# exactly;
 - the action-derived counters are 924 ray iterations, 3 level-0 samples, and
   921 culled blocks; and
-- hierarchy slope `0.1653369218` is above the 1.2 m fixed-step level-0
+- hierarchy slope `0.1659297943` is above the 1.2 m fixed-step level-0
   reference slope `0.1638278216`.
 
 Explicit device `float32` return values are required. Without them, Numba can
@@ -40,22 +40,22 @@ next bilinear cell boundary. Results are:
 
 - adaptive level-0 slope: `0.2202198207`;
 - 1.2 m fixed-step level-0 slope: `0.2562785745`;
-- corrected C# hierarchy slope: `0.2570572`;
-- corrected NumPy hierarchy slope: `0.2570571303`;
-- corrected Numba CUDA hierarchy slope: `0.2570571899`.
+- corrected C# hierarchy slope: `0.25802016`;
+- corrected NumPy hierarchy slope: `0.2580201626`;
+- corrected Numba CUDA hierarchy slope: `0.2580201626`.
 
-Before correction, C# and Numba returned about `0.000713`, losing roughly
-`0.2563` slope relative to the dense reference. The four-cell bound alone
-prevented that cull, but exposed another interaction: the adaptive level-0
-step could then cross the protected boundary. Capping that step at the cell
-exit was therefore required as a companion change.
+Before the four-cell correction, C# and Numba returned about `0.000713` because
+the culling bound omitted elevations that bilinear sampling could use. The
+four-cell bound prevents that invalid cull. The retained adaptive sampler may
+still skip an interior maximum of the artificial bilinear surface; that is an
+intentional terrain approximation rather than a culling-safety claim.
 
-The selected boundary and production rays no longer fall below their dense
-references, and corrected Numba CUDA traces match corrected C# exactly. This
-is bounded evidence, not a general mathematical proof over every ray and
-terrain. The small host-generated segment sensitivity remains well inside the
-accepted `0.005` degree angular limit; broader hierarchy validation keeps the
-overall Phase 4 gate open.
+A separate ten-case diagnostic matrix covers eight directions, diagonal
+interior maxima, odd dimensions, coarse factor-four mip traversal, raster
+edges, and invalid neighbors. Its dense 1.2 m bilinear comparison is recorded
+to characterize the approximation, but it is not an acceptance gate. C#/Numba
+parity and downstream illumination error remain the correctness gates. See
+`docs/numba-horizon-phase-4-hierarchy-safety.json`.
 
 ## Reproduction
 

@@ -285,7 +285,8 @@ def main() -> int:
             "counters": asdict(traversal_counters(boundary_gpu)),
             "classification": (
                 "corrected in C# and Numba: culling bounds include the four-cell "
-                "bilinear footprint and adaptive level-0 steps stop at cell exits"
+                "bilinear footprint; non-cullable level-0 cells retain adaptive "
+                "sampling and use a 1 mm boundary nudge"
             ),
         },
         "boundary_mechanics": {
@@ -295,9 +296,10 @@ def main() -> int:
         },
         "conclusion": (
             "Numba CPU and CUDA reproduce the corrected C# hierarchy decisions and "
-            "slopes. On both selected rays the hierarchy result is not below the "
-            "1.2 m fixed-step level-0 reference; broader terrain evidence remains "
-            "necessary before treating this bounded result as a general proof."
+            "slopes. A separate ten-case directional and coarse-mip matrix records "
+            "differences from dense bilinear sampling as a non-gating approximation "
+            "diagnostic; C#/Numba parity and downstream illumination error are the "
+            "correctness gates."
         ),
     }
     arguments.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

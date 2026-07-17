@@ -113,6 +113,9 @@ def main() -> int:
     artifact = load_reference_artifact(
         DATA / "phase1_reference_rays.json", DATA / "phase1_reference_rays.npz"
     )
+    corrected_capture = json.loads(
+        (DATA / "phase4d_production_segments.json").read_text(encoding="utf-8")
+    )["production_hierarchy_case"]
     session = CudaSession()
 
     base = "single_pixel_multi_dem_production__horizon_buffer_fixture"
@@ -129,7 +132,9 @@ def main() -> int:
             *map(float, artifact.arrays[f"{base}__grid_convergence"])
         ),
     )
-    expected_passes = artifact.arrays[f"{base}__per_dem_slopes"].reshape(2, 1, 1440)
+    expected_passes = np.asarray(
+        corrected_capture["per_dem_slopes"], dtype=np.float32
+    ).reshape(2, 1, 1440)
     production_passes = [
         session.subpatch_hierarchical_pass(
             production_segments, production_pyramids[0], production_pyramids[index],
@@ -152,8 +157,12 @@ def main() -> int:
         tile_column=20,
         tile_row=20,
     )
-    expected_final = artifact.arrays[f"{base}__final_slopes"]
-    expected_degrees = artifact.arrays[f"{base}__final_degrees"]
+    expected_final = np.asarray(
+        corrected_capture["final_slopes"], dtype=np.float32
+    ).reshape(1, 1440)
+    expected_degrees = np.asarray(
+        corrected_capture["final_degrees"], dtype=np.float32
+    ).reshape(1, 1440)
 
     boundary_segments = artifact.arrays[
         "boundary_halo_multi_dem_16az__subpatch_fixture__segment_values"

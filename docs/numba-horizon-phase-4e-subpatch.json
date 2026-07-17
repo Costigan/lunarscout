@@ -19,8 +19,8 @@
     "maximum_final_slope_error": 0.0,
     "maximum_final_degree_error": 0.0,
     "slope_sentinel_mismatches": 0,
-    "final_slope_sha256": "564edad5868f162dcc85dc408acc39cf1cee613a8001ef92c35910b3e4c347bd",
-    "final_degree_sha256": "f122d4568d35717d0f963a7982631156c308114903e3559c2fbe95d1f50604a7"
+    "final_slope_sha256": "62d284e01ec97a6c05c6fb0f58a8198bcd4cd71e56a41deae42d3ed28fdbe594",
+    "final_degree_sha256": "3a66e7169d5404cea75bc87cdb944f5bb480f4b8f319523741ad629573333062"
   },
   "partial_patch_halo_fixture": {
     "shape": [
@@ -55,7 +55,7 @@
     "maximum_selected_slope_error": 1.4901161193847656e-08,
     "pass_sha256": [
       "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b",
-      "76f6985733d5ea33fbaa74d0297ee9d7942db09e9f190979d5394544260d5176"
+      "079cc99cad98d9cf0a510001126bd2e6303288e13616e91be793fdb6c42c60b2"
     ]
   },
   "near_field_reference_merge": {

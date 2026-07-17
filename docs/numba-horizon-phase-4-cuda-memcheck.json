@@ -29,8 +29,8 @@
     "tile_height": 16,
     "azimuth_count": 1440,
     "hierarchy_enabled": true,
-    "numba_slope_sha256": "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf",
-    "csharp_slope_sha256": "4772be4dfe45efbb3acbcb10ee41ebea80389240a3ee4eaeea6c5608f6f0f715"
+    "numba_slope_sha256": "6ed2160ee9022be08eee9824935fa4c1605c6b9e6e0492845a82977d60cd402b",
+    "csharp_slope_sha256": "fd3d0cb9463ac320257c81904bee1a749b36765471cc738b4573af573842d224"
   },
   "coverage": [
     "production-shaped subpatch hierarchy kernel",

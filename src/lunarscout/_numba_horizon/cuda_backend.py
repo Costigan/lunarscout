@@ -22,6 +22,7 @@ _KERNELS = None
 
 def _build_kernels(cuda):
     from numba import float32, int32
+    from numba.cuda import libdevice
 
     @cuda.jit(device=True)
     def valid_elevation(value):
@@ -388,15 +389,15 @@ def _build_kernels(cuda):
             )
             if (
                 math.isnan(pixel_x) or math.isnan(pixel_y)
-                or pixel_x < 0.0 or pixel_y < 0.0
-                or pixel_x >= level0.shape[1] - 1.0
-                or pixel_y >= level0.shape[0] - 1.0
+                or pixel_x < float32(0.0) or pixel_y < float32(0.0)
+                or pixel_x >= float32(level0.shape[1] - 1)
+                or pixel_y >= float32(level0.shape[0] - 1)
             ):
                 break
             planar_x = (pixel_x - segment[0]) * map_resolution
             planar_y = (pixel_y - segment[1]) * map_resolution
             planar_m = math.sqrt(planar_x * planar_x + planar_y * planar_y)
-            if s < 0.5:
+            if s < float32(0.5):
                 true_m = float32(s * float32(1000.0))
             else:
                 true_m = float32(
@@ -408,7 +409,7 @@ def _build_kernels(cuda):
             )
             level = levels.shape[0] - 1
             while level > 0:
-                side = (1 << (level * 2)) * map_resolution
+                side = float32(float32(1 << (level * 2)) * map_resolution)
                 if side <= footprint:
                     break
                 level -= 1
@@ -482,12 +483,12 @@ def _build_kernels(cuda):
                     ) * float32(0.001)
                 )
                 distance_to_exit = float32(
-                    exit_distance if exit_distance > 0 else fallback
+                    exit_distance if exit_distance > float32(0.0) else fallback
                 )
-                if maximum_height < -20000.0:
+                if maximum_height < float32(-20000.0):
                     advance = float32(
                         distance_to_exit + float32(0.0001)
-                        if distance_to_exit > 0 else fallback
+                        if distance_to_exit > float32(0.0) else fallback
                     )
                     traces[index, count, 10] = advance
                     traces[index, count, 11] = 2.0
@@ -499,7 +500,7 @@ def _build_kernels(cuda):
                     float32(true_m - block_m), float32(1.0)
                 ))
                 observer_radius = float32(radius[index] + observer_z[index])
-                if s < 0.5:
+                if s < float32(0.5):
                     possible = float32(
                         float32(maximum_height - observer_z[index]) / true_near
                     )
@@ -521,13 +522,13 @@ def _build_kernels(cuda):
                     )
                     local_x = (
                         float32(math.sqrt(local_x_squared))
-                        if local_x_squared > 0 else float32(1e-6)
+                        if local_x_squared > float32(0.0) else float32(1e-6)
                     )
                     possible = float32(local_z / local_x)
                 if possible <= current:
                     advance = float32(
                         distance_to_exit + float32(0.0001)
-                        if distance_to_exit > 0 else fallback
+                        if distance_to_exit > float32(0.0) else fallback
                     )
                     traces[index, count, 10] = advance
                     traces[index, count, 11] = 1.0
@@ -536,9 +537,9 @@ def _build_kernels(cuda):
                     break
                 if level == 0:
                     height = bilinear(level0, pixel_x, pixel_y)
-                    slope = -1e30
+                    slope = float32(-1e30)
                     if valid_elevation(height):
-                        if s < 0.5:
+                        if s < float32(0.5):
                             slope = float32(
                                 float32(height - observer_z[index]) / true_m
                             )
@@ -559,31 +560,45 @@ def _build_kernels(cuda):
                             )
                             local_x = (
                                 float32(math.sqrt(local_x_squared))
-                                if local_x_squared > 0 else float32(1e-6)
+                                if local_x_squared > float32(0.0) else float32(1e-6)
                             )
                             slope = float32(local_z / local_x)
                         if slope > current:
                             current = slope
                     traces[index, count, 8] = height
                     traces[index, count, 9] = slope
-                    magnitude = math.sqrt(dx * dx + dy * dy)
-                    pixel_step = 1.0 / magnitude if magnitude > 1e-6 else 0.0005
-                    margin = current - slope
-                    margin_step = (
-                        margin * true_m * 1.732 / 1000.0 if margin > 0 else 0.0
+                    magnitude = float32(math.sqrt(float32(
+                        float32(dx * dx) + float32(dy * dy)
+                    )))
+                    pixel_step = (
+                        float32(float32(1.0) / magnitude)
+                        if magnitude > float32(1e-6) else float32(0.0005)
                     )
-                    angular_step = true_m * 0.00151 / 1000.0
-                    advance = max(pixel_step, min(margin_step, angular_step))
-                    if s < 0.5:
-                        advance *= 0.25
+                    margin = float32(current - slope)
+                    margin_step = (
+                        float32(
+                            float32(float32(margin * true_m) * float32(1.732))
+                            / float32(1000.0)
+                        )
+                        if margin > float32(0.0) else float32(0.0)
+                    )
+                    angular_step = float32(
+                        float32(true_m * float32(0.00151)) / float32(1000.0)
+                    )
+                    advance = float32(
+                        max(pixel_step, min(margin_step, angular_step))
+                    )
+                    if s < float32(0.5):
+                        advance = float32(advance * float32(0.25))
                     floor = (
                         primary_far_step
-                        if pass_index == 0 and true_m >= 100.0 else minimum_step
+                        if pass_index == 0 and true_m >= float32(100.0)
+                        else minimum_step
                     )
                     advance = float32(max(advance, floor))
                     boundary_advance = float32(
-                        distance_to_exit + float32(0.0001)
-                        if distance_to_exit > 0 else fallback
+                        distance_to_exit + float32(0.000001)
+                        if distance_to_exit > float32(0.0) else fallback
                     )
                     advance = float32(min(advance, boundary_advance))
                     traces[index, count, 10] = advance
@@ -601,10 +616,11 @@ def _build_kernels(cuda):
 
     @cuda.jit(device=True)
     def hierarchy_maximum(
-        segment, level0, mips, levels, observer_z, radius, map_resolution,
-        pass_index, initial,
+        start_x, start_y, a1, a2, a3, a4, b1, b2, b3, b4,
+        s_start, s_end, s_start_chord, chord_c1, chord_c2, chord_c3,
+        level0, mips, levels, observer_z, radius, map_resolution, pass_index,
+        initial,
     ):
-        s_start = segment[12]
         s = float32(max(s_start, float32(0.001)))
         current = float32(-1e30) if math.isinf(initial) else float32(initial)
         minimum_step = float32(
@@ -614,37 +630,37 @@ def _build_kernels(cuda):
             float32(float32(0.8) * map_resolution) * float32(0.001)
         )
         ray_out = False
-        while s <= segment[13]:
+        while s <= s_end:
             delta = s - s_start
             pixel_x = evaluate(
-                segment[0], segment[4], segment[5], segment[6], segment[7], delta
+                start_x, a1, a2, a3, a4, delta
             )
             pixel_y = evaluate(
-                segment[1], segment[8], segment[9], segment[10], segment[11], delta
+                start_y, b1, b2, b3, b4, delta
             )
             if (
                 math.isnan(pixel_x) or math.isnan(pixel_y)
-                or pixel_x < 0.0 or pixel_y < 0.0
-                or pixel_x >= level0.shape[1] - 1.0
-                or pixel_y >= level0.shape[0] - 1.0
+                or pixel_x < float32(0.0) or pixel_y < float32(0.0)
+                or pixel_x >= float32(level0.shape[1] - 1)
+                or pixel_y >= float32(level0.shape[0] - 1)
             ):
                 break
-            planar_x = (pixel_x - segment[0]) * map_resolution
-            planar_y = (pixel_y - segment[1]) * map_resolution
+            planar_x = (pixel_x - start_x) * map_resolution
+            planar_y = (pixel_y - start_y) * map_resolution
             planar_m = math.sqrt(planar_x * planar_x + planar_y * planar_y)
-            if s < 0.5:
+            if s < float32(0.5):
                 true_m = float32(s * float32(1000.0))
             else:
-                true_m = float32(
-                    segment[14] * float32(1000.0)
-                    + planar_chord(segment, planar_m)
-                )
-            footprint = float32(
-                true_m * float32(2.0 * math.pi / 1440.0)
-            )
+                planar_m2 = float32(planar_m * planar_m)
+                planar_m3 = float32(planar_m2 * planar_m)
+                chord = float32(chord_c1 * planar_m)
+                chord = float32(chord + float32(chord_c2 * planar_m2))
+                chord = float32(chord + float32(chord_c3 * planar_m3))
+                true_m = float32(s_start_chord * float32(1000.0) + chord)
+            footprint = float32(true_m * float32(0.004363323129985824))
             level = levels.shape[0] - 1
             while level > 0:
-                side = (1 << (level * 2)) * map_resolution
+                side = float32(float32(1 << (level * 2)) * map_resolution)
                 if side <= footprint:
                     break
                 level -= 1
@@ -679,8 +695,8 @@ def _build_kernels(cuda):
                 minimum_y = float32(cell_y * scale)
                 maximum_x = float32(minimum_x + float32(scale))
                 maximum_y = float32(minimum_y + float32(scale))
-                dx = tangent(segment[4], segment[5], segment[6], segment[7], delta)
-                dy = tangent(segment[8], segment[9], segment[10], segment[11], delta)
+                dx = tangent(a1, a2, a3, a4, delta)
+                dy = tangent(b1, b2, b3, b4, delta)
                 inverse_x = (
                     float32(float32(1.0) / dx)
                     if abs(dx) > float32(1e-8) else float32(1e30)
@@ -700,12 +716,12 @@ def _build_kernels(cuda):
                     ) * float32(0.001)
                 )
                 distance_to_exit = float32(
-                    exit_distance if exit_distance > 0 else fallback
+                    exit_distance if exit_distance > float32(0.0) else fallback
                 )
-                if maximum_height < -20000.0:
+                if maximum_height < float32(-20000.0):
                     advance = float32(
                         distance_to_exit + float32(0.0001)
-                        if distance_to_exit > 0 else fallback
+                        if distance_to_exit > float32(0.0) else fallback
                     )
                     s = float32(s + advance)
                     break
@@ -714,7 +730,7 @@ def _build_kernels(cuda):
                     float32(true_m - block_m), float32(1.0)
                 ))
                 observer_radius = float32(radius + observer_z)
-                if s < 0.5:
+                if s < float32(0.5):
                     possible = float32(
                         float32(maximum_height - observer_z) / true_near
                     )
@@ -735,21 +751,21 @@ def _build_kernels(cuda):
                     )
                     local_x = (
                         float32(math.sqrt(local_x_squared))
-                        if local_x_squared > 0 else float32(1e-6)
+                        if local_x_squared > float32(0.0) else float32(1e-6)
                     )
                     possible = float32(local_z / local_x)
                 if possible <= current:
                     advance = float32(
                         distance_to_exit + float32(0.0001)
-                        if distance_to_exit > 0 else fallback
+                        if distance_to_exit > float32(0.0) else fallback
                     )
                     s = float32(s + advance)
                     break
                 if level == 0:
                     height = bilinear(level0, pixel_x, pixel_y)
-                    slope = -1e30
+                    slope = float32(-1e30)
                     if valid_elevation(height):
-                        if s < 0.5:
+                        if s < float32(0.5):
                             slope = float32(
                                 float32(height - observer_z) / true_m
                             )
@@ -770,29 +786,43 @@ def _build_kernels(cuda):
                             )
                             local_x = (
                                 float32(math.sqrt(local_x_squared))
-                                if local_x_squared > 0 else float32(1e-6)
+                                if local_x_squared > float32(0.0) else float32(1e-6)
                             )
                             slope = float32(local_z / local_x)
                         if slope > current:
                             current = slope
-                    magnitude = math.sqrt(dx * dx + dy * dy)
-                    pixel_step = 1.0 / magnitude if magnitude > 1e-6 else 0.0005
-                    margin = current - slope
-                    margin_step = (
-                        margin * true_m * 1.732 / 1000.0 if margin > 0 else 0.0
+                    magnitude = float32(math.sqrt(float32(
+                        float32(dx * dx) + float32(dy * dy)
+                    )))
+                    pixel_step = (
+                        float32(float32(1.0) / magnitude)
+                        if magnitude > float32(1e-6) else float32(0.0005)
                     )
-                    angular_step = true_m * 0.00151 / 1000.0
-                    advance = max(pixel_step, min(margin_step, angular_step))
-                    if s < 0.5:
-                        advance *= 0.25
+                    margin = float32(current - slope)
+                    margin_step = (
+                        float32(
+                            float32(float32(margin * true_m) * float32(1.732))
+                            / float32(1000.0)
+                        )
+                        if margin > float32(0.0) else float32(0.0)
+                    )
+                    angular_step = float32(
+                        float32(true_m * float32(0.00151)) / float32(1000.0)
+                    )
+                    advance = float32(
+                        max(pixel_step, min(margin_step, angular_step))
+                    )
+                    if s < float32(0.5):
+                        advance = float32(advance * float32(0.25))
                     floor = (
                         primary_far_step
-                        if pass_index == 0 and true_m >= 100.0 else minimum_step
+                        if pass_index == 0 and true_m >= float32(100.0)
+                        else minimum_step
                     )
                     advance = float32(max(advance, floor))
                     boundary_advance = float32(
-                        distance_to_exit + float32(0.0001)
-                        if distance_to_exit > 0 else fallback
+                        distance_to_exit + float32(0.000001)
+                        if distance_to_exit > float32(0.0) else fallback
                     )
                     advance = float32(min(advance, boundary_advance))
                     s = float32(s + advance)
@@ -800,7 +830,10 @@ def _build_kernels(cuda):
                 level -= 1
             if ray_out:
                 break
-        return current if current > -1e29 else -np.inf
+        return (
+            current if current > float32(-1e29)
+            else float32(-np.inf)
+        )
 
     @cuda.jit(device=True)
     def interpolate_subpatch_segment(
@@ -886,10 +919,34 @@ def _build_kernels(cuda):
                 values[corner] = value
             upper_difference = float32(values[1] - values[0])
             lower_difference = float32(values[3] - values[2])
-            upper = float32(cuda.fma(upper_difference, tx, values[0]))
-            lower = float32(cuda.fma(lower_difference, tx, values[2]))
+            upper = libdevice.fmaf(upper_difference, tx, values[0])
+            lower = libdevice.fmaf(lower_difference, tx, values[2])
             vertical_difference = float32(lower - upper)
-            segment[field] = float32(cuda.fma(vertical_difference, ty, upper))
+            segment[field] = libdevice.fmaf(vertical_difference, ty, upper)
+
+    @cuda.jit(device=True, inline=True)
+    def interpolate_subpatch_field(
+        segments, azimuth, pass_index, field,
+        index00, index10, index01, index11, tx, ty,
+        shift_x_left, shift_x_right, shift_y_top, shift_y_bottom,
+    ):
+        value00 = segments[azimuth, index00, pass_index, field]
+        value10 = segments[azimuth, index10, pass_index, field]
+        value01 = segments[azimuth, index01, pass_index, field]
+        value11 = segments[azimuth, index11, pass_index, field]
+        if field == 0:
+            value00 = float32(value00 + shift_x_left)
+            value10 = float32(value10 + shift_x_right)
+            value01 = float32(value01 + shift_x_left)
+            value11 = float32(value11 + shift_x_right)
+        elif field == 1:
+            value00 = float32(value00 + shift_y_top)
+            value10 = float32(value10 + shift_y_top)
+            value01 = float32(value01 + shift_y_bottom)
+            value11 = float32(value11 + shift_y_bottom)
+        upper = libdevice.fmaf(float32(value10 - value00), tx, value00)
+        lower = libdevice.fmaf(float32(value11 - value01), tx, value01)
+        return libdevice.fmaf(float32(lower - upper), ty, upper)
 
     @cuda.jit
     def subpatch_interpolation_kernel(
@@ -916,9 +973,14 @@ def _build_kernels(cuda):
         tile_width, tile_height, subpatch_size, pass_index, observer_elevation,
         output,
     ):
-        pixel, azimuth = cuda.grid(2)
-        if pixel >= tile_width * tile_height or azimuth >= segments.shape[0]:
+        linear_index = cuda.grid(1)
+        pixel_count = tile_width * tile_height
+        if linear_index >= pixel_count * segments.shape[0]:
             return
+        # Match ILGPU's auto-grouped Index2D reconstruction: X (pixel) is the
+        # contiguous coordinate and Y (azimuth) advances after all pixels.
+        pixel = linear_index % pixel_count
+        azimuth = linear_index // pixel_count
         row = pixel // tile_width
         column = pixel % tile_width
         active_column_resolution = float32(math.sqrt(float32(
@@ -929,12 +991,86 @@ def _build_kernels(cuda):
             float32(active_map[7] * active_map[7])
             + float32(active_map[10] * active_map[10])
         )))
-        segment = cuda.local.array(18, dtype=float32)
-        interpolate_subpatch_segment(
-            segments, primary_level0, primary_map, active_map, tile_column,
-            tile_row, tile_width, subpatch_size, pass_index, pixel, azimuth,
-            segment,
+        count = tile_width // subpatch_size + 2
+        gx = float32(
+            float32(column - subpatch_size // 2) / float32(subpatch_size)
+            + float32(1.0)
         )
+        gy = float32(
+            float32(row - subpatch_size // 2) / float32(subpatch_size)
+            + float32(1.0)
+        )
+        left = int(gx)
+        top = int(gy)
+        tx = float32(gx - left)
+        ty = float32(gy - top)
+        if left < 0:
+            left = 0
+            tx = float32(0.0)
+        if top < 0:
+            top = 0
+            ty = float32(0.0)
+        if left > count - 2:
+            left = count - 2
+            tx = float32(1.0)
+        if top > count - 2:
+            top = count - 2
+            ty = float32(1.0)
+        index00 = top * count + left
+        index10 = index00 + 1
+        index01 = (top + 1) * count + left
+        index11 = index01 + 1
+        primary_resolution = float32(math.sqrt(float32(
+            float32(primary_map[6] * primary_map[6])
+            + float32(primary_map[9] * primary_map[9])
+        )))
+        scale_ratio = float32(primary_resolution / active_column_resolution)
+        requested_left = (
+            tile_column + (left - 1) * subpatch_size + subpatch_size // 2
+        )
+        requested_right = requested_left + subpatch_size
+        requested_top = tile_row + (top - 1) * subpatch_size + subpatch_size // 2
+        requested_bottom = requested_top + subpatch_size
+        center_left = clamp_center(
+            requested_left, primary_level0.shape[1], subpatch_size
+        ) - tile_column
+        center_right = clamp_center(
+            requested_right, primary_level0.shape[1], subpatch_size
+        ) - tile_column
+        center_top = clamp_center(
+            requested_top, primary_level0.shape[0], subpatch_size
+        ) - tile_row
+        center_bottom = clamp_center(
+            requested_bottom, primary_level0.shape[0], subpatch_size
+        ) - tile_row
+        shift_x_left = float32(float32(column - center_left) * scale_ratio)
+        shift_x_right = float32(float32(column - center_right) * scale_ratio)
+        shift_y_top = float32(float32(row - center_top) * scale_ratio)
+        shift_y_bottom = float32(float32(row - center_bottom) * scale_ratio)
+        start_x = interpolate_subpatch_field(
+            segments, azimuth, pass_index, 0, index00, index10, index01,
+            index11, tx, ty, shift_x_left, shift_x_right, shift_y_top,
+            shift_y_bottom,
+        )
+        start_y = interpolate_subpatch_field(
+            segments, azimuth, pass_index, 1, index00, index10, index01,
+            index11, tx, ty, shift_x_left, shift_x_right, shift_y_top,
+            shift_y_bottom,
+        )
+        a1 = interpolate_subpatch_field(segments, azimuth, pass_index, 4, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        a2 = interpolate_subpatch_field(segments, azimuth, pass_index, 5, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        a3 = interpolate_subpatch_field(segments, azimuth, pass_index, 6, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        a4 = interpolate_subpatch_field(segments, azimuth, pass_index, 7, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        b1 = interpolate_subpatch_field(segments, azimuth, pass_index, 8, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        b2 = interpolate_subpatch_field(segments, azimuth, pass_index, 9, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        b3 = interpolate_subpatch_field(segments, azimuth, pass_index, 10, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        b4 = interpolate_subpatch_field(segments, azimuth, pass_index, 11, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        s_start = interpolate_subpatch_field(segments, azimuth, pass_index, 12, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        s_end = interpolate_subpatch_field(segments, azimuth, pass_index, 13, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        s_start_chord = interpolate_subpatch_field(segments, azimuth, pass_index, 14, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        chord_c1 = interpolate_subpatch_field(segments, azimuth, pass_index, 15, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        chord_c2 = interpolate_subpatch_field(segments, azimuth, pass_index, 16, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
+        chord_c3 = interpolate_subpatch_field(segments, azimuth, pass_index, 17, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
         observer_terrain = bilinear(
             primary_level0, tile_column + column, tile_row + row
         )
@@ -944,7 +1080,9 @@ def _build_kernels(cuda):
             * float32(0.5)
         )
         output[pixel, azimuth] = hierarchy_maximum(
-            segment, active_level0, active_mips, active_levels, observer_z,
+            start_x, start_y, a1, a2, a3, a4, b1, b2, b3, b4,
+            s_start, s_end, s_start_chord, chord_c1, chord_c2, chord_c3,
+            active_level0, active_mips, active_levels, observer_z,
             active_projection[0], map_resolution, pass_index,
             output[pixel, azimuth],
         )
@@ -988,6 +1126,36 @@ class CudaSession:
             self._subpatch_interpolation_kernel,
             self._subpatch_hierarchy_kernel,
         ) = _KERNELS
+        self._production_pyramids = None
+        self._production_device_pyramids = None
+
+    def _prepare_production_pyramids(self, pyramids):
+        """Keep immutable production pyramid inputs resident across patches."""
+        host_pyramids = tuple(pyramids)
+        if (
+            self._production_pyramids is not None
+            and len(host_pyramids) == len(self._production_pyramids)
+            and all(
+                current is cached
+                for current, cached in zip(
+                    host_pyramids, self._production_pyramids, strict=True
+                )
+            )
+        ):
+            return self._production_device_pyramids
+        device_pyramids = [
+            (
+                self._cuda.to_device(pyramid.level0),
+                self._cuda.to_device(pyramid.mips),
+                self._cuda.to_device(pyramid.levels),
+                self._cuda.to_device(pyramid.map_parameters),
+                self._cuda.to_device(pyramid.projection_parameters),
+            )
+            for pyramid in host_pyramids
+        ]
+        self._production_pyramids = host_pyramids
+        self._production_device_pyramids = device_pyramids
+        return device_pyramids
 
     def index_mapping(self, pixel_count: int, azimuth_count: int) -> np.ndarray:
         if pixel_count <= 0 or azimuth_count <= 0:
@@ -1129,11 +1297,12 @@ class CudaSession:
             if host_output.shape != output_shape:
                 raise ValueError(f"slopes must have shape {output_shape}")
         device_output = self._cuda.to_device(host_output)
-        threads = (8, 32)
-        blocks = (
-            (pixel_count + threads[0] - 1) // threads[0],
-            (segments.shape[0] + threads[1] - 1) // threads[1],
-        )
+        # Preserve ILGPU's warp organization (32 adjacent pixels for one
+        # azimuth) without copying its larger block size.  This kernel's
+        # register use supports better occupancy with 256-thread blocks.
+        threads = 256
+        total_threads = pixel_count * segments.shape[0]
+        blocks = (total_threads + threads - 1) // threads
         self._subpatch_hierarchy_kernel[blocks, threads](
             self._cuda.to_device(segments),
             self._cuda.to_device(primary_pyramid.level0),
@@ -1149,6 +1318,71 @@ class CudaSession:
         )
         self._cuda.synchronize()
         return device_output.copy_to_host()
+
+    def subpatch_hierarchical_all_passes(
+        self,
+        segment_values,
+        pyramids,
+        *,
+        tile_column: int,
+        tile_row: int,
+        tile_width: int,
+        tile_height: int,
+        subpatch_size: int,
+        observer_elevation_m: float = 0.0,
+    ) -> tuple[np.ndarray, list[float]]:
+        """Run every DEM pass on one resident slope buffer and synchronize once."""
+        segments = np.ascontiguousarray(segment_values, dtype=np.float32)
+        if segments.ndim != 4 or segments.shape[-1] != 18:
+            raise ValueError("segment_values must have shape (azimuth, center, DEM, 18)")
+        if len(pyramids) != segments.shape[2]:
+            raise ValueError("pyramid count must match the segment DEM axis")
+        expected_centers = (tile_width // subpatch_size + 2) ** 2
+        if segments.shape[1] != expected_centers:
+            raise ValueError("segment center count does not match tile/subpatch layout")
+
+        pixel_count = tile_width * tile_height
+        output_shape = (pixel_count, segments.shape[0])
+        device_segments = self._cuda.to_device(segments)
+        device_pyramids = self._prepare_production_pyramids(pyramids)
+        device_primary_level0 = device_pyramids[0][0]
+        device_primary_map = device_pyramids[0][3]
+        device_output = self._cuda.to_device(
+            np.full(output_shape, -np.inf, dtype=np.float32)
+        )
+        threads = 256
+        total_threads = pixel_count * segments.shape[0]
+        blocks = (total_threads + threads - 1) // threads
+        events = [self._cuda.event(timing=True) for _ in range(len(pyramids) + 1)]
+        events[0].record()
+        for pass_index, device_pyramid in enumerate(device_pyramids):
+            (
+                active_level0,
+                active_mips,
+                active_levels,
+                active_map,
+                active_projection,
+            ) = device_pyramid
+            self._subpatch_hierarchy_kernel[blocks, threads](
+                device_segments,
+                device_primary_level0,
+                device_primary_map,
+                active_level0,
+                active_mips,
+                active_levels,
+                active_map,
+                active_projection,
+                np.int32(tile_column), np.int32(tile_row), np.int32(tile_width),
+                np.int32(tile_height), np.int32(subpatch_size), np.int32(pass_index),
+                np.float32(observer_elevation_m), device_output,
+            )
+            events[pass_index + 1].record()
+        events[-1].synchronize()
+        pass_kernel_seconds = [
+            events[index].elapsed_time(events[index + 1]) / 1000.0
+            for index in range(len(pyramids))
+        ]
+        return device_output.copy_to_host(), pass_kernel_seconds
 
     def subpatch_interpolation(
         self, segment_values, primary_pyramid, active_pyramid, *, tile_column,

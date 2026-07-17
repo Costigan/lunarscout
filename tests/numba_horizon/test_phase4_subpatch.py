@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -71,7 +73,12 @@ def _production_patch_inputs():
 )
 def test_cuda_full_subpatch_multi_dem_passes_match_csharp_buffers() -> None:
     artifact, base, segments, pyramids = _production_patch_inputs()
-    expected_passes = artifact.arrays[f"{base}__per_dem_slopes"].reshape(2, 1, 1440)
+    corrected = json.loads(
+        (DATA / "phase4d_production_segments.json").read_text(encoding="utf-8")
+    )["production_hierarchy_case"]
+    expected_passes = np.asarray(
+        corrected["per_dem_slopes"], dtype=np.float32
+    ).reshape(2, 1, 1440)
     session = CudaSession()
     pass_zero = session.subpatch_hierarchical_pass(
         segments, pyramids[0], pyramids[0], tile_column=20, tile_row=20,
@@ -84,7 +91,9 @@ def test_cuda_full_subpatch_multi_dem_passes_match_csharp_buffers() -> None:
     np.testing.assert_allclose(pass_zero, expected_passes[0], rtol=0, atol=3e-7)
     np.testing.assert_allclose(pass_one, expected_passes[1], rtol=0, atol=3e-7)
 
-    expected_final = artifact.arrays[f"{base}__final_slopes"]
+    expected_final = np.asarray(
+        corrected["final_slopes"], dtype=np.float32
+    ).reshape(1, 1440)
     np.testing.assert_array_equal(
         np.maximum(expected_passes[0], expected_passes[1]), expected_final
     )
@@ -105,11 +114,14 @@ def test_cuda_full_subpatch_multi_dem_passes_match_csharp_buffers() -> None:
     np.testing.assert_allclose(generated.slopes, expected_final, rtol=0, atol=3e-7)
     degrees = generated.degrees()
     np.testing.assert_allclose(
-        degrees, artifact.arrays[f"{base}__final_degrees"], rtol=0, atol=1e-5
+        degrees,
+        np.asarray(corrected["final_degrees"], dtype=np.float32).reshape(1, 1440),
+        rtol=0,
+        atol=1e-5,
     )
 
 
-def test_generator_runs_dem_passes_independently_before_merging() -> None:
+def test_generator_carries_accumulated_slopes_between_dem_passes() -> None:
     configuration = ContractConfiguration(
         tile_width=1, tile_height=1, azimuth_count=3, subpatch_size=8,
         dem_count=2, primary_width=2, primary_height=2,
@@ -128,20 +140,53 @@ def test_generator_runs_dem_passes_independently_before_merging() -> None:
         def __init__(self):
             self.calls = []
 
-        def subpatch_hierarchical_pass(self, *args, **kwargs):
-            assert "slopes" not in kwargs
-            pass_index = kwargs["pass_index"]
-            self.calls.append(pass_index)
-            return expected_passes[pass_index].copy()
+        def subpatch_hierarchical_all_passes(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            return np.maximum(*expected_passes), [0.1, 0.2]
 
     session = FakeSession()
     generated = generate_patch_horizons(
         session, tensor, [object(), object()], tile_column=0, tile_row=0
     )
-    assert session.calls == [0, 1]
+    assert len(session.calls) == 1
+    assert session.calls[0][0][0] is tensor.values
+    assert len(session.calls[0][0][1]) == 2
     np.testing.assert_array_equal(
         generated.slopes, np.array([[5.0, 4.0, 3.0]], dtype=np.float32)
     )
+
+
+def test_cuda_session_reuses_unchanged_production_pyramids() -> None:
+    class FakeCuda:
+        def __init__(self):
+            self.uploads = []
+
+        def to_device(self, value):
+            device = ("device", id(value))
+            self.uploads.append(device)
+            return device
+
+    def pyramid():
+        return SimpleNamespace(
+            level0=np.zeros((2, 2), dtype=np.float32),
+            mips=np.zeros(1, dtype=np.float32),
+            levels=np.zeros((1, 4), dtype=np.int32),
+            map_parameters=np.zeros(11, dtype=np.float32),
+            projection_parameters=np.zeros(6, dtype=np.float32),
+        )
+
+    session = object.__new__(CudaSession)
+    session._cuda = FakeCuda()
+    session._production_pyramids = None
+    session._production_device_pyramids = None
+    first = (pyramid(), pyramid())
+    first_device = session._prepare_production_pyramids(first)
+    assert len(session._cuda.uploads) == 10
+    assert session._prepare_production_pyramids(first) is first_device
+    assert len(session._cuda.uploads) == 10
+    replacement = (first[0], pyramid())
+    assert session._prepare_production_pyramids(replacement) is not first_device
+    assert len(session._cuda.uploads) == 20
 
 
 def _boundary_patch_inputs():

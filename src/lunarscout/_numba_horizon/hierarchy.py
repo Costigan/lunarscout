@@ -96,6 +96,7 @@ def traverse_hierarchy(
     radius_m: float,
     map_resolution_m: float,
     pass_index: int,
+    initial_slope: float = -np.inf,
 ) -> HierarchyTrace:
     """Run the current C# hierarchy algorithm and retain every branch record."""
     segment = np.asarray(segment, dtype=np.float32)
@@ -104,7 +105,11 @@ def traverse_hierarchy(
     radius = np.float32(radius_m)
     minimum_step = np.float32(0.5) * map_resolution / np.float32(1000.0)
     primary_far_step = np.float32(0.8) * map_resolution / np.float32(1000.0)
-    current = np.float32(-1e30)
+    current = (
+        np.float32(-1e30)
+        if np.isneginf(initial_slope)
+        else np.float32(initial_slope)
+    )
     s_start = segment[12]
     s = max(s_start, np.float32(0.001))
     trace = []
@@ -251,7 +256,7 @@ def traverse_hierarchy(
                 )
                 advance = max(advance, floor)
                 boundary_advance = (
-                    distance_to_exit + np.float32(0.0001)
+                    distance_to_exit + np.float32(0.000001)
                     if distance_to_exit > 0 else fallback
                 )
                 advance = min(advance, boundary_advance)

@@ -1,0 +1,737 @@
+{
+  "schema_version": 1,
+  "report_kind": "numba_phase_5_production_benchmark",
+  "configuration": {
+    "patch_count": 4,
+    "patches": [
+      {
+        "index": 0,
+        "tile_column": 0,
+        "tile_row": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "index": 1,
+        "tile_column": 128,
+        "tile_row": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "index": 2,
+        "tile_column": 256,
+        "tile_row": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "index": 3,
+        "tile_column": 384,
+        "tile_row": 0,
+        "width": 128,
+        "height": 128
+      }
+    ],
+    "azimuth_bins": 1440,
+    "observer_elevation_m": 0.0,
+    "hierarchy_enabled": true,
+    "dem_pass_count": 4,
+    "cuda_streams": 1,
+    "serial_host_pipeline_concurrency": 1,
+    "pipelined_segment_producers": 1,
+    "pipelined_gpu_consumers": 1,
+    "pipelined_queue_capacity": 1,
+    "warm_repeats": 3
+  },
+  "environment": {
+    "platform": "Linux-6.18.7-76061807-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "numpy": "2.2.6",
+    "numba": "0.66.0",
+    "logical_cpu_count": 24,
+    "numba_threads": 24,
+    "cuda_device_name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "compute_capability": [
+      12,
+      0
+    ]
+  },
+  "inputs": [
+    {
+      "path": "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+      "size_bytes": 1050162,
+      "sha256": "8f041cb7dba79bce23dd38de3de7a34a5a179b8c3e5455df197684e0aec2c6e6",
+      "pyramid_cache_path": "/d/lunar_analyst_scenarios/test_scenario/dem.pyr.bin",
+      "pyramid_cache_size_bytes": 69908,
+      "pyramid_cache_sha256": "a32dc464e843f7b57fdccf9108d1e0ae0d55c4b20e00e95524fc88c043ffe11d"
+    },
+    {
+      "path": "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+      "size_bytes": 104824370,
+      "sha256": "1b5cdb5c9d656cd6ff84dd3671ffd40ef8eeee99e85d0020b8d5b3e9e62d3497",
+      "pyramid_cache_path": "/d/datasets/viper_v71_2024_medium/other/dem.pyr.bin",
+      "pyramid_cache_size_bytes": 6986252,
+      "pyramid_cache_sha256": "38a002d4e4d8f6035507f2d33b9f456fa9d1037fa01d5089b61eb5b6aa5bd00e"
+    },
+    {
+      "path": "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+      "size_bytes": 108192905,
+      "sha256": "0e96c40987c0814eadd4f94f85dacbb33bcab5388dd0b1dc99dc59bf987f072f",
+      "pyramid_cache_path": "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.pyr.bin",
+      "pyramid_cache_size_bytes": 7211324,
+      "pyramid_cache_sha256": "77f7e233163115ba392e23b2f48055011d8b51a894f0a71cfd649587ba79f860"
+    },
+    {
+      "path": "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif",
+      "size_bytes": 618310074,
+      "sha256": "b250e94730fcbcf387e0a5494ce23fe7a17e00932982cab903d1bdff602b30e6",
+      "pyramid_cache_path": "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.pyr.bin",
+      "pyramid_cache_size_bytes": 246443020,
+      "pyramid_cache_sha256": "8d4a037540853e572144a4220950a8eacbc2c063a506e97542e174b0514b0767"
+    }
+  ],
+  "startup": {
+    "dem_load_seconds": 8.252029620998655,
+    "warm_pyramid_cache_load_seconds": 0.04185188400151674,
+    "first_segment_generation_including_numba_cpu_compilation_seconds": 6.830270802995074,
+    "cuda_session_initialization_seconds": 0.3470181369993952,
+    "first_cuda_compile_and_execution_seconds": 6.815858603004017,
+    "first_cuda_kernel_seconds_by_pass": [
+      1.8245511474609375,
+      1.4162525634765626,
+      1.19457080078125,
+      2.0391444091796873
+    ],
+    "first_degree_conversion_seconds": 0.06212573099764995,
+    "first_output_hashes": {
+      "slope_sha256": "f85eb1e5cc7f5d52b7df731a493cab9b285c2fafc7412533c0b5686e983a04bd",
+      "degree_sha256": "b67d363ad4a40e4e313dc3d5831b411a95e4355ab0bca2a70d443d54dde40893"
+    }
+  },
+  "warm_single_patch": {
+    "cuda_seconds_including_transfers": {
+      "samples": 3,
+      "seconds": [
+        5.12229643399769,
+        5.146278630003508,
+        5.162222747996566
+      ],
+      "minimum_seconds": 5.12229643399769,
+      "median_seconds": 5.146278630003508,
+      "maximum_seconds": 5.162222747996566,
+      "mean_seconds": 5.143599270665921,
+      "population_standard_deviation_seconds": 0.016409587893040815
+    },
+    "cuda_kernel_seconds_by_pass": [
+      [
+        0.40571554565429685,
+        1.420644287109375,
+        1.196708984375,
+        2.0474715576171874
+      ],
+      [
+        0.40675469970703126,
+        1.4240369873046874,
+        1.2038367919921875,
+        2.056585205078125
+      ],
+      [
+        0.4078584289550781,
+        1.43052197265625,
+        1.20786865234375,
+        2.063042236328125
+      ]
+    ],
+    "degree_conversion_seconds": {
+      "samples": 3,
+      "seconds": [
+        0.06182625899964478,
+        0.06225346599967452,
+        0.062457166000967845
+      ],
+      "minimum_seconds": 0.06182625899964478,
+      "median_seconds": 0.06225346599967452,
+      "maximum_seconds": 0.062457166000967845,
+      "mean_seconds": 0.06217896366676238,
+      "population_standard_deviation_seconds": 0.0002628990418223051
+    },
+    "output_hashes_stable": true,
+    "output_hashes": {
+      "slope_sha256": "f85eb1e5cc7f5d52b7df731a493cab9b285c2fafc7412533c0b5686e983a04bd",
+      "degree_sha256": "b67d363ad4a40e4e313dc3d5831b411a95e4355ab0bca2a70d443d54dde40893"
+    }
+  },
+  "warm_multi_patch": {
+    "execution_model": "Serial segment generation followed by CUDA for each patch.",
+    "runs": [
+      {
+        "repeat": 0,
+        "elapsed_seconds": 28.99245740799961,
+        "patches_per_second": 0.13796691821288384,
+        "segment_generation_seconds": [
+          1.6720971140020993,
+          1.9055747960010194,
+          1.7657902740029385,
+          1.6980016160014202
+        ],
+        "cuda_seconds_including_transfers": [
+          5.1854781419970095,
+          5.219523489999119,
+          5.581249946997559,
+          5.489267826000287
+        ],
+        "cuda_kernel_seconds_by_pass": [
+          [
+            0.40967373657226563,
+            1.437994140625,
+            1.2159078369140626,
+            2.067876708984375
+          ],
+          [
+            0.4585539245605469,
+            1.5184813232421874,
+            1.1686553955078125,
+            2.017725341796875
+          ],
+          [
+            0.4190562744140625,
+            1.9734908447265624,
+            1.140425537109375,
+            1.9932630615234375
+          ],
+          [
+            0.42841104125976565,
+            1.883466796875,
+            1.1348369140625,
+            1.9886920166015625
+          ]
+        ],
+        "degree_conversion_seconds": [
+          0.06552161300351145,
+          0.06251919600617839,
+          0.06345305099966936,
+          0.06142650300171226
+        ],
+        "patch_hashes": [
+          {
+            "patch_index": 0,
+            "tile_column": 0,
+            "tile_row": 0,
+            "slope_sha256": "f85eb1e5cc7f5d52b7df731a493cab9b285c2fafc7412533c0b5686e983a04bd",
+            "degree_sha256": "b67d363ad4a40e4e313dc3d5831b411a95e4355ab0bca2a70d443d54dde40893"
+          },
+          {
+            "patch_index": 1,
+            "tile_column": 128,
+            "tile_row": 0,
+            "slope_sha256": "d96a40bc280464e5c46380931af9944066fb26322f38882a98bdb027a71abf3f",
+            "degree_sha256": "3a40691e489da681c89408523aa754b89b8fc5e5bb5e6a1d461968a269580e8c"
+          },
+          {
+            "patch_index": 2,
+            "tile_column": 256,
+            "tile_row": 0,
+            "slope_sha256": "7824129e18343fb4014ed615f56be0e887ca5bdd8f42f0ee2d7959f00b238c38",
+            "degree_sha256": "9e3d14715cc41ca36c06de8d4ecaec40cbda4bc5abc1eb06fcd5f05df9fbdd28"
+          },
+          {
+            "patch_index": 3,
+            "tile_column": 384,
+            "tile_row": 0,
+            "slope_sha256": "79d33a44bf6bbe503ac191bf20dee1594bc3787cde496527af8ad5d3116bcd9b",
+            "degree_sha256": "efb6f3d436569c26ed6dd51adc91ef8cf9224feb8011e7bd0ae57d4ece49effc"
+          }
+        ]
+      },
+      {
+        "repeat": 1,
+        "elapsed_seconds": 29.077260172001843,
+        "patches_per_second": 0.1375645427505427,
+        "segment_generation_seconds": [
+          1.674289188995317,
+          1.81979678299831,
+          1.8359061689989176,
+          1.700630850995367
+        ],
+        "cuda_seconds_including_transfers": [
+          5.219672737999645,
+          5.241907800998888,
+          5.600919557997258,
+          5.5072770869956
+        ],
+        "cuda_kernel_seconds_by_pass": [
+          [
+            0.4124004821777344,
+            1.4501162109375,
+            1.2229287109375,
+            2.079373046875
+          ],
+          [
+            0.4610689392089844,
+            1.527859130859375,
+            1.1725137939453125,
+            2.0260535888671876
+          ],
+          [
+            0.4213747253417969,
+            1.979580322265625,
+            1.1442391357421875,
+            1.9994635009765624
+          ],
+          [
+            0.4296421508789062,
+            1.8905037841796875,
+            1.139264892578125,
+            1.9957030029296876
+          ]
+        ],
+        "degree_conversion_seconds": [
+          0.06382173300517024,
+          0.061720616002276074,
+          0.06255530300404644,
+          0.06387533599627204
+        ],
+        "patch_hashes": [
+          {
+            "patch_index": 0,
+            "tile_column": 0,
+            "tile_row": 0,
+            "slope_sha256": "f85eb1e5cc7f5d52b7df731a493cab9b285c2fafc7412533c0b5686e983a04bd",
+            "degree_sha256": "b67d363ad4a40e4e313dc3d5831b411a95e4355ab0bca2a70d443d54dde40893"
+          },
+          {
+            "patch_index": 1,
+            "tile_column": 128,
+            "tile_row": 0,
+            "slope_sha256": "d96a40bc280464e5c46380931af9944066fb26322f38882a98bdb027a71abf3f",
+            "degree_sha256": "3a40691e489da681c89408523aa754b89b8fc5e5bb5e6a1d461968a269580e8c"
+          },
+          {
+            "patch_index": 2,
+            "tile_column": 256,
+            "tile_row": 0,
+            "slope_sha256": "7824129e18343fb4014ed615f56be0e887ca5bdd8f42f0ee2d7959f00b238c38",
+            "degree_sha256": "9e3d14715cc41ca36c06de8d4ecaec40cbda4bc5abc1eb06fcd5f05df9fbdd28"
+          },
+          {
+            "patch_index": 3,
+            "tile_column": 384,
+            "tile_row": 0,
+            "slope_sha256": "79d33a44bf6bbe503ac191bf20dee1594bc3787cde496527af8ad5d3116bcd9b",
+            "degree_sha256": "efb6f3d436569c26ed6dd51adc91ef8cf9224feb8011e7bd0ae57d4ece49effc"
+          }
+        ]
+      },
+      {
+        "repeat": 2,
+        "elapsed_seconds": 29.265127139995457,
+        "patches_per_second": 0.13668144959238407,
+        "segment_generation_seconds": [
+          1.6995934910009964,
+          1.8113163970047026,
+          1.9869946549952147,
+          1.6695757459965535
+        ],
+        "cuda_seconds_including_transfers": [
+          5.23330312899634,
+          5.256561805996171,
+          5.607721596999909,
+          5.510635730999638
+        ],
+        "cuda_kernel_seconds_by_pass": [
+          [
+            0.4141714172363281,
+            1.4538311767578125,
+            1.22642431640625,
+            2.0847841796875
+          ],
+          [
+            0.462868896484375,
+            1.532236083984375,
+            1.1756732177734375,
+            2.030119873046875
+          ],
+          [
+            0.42181536865234376,
+            1.984751708984375,
+            1.1469796142578126,
+            2.0027235107421877
+          ],
+          [
+            0.4303492431640625,
+            1.89308935546875,
+            1.13978271484375,
+            1.9973468017578124
+          ]
+        ],
+        "degree_conversion_seconds": [
+          0.06305332500051009,
+          0.06953892299497966,
+          0.06265668700507376,
+          0.06444298900169088
+        ],
+        "patch_hashes": [
+          {
+            "patch_index": 0,
+            "tile_column": 0,
+            "tile_row": 0,
+            "slope_sha256": "f85eb1e5cc7f5d52b7df731a493cab9b285c2fafc7412533c0b5686e983a04bd",
+            "degree_sha256": "b67d363ad4a40e4e313dc3d5831b411a95e4355ab0bca2a70d443d54dde40893"
+          },
+          {
+            "patch_index": 1,
+            "tile_column": 128,
+            "tile_row": 0,
+            "slope_sha256": "d96a40bc280464e5c46380931af9944066fb26322f38882a98bdb027a71abf3f",
+            "degree_sha256": "3a40691e489da681c89408523aa754b89b8fc5e5bb5e6a1d461968a269580e8c"
+          },
+          {
+            "patch_index": 2,
+            "tile_column": 256,
+            "tile_row": 0,
+            "slope_sha256": "7824129e18343fb4014ed615f56be0e887ca5bdd8f42f0ee2d7959f00b238c38",
+            "degree_sha256": "9e3d14715cc41ca36c06de8d4ecaec40cbda4bc5abc1eb06fcd5f05df9fbdd28"
+          },
+          {
+            "patch_index": 3,
+            "tile_column": 384,
+            "tile_row": 0,
+            "slope_sha256": "79d33a44bf6bbe503ac191bf20dee1594bc3787cde496527af8ad5d3116bcd9b",
+            "degree_sha256": "efb6f3d436569c26ed6dd51adc91ef8cf9224feb8011e7bd0ae57d4ece49effc"
+          }
+        ]
+      }
+    ],
+    "elapsed": {
+      "samples": 3,
+      "seconds": [
+        28.99245740799961,
+        29.077260172001843,
+        29.265127139995457
+      ],
+      "minimum_seconds": 28.99245740799961,
+      "median_seconds": 29.077260172001843,
+      "maximum_seconds": 29.265127139995457,
+      "mean_seconds": 29.111614906665636,
+      "population_standard_deviation_seconds": 0.11393677057045445
+    },
+    "patches_per_second_from_median_elapsed": 0.1375645427505427,
+    "outputs_stable": true
+  },
+  "warm_multi_patch_pipelined": {
+    "execution_model": "One CPU segment producer prepares patch N+1 while one CUDA consumer processes patch N.",
+    "runs": [
+      {
+        "repeat": 0,
+        "elapsed_seconds": 24.468769994004106,
+        "patches_per_second": 0.1634736850679528,
+        "segment_generation_seconds": [
+          1.7404130169961718,
+          2.248198147994117,
+          2.28690234899841,
+          2.277583543000219
+        ],
+        "consumer_segment_wait_seconds": [
+          1.7070908660025452,
+          0.0007733029997325502,
+          0.000526536998222582,
+          0.0005081759954919107
+        ],
+        "cuda_seconds_including_transfers": [
+          5.256816623994382,
+          5.3672823879969656,
+          6.072427386003255,
+          5.527467463994981
+        ],
+        "cuda_kernel_seconds_by_pass": [
+          [
+            0.41408377075195313,
+            1.457166259765625,
+            1.22893310546875,
+            2.0871689453125
+          ],
+          [
+            0.4783487243652344,
+            1.5317628173828124,
+            1.1769393310546874,
+            2.0347188720703127
+          ],
+          [
+            0.49658563232421876,
+            1.9868936767578125,
+            1.1501600341796876,
+            2.00964111328125
+          ],
+          [
+            0.4317437744140625,
+            1.896722412109375,
+            1.144216552734375,
+            2.00462548828125
+          ]
+        ],
+        "degree_conversion_seconds": [
+          0.0693739709968213,
+          0.06945426600577775,
+          0.06562467500043567,
+          0.06544863599992823
+        ],
+        "patch_hashes": [
+          {
+            "patch_index": 0,
+            "tile_column": 0,
+            "tile_row": 0,
+            "slope_sha256": "f85eb1e5cc7f5d52b7df731a493cab9b285c2fafc7412533c0b5686e983a04bd",
+            "degree_sha256": "b67d363ad4a40e4e313dc3d5831b411a95e4355ab0bca2a70d443d54dde40893"
+          },
+          {
+            "patch_index": 1,
+            "tile_column": 128,
+            "tile_row": 0,
+            "slope_sha256": "d96a40bc280464e5c46380931af9944066fb26322f38882a98bdb027a71abf3f",
+            "degree_sha256": "3a40691e489da681c89408523aa754b89b8fc5e5bb5e6a1d461968a269580e8c"
+          },
+          {
+            "patch_index": 2,
+            "tile_column": 256,
+            "tile_row": 0,
+            "slope_sha256": "7824129e18343fb4014ed615f56be0e887ca5bdd8f42f0ee2d7959f00b238c38",
+            "degree_sha256": "9e3d14715cc41ca36c06de8d4ecaec40cbda4bc5abc1eb06fcd5f05df9fbdd28"
+          },
+          {
+            "patch_index": 3,
+            "tile_column": 384,
+            "tile_row": 0,
+            "slope_sha256": "79d33a44bf6bbe503ac191bf20dee1594bc3787cde496527af8ad5d3116bcd9b",
+            "degree_sha256": "efb6f3d436569c26ed6dd51adc91ef8cf9224feb8011e7bd0ae57d4ece49effc"
+          }
+        ]
+      },
+      {
+        "repeat": 1,
+        "elapsed_seconds": 24.9640118860043,
+        "patches_per_second": 0.16023065596449823,
+        "segment_generation_seconds": [
+          1.9480220789992018,
+          2.3740315999966697,
+          2.292272377999325,
+          2.15357636599947
+        ],
+        "consumer_segment_wait_seconds": [
+          1.9327409799952875,
+          0.00035912000021198764,
+          0.0003765340006793849,
+          0.0005206780042499304
+        ],
+        "cuda_seconds_including_transfers": [
+          5.708678634000535,
+          5.471737767002196,
+          5.804705021997506,
+          5.545862858998589
+        ],
+        "cuda_kernel_seconds_by_pass": [
+          [
+            0.4147450256347656,
+            1.463387939453125,
+            1.23329833984375,
+            2.09253369140625
+          ],
+          [
+            0.4645459289550781,
+            1.53754931640625,
+            1.17970947265625,
+            2.038830078125
+          ],
+          [
+            0.4234016418457031,
+            1.991173095703125,
+            1.153984375,
+            2.015066162109375
+          ],
+          [
+            0.43220144653320314,
+            1.902455810546875,
+            1.1474051513671875,
+            2.010957763671875
+          ]
+        ],
+        "degree_conversion_seconds": [
+          0.06820355499803554,
+          0.06389509700238705,
+          0.062000131998502184,
+          0.06403129099635407
+        ],
+        "patch_hashes": [
+          {
+            "patch_index": 0,
+            "tile_column": 0,
+            "tile_row": 0,
+            "slope_sha256": "f85eb1e5cc7f5d52b7df731a493cab9b285c2fafc7412533c0b5686e983a04bd",
+            "degree_sha256": "b67d363ad4a40e4e313dc3d5831b411a95e4355ab0bca2a70d443d54dde40893"
+          },
+          {
+            "patch_index": 1,
+            "tile_column": 128,
+            "tile_row": 0,
+            "slope_sha256": "d96a40bc280464e5c46380931af9944066fb26322f38882a98bdb027a71abf3f",
+            "degree_sha256": "3a40691e489da681c89408523aa754b89b8fc5e5bb5e6a1d461968a269580e8c"
+          },
+          {
+            "patch_index": 2,
+            "tile_column": 256,
+            "tile_row": 0,
+            "slope_sha256": "7824129e18343fb4014ed615f56be0e887ca5bdd8f42f0ee2d7959f00b238c38",
+            "degree_sha256": "9e3d14715cc41ca36c06de8d4ecaec40cbda4bc5abc1eb06fcd5f05df9fbdd28"
+          },
+          {
+            "patch_index": 3,
+            "tile_column": 384,
+            "tile_row": 0,
+            "slope_sha256": "79d33a44bf6bbe503ac191bf20dee1594bc3787cde496527af8ad5d3116bcd9b",
+            "degree_sha256": "efb6f3d436569c26ed6dd51adc91ef8cf9224feb8011e7bd0ae57d4ece49effc"
+          }
+        ]
+      },
+      {
+        "repeat": 2,
+        "elapsed_seconds": 24.249931304999336,
+        "patches_per_second": 0.1649489208728342,
+        "segment_generation_seconds": [
+          1.7944002430012915,
+          2.2576058839986217,
+          2.3099214079993544,
+          2.184963792999042
+        ],
+        "consumer_segment_wait_seconds": [
+          1.7681089830002747,
+          0.0003352589992573485,
+          0.000518947999808006,
+          0.0006641910003963858
+        ],
+        "cuda_seconds_including_transfers": [
+          5.319303579999541,
+          5.37597738399927,
+          5.71949036699516,
+          5.560072398002376
+        ],
+        "cuda_kernel_seconds_by_pass": [
+          [
+            0.4162112121582031,
+            1.467813720703125,
+            1.234851806640625,
+            2.09735888671875
+          ],
+          [
+            0.4650888977050781,
+            1.542550537109375,
+            1.1829371337890624,
+            2.0446026611328123
+          ],
+          [
+            0.42374835205078126,
+            1.9957464599609376,
+            1.1568909912109375,
+            2.021638671875
+          ],
+          [
+            0.43354403686523435,
+            1.9052196044921874,
+            1.1500726318359376,
+            2.0142940673828127
+          ]
+        ],
+        "degree_conversion_seconds": [
+          0.0641827090003062,
+          0.064284782994946,
+          0.06300475299940445,
+          0.06430342000385281
+        ],
+        "patch_hashes": [
+          {
+            "patch_index": 0,
+            "tile_column": 0,
+            "tile_row": 0,
+            "slope_sha256": "f85eb1e5cc7f5d52b7df731a493cab9b285c2fafc7412533c0b5686e983a04bd",
+            "degree_sha256": "b67d363ad4a40e4e313dc3d5831b411a95e4355ab0bca2a70d443d54dde40893"
+          },
+          {
+            "patch_index": 1,
+            "tile_column": 128,
+            "tile_row": 0,
+            "slope_sha256": "d96a40bc280464e5c46380931af9944066fb26322f38882a98bdb027a71abf3f",
+            "degree_sha256": "3a40691e489da681c89408523aa754b89b8fc5e5bb5e6a1d461968a269580e8c"
+          },
+          {
+            "patch_index": 2,
+            "tile_column": 256,
+            "tile_row": 0,
+            "slope_sha256": "7824129e18343fb4014ed615f56be0e887ca5bdd8f42f0ee2d7959f00b238c38",
+            "degree_sha256": "9e3d14715cc41ca36c06de8d4ecaec40cbda4bc5abc1eb06fcd5f05df9fbdd28"
+          },
+          {
+            "patch_index": 3,
+            "tile_column": 384,
+            "tile_row": 0,
+            "slope_sha256": "79d33a44bf6bbe503ac191bf20dee1594bc3787cde496527af8ad5d3116bcd9b",
+            "degree_sha256": "efb6f3d436569c26ed6dd51adc91ef8cf9224feb8011e7bd0ae57d4ece49effc"
+          }
+        ]
+      }
+    ],
+    "elapsed": {
+      "samples": 3,
+      "seconds": [
+        24.468769994004106,
+        24.9640118860043,
+        24.249931304999336
+      ],
+      "minimum_seconds": 24.249931304999336,
+      "median_seconds": 24.468769994004106,
+      "maximum_seconds": 24.9640118860043,
+      "mean_seconds": 24.56090439500258,
+      "population_standard_deviation_seconds": 0.2987131622226777
+    },
+    "patches_per_second_from_median_elapsed": 0.1634736850679528,
+    "outputs_match_serial": true
+  },
+  "runtime": {
+    "worker_total_seconds": 199.56477809199714,
+    "process_max_rss_bytes": 8971509760
+  },
+  "limitations": [
+    "Immutable DEM pyramids remain device-resident for the session; segments and output buffers are still allocated and transferred per patch.",
+    "The serial measurement is retained separately from the one-producer/one-CUDA-consumer pipelined measurement.",
+    "The pipelined measurement overlaps segment generation with CUDA work but still uses one CUDA default stream; it does not reproduce the C# four concurrent CUDA workers.",
+    "Warm pyramid timing reads existing C#-format float32 mip caches and is not a fresh-pyramid build.",
+    "CUDA timing includes allocation, host-to-device transfer, synchronization, and device-to-host transfer.",
+    "Compression and horizon-file writing are outside this kernel-prototype benchmark."
+  ],
+  "external_sampling": {
+    "method": "Parent sampled /proc/<pid>/status and nvidia-smi every approximately 50 ms.",
+    "launcher_elapsed_seconds": 200.45860156699928,
+    "host_sample_count": 2943,
+    "peak_host_rss_bytes": 8946745344,
+    "gpu_sample_count": 2717,
+    "peak_process_gpu_memory_mib": 5558,
+    "minimum_process_gpu_memory_mib": 10,
+    "sampling_limitation": "Polling can miss allocations shorter than the sample interval."
+  },
+  "comparison": {
+    "csharp_report": "docs/numba-horizon-phase-5-csharp-corrected-benchmark.json",
+    "csharp_patch_count": 4,
+    "warm_single_patch_latency_csharp_ratio": 1.196357998489734,
+    "warm_multi_patch_throughput_csharp_ratio": 0.703201828462008,
+    "peak_gpu_memory_csharp_ratio": 1.1408045977011494,
+    "peak_host_memory_csharp_ratio": 0.6343228231620656,
+    "first_use_csharp_ratio": 1.4989561018303856,
+    "all_provisional_gates_pass": true
+  },
+  "acceptance_policy": {
+    "warm_single_patch_latency_maximum_csharp_ratio": 2.0,
+    "warm_multi_patch_throughput_minimum_csharp_ratio": 0.5,
+    "peak_gpu_memory_maximum_csharp_ratio": 1.5,
+    "peak_host_memory_maximum_csharp_ratio": 1.5,
+    "first_use_maximum_csharp_ratio": 5.0,
+    "comparison_status": "pass"
+  }
+}
