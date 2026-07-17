@@ -214,7 +214,8 @@ def test_slope_sentinel_merge_boundary_and_single_degree_conversion(artifact) ->
         merged = merged.merge_pass(np.ascontiguousarray(pass_slopes))
     np.testing.assert_array_equal(merged.slopes, expected_slopes)
     actual = merged.degrees()
-    np.testing.assert_allclose(actual, expected_degrees, rtol=0, atol=1e-6)
+    np.testing.assert_array_equal(actual, expected_degrees)
+    assert np.isneginf(empty.degrees()).all()
 
     invalid = expected_slopes.copy()
     invalid[0, 0] = np.inf

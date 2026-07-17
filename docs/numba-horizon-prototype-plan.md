@@ -289,34 +289,34 @@ Port host calculations incrementally. Begin with ordinary Python or NumPy where
 that makes comparison easy, then apply `@njit` and `parallel=True` only to
 measured CPU bottlenecks and naturally independent loops.
 
-- [ ] Port affine pixel/CRS conversion and stereographic projection helpers.
-- [ ] Port latitude/longitude and Moon-centered vector conversions.
-- [ ] Port local east/north/up rotation and azimuth direction construction.
-- [ ] Port chord sampling and DEM-bound intersection behavior.
-- [ ] Port sample placement and minimum-sample rules.
-- [ ] Port four-term quartic fitting and singular-system fallback behavior.
-- [ ] Port planar-distance to chord-distance fitting.
-- [ ] Port DEM segment-context and ray-limit construction.
-- [ ] Port subpatch-center clamping and interpolation-halo construction.
-- [ ] Port grid-convergence calculation or define a small non-GDAL input
+- [x] Port affine pixel/CRS conversion and stereographic projection helpers.
+- [x] Port latitude/longitude and Moon-centered vector conversions.
+- [x] Port local east/north/up rotation and azimuth direction construction.
+- [x] Port chord sampling and DEM-bound intersection behavior.
+- [x] Port sample placement and minimum-sample rules.
+- [x] Port four-term quartic fitting and singular-system fallback behavior.
+- [x] Port planar-distance to chord-distance fitting.
+- [x] Port DEM segment-context and ray-limit construction.
+- [x] Port subpatch-center clamping and interpolation-halo construction.
+- [x] Port grid-convergence calculation or define a small non-GDAL input
       contract through which Lunarscout supplies it.
-- [ ] Port segment caching without assuming that a Python dictionary is usable
+- [x] Port segment caching without assuming that a Python dictionary is usable
       inside compiled code.
-- [ ] Add deterministic comparison tests for every intermediate result.
-- [ ] Profile serial Python, compiled serial CPU, and compiled parallel CPU
+- [x] Add deterministic comparison tests for every intermediate result.
+- [x] Profile serial Python, compiled serial CPU, and compiled parallel CPU
       implementations of segment generation.
 - [ ] Confirm parallel execution is deterministic within the accepted numeric
       tolerance and does not oversubscribe the end-to-end pipeline.
 
 ### Host-Side Gate
 
-- [ ] All synthetic segment coefficients match the baseline within a justified
+- [x] All synthetic segment coefficients match the baseline within a justified
       tolerance.
-- [ ] Real-terrain segment paths remain within an accepted pixel error over the
+- [x] Real-terrain segment paths remain within an accepted pixel error over the
       entire fitted distance, not only at sample points.
-- [ ] Segment preparation is fast enough to overlap GPU work or is identified
+- [x] Segment preparation is fast enough to overlap GPU work or is identified
       with a specific optimization plan.
-- [ ] Peak host memory is acceptable when caches cover a realistic patch batch.
+- [x] Peak host memory is acceptable when caches cover a realistic patch batch.
 
 ## 10. Phase 4: Build the CUDA Kernel in Diagnostic Stages
 
@@ -325,68 +325,82 @@ a selectable diagnostic mode until the next stage is validated.
 
 ### Stage 4A: CUDA Mechanics
 
-- [ ] Implement lazy device selection, allocation, launch, synchronization, and
+- [x] Implement lazy device selection, allocation, launch, synchronization, and
       result-copy helpers.
-- [ ] Verify the `(pixel, azimuth)` thread mapping and output indexing.
-- [ ] Implement and test device helpers for interpolation, polynomial
+- [x] Verify the `(pixel, azimuth)` thread mapping and output indexing.
+- [x] Implement and test device helpers for interpolation, polynomial
       evaluation, tangents, bilinear sampling, validity, and subpatch clamping.
-- [ ] Confirm bounds checks and sentinel behavior under CUDA's error model.
-- [ ] Add a CUDA-simulator or CPU-helper test only where it tests the same
+- [x] Confirm bounds checks and sentinel behavior under CUDA's error model.
+- [x] Add a CUDA-simulator or CPU-helper test only where it tests the same
       arithmetic; do not claim it validates real GPU behavior.
 
 ### Stage 4B: Fixed-Step Level-0 Traversal
 
-- [ ] Implement level-0 ray marching with a deliberately fixed, conservative
+- [x] Implement level-0 ray marching with a deliberately fixed, conservative
       step.
-- [ ] Compare selected rays against `ReferenceRayEmulator` sample by sample.
-- [ ] Validate near-field and spherical far-field slope calculations.
-- [ ] Validate quartic evaluation and chord correction independently from
+- [x] Compare selected rays against `ReferenceRayEmulator` sample by sample.
+- [x] Validate near-field and spherical far-field slope calculations.
+- [x] Validate quartic evaluation and chord correction independently from
       adaptive stepping.
-- [ ] Produce a compact traversal trace for a selected pixel and azimuth.
+- [x] Produce a compact traversal trace for a selected pixel and azimuth.
 
 ### Stage 4C: Adaptive Level-0 Traversal
 
-- [ ] Port tangent-based pixel stepping, margin stepping, angular stepping, and
+- [x] Port tangent-based pixel stepping, margin stepping, angular stepping, and
       minimum step floors.
-- [ ] Compare adaptive results against the fixed-step implementation.
-- [ ] Identify every mismatch caused by skipped terrain rather than merely
+- [x] Compare adaptive results against the fixed-step implementation.
+- [x] Identify every mismatch caused by skipped terrain rather than merely
       increasing a global tolerance.
-- [ ] Test discontinuities around the 500-meter near/far threshold and the
+- [x] Test discontinuities around the 500-meter near/far threshold and the
       primary-DEM far-step threshold.
 
 ### Stage 4D: Hierarchical Traversal
 
-- [ ] Build max pyramids with the same factor-four reduction and nodata rules.
-- [ ] Port start-level selection, block bounds, conservative possible-slope
+- [x] Build max pyramids with the same factor-four reduction and nodata rules.
+- [x] Port start-level selection, block bounds, conservative possible-slope
       calculation, culling, descent, and block-exit advancement.
-- [ ] Add optional traversal counters analogous to the C# diagnostic build.
-- [ ] Compare hierarchy-enabled output to adaptive level-0 output and the C#
+- [x] Add optional traversal counters analogous to the C# diagnostic build.
+- [x] Compare hierarchy-enabled output to adaptive level-0 output and the C#
       hierarchy-enabled output.
 - [ ] Prove that hierarchy culling does not lower a true horizon beyond the
       accepted scientific tolerance.
-- [ ] Test rays tangent to block boundaries and rays with nearly zero X or Y
+- [x] Test rays tangent to block boundaries and rays with nearly zero X or Y
       tangent components.
+
+The inherited bilinear-boundary culling defect is corrected in both C# and
+Numba by bounding the four cells used by bilinear sampling and capping
+level-0 adaptive advances at cell exits. Two selected hierarchy rays are no
+longer below a 1.2 m fixed-step reference, but that bounded evidence is not yet
+a general proof. The corrected two-DEM fixture also exposes one
+Python-generated-segment result at `7.391e-6` degrees versus exact parity when
+using C# segments; this is acceptable under the adopted `0.005` degree limit.
+See `docs/numba-horizon-phase-4d-hierarchy.md` and
+`docs/numba-horizon-phase-4-real-terrain.md`.
 
 ### Stage 4E: Full Subpatch and Multi-DEM Operation
 
-- [ ] Port four-segment bilinear interpolation for each pixel and azimuth.
-- [ ] Validate edge clamping and interpolation halos for full and partial
+- [x] Port four-segment bilinear interpolation for each pixel and azimuth.
+- [x] Validate edge clamping and interpolation halos for full and partial
       patches.
-- [ ] Run one pass per DEM while accumulating the maximum slope.
-- [ ] Validate maps with different resolution, extent, and ray limits.
-- [ ] Apply degree conversion once, after all DEM passes.
-- [ ] Evaluate the optional near-field reference merge separately and decide
+- [x] Run one pass per DEM while accumulating the maximum slope.
+- [x] Validate maps with different resolution, extent, and ray limits.
+- [x] Apply degree conversion once, after all DEM passes.
+- [x] Evaluate the optional near-field reference merge separately and decide
       whether it is required for replacement.
+
+The optional near-field merge is off in the public production path and is not
+required for initial replacement parity. It remains separate adoption scope.
+Stage 4E results are recorded in `docs/numba-horizon-phase-4e-subpatch.md`.
 
 ### Kernel Correctness Gate
 
-- [ ] All analytical synthetic expectations pass.
-- [ ] Fixed-step selected rays agree with the independent reference calculation.
+- [x] All analytical synthetic expectations pass.
+- [x] Fixed-step selected rays agree with the independent reference calculation.
 - [ ] Adaptive and hierarchical modes meet the accepted error budget.
-- [ ] Single- and multi-DEM real-terrain comparisons meet the accepted error
+- [x] Single- and multi-DEM real-terrain comparisons meet the accepted error
       budget without unexplained spatial patterns.
-- [ ] Repeated warm runs produce stable results on the reference GPU.
-- [ ] CUDA memory checking and out-of-bounds diagnostics report no errors.
+- [x] Repeated warm runs produce stable results on the reference GPU.
+- [x] CUDA memory checking and out-of-bounds diagnostics report no errors.
 
 ## 11. Correctness Metrics and Acceptance Policy
 
@@ -395,17 +409,24 @@ between `ReferenceRayEmulator`, fixed-step ILGPU, and production ILGPU. Establis
 the baseline first, then adopt thresholds no weaker than the current production
 error unless a scientifically reviewed change is intentional.
 
+The accepted maximum horizon-angle difference is `0.005` degrees. This is one
+percent of the Moon-observed solar angular diameter of approximately `0.5`
+degrees and is a conservative proxy for the user-approved one-percent sunlight
+error. Because visible solar-disk area is nonlinear near first and last limb
+contact, the downstream illumination comparison below remains the definitive
+scientific test.
+
 Report at least:
 
-- [ ] Maximum and mean absolute angular error.
-- [ ] Median, 95th, 99th, and 99.9th percentile absolute angular error.
-- [ ] Counts above each selected angular threshold.
-- [ ] Azimuth and spatial locations of the largest errors.
-- [ ] NaN, infinity, sentinel, and missing-bin counts.
-- [ ] Directional bias and signed error distribution.
+- [x] Maximum and mean absolute angular error.
+- [x] Median, 95th, 99th, and 99.9th percentile absolute angular error.
+- [x] Counts above each selected angular threshold.
+- [x] Azimuth and spatial locations of the largest errors.
+- [x] NaN, infinity, sentinel, and missing-bin counts.
+- [x] Directional bias and signed error distribution.
 - [ ] Error separated by DEM pass, distance, terrain class, tile edge, subpatch
       edge, nodata proximity, and hierarchy mode.
-- [ ] Horizon-setting obstacle distance for selected diagnostic rays.
+- [x] Horizon-setting obstacle distance for selected diagnostic rays.
 
 The comparison harness should fail on shape, metadata, missing values, or
 unexplained sentinel differences before computing aggregate statistics.

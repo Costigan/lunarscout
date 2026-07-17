@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "scope": "fixed 1.2 m step, fitted-ray, level-0 traversal; no adaptive stepping or hierarchy",
+  "device": {
+    "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "compute_capability": [
+      12,
+      0
+    ]
+  },
+  "cases": [
+    {
+      "id": "flat_east",
+      "trace_steps": 832,
+      "gpu_trace_sha256": "7eea024b9e1f0a21198e2fe1f2850ebf6fd78fdd0670c900af37e34096ba0556",
+      "cpu_trace_sha256": "61db69e0049f661bc3ef22a5b8c70df85cbea09ec80cd72221f54ba60f304561",
+      "gpu_maximum_slope": 0.0,
+      "cpu_maximum_slope": 0.0,
+      "csharp_reference_emulator_maximum_slope": -2.878550731111795e-07,
+      "gpu_minus_csharp_reference_maximum_slope": 2.878550731111795e-07,
+      "direct_reference_at_gpu_distances": {
+        "maximum_fitted_path_error_pixels": 5.798487350716641e-06,
+        "maximum_elevation_difference_m": 0.0,
+        "maximum_production_vs_exact_slope_difference": 0.0001436053883283009,
+        "qualification": "Position/elevation compare the fitted production ray with direct vector geometry. Slope includes the intentional production near-field approximation difference."
+      },
+      "maximum_absolute_difference_by_field": {
+        "parameter_distance_km": 6.973743438720703e-06,
+        "true_distance_m": 0.00714111328125,
+        "pixel_x": 0.00023651123046875,
+        "pixel_y": 0.0,
+        "elevation_m": 0.0,
+        "sample_slope": 2.066371962428093e-09,
+        "running_maximum_slope": 0.0
+      },
+      "selected_trace_rows": [
+        {
+          "index": 0,
+          "parameter_distance_km": 0.002199999988079071,
+          "true_distance_m": 2.200000047683716,
+          "pixel_x": 60.073333740234375,
+          "pixel_y": 60.0,
+          "elevation_m": 0.0,
+          "sample_slope": 0.0,
+          "running_maximum_slope": 0.0
+        },
+        {
+          "index": 414,
+          "parameter_distance_km": 0.49900001287460327,
+          "true_distance_m": 499.0000305175781,
+          "pixel_x": 76.63333129882812,
+          "pixel_y": 60.0,
+          "elevation_m": 0.0,
+          "sample_slope": 0.0,
+          "running_maximum_slope": 0.0
+        },
+        {
+          "index": 415,
+          "parameter_distance_km": 0.5002000331878662,
+          "true_distance_m": 500.1999816894531,
+          "pixel_x": 76.67333221435547,
+          "pixel_y": 60.0,
+          "elevation_m": 0.0,
+          "sample_slope": -0.0001439507323084399,
+          "running_maximum_slope": 0.0
+        },
+        {
+          "index": 831,
+          "parameter_distance_km": 0.9994000196456909,
+          "true_distance_m": 999.39990234375,
+          "pixel_x": 93.3133316040039,
+          "pixel_y": 60.0,
+          "elevation_m": 0.0,
+          "sample_slope": -0.0002876136568374932,
+          "running_maximum_slope": 0.0
+        }
+      ]
+    },
+    {
+      "id": "single_obstacle_north",
+      "trace_steps": 999,
+      "gpu_trace_sha256": "f29db7868adf964ba619c7ecf620abe9bd5202059e6b3010041aa6d0d7b49d39",
+      "cpu_trace_sha256": "3d0e17d08de22eeb168af8f199ee5838c88064000841972d49f15205792fde61",
+      "gpu_maximum_slope": 0.25627654790878296,
+      "cpu_maximum_slope": 0.2562785744667053,
+      "csharp_reference_emulator_maximum_slope": 0.24107162967554327,
+      "gpu_minus_csharp_reference_maximum_slope": 0.01520491823323969,
+      "direct_reference_at_gpu_distances": {
+        "maximum_fitted_path_error_pixels": 5.052486933720957e-06,
+        "maximum_elevation_difference_m": 0.0006171570092305956,
+        "maximum_production_vs_exact_slope_difference": 0.008054061954587383,
+        "qualification": "Position/elevation compare the fitted production ray with direct vector geometry. Slope includes the intentional production near-field approximation difference."
+      },
+      "maximum_absolute_difference_by_field": {
+        "parameter_distance_km": 6.973743438720703e-06,
+        "true_distance_m": 0.00701904296875,
+        "pixel_x": 0.0,
+        "pixel_y": 0.000232696533203125,
+        "elevation_m": 0.0034332275390625,
+        "sample_slope": 5.54695725440979e-06,
+        "running_maximum_slope": 2.0265579223632812e-06
+      },
+      "selected_trace_rows": [
+        {
+          "index": 0,
+          "parameter_distance_km": 0.002199999988079071,
+          "true_distance_m": 2.200000047683716,
+          "pixel_x": 60.0,
+          "pixel_y": 59.926666259765625,
+          "elevation_m": 0.0,
+          "sample_slope": 0.0,
+          "running_maximum_slope": 0.0
+        },
+        {
+          "index": 414,
+          "parameter_distance_km": 0.49900001287460327,
+          "true_distance_m": 499.0000305175781,
+          "pixel_x": 60.0,
+          "pixel_y": 43.366668701171875,
+          "elevation_m": 0.0,
+          "sample_slope": 0.0,
+          "running_maximum_slope": 0.0
+        },
+        {
+          "index": 415,
+          "parameter_distance_km": 0.5002000331878662,
+          "true_distance_m": 500.1999816894531,
+          "pixel_x": 60.0,
+          "pixel_y": 43.32666778564453,
+          "elevation_m": 0.0,
+          "sample_slope": -0.0001439507323084399,
+          "running_maximum_slope": 0.0
+        },
+        {
+          "index": 498,
+          "parameter_distance_km": 0.5998000502586365,
+          "true_distance_m": 599.7999877929688,
+          "pixel_x": 60.0,
+          "pixel_y": 40.00666809082031,
+          "elevation_m": 148.99978637695312,
+          "sample_slope": 0.25627654790878296,
+          "running_maximum_slope": 0.25627654790878296
+        },
+        {
+          "index": 998,
+          "parameter_distance_km": 1.1998000144958496,
+          "true_distance_m": 1199.7998046875,
+          "pixel_x": 60.0,
+          "pixel_y": 20.006669998168945,
+          "elevation_m": 0.0,
+          "sample_slope": -0.0003452860109973699,
+          "running_maximum_slope": 0.25627654790878296
+        }
+      ]
+    }
+  ],
+  "reference_qualification": "The Phase 1 C# ReferenceRayEmulator uses three azimuth offsets and exact spherical slopes. GPU trace rows are compared sample-by-sample with an independent CPU implementation of current production fixed-step arithmetic; C# reference maxima are reported separately, not asserted equal.",
+  "known_difference": "Below 500 m the current production kernel uses a flat-earth slope. Flat terrain therefore produces a zero running maximum, whereas the independent C# reference reports a small negative curvature slope."
+}

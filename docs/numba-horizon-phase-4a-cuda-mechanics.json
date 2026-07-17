@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "scope": "CUDA mechanics and arithmetic helpers; no terrain traversal or horizon output",
+  "device": {
+    "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "compute_capability": [
+      12,
+      0
+    ]
+  },
+  "packages": {
+    "numba": "0.66.0",
+    "llvmlite": "0.48.0",
+    "numba-cuda": "0.30.4",
+    "cuda-toolkit": "12.9.2.0",
+    "cuda-bindings": "12.9.7",
+    "nvidia-cuda-nvcc-cu12": "12.9.86"
+  },
+  "cuda_module_path": "/e/projects/lunarscout/.venv/lib/python3.12/site-packages/numba_cuda/numba/cuda/__init__.py",
+  "index_mapping": {
+    "pixel_count": 35,
+    "azimuth_count": 37,
+    "layout": "output[pixel, azimuth] = pixel * azimuth_count + azimuth",
+    "matches_exactly": true,
+    "sha256": "826870ea04eecbf4d2fc1fa5a2238dd4e5d1bddf9ceed9e9732c88fb85de1ec8"
+  },
+  "helper_diagnostics": {
+    "case_count": 7,
+    "field_count": 14,
+    "maximum_absolute_error": 0.0078125,
+    "accepted_relative_tolerance": 2e-06,
+    "accepted_absolute_tolerance": 2e-05,
+    "accepted": true,
+    "gpu_sha256": "ff8e1526febf9cda16b25f3ea031af140b02fc16278455b4b17fb0a88129012d",
+    "cpu_sha256": "554806799192d20034f6472c9d4708a39863e508abad75f1f7d47fed4687e637",
+    "invalid_elevation_sentinel_present": true
+  },
+  "qualification": "This proves a real Numba CUDA launch, bounds checks, synchronization, copies, and selected helper arithmetic. It does not calculate a horizon."
+}

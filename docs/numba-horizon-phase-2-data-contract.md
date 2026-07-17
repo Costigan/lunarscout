@@ -76,7 +76,9 @@ silently correct production behavior.
 
 Slope buffers initialize to negative infinity. DEM passes merge in slope
 space. `HorizonBuffers.degrees()` is the only device-contract conversion to
-degrees and is called after merging; it returns a new `float32` array.
+degrees and is called after merging; it returns a new `float32` array using the
+same `MathF.Atan`-equivalent precision as C# and preserves negative-infinity
+sentinels.
 
 ## Reference Gate
 
@@ -92,4 +94,4 @@ CUDA or Python.NET. Tests additionally prove:
 - host sample arrays remain `float64` while segments cross the boundary as
   `float32`;
 - per-DEM slopes merge exactly and the single degree conversion reproduces the
-  production buffer within `1e-6` degree.
+  production buffer exactly.

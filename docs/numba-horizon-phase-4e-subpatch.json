@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "scope": "device subpatch interpolation, patch traversal, DEM accumulation, and degree conversion",
+  "device": {
+    "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "compute_capability": [
+      12,
+      0
+    ]
+  },
+  "csharp_production_fixture": {
+    "pixels": 1,
+    "azimuth_bins": 1440,
+    "dem_passes": 2,
+    "maximum_pass_slope_errors": [
+      0.0,
+      0.0
+    ],
+    "maximum_final_slope_error": 0.0,
+    "maximum_final_degree_error": 0.0,
+    "slope_sentinel_mismatches": 0,
+    "final_slope_sha256": "564edad5868f162dcc85dc408acc39cf1cee613a8001ef92c35910b3e4c347bd",
+    "final_degree_sha256": "f122d4568d35717d0f963a7982631156c308114903e3559c2fbe95d1f50604a7"
+  },
+  "partial_patch_halo_fixture": {
+    "shape": [
+      16,
+      16,
+      16
+    ],
+    "selected_cpu_gpu_comparisons": 60,
+    "maximum_selected_slope_error": 0.0,
+    "pass_sha256": [
+      "0bf306562801a4f261cdc2e6e43d13e1bef302947f46c17abdc285d5dee7c589",
+      "ceced7ab3bb5b949a76e5027aca6f6b0bcde03adbfe98f1e8d4b2fc33d943302"
+    ]
+  },
+  "full_patch_fixture": {
+    "shape": [
+      128,
+      128,
+      16
+    ],
+    "halo_centers": 324,
+    "selected_cpu_gpu_comparisons": 30,
+    "maximum_selected_slope_error": 0.0,
+    "output_sha256": "6c66d1ed4e14f8b07e1a5255cd214cbb6b0891ec8baa371173d313a9226560c4"
+  },
+  "different_resolution_fixture": {
+    "map_resolutions_m": [
+      30.0,
+      60.0
+    ],
+    "selected_cpu_gpu_comparisons": 32,
+    "maximum_selected_slope_error": 1.4901161193847656e-08,
+    "pass_sha256": [
+      "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b",
+      "76f6985733d5ea33fbaa74d0297ee9d7942db09e9f190979d5394544260d5176"
+    ]
+  },
+  "near_field_reference_merge": {
+    "current_public_python_path_enabled": false,
+    "required_for_initial_replacement_parity": false,
+    "status": "deferred optional native mode; adopting the Numba backend must either keep it explicitly unsupported or evaluate it as separate scope"
+  },
+  "qualification": "This is kernel correctness evidence. It is not a production scheduler, streaming pipeline, file writer, or performance benchmark."
+}

@@ -6,6 +6,31 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added diagnostic Numba CUDA mechanics on a real GPU, including lazy device
+  selection, launch/copy synchronization, pixel/azimuth indexing, C#-matching
+  arithmetic helpers, fixed-step and adaptive level-0 traversal, exact
+  factor-four max pyramids, and hierarchical traversal with C#/CPU/CUDA traces.
+  The prototype pins NVIDIA's external CUDA target and a driver-compatible CUDA
+  12.9 toolchain. It records narrow terrain skipped by the primary-DEM
+  adaptive step floor. An inherited hierarchy defect at bilinear cell
+  boundaries is corrected in both C# and Numba with four-cell culling bounds
+  and boundary-capped level-0 steps. Production-shaped device subpatch
+  interpolation, full and partial patches, multi-resolution DEM accumulation,
+  and final degree buffers now match the selected C# fixtures. A
+  hierarchy-enabled 16 by 16 LOLA patch is byte-for-byte identical across all
+  368,640 C# and Numba degree values; a
+  bounded real two-DEM stack has one Python-segment-sensitive value at
+  `7.391e-6` degrees while exact C# segments remain byte-identical. This is
+  about 676 times below the adopted `0.005` degree angular acceptance limit.
+  The fixture also exposed a prototype bug, now corrected, where later passes
+  were seeded with prior horizons instead of being merged after independent
+  traversal. Scheduling, file output, and product integration remain
+  unimplemented.
+- Ported the experimental horizon host-side geometry to Python/NumPy and an
+  optional Numba CPU path, with C# oracle parity for sampling, polynomial ray
+  segments, multi-DEM continuity, subpatch halos, deterministic cache reuse,
+  real-terrain fitted paths, and bounded performance/memory evidence. This
+  completed preprocessing Phase 3 before the diagnostic CUDA work began.
 - Defined the private Python/NumPy horizon host/device data contract, including
   checked precision conversions, dense segment tensors, flattened pyramid
   storage, kernel/configuration validation, slope-buffer semantics, verified

@@ -360,11 +360,15 @@ class HorizonBuffers:
         return cls(np.full(configuration.output_shape, SLOPE_SENTINEL, dtype=DEVICE_FLOAT_DTYPE))
 
     def degrees(self) -> npt.NDArray[np.float32]:
-        """Convert slopes once, after every DEM pass has been merged."""
-        return np.ascontiguousarray(
-            np.degrees(np.arctan(self.slopes.astype(np.float64))),
+        """Convert slopes once using the production C# ``MathF`` precision."""
+        result = np.ascontiguousarray(
+            np.arctan(self.slopes) * (
+                np.float32(180.0) / np.float32(np.pi)
+            ),
             dtype=DEVICE_FLOAT_DTYPE,
         )
+        result[np.isneginf(self.slopes)] = SLOPE_SENTINEL
+        return result
 
     def merge_pass(self, pass_slopes: npt.NDArray[np.float32]) -> HorizonBuffers:
         """Merge one DEM pass in slope space without mutating either input."""

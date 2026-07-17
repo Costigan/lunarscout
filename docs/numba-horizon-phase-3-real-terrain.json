@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "scope": "host-side real-terrain ray-segment preparation; no horizon kernel",
+  "input": {
+    "path": "/tmp/lunarscout-phase1-lola-512.tif",
+    "sha256": "491e78728f04f72f6d319280800d12bfc60d509b5bd3a20cad9dba69229e07c4",
+    "raster_float32_sha256": "7a7f86c29ede9d4a07cab706327c3030affb77e5f1afec89101840863b4c163c",
+    "shape_y_x": [
+      512,
+      512
+    ],
+    "dtype": "float32",
+    "geo_transform": [
+      -5120.0,
+      20.0,
+      0.0,
+      5120.0,
+      0.0,
+      -20.0
+    ],
+    "projection": "+proj=stere +lat_0=-90 +lat_ts=-90 +lon_0=0 +x_0=0 +y_0=0 +R=1737400 +units=m +no_defs"
+  },
+  "configuration": {
+    "tile_column": 240,
+    "tile_row": 240,
+    "tile_width": 16,
+    "tile_height": 16,
+    "azimuth_count": 64,
+    "subpatch_size": 8,
+    "maximum_distance_m": 5000,
+    "observer_elevation_m": 0
+  },
+  "csharp": {
+    "selected_accelerator_name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "selected_accelerator_type": "Cuda",
+    "segment_sha256": "f77bd71603c4cad3b94938f7e63d1106bc65c9a06babc7c3c4b61ba6948599f2"
+  },
+  "python": {
+    "implementation": "ordinary Python/NumPy Phase 3 geometry",
+    "segment_sha256": "f1ad399dd59c03a5d3da1fdeea3ab978205e08b0992bdd6410d1f646b6217949",
+    "elapsed_seconds": 0.22531070199875103
+  },
+  "numba": {
+    "version": "0.66.0",
+    "threads": 8,
+    "serial_segment_sha256": "e3cccd14801d8030a02f0eaead7012c4984aedcd308660c2c651378b21ba839f",
+    "parallel_segment_sha256": "e3cccd14801d8030a02f0eaead7012c4984aedcd308660c2c651378b21ba839f",
+    "serial_equals_parallel_bitwise": true,
+    "serial_first_call_seconds_including_compilation": 3.26510389699979,
+    "parallel_first_call_seconds_including_compilation": 2.2469808680016286,
+    "serial_warm_seconds": [
+      0.0054467350000777515,
+      0.005306503000610974,
+      0.005330211999535095,
+      0.005301585000779596,
+      0.005312279999998282
+    ],
+    "serial_warm_median_seconds": 0.005312279999998282,
+    "parallel_warm_seconds": [
+      0.003978332999395207,
+      0.0038186150013643783,
+      0.004104190998987178,
+      0.003930392998881871,
+      0.00404265200086229
+    ],
+    "parallel_warm_median_seconds": 0.003978332999395207,
+    "bounded_production_shape_benchmark": {
+      "qualification": "128x128 patch shape and 1440 azimuth bins, but one 512x512 real DEM and a bounded 5 km distance; not a production horizon run",
+      "configuration": {
+        "tile_column": 192,
+        "tile_row": 192,
+        "tile_width": 128,
+        "azimuth_count": 1440,
+        "maximum_distance_m": 5000.0,
+        "observer_elevation_m": 0.0,
+        "subpatch_size": 8,
+        "grid_convergence": [
+          -0.7853982,
+          0.066568166,
+          -0.066568166
+        ]
+      },
+      "segment_count": 466560,
+      "output_tensor_bytes": 33592320,
+      "warm_seconds": [
+        1.375103800000943,
+        1.35118083999987,
+        1.3630223189993558
+      ],
+      "warm_median_seconds": 1.3630223189993558,
+      "output_sha256": "61c1dcf1827a125a3b4a0b0aefab66b4d4b2308cb2fa93e3b51443b68474ebaa",
+      "process_max_rss_kib_after_run": 571228
+    },
+    "retained_six_patch_tensor_batch": {
+      "qualification": "Six production-shaped four-DEM tensors are retained, but the same bounded LOLA DEM is repeated and later DEM passes have no remaining ray distance; this measures tensor/cache memory, not four-DEM computation throughput",
+      "patch_count": 6,
+      "dem_axes_per_patch": 4,
+      "retained_tensor_bytes": 806215680,
+      "elapsed_seconds": 9.3260729370013,
+      "process_max_rss_kib": 1448724,
+      "output_sha256_by_patch": [
+        "c4de039f4bb3ce44ab44827fa8994f935f8b5f4aaa2b364c6b7638d58affec85",
+        "a89db08dad32c93fdc3e52cccd32f4f676acc498d28b8b185fc604144bd5c1e0",
+        "9828ca0bfd5ba259556be9c8431d421e98d8bd7318856875e630e0e2b4c1db43",
+        "b81d61762a324d6d8f4115383ae025a97aaec1cd9c382753b498d48d8a16fbd0",
+        "39c622d76ad453a02ac170701b6d42d86fcc9602d02ec3025d9f9b62140e20e8",
+        "18bf0f4e257752cf848a05959fd6d966cb9293056866196780117fa8f2f9f690"
+      ]
+    }
+  },
+  "comparison": {
+    "segment_count": 1024,
+    "dense_samples_per_segment": 257,
+    "maximum_absolute_coefficient_difference": 6.912159733474255e-11,
+    "mean_path_error_pixels": 3.772618318419893e-11,
+    "p95_path_error_pixels": 1.11587632331573e-10,
+    "p99_path_error_pixels": 1.643100171875963e-10,
+    "maximum_path_error_pixels": 3.274558133766289e-10,
+    "accepted_maximum_path_error_pixels": 0.0001,
+    "accepted": true,
+    "numba_maximum_path_error_pixels": 3.0449168329013466e-10,
+    "numba_accepted": true
+  },
+  "grid_convergence": [
+    -0.7853982,
+    0.066568166,
+    -0.066568166
+  ],
+  "qualification": "C# calculated convergence and selected CUDA while building diagnostic pyramids; the compared values are CPU-prepared ray segments, not CUDA horizon output. The current production subpatch kernel does not apply the convergence values."
+}

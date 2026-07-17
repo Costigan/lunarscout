@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "scope": {
+    "included": [
+      "ray-segment coefficient fitting from precomputed C# oracle samples",
+      "complete DEM chord sampling plus segment fitting for a repeated synthetic oracle ray"
+    ],
+    "excluded": [
+      "complete subpatch assembly",
+      "CUDA horizon ray casting",
+      "pyramid traversal",
+      "final horizon generation"
+    ],
+    "warm_execution": true
+  },
+  "environment": {
+    "platform": "Linux-6.18.7-76061807-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "numpy": "2.2.6",
+    "numba": "0.66.0",
+    "logical_cpu_count": 24,
+    "numba_parallel_threads": 8
+  },
+  "inputs": {
+    "distinct_csharp_oracle_fits": 29,
+    "compiled_jobs": 65536,
+    "python_jobs": 2048,
+    "repeats": 5
+  },
+  "results": {
+    "python_serial": {
+      "seconds": [
+        0.23521675200026948,
+        0.23732794799980184,
+        0.2378902479995304,
+        0.23658428300041123,
+        0.23647856999923533
+      ],
+      "median_seconds": 0.23658428300041123,
+      "jobs_per_second_from_median": 8656.534466393274
+    },
+    "numba_serial": {
+      "seconds": [
+        0.07620600500013097,
+        0.07649054899957264,
+        0.07626131299912231,
+        0.07700106099946424,
+        0.07638024100015173
+      ],
+      "median_seconds": 0.07638024100015173,
+      "jobs_per_second_from_median": 858022.9538666919
+    },
+    "numba_parallel": {
+      "seconds": [
+        0.009980066999560222,
+        0.010056090999569278,
+        0.009964226999727543,
+        0.010238318998744944,
+        0.010820441000760184
+      ],
+      "median_seconds": 0.010056090999569278,
+      "jobs_per_second_from_median": 6517045.24181484
+    },
+    "parallel_equals_serial_bitwise": true,
+    "python_output_sha256": "37f9cd78c2da6994074f50fa48cf098fea550f26d2b3031512fce50e03736289",
+    "compiled_serial_output_sha256": "bbad592493b1b019c03a2d7db573fd5ab2110577565329f00ac0ef8e4579e614",
+    "compiled_parallel_output_sha256": "bbad592493b1b019c03a2d7db573fd5ab2110577565329f00ac0ef8e4579e614",
+    "peak_process_max_rss_kib": 486196,
+    "complete_segment_generation": {
+      "workload": "repeated synthetic C# oracle ray on one DEM",
+      "python_serial": {
+        "seconds": [
+          0.41651524500048254,
+          0.41493305699987104,
+          0.4098719590001565,
+          0.410368164000829,
+          0.40999046499928227
+        ],
+        "median_seconds": 0.410368164000829,
+        "jobs_per_second_from_median": 4990.640550751551
+      },
+      "numba_serial": {
+        "seconds": [
+          0.12424246400041739,
+          0.12430028699964168,
+          0.12917762700089952,
+          0.12413303199900838,
+          0.12425433300086297
+        ],
+        "median_seconds": 0.12425433300086297,
+        "jobs_per_second_from_median": 527434.3229506921
+      },
+      "numba_parallel": {
+        "seconds": [
+          0.021176444000957417,
+          0.018174073000409408,
+          0.018021568001131527,
+          0.01801719899958698,
+          0.01784884399967268
+        ],
+        "median_seconds": 0.018021568001131527,
+        "jobs_per_second_from_median": 3636531.5157862604
+      },
+      "parallel_equals_serial_bitwise": true,
+      "python_output_sha256": "16598c8e36436f9237453e59483d5788004d79f4001ff1d4de11b2a4fe916aff",
+      "compiled_serial_output_sha256": "a9af39f8ab8fd43fa14948073ed1a037e1ce9ca831bcb044dd89a43ea31551c0",
+      "compiled_parallel_output_sha256": "a9af39f8ab8fd43fa14948073ed1a037e1ce9ca831bcb044dd89a43ea31551c0"
+    }
+  },
+  "production_cache_projection": {
+    "basis": "324 centers * 1440 azimuths * 4 DEMs * 18 float32 fields",
+    "segments_per_patch": 1866240,
+    "segment_tensor_bytes_per_patch": 134369280,
+    "segment_tensor_bytes_for_six_patch_queue": 806215680,
+    "qualification": "tensor payload only; Python objects, samples, DEMs, and CUDA buffers excluded"
+  }
+}

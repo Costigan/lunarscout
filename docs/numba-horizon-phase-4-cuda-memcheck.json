@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "captured_utc_date": "2026-07-16",
+  "tool": {
+    "name": "NVIDIA Compute Sanitizer",
+    "version": "2026.1.1.0",
+    "mode": "memcheck",
+    "error_exitcode": 99
+  },
+  "command": [
+    "/usr/local/cuda/bin/compute-sanitizer",
+    "--tool",
+    "memcheck",
+    "--error-exitcode",
+    "99",
+    "env",
+    "PYTHONPATH=src",
+    "/e/projects/lunarscout/.venv/bin/python",
+    "scripts/numba_horizon/validate_phase4_real_terrain.py",
+    "/tmp/lunarscout-phase4-real-terrain.json",
+    "--warm-repeats",
+    "1",
+    "--output",
+    "/tmp/lunarscout-phase4-real-terrain-memcheck.json"
+  ],
+  "fixture": {
+    "input_sha256": "491e78728f04f72f6d319280800d12bfc60d509b5bd3a20cad9dba69229e07c4",
+    "tile_width": 16,
+    "tile_height": 16,
+    "azimuth_count": 1440,
+    "hierarchy_enabled": true,
+    "numba_slope_sha256": "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf",
+    "csharp_slope_sha256": "4772be4dfe45efbb3acbcb10ee41ebea80389240a3ee4eaeea6c5608f6f0f715"
+  },
+  "coverage": [
+    "production-shaped subpatch hierarchy kernel",
+    "Python-generated and exact C# segment passes",
+    "selected device interpolation",
+    "selected hierarchy traversal trace",
+    "one repeated warm production-shaped pass"
+  ],
+  "result": {
+    "process_exit_code": 0,
+    "compute_sanitizer_error_summary": 0,
+    "out_of_bounds_errors": 0,
+    "memory_errors": 0
+  },
+  "qualification": "This is bounded correctness diagnostics, not a leak check or a Phase 5 performance measurement."
+}

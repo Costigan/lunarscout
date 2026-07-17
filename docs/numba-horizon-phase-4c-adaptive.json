@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "scope": "adaptive level-0 traversal compared with fixed-step control; no hierarchy",
+  "device": {
+    "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "compute_capability": [
+      12,
+      0
+    ]
+  },
+  "constants": {
+    "angular_step_factor": 0.00151,
+    "inverse_tangent_max_slope": 1.732,
+    "minimum_step_resolution_factor": 0.5,
+    "primary_far_minimum_step_resolution_factor": 0.8,
+    "primary_far_threshold_m": 100.0,
+    "near_far_formula_threshold_m": 500.0
+  },
+  "cases": [
+    {
+      "id": "flat_east",
+      "fixed": {
+        "trace_steps": 832,
+        "maximum_slope": 0.0,
+        "horizon_setting_row": [
+          0.002199999988079071,
+          2.200000047683716,
+          60.073333740234375,
+          60.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "adaptive": {
+        "trace_steps": 41,
+        "gpu_maximum_slope": 0.0,
+        "cpu_maximum_slope": 0.0,
+        "gpu_trace_sha256": "ad3543631ebc82bcd94982e7c633936113f0c5495cc16841c9cc8556d2f722fa",
+        "cpu_trace_sha256": "6bfc2c42a832749ac8ab960b01d098011eba31e8f33b02cc1c363a7ededa148a",
+        "minimum_advance_below_100_m_km": 0.015000000596046448,
+        "minimum_advance_at_or_above_100_m_km": 0.024000000208616257,
+        "rows_nearest_fixed_horizon_distance": [
+          [
+            0.0010000000474974513,
+            1.0,
+            60.03333282470703,
+            60.0,
+            0.0,
+            0.0,
+            0.0,
+            0.015000000596046448
+          ],
+          [
+            0.01600000075995922,
+            16.0,
+            60.53333282470703,
+            60.0,
+            0.0,
+            0.0,
+            0.0,
+            0.015000000596046448
+          ],
+          [
+            0.03100000135600567,
+            31.000001907348633,
+            61.03333282470703,
+            60.0,
+            0.0,
+            0.0,
+            0.0,
+            0.015000000596046448
+          ]
+        ]
+      },
+      "adaptive_minus_fixed_maximum_slope": 0.0,
+      "gpu_cpu_maximum_slope_difference": 0.0
+    },
+    {
+      "id": "single_obstacle_north",
+      "fixed": {
+        "trace_steps": 999,
+        "maximum_slope": 0.2562785744667053,
+        "horizon_setting_row": [
+          0.5998002290725708,
+          599.8001708984375,
+          60.0,
+          40.00666046142578,
+          149.0009307861328,
+          0.2562785744667053,
+          0.2562785744667053
+        ]
+      },
+      "adaptive": {
+        "trace_steps": 47,
+        "gpu_maximum_slope": 0.2202187478542328,
+        "cpu_maximum_slope": 0.22021982073783875,
+        "gpu_trace_sha256": "c8914217921220d4e43e76fd12a71e1743ba8b13e9fc35e8ba3f250a40861e7a",
+        "cpu_trace_sha256": "f8c0119f3b41ddd2ef59825ee776508326a25e59baea93bc096602fcdaff7b93",
+        "minimum_advance_below_100_m_km": 0.015000000596046448,
+        "minimum_advance_at_or_above_100_m_km": 0.024000000208616257,
+        "rows_nearest_fixed_horizon_distance": [
+          [
+            0.5740000009536743,
+            573.9999389648438,
+            60.0,
+            40.866668701171875,
+            19.99969482421875,
+            0.03469855710864067,
+            0.03469855710864067,
+            0.030000004917383194
+          ],
+          [
+            0.6040000319480896,
+            604.0000610351562,
+            60.0,
+            39.86666488647461,
+            129.99972534179688,
+            0.2202187478542328,
+            0.2202187478542328,
+            0.030000004917383194
+          ],
+          [
+            0.6340000033378601,
+            633.9999389648438,
+            60.0,
+            38.866668701171875,
+            0.0,
+            -0.00018245652609039098,
+            0.2202187478542328,
+            0.030000004917383194
+          ]
+        ]
+      },
+      "adaptive_minus_fixed_maximum_slope": -0.036059826612472534,
+      "gpu_cpu_maximum_slope_difference": -1.0728836059570312e-06
+    }
+  ],
+  "finding": "The aligned one-pixel obstacle loses about 0.03606 slope versus the 1.2 m fixed-step control because the 24 m primary far-step floor samples away from the narrow peak. This follows current production stepping rules."
+}

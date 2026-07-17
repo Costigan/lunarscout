@@ -14,6 +14,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="HorizonGen.Tests" />
     <InternalsVisibleTo Include="CSharpPhase1OracleCapture" />
+    <InternalsVisibleTo Include="CSharpPhase3RealTerrainCapture" />
+    <InternalsVisibleTo Include="CSharpPhase4DHierarchyCapture" />
+    <InternalsVisibleTo Include="CSharpPhase4RealTerrainCapture" />
   </ItemGroup>
 
   <ItemGroup>

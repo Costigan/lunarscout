@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "scope": "bounded hierarchy-enabled real-terrain C# CUDA versus Numba CUDA horizon comparison",
+  "inputs": [
+    {
+      "path": "/tmp/lunarscout-phase1-lola-512.tif",
+      "sha256": "491e78728f04f72f6d319280800d12bfc60d509b5bd3a20cad9dba69229e07c4",
+      "raster_float32_sha256": "7a7f86c29ede9d4a07cab706327c3030affb77e5f1afec89101840863b4c163c",
+      "shape_y_x": [
+        512,
+        512
+      ]
+    }
+  ],
+  "configuration": {
+    "tile_column": 240,
+    "tile_row": 240,
+    "tile_width": 16,
+    "tile_height": 16,
+    "azimuth_count": 1440,
+    "subpatch_size": 8,
+    "observer_elevation_m": 0,
+    "hierarchy_enabled": true
+  },
+  "acceptance": {
+    "maximum_angular_error_degrees": 0.005,
+    "reference_solar_angular_diameter_degrees": 0.5,
+    "accepted_sunlight_fraction_error": 0.01,
+    "basis": "User-approved conservative angular proxy: one percent of an approximately 0.5-degree solar diameter. A downstream solar-limb illumination comparison remains required.",
+    "observed_maximum_within_angular_criterion": true,
+    "angular_margin_factor": null
+  },
+  "csharp": {
+    "selected_accelerator_name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "selected_accelerator_type": "Cuda",
+    "slope_sha256": "4772be4dfe45efbb3acbcb10ee41ebea80389240a3ee4eaeea6c5608f6f0f715",
+    "degree_sha256": "385bd7a01923f7f338945b4fd8b2caf6feca43d189adbd53dc1cb67d912a2d86",
+    "per_dem_slope_sha256": [
+      "4772be4dfe45efbb3acbcb10ee41ebea80389240a3ee4eaeea6c5608f6f0f715"
+    ],
+    "capture_elapsed_seconds": 0.0747511
+  },
+  "numba": {
+    "device_name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "compute_capability": [
+      12,
+      0
+    ],
+    "slope_sha256": "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf",
+    "degree_sha256": "385bd7a01923f7f338945b4fd8b2caf6feca43d189adbd53dc1cb67d912a2d86",
+    "per_dem_slope_sha256": [
+      "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf"
+    ],
+    "host_segment_seconds": 8.218833801998699,
+    "cuda_call_seconds_including_transfers": 1.090933742998459,
+    "warm_repeat_count": 3,
+    "warm_repeat_seconds_including_transfers": [
+      0.015465320997464005,
+      0.014775016003113706,
+      0.014729308997630142
+    ],
+    "warm_slope_sha256": [
+      "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf",
+      "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf",
+      "f74413cc8f8d11e87f1c12ad23b45bc3896daf55f46562aef00bd7ce3d1a4baf"
+    ],
+    "warm_outputs_stable": true
+  },
+  "comparison": {
+    "per_dem_python_generated_segments": [
+      {
+        "slope_sentinel_mismatches": 0,
+        "maximum_absolute_angular_error_degrees": 0.0,
+        "mean_absolute_angular_error_degrees": 0.0,
+        "p95_absolute_angular_error_degrees": 0.0,
+        "p99_absolute_angular_error_degrees": 0.0,
+        "p99_9_absolute_angular_error_degrees": 0.0,
+        "counts_above_degrees": {
+          "1e-6": 0,
+          "1e-5": 0,
+          "1e-4": 0
+        }
+      }
+    ],
+    "exact_csharp_segments": {
+      "slope_sentinel_mismatches": 0,
+      "maximum_absolute_angular_error_degrees": 0.0,
+      "mean_absolute_angular_error_degrees": 0.0,
+      "p95_absolute_angular_error_degrees": 0.0,
+      "p99_absolute_angular_error_degrees": 0.0,
+      "p99_9_absolute_angular_error_degrees": 0.0,
+      "counts_above_degrees": {
+        "1e-6": 0,
+        "1e-5": 0,
+        "1e-4": 0
+      }
+    },
+    "python_generated_segments": {
+      "slope_sentinel_mismatches": 0,
+      "maximum_absolute_angular_error_degrees": 0.0,
+      "mean_absolute_angular_error_degrees": 0.0,
+      "p95_absolute_angular_error_degrees": 0.0,
+      "p99_absolute_angular_error_degrees": 0.0,
+      "p99_9_absolute_angular_error_degrees": 0.0,
+      "counts_above_degrees": {
+        "1e-6": 0,
+        "1e-5": 0,
+        "1e-4": 0
+      }
+    },
+    "segment_maximum_absolute_field_difference": 8.310507837450132e-11,
+    "value_count": 368640,
+    "finite_value_count": 368640,
+    "csharp_nonfinite_count": 0,
+    "numba_nonfinite_count": 0,
+    "slope_sentinel_mismatches": 0,
+    "maximum_absolute_angular_error_degrees": 0.0,
+    "mean_absolute_angular_error_degrees": 0.0,
+    "median_absolute_angular_error_degrees": 0.0,
+    "p95_absolute_angular_error_degrees": 0.0,
+    "p99_absolute_angular_error_degrees": 0.0,
+    "p99_9_absolute_angular_error_degrees": 0.0,
+    "mean_signed_angular_error_degrees": 0.0,
+    "counts_above_degrees": {
+      "1e-6": 0,
+      "1e-5": 0,
+      "1e-4": 0,
+      "5e-3_accepted": 0
+    },
+    "largest_error_location": {
+      "pixel_index": 0,
+      "tile_column": 0,
+      "tile_row": 0,
+      "azimuth_index": 0,
+      "azimuth_degrees": 0.0,
+      "csharp_degrees": -3.0605075359344482,
+      "numba_degrees": -3.0605075359344482
+    },
+    "spatial_groups": {
+      "tile_edge": {
+        "count": 86400,
+        "mean_signed_degrees": 0.0,
+        "maximum_absolute_degrees": 0.0
+      },
+      "subpatch_seam": {
+        "count": 161280,
+        "mean_signed_degrees": 0.0,
+        "maximum_absolute_degrees": 0.0
+      },
+      "other": {
+        "count": 207360,
+        "mean_signed_degrees": 0.0,
+        "maximum_absolute_degrees": 0.0
+      }
+    },
+    "azimuth_quadrants": {
+      "0": {
+        "count": 92160,
+        "mean_signed_degrees": 0.0,
+        "maximum_absolute_degrees": 0.0
+      },
+      "1": {
+        "count": 92160,
+        "mean_signed_degrees": 0.0,
+        "maximum_absolute_degrees": 0.0
+      },
+      "2": {
+        "count": 92160,
+        "mean_signed_degrees": 0.0,
+        "maximum_absolute_degrees": 0.0
+      },
+      "3": {
+        "count": 92160,
+        "mean_signed_degrees": 0.0,
+        "maximum_absolute_degrees": 0.0
+      }
+    },
+    "selected_trace": {
+      "dem_pass": 0,
+      "pixel_index": 255,
+      "azimuth_index": 1160,
+      "csharp_rows": 117,
+      "numba_gpu_rows": 117,
+      "csharp_output_slope": 0.20358288288116455,
+      "numba_gpu_direct_slope": 0.20358288288116455,
+      "numpy_cpu_direct_slope": 0.20358288288116455,
+      "numba_device_interpolated_segment_direct_slope": 0.20358288288116455,
+      "device_interpolated_segment_maximum_field_difference": 0.0,
+      "device_interpolated_segment": [
+        254.98867797851562,
+        255.00527954101562,
+        254.98867797851562,
+        255.00527954101562,
+        -11.320289611816406,
+        1.2972733998140029e-08,
+        9.361534694107831e-07,
+        -2.2517927193016485e-12,
+        5.278595924377441,
+        1.151946023014716e-07,
+        -4.364967196579528e-07,
+        7.330962009319264e-13,
+        0.0010000000474974513,
+        5.565185546875,
+        0.0010000000474974513,
+        1.0007456541061401,
+        -3.3323541408919466e-12,
+        -4.1441151318920635e-14
+      ],
+      "csharp_interpolated_segment": [
+        254.98867797851562,
+        255.00527954101562,
+        254.98867797851562,
+        255.00527954101562,
+        -11.320289611816406,
+        1.2972733998140029e-08,
+        9.361534694107831e-07,
+        -2.2517927193016485e-12,
+        5.278595924377441,
+        1.151946023014716e-07,
+        -4.364967196579528e-07,
+        7.330962009319264e-13,
+        0.0010000000474974513,
+        5.565185546875,
+        0.0010000000474974513,
+        1.0007456541061401,
+        -3.3323541408919466e-12,
+        -4.1441151318920635e-14
+      ],
+      "first_level_cell_or_action_difference": null,
+      "first_parameter_distance_difference": null,
+      "csharp_row_at_first_parameter_distance_difference": null,
+      "numba_row_at_first_parameter_distance_difference": null,
+      "csharp_row_before_first_parameter_distance_difference": null,
+      "numba_row_before_first_parameter_distance_difference": null,
+      "csharp_maximum_sample_row_index": 32,
+      "csharp_maximum_sample_row": [
+        0.6184585690498352,
+        155.36221313476562,
+        0.0,
+        247.0,
+        258.0,
+        247.99887084960938,
+        258.26458740234375,
+        1326.0174560546875,
+        1322.4376220703125,
+        0.20358288288116455,
+        0.08006086945533752,
+        4.0
+      ],
+      "numba_maximum_sample_row_index": 32,
+      "numba_maximum_sample_row": [
+        0.6184585690498352,
+        155.36221313476562,
+        0.0,
+        247.0,
+        258.0,
+        247.99887084960938,
+        258.26458740234375,
+        1326.0174560546875,
+        1322.4376220703125,
+        0.20358288288116455,
+        0.08006086945533752,
+        4.0
+      ],
+      "csharp_row_at_first_difference": null,
+      "numba_row_at_first_difference": null,
+      "csharp_row_before_first_difference": null,
+      "numba_row_before_first_difference": null
+    }
+  },
+  "qualification": "This fixture measures one 16x16 real-terrain tile and 1 DEM pass(es) on one GPU. The timings are diagnostic single calls, not Phase 5 benchmarks."
+}

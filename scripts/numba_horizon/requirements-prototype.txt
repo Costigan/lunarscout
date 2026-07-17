@@ -1,0 +1,17 @@
+# Prototype-only dependencies. Do not merge these into Lunarscout runtime
+# metadata until the backend and packaging evaluation gates are complete.
+numba==0.66.0
+llvmlite==0.48.0
+
+# NVIDIA's external CUDA target plus a CUDA 12.9 compiler/runtime toolchain.
+# CUDA 13.2 emits PTX 9.2, which driver 580.159.03 cannot JIT (PTX 9.0 max).
+numba-cuda[cu12]==0.30.4
+cuda-bindings==12.9.7
+cuda-core==1.1.0
+cuda-pathfinder==1.5.6
+cuda-toolkit==12.9.2.0
+nvidia-cuda-cccl-cu12==12.9.27
+nvidia-cuda-nvcc-cu12==12.9.86
+nvidia-cuda-nvrtc-cu12==12.9.86
+nvidia-cuda-runtime-cu12==12.9.79
+nvidia-nvjitlink-cu12==12.9.86

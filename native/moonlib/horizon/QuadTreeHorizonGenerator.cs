@@ -244,6 +244,7 @@ namespace moonlib.horizon
         public readonly int DebugFlags;
         public readonly int PrimaryWidth;
         public readonly int PrimaryHeight;
+        public readonly int DebugPixelIndex;
 
         public KernelParams(float observerElevation, float minTraverseDistanceKm, int debugAzimuthIndex)
             : this(observerElevation, minTraverseDistanceKm, debugAzimuthIndex, 0f, 0f, 0f) { }
@@ -257,7 +258,8 @@ namespace moonlib.horizon
             : this(observerElevation, minTraverseDistanceKm, debugAzimuthIndex, gammaCenter, dGammaDx, dGammaDy, debugFlags, 0, 0) { }
 
         public KernelParams(float observerElevation, float minTraverseDistanceKm, int debugAzimuthIndex,
-            float gammaCenter, float dGammaDx, float dGammaDy, int debugFlags, int primaryWidth, int primaryHeight)
+            float gammaCenter, float dGammaDx, float dGammaDy, int debugFlags, int primaryWidth, int primaryHeight,
+            int debugPixelIndex = 0)
         {
             ObserverElevation = observerElevation;
             MinTraverseDistanceKm = minTraverseDistanceKm;
@@ -268,6 +270,7 @@ namespace moonlib.horizon
             DebugFlags = debugFlags;
             PrimaryWidth = primaryWidth;
             PrimaryHeight = primaryHeight;
+            DebugPixelIndex = debugPixelIndex;
         }
     }
 
@@ -2309,6 +2312,7 @@ namespace moonlib.horizon
             GridConvergenceInfo GridConvergence,
             int TraversalTraceDemPass,
             int TraversalTraceAzimuthIndex,
+            float[] TraversalInterpolatedSegment,
             TraversalStepDiagnostic[] TraversalTrace) CaptureSubpatchBuffersForDiagnostics(
                 List<ElevationMap> dems,
                 int tileColumn,
@@ -2316,14 +2320,21 @@ namespace moonlib.horizon
                 int tileWidth,
                 int tileHeight,
                 float observerElevationMeters,
-                int subpatchSize)
+                int subpatchSize,
+                int traversalTraceDemPass = 1,
+                int traversalTraceAzimuthIndex = 360,
+                int traversalTracePixelIndex = 0)
         {
             const int numAzimuths = 1440;
             const float maxDistanceMeters = 1000000f;
-            const int traceDemPass = 1;
-            const int traceAzimuthIndex = 360;
             const int traceFieldCount = 12;
             const int traceCapacity = 16384;
+            if (traversalTraceDemPass < 0 || traversalTraceDemPass >= dems.Count)
+                throw new ArgumentOutOfRangeException(nameof(traversalTraceDemPass));
+            if (traversalTraceAzimuthIndex < 0 || traversalTraceAzimuthIndex >= numAzimuths)
+                throw new ArgumentOutOfRangeException(nameof(traversalTraceAzimuthIndex));
+            if (traversalTracePixelIndex < 0 || traversalTracePixelIndex >= tileWidth * tileHeight)
+                throw new ArgumentOutOfRangeException(nameof(traversalTracePixelIndex));
             var pyramids = dems.Select(BuildOrLoadPyramid).ToList();
             try
             {
@@ -2355,7 +2366,7 @@ namespace moonlib.horizon
                 using var gpuSegments = _accelerator.Allocate1D(segments);
                 using var gpuOutput = _accelerator.Allocate1D(reset);
                 using var debugBuffer = _accelerator.Allocate1D<float>(
-                    1 + traceCapacity * traceFieldCount);
+                    1 + traceCapacity * traceFieldCount + 18);
                 using var stream = _accelerator.CreateStream();
 #if QUADTREE_TRAVERSAL_PROFILE
                 using var traversalCounters = _accelerator.Allocate1D<long>(
@@ -2374,13 +2385,14 @@ namespace moonlib.horizon
                     var kernelParameters = new KernelParams(
                         observerElevationMeters,
                         0f,
-                        demPass == traceDemPass ? traceAzimuthIndex : -1,
+                        demPass == traversalTraceDemPass ? traversalTraceAzimuthIndex : -1,
                         gridConvergence.GammaCenter,
                         gridConvergence.DGammaDx,
                         gridConvergence.DGammaDy,
                         GetSubpatchDebugFlags(),
                         pyramids[0].CpuInfos![0].Width,
-                        pyramids[0].CpuInfos![0].Height);
+                        pyramids[0].CpuInfos![0].Height,
+                        traversalTracePixelIndex);
                     _subpatchKernel!(
                         stream,
                         new Index2D(tileWidth * tileHeight, numAzimuths),
@@ -2403,7 +2415,7 @@ namespace moonlib.horizon
                         );
                     stream.Synchronize();
                     perDemSlopes[demPass] = gpuOutput.GetAsArray1D();
-                    if (demPass == traceDemPass)
+                    if (demPass == traversalTraceDemPass)
                         traceBuffer = debugBuffer.GetAsArray1D();
                 }
 
@@ -2411,6 +2423,13 @@ namespace moonlib.horizon
                     throw new InvalidOperationException(
                         "Traversal trace DEM pass was not executed.");
                 int traceCount = Math.Min((int)traceBuffer[0], traceCapacity);
+                var traversalInterpolatedSegment = new float[18];
+                Array.Copy(
+                    traceBuffer,
+                    traceBuffer.Length - traversalInterpolatedSegment.Length,
+                    traversalInterpolatedSegment,
+                    0,
+                    traversalInterpolatedSegment.Length);
                 var traversalTrace = new TraversalStepDiagnostic[traceCount];
                 for (int index = 0; index < traceCount; index++)
                 {
@@ -2441,8 +2460,9 @@ namespace moonlib.horizon
                     finalSlopes,
                     HorizonAngles.FromSlopes((float[])finalSlopes.Clone()).Degrees,
                     gridConvergence,
-                    traceDemPass,
-                    traceAzimuthIndex,
+                    traversalTraceDemPass,
+                    traversalTraceAzimuthIndex,
+                    traversalInterpolatedSegment,
                     traversalTrace);
             }
             finally
@@ -2633,6 +2653,26 @@ namespace moonlib.horizon
         }
 
         static bool IsValid(float h) => !float.IsNaN(h) && !float.IsInfinity(h) && h > -20000.0f;
+
+        internal static float HierarchyBilinearBound(
+            PyramidView pyramid, LevelInfo info, int level, int cellX, int cellY)
+        {
+            float maximum = -32000.0f;
+            int endX = XMath.Min(cellX + 2, info.Width);
+            int endY = XMath.Min(cellY + 2, info.Height);
+            for (int y = cellY; y < endY; y++)
+            {
+                for (int x = cellX; x < endX; x++)
+                {
+                    float value = level == 0
+                        ? pyramid.DataLevel0[info.Offset + y * info.Width + x]
+                        : pyramid.DataMips[info.Offset + y * info.Width + x];
+                    if (IsValid(value) && value > maximum)
+                        maximum = value;
+                }
+            }
+            return maximum;
+        }
 
         private static void DownsampleKernel(Index2D index, ArrayView<float> src, ArrayView<float> dst, int srcW, int srcH, int dstW)
         {
@@ -3597,9 +3637,7 @@ namespace moonlib.horizon
                         break;
                     }
 
-                    float maxH = (level == 0)
-                        ? activePV.DataLevel0[info.Offset + ly * lW + lx]
-                        : activePV.DataMips[info.Offset + ly * lW + lx];
+                    float maxH = HierarchyBilinearBound(activePV, info, level, lx, ly);
                         
                     float minX = lx * scale;
                     float minY = ly * scale;
@@ -3732,6 +3770,8 @@ namespace moonlib.horizon
                                     ? primaryDemFarMinAdaptiveStepKm
                                     : minAdaptiveStepKm;
                                 ds = XMath.Max(ds, stepFloorKm);
+                                float boundaryAdvance = (distToExit > 0f) ? distToExit + 0.0001f : fallbackDist;
+                                ds = XMath.Min(ds, boundaryAdvance);
                             }
                             s += ds;
                             break;
@@ -4014,6 +4054,31 @@ namespace moonlib.horizon
                 LerpRaySegment(seg01, seg11, tx),
                 ty);
 
+            if (pixelIdx == kernelParams.DebugPixelIndex &&
+                azIdx == kernelParams.DebugAzimuthIndex &&
+                debugBuffer.Length >= 18)
+            {
+                int offset = (int)debugBuffer.Length - 18;
+                debugBuffer[offset] = seg.StartPixel.X;
+                debugBuffer[offset + 1] = seg.StartPixel.Y;
+                debugBuffer[offset + 2] = seg.X0;
+                debugBuffer[offset + 3] = seg.Y0;
+                debugBuffer[offset + 4] = seg.A1;
+                debugBuffer[offset + 5] = seg.A2;
+                debugBuffer[offset + 6] = seg.A3;
+                debugBuffer[offset + 7] = seg.A4;
+                debugBuffer[offset + 8] = seg.B1;
+                debugBuffer[offset + 9] = seg.B2;
+                debugBuffer[offset + 10] = seg.B3;
+                debugBuffer[offset + 11] = seg.B4;
+                debugBuffer[offset + 12] = seg.SStart;
+                debugBuffer[offset + 13] = seg.SEnd;
+                debugBuffer[offset + 14] = seg.SStartChord;
+                debugBuffer[offset + 15] = seg.PlanarToChordC1;
+                debugBuffer[offset + 16] = seg.PlanarToChordC2;
+                debugBuffer[offset + 17] = seg.PlanarToChordC3;
+            }
+
             float startPx = seg.StartPixel.X;
             float startPy = seg.StartPixel.Y;
             float sStart = seg.SStart;
@@ -4057,7 +4122,7 @@ namespace moonlib.horizon
 
             bool disableHierarchy = (kernelParams.DebugFlags & DEBUG_FLAG_DISABLE_HIERARCHY) != 0;
             const float CLOSE_DISTANCE_THRESHOLD_KM = 0.5f; // 500 meters
-            bool traceTraversal = pixelIdx == 0 &&
+            bool traceTraversal = pixelIdx == kernelParams.DebugPixelIndex &&
                 kernelParams.DebugAzimuthIndex >= 0 &&
                 azIdx == kernelParams.DebugAzimuthIndex;
             int traceCount = 0;
@@ -4229,9 +4294,7 @@ namespace moonlib.horizon
                         break;
                     }
 
-                    float maxH = (level == 0)
-                        ? activePV.DataLevel0[info.Offset + ly * lW + lx]
-                        : activePV.DataMips[info.Offset + ly * lW + lx];
+                    float maxH = HierarchyBilinearBound(activePV, info, level, lx, ly);
                     if (traceOffset >= 0)
                         debugBuffer[traceOffset + 7] = maxH;
                         
@@ -4364,6 +4427,8 @@ namespace moonlib.horizon
                                     ? primaryDemFarMinAdaptiveStepKm
                                     : minAdaptiveStepKm;
                                 ds = XMath.Max(ds, stepFloorKm);
+                                float boundaryAdvance = (distToExit > 0f) ? distToExit + 0.0001f : fallbackDist;
+                                ds = XMath.Min(ds, boundaryAdvance);
                             }
                             if (traceOffset >= 0)
                             {
