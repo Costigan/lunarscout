@@ -1,0 +1,443 @@
+{
+  "schema_version": 1,
+  "mode": "writer-pipeline",
+  "gpu_workers": 4,
+  "compressed": true,
+  "patch_count": 16,
+  "elapsed_seconds": 89.12605534999966,
+  "patches_per_second": 0.1795210159045826,
+  "wall_seconds_per_patch": 5.570378459374979,
+  "preparation_seconds": [
+    1.7465696740000567,
+    2.319403505000082,
+    2.2669209610003236,
+    2.3712010230001397,
+    2.3998486410000623,
+    2.73565685199992,
+    2.723444897000263,
+    2.7580086339994523,
+    2.529862597999454,
+    2.6997548330000427,
+    2.8214355910004087,
+    2.541927964000024,
+    2.3598944320001465,
+    2.6747069940001893,
+    2.7463459119999243,
+    2.750071591000051
+  ],
+  "cuda_call_seconds": [
+    5.6934318180001355,
+    12.954547834999175,
+    17.223502708000524,
+    16.92633076399943,
+    21.380014599999413,
+    21.621619118000126,
+    21.84927714300011,
+    21.802301501999864,
+    21.915976864000186,
+    22.09539792399937,
+    21.99976815899936,
+    21.99323176800044,
+    21.805455020999943,
+    21.68359943300038,
+    19.46729751299972,
+    19.467312323999977
+  ],
+  "degree_conversion_seconds": [
+    0.19247370299945032,
+    0.28577355699962936,
+    0.14482642599978135,
+    0.25898585800041474,
+    0.23142455300057918,
+    0.1908201669994014,
+    0.29667864499970165,
+    0.14170190400000138,
+    0.11626065200016455,
+    0.11873633899995184,
+    0.11898985399966477,
+    0.11979551700005686,
+    0.11722651499985659,
+    0.10888325700034329,
+    0.10575187599988567,
+    0.10170874300001742
+  ],
+  "write_seconds": [
+    3.6353356600011466
+  ],
+  "pass_kernel_seconds": [
+    [
+      0.41086392211914063,
+      1.444379638671875,
+      1.2204698486328125,
+      2.55285498046875
+    ],
+    [
+      1.1860743408203125,
+      3.588013427734375,
+      2.059432861328125,
+      5.85434716796875
+    ],
+    [
+      2.916496337890625,
+      3.57821240234375,
+      5.5173759765625,
+      5.09820068359375
+    ],
+    [
+      1.065474609375,
+      4.98476611328125,
+      4.7944345703125,
+      5.95815673828125
+    ],
+    [
+      6.07793994140625,
+      4.239865234375,
+      6.7207177734375,
+      4.2740087890625
+    ],
+    [
+      3.053718505859375,
+      6.938580078125,
+      3.417533447265625,
+      8.1728505859375
+    ],
+    [
+      5.19658056640625,
+      5.63149755859375,
+      5.853748046875,
+      5.1291337890625
+    ],
+    [
+      3.58790966796875,
+      7.31680859375,
+      4.8397880859375,
+      5.98308837890625
+    ],
+    [
+      6.497666015625,
+      4.28116650390625,
+      6.73156884765625,
+      4.3312919921875
+    ],
+    [
+      3.27678271484375,
+      6.9344306640625,
+      3.485531005859375,
+      8.3593271484375
+    ],
+    [
+      5.1641865234375,
+      5.68048388671875,
+      5.97543505859375,
+      5.06462158203125
+    ],
+    [
+      3.6932109375,
+      7.51530615234375,
+      4.83401904296875,
+      5.90857763671875
+    ],
+    [
+      6.6583515625,
+      4.22604443359375,
+      6.69610009765625,
+      4.18541015625
+    ],
+    [
+      3.189866943359375,
+      6.863248046875,
+      3.34631396484375,
+      8.2462802734375
+    ],
+    [
+      5.08241064453125,
+      5.6067607421875,
+      5.5005625,
+      3.239200927734375
+    ],
+    [
+      3.479126220703125,
+      7.40365576171875,
+      4.47747119140625,
+      4.07038916015625
+    ]
+  ],
+  "production_cuda_timings": [
+    {
+      "segment_upload_seconds": 0.011753288000363682,
+      "output_reset_seconds": 0.008064177000051131,
+      "kernel_wall_seconds": 5.628680135999275,
+      "copy_back_seconds": 0.03465125700040517
+    },
+    {
+      "segment_upload_seconds": 0.009953397999197477,
+      "output_reset_seconds": 0.04756305499995506,
+      "kernel_wall_seconds": 12.742850612999973,
+      "copy_back_seconds": 0.10229782699934731
+    },
+    {
+      "segment_upload_seconds": 0.037893654000072274,
+      "output_reset_seconds": 0.02057348699963768,
+      "kernel_wall_seconds": 17.110204430000522,
+      "copy_back_seconds": 0.02122676299950399
+    },
+    {
+      "segment_upload_seconds": 0.011631392999333912,
+      "output_reset_seconds": 0.00870031599970389,
+      "kernel_wall_seconds": 16.853087520999907,
+      "copy_back_seconds": 0.030826750000414904
+    },
+    {
+      "segment_upload_seconds": 0.01511485100036225,
+      "output_reset_seconds": 0.025798840999414097,
+      "kernel_wall_seconds": 21.312433307999527,
+      "copy_back_seconds": 0.016518184000233305
+    },
+    {
+      "segment_upload_seconds": 0.011562318999494892,
+      "output_reset_seconds": 0.009432901999389287,
+      "kernel_wall_seconds": 21.58256535200053,
+      "copy_back_seconds": 0.01779164599975047
+    },
+    {
+      "segment_upload_seconds": 0.012335701000665722,
+      "output_reset_seconds": 0.00976801799970417,
+      "kernel_wall_seconds": 21.810835547999886,
+      "copy_back_seconds": 0.01617734899991774
+    },
+    {
+      "segment_upload_seconds": 0.01267870399988169,
+      "output_reset_seconds": 0.018634306999956607,
+      "kernel_wall_seconds": 21.727481808999983,
+      "copy_back_seconds": 0.028054023000549932
+    },
+    {
+      "segment_upload_seconds": 0.012545395000415738,
+      "output_reset_seconds": 0.008838599999762664,
+      "kernel_wall_seconds": 21.84156564299974,
+      "copy_back_seconds": 0.018567577999419882
+    },
+    {
+      "segment_upload_seconds": 0.011897578999196412,
+      "output_reset_seconds": 0.008939426999859279,
+      "kernel_wall_seconds": 22.05592029000036,
+      "copy_back_seconds": 0.0185027360003005
+    },
+    {
+      "segment_upload_seconds": 0.014000554999256565,
+      "output_reset_seconds": 0.021652136999364302,
+      "kernel_wall_seconds": 21.88458971900036,
+      "copy_back_seconds": 0.018016091999925266
+    },
+    {
+      "segment_upload_seconds": 0.013984253000671742,
+      "output_reset_seconds": 0.009968047000256774,
+      "kernel_wall_seconds": 21.950955748000524,
+      "copy_back_seconds": 0.018169242000112718
+    },
+    {
+      "segment_upload_seconds": 0.012275515000510495,
+      "output_reset_seconds": 0.008825683999930334,
+      "kernel_wall_seconds": 21.765744690000247,
+      "copy_back_seconds": 0.018463129999872763
+    },
+    {
+      "segment_upload_seconds": 0.012442918000488135,
+      "output_reset_seconds": 0.008777075999205408,
+      "kernel_wall_seconds": 21.645545387999846,
+      "copy_back_seconds": 0.016709389999959967
+    },
+    {
+      "segment_upload_seconds": 0.012610409000444633,
+      "output_reset_seconds": 0.008558931999687047,
+      "kernel_wall_seconds": 19.428802690999873,
+      "copy_back_seconds": 0.017175768000015523
+    },
+    {
+      "segment_upload_seconds": 0.011992187000032573,
+      "output_reset_seconds": 0.009147072999439843,
+      "kernel_wall_seconds": 19.430498934999378,
+      "copy_back_seconds": 0.015544075000434532
+    }
+  ],
+  "maximum_prepared_queue_depth": 4,
+  "pipeline_metrics": {
+    "preparation_seconds": 40.44509582199862,
+    "compute_seconds": 309.8843768170009,
+    "finalization_seconds": 2.654448450000018,
+    "write_seconds": 3.6353356600011466,
+    "maximum_prepared_queue_depth": 4,
+    "maximum_writer_queue_depth": 1,
+    "producer_enqueue_wait_seconds": [
+      1.3048000255366787e-05,
+      1.3357000170799438e-05,
+      1.2953999430465046e-05,
+      1.0818000191648025e-05,
+      1.3992999811307527e-05,
+      1.2591000086104032e-05,
+      9.869000678008888e-06,
+      8.14200029708445e-06,
+      1.1823000022559427e-05,
+      8.375999641430099e-06,
+      9.518000297248363e-06,
+      8.023000191315077e-06,
+      0.2678739630000564,
+      3.428041408000354,
+      4.016535868000574,
+      1.0206999832007568e-05
+    ],
+    "consumer_dequeue_wait_seconds": [
+      1.747709606999706,
+      4.067449140999997,
+      6.333718770000814,
+      8.704853244999867,
+      3.7203388689995336,
+      0.000409733999731543,
+      0.00037808100023539737,
+      0.0003794639997067861,
+      0.0003285490001871949,
+      0.0005093070003567846,
+      0.00036879899926134385,
+      0.00044485200032795547,
+      0.0003638279995357152,
+      0.00036409199947229354,
+      0.0004898569995930302,
+      0.0004752019995066803
+    ],
+    "writer_enqueue_wait_seconds": [
+      6.93400033924263e-06,
+      1.059099940903252e-05,
+      9.542000043438748e-06,
+      1.0054999620479066e-05,
+      9.578000572219025e-06,
+      7.527999514422845e-06,
+      8.011999852897134e-06,
+      1.2308999430388212e-05,
+      8.65299989527557e-06,
+      8.805999641481321e-06,
+      8.98200050869491e-06,
+      9.624000085750595e-06,
+      8.603000424045604e-06,
+      9.898999451252166e-06,
+      9.145999683823902e-06,
+      9.524999768473208e-06
+    ],
+    "writer_dequeue_wait_seconds": [
+      7.4414087109998945,
+      9.279386254000201,
+      5.716911588000585,
+      1.726542989000336,
+      6.259919038000589,
+      5.4186203399995065,
+      6.2091792210003405,
+      1.3069249489999493,
+      6.695867888999601,
+      6.0388375630000155,
+      6.414192526999614,
+      1.7634164999999484,
+      6.575970161999976,
+      5.915967140999783,
+      4.221306029999141,
+      1.785741082999266
+    ]
+  },
+  "peak_host_rss_bytes": 10155687936,
+  "peak_process_gpu_memory_mib": 5120,
+  "gpu_memory_samples": 1127,
+  "files": [
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00000/horizon_00000_00000_000.cbin",
+      "bytes": 23672772,
+      "sha256": "1144fbb30c72b2bf992c0d592863c662aac321019e17f4650db0900e3dbd22eb"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00000/horizon_00000_00128_000.cbin",
+      "bytes": 23656625,
+      "sha256": "7b49aba1bfb741befcc6c8cbe03063fd70e1eb7cbf24f371be843340327177a3"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00000/horizon_00000_00256_000.cbin",
+      "bytes": 23651112,
+      "sha256": "cfc841263de05bf50ec6e59125b09469cd0d4fd64a1c5cf98acef9b8ea63a52d"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00000/horizon_00000_00384_000.cbin",
+      "bytes": 23647011,
+      "sha256": "4f7bd2c9a034447bc919391fcc5c24f0627be8932dff02517720b120b8ac6ec2"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00128/horizon_00128_00000_000.cbin",
+      "bytes": 23669667,
+      "sha256": "b7eec2bfabef1ed6630b041f054b81e2db91ad55b452ab68ea89549eb53f0ef4"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00128/horizon_00128_00128_000.cbin",
+      "bytes": 23666523,
+      "sha256": "ea7d9e36a6ad7dc16fdeb9db6b162e959564d0c77951b77676c55b5d4c41cd1e"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00128/horizon_00128_00256_000.cbin",
+      "bytes": 23644945,
+      "sha256": "ea47c2e1d69324df383495cc26927f275042c9f6379c8662fa98401bd74940e2"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00128/horizon_00128_00384_000.cbin",
+      "bytes": 23644730,
+      "sha256": "c4a6e7af72833bc58b09ee365ab3d26c0559816bed911e2ef072a452a77d150c"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00256/horizon_00256_00000_000.cbin",
+      "bytes": 23672496,
+      "sha256": "8ba9504b4a33b41b87fc2c03a929cbdd19cb6fdaa91f1b80c34bc8d96537efd3"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00256/horizon_00256_00128_000.cbin",
+      "bytes": 23665275,
+      "sha256": "907285a552feb949782d1520f68653c5e360ea7fd9f0d1a349c8f12dddd5c217"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00256/horizon_00256_00256_000.cbin",
+      "bytes": 23646145,
+      "sha256": "673d51740b02c79766f3fd50254033cd242e231bd51b0c0cdde712f43aea1f56"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00256/horizon_00256_00384_000.cbin",
+      "bytes": 23643669,
+      "sha256": "ac30cae497030f1f0c4ed429bbbd6f399960d8f735323a1157df4fea77921a6e"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00384/horizon_00384_00000_000.cbin",
+      "bytes": 23665867,
+      "sha256": "af71baabcf1e9cdfa5e031cd39702b7ec70794bcb5c92a97b3fcfc8a6c120731"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00384/horizon_00384_00128_000.cbin",
+      "bytes": 23664626,
+      "sha256": "c2142f55d886d04c13f3098011156e90cb376211271c1b81d832bda04ca21fca"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00384/horizon_00384_00256_000.cbin",
+      "bytes": 23662006,
+      "sha256": "ac4abd0e3830ddd11ec8e7db2cac5517099798619085b9d58b50fb2fd35ebe5d"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-streams4-sustained/00384/horizon_00384_00384_000.cbin",
+      "bytes": 23645067,
+      "sha256": "30dba30ab609799ffea90ff151c628b7bbb5042ba27696912a58e437f2fb67df"
+    }
+  ],
+  "total_output_bytes": 378518536,
+  "inputs": [
+    "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+    "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+    "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+    "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif"
+  ],
+  "notes": [
+    "Warm timing follows one unrecorded segment/CUDA/compression warm-up patch.",
+    "CUDA call includes segment upload, kernel events, synchronization, and result copy.",
+    "Pipeline mode uses one producer and 4 CUDA worker(s)/work-buffer slot(s).",
+    "Writer-pipeline mode moves degree conversion, compression, and staged writing to a one-item bounded writer queue.",
+    "Pyramids and fixed-shape transient segment/output device buffers remain resident and are reused."
+  ]
+}

@@ -12,7 +12,21 @@ import numpy.typing as npt
 from numba import njit, prange
 
 
-@njit
+def _cached_njit(**options):
+    """Use Numba's disk cache when its cache location is writable."""
+
+    def decorate(function):
+        try:
+            return njit(cache=True, **options)(function)
+        except RuntimeError as error:
+            if "no locator available" not in str(error):
+                raise
+            return njit(**options)(function)
+
+    return decorate
+
+
+@_cached_njit()
 def _solve(matrix: npt.NDArray[np.float64], rhs: npt.NDArray[np.float64]):
     size = rhs.shape[0]
     augmented = np.empty((size, size + 1), dtype=np.float64)
@@ -49,7 +63,7 @@ def _solve(matrix: npt.NDArray[np.float64], rhs: npt.NDArray[np.float64]):
     return augmented[:, size].copy(), True
 
 
-@njit
+@_cached_njit()
 def _quartic(samples, count, value_column, value0, anchor_km, span_km):
     normal = np.zeros((4, 4), dtype=np.float64)
     rhs = np.zeros(4, dtype=np.float64)
@@ -75,7 +89,7 @@ def _quartic(samples, count, value_column, value0, anchor_km, span_km):
     return solution
 
 
-@njit
+@_cached_njit()
 def _chord_distance(observer, latitude, longitude, radius):
     cos_latitude = np.cos(latitude)
     x = radius * cos_latitude * np.cos(longitude) - observer[0]
@@ -84,7 +98,7 @@ def _chord_distance(observer, latitude, longitude, radius):
     return np.sqrt(x * x + y * y + z * z)
 
 
-@njit
+@_cached_njit()
 def _fit_chord(samples, count, map_resolution, observer, radius):
     identity = np.array((1.0, 0.0, 0.0), dtype=np.float64)
     if count < 2 or map_resolution <= 0.0:
@@ -124,7 +138,7 @@ def _fit_chord(samples, count, map_resolution, observer, radius):
     return solution
 
 
-@njit
+@_cached_njit()
 def _fit_one(samples, count, map_resolution, observer, radius, fallback_start):
     result = np.zeros(18, dtype=np.float32)
     if count < 3:
@@ -155,7 +169,7 @@ def _fit_one(samples, count, map_resolution, observer, radius, fallback_start):
     return result
 
 
-@njit
+@_cached_njit()
 def _sample_chord(observer, direction, distance, elevation, transform, projection):
     x_vector = observer[0] + direction[0] * distance
     y_vector = observer[1] + direction[1] * distance
@@ -208,7 +222,7 @@ def _sample_chord(observer, direction, distance, elevation, transform, projectio
     return inside, sample
 
 
-@njit
+@_cached_njit()
 def _build_samples(observer, direction, start, maximum, elevation, transform, projection):
     samples = np.zeros((16, 8), dtype=np.float64)
     inside, first = _sample_chord(
@@ -283,7 +297,7 @@ def _build_samples(observer, direction, start, maximum, elevation, transform, pr
     return samples, count
 
 
-@njit
+@_cached_njit()
 def _generate_one(
     elevation, transform, projection, observer, direction, start, maximum,
     map_resolution, correction_radius,
@@ -296,7 +310,7 @@ def _generate_one(
     )
 
 
-@njit
+@_cached_njit()
 def fit_segments_serial(samples, counts, map_resolutions, observers, radii, starts):
     """Fit an independent padded batch in deterministic serial order."""
     result = np.empty((samples.shape[0], 18), dtype=np.float32)
@@ -308,7 +322,7 @@ def fit_segments_serial(samples, counts, map_resolutions, observers, radii, star
     return result
 
 
-@njit(parallel=True)
+@_cached_njit(parallel=True)
 def fit_segments_parallel(samples, counts, map_resolutions, observers, radii, starts):
     """Fit an independent padded batch with one Numba iteration per segment."""
     result = np.empty((samples.shape[0], 18), dtype=np.float32)
@@ -320,7 +334,7 @@ def fit_segments_parallel(samples, counts, map_resolutions, observers, radii, st
     return result
 
 
-@njit
+@_cached_njit()
 def generate_segments_serial(
     elevation, transform, projection, observers, directions, starts, maximums,
     map_resolution, correction_radii,
@@ -335,7 +349,7 @@ def generate_segments_serial(
     return result
 
 
-@njit(parallel=True)
+@_cached_njit(parallel=True)
 def generate_segments_parallel(
     elevation, transform, projection, observers, directions, starts, maximums,
     map_resolution, correction_radii,

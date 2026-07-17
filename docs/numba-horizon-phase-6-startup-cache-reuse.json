@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "startup": {
+    "dem_and_pyramid_load_seconds": 8.216022001000056,
+    "cuda_session_construction_seconds": 3.4413580240006922,
+    "first_segment_generation_seconds": 1.8212240729999394,
+    "first_cuda_compile_and_execution_seconds": 5.487596460000532,
+    "first_cuda_timings": {
+      "segment_upload_seconds": 0.009521353999843996,
+      "output_reset_seconds": 0.006121640000856132,
+      "kernel_wall_seconds": 5.1675708330003545,
+      "copy_back_seconds": 0.006925362000401947
+    },
+    "first_degree_conversion_seconds": 0.085391174000506,
+    "first_compression_and_write_seconds": 0.34097103200019774
+  },
+  "mode": "writer-pipeline",
+  "gpu_workers": 1,
+  "compressed": true,
+  "patch_count": 1,
+  "elapsed_seconds": 7.117462978999356,
+  "patches_per_second": 0.14049950143057716,
+  "wall_seconds_per_patch": 7.117462978999356,
+  "preparation_seconds": [
+    1.7747128910004903
+  ],
+  "cuda_call_seconds": [
+    5.130708682000659
+  ],
+  "degree_conversion_seconds": [
+    0.10384570700080076
+  ],
+  "write_seconds": [
+    0.10571099699882325
+  ],
+  "pass_kernel_seconds": [
+    [
+      0.40765362548828127,
+      1.4281400146484375,
+      1.205632080078125,
+      2.057544677734375
+    ]
+  ],
+  "production_cuda_timings": [
+    {
+      "segment_upload_seconds": 0.010159798000131559,
+      "output_reset_seconds": 0.006274999999732245,
+      "kernel_wall_seconds": 5.0989660740006,
+      "copy_back_seconds": 0.015151318000789615
+    }
+  ],
+  "maximum_prepared_queue_depth": 1,
+  "pipeline_metrics": {
+    "preparation_seconds": 1.7747171190003428,
+    "compute_seconds": 5.130714390999856,
+    "finalization_seconds": 0.10385004099953221,
+    "write_seconds": 0.10571099699882325,
+    "maximum_prepared_queue_depth": 1,
+    "maximum_writer_queue_depth": 1,
+    "producer_enqueue_wait_seconds": [
+      1.2866999895777553e-05
+    ],
+    "consumer_dequeue_wait_seconds": [
+      1.775129343000117
+    ],
+    "writer_enqueue_wait_seconds": [
+      7.763001121929847e-06
+    ],
+    "writer_dequeue_wait_seconds": [
+      6.906825915999434
+    ]
+  },
+  "peak_host_rss_bytes": 8422486016,
+  "peak_process_gpu_memory_mib": 4458,
+  "gpu_memory_samples": 104,
+  "files": [
+    {
+      "path": "/tmp/lunarscout-phase6-cache-v2-reuse/00000/horizon_00000_00000_000.cbin",
+      "bytes": 23672772,
+      "sha256": "1144fbb30c72b2bf992c0d592863c662aac321019e17f4650db0900e3dbd22eb"
+    }
+  ],
+  "total_output_bytes": 23672772,
+  "inputs": [
+    "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+    "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+    "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+    "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif"
+  ],
+  "native_runtime_modules_loaded": [],
+  "notes": [
+    "Warm timing follows one unrecorded segment/CUDA/compression warm-up patch.",
+    "CUDA call includes segment upload, kernel events, synchronization, and result copy.",
+    "Pipeline mode uses one producer and 1 CUDA worker(s)/work-buffer slot(s).",
+    "Writer-pipeline mode moves degree conversion, compression, and staged writing to a one-item bounded writer queue.",
+    "Pyramids and fixed-shape transient segment/output device buffers remain resident and are reused."
+  ]
+}

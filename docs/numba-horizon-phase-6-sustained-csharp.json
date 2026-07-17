@@ -1,0 +1,1560 @@
+{
+  "schema_version": 1,
+  "report_kind": "csharp_phase_0_multi_patch_benchmark",
+  "captured_at_utc": "2026-07-17T16:25:04.5049879Z",
+  "baseline_commit": "a22901f",
+  "process_id": 27544,
+  "configuration": {
+    "patch_count": 16,
+    "patch_selection": "First N patches in GeneratePatchList row-major order.",
+    "patches": [
+      {
+        "Index": 0,
+        "tile_x": 0,
+        "tile_y": 0,
+        "patch_x": 0,
+        "patch_y": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 1,
+        "tile_x": 128,
+        "tile_y": 0,
+        "patch_x": 1,
+        "patch_y": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 2,
+        "tile_x": 256,
+        "tile_y": 0,
+        "patch_x": 2,
+        "patch_y": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 3,
+        "tile_x": 384,
+        "tile_y": 0,
+        "patch_x": 3,
+        "patch_y": 0,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 4,
+        "tile_x": 0,
+        "tile_y": 128,
+        "patch_x": 0,
+        "patch_y": 1,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 5,
+        "tile_x": 128,
+        "tile_y": 128,
+        "patch_x": 1,
+        "patch_y": 1,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 6,
+        "tile_x": 256,
+        "tile_y": 128,
+        "patch_x": 2,
+        "patch_y": 1,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 7,
+        "tile_x": 384,
+        "tile_y": 128,
+        "patch_x": 3,
+        "patch_y": 1,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 8,
+        "tile_x": 0,
+        "tile_y": 256,
+        "patch_x": 0,
+        "patch_y": 2,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 9,
+        "tile_x": 128,
+        "tile_y": 256,
+        "patch_x": 1,
+        "patch_y": 2,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 10,
+        "tile_x": 256,
+        "tile_y": 256,
+        "patch_x": 2,
+        "patch_y": 2,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 11,
+        "tile_x": 384,
+        "tile_y": 256,
+        "patch_x": 3,
+        "patch_y": 2,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 12,
+        "tile_x": 0,
+        "tile_y": 384,
+        "patch_x": 0,
+        "patch_y": 3,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 13,
+        "tile_x": 128,
+        "tile_y": 384,
+        "patch_x": 1,
+        "patch_y": 3,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 14,
+        "tile_x": 256,
+        "tile_y": 384,
+        "patch_x": 2,
+        "patch_y": 3,
+        "width": 128,
+        "height": 128
+      },
+      {
+        "Index": 15,
+        "tile_x": 384,
+        "tile_y": 384,
+        "patch_x": 3,
+        "patch_y": 3,
+        "width": 128,
+        "height": 128
+      }
+    ],
+    "azimuth_bins": 1440,
+    "observer_elevation_m": 0,
+    "hierarchy_enabled": true,
+    "compression_requested": true,
+    "concurrent_gpu_operations": 4,
+    "segment_queue_size": 6,
+    "shared_subpatch_segment_cache": false,
+    "dem_pass_count": 4
+  },
+  "accelerator": {
+    "name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "type": "Cuda"
+  },
+  "inputs": [
+    {
+      "index": 0,
+      "source_path": "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+      "source_size_bytes": 1050162,
+      "sha256": "8f041cb7dba79bce23dd38de3de7a34a5a179b8c3e5455df197684e0aec2c6e6",
+      "copied_path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-00.tif"
+    },
+    {
+      "index": 1,
+      "source_path": "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+      "source_size_bytes": 104824370,
+      "sha256": "1b5cdb5c9d656cd6ff84dd3671ffd40ef8eeee99e85d0020b8d5b3e9e62d3497",
+      "copied_path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-01.tif"
+    },
+    {
+      "index": 2,
+      "source_path": "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+      "source_size_bytes": 108192905,
+      "sha256": "0e96c40987c0814eadd4f94f85dacbb33bcab5388dd0b1dc99dc59bf987f072f",
+      "copied_path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-02.tif"
+    },
+    {
+      "index": 3,
+      "source_path": "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif",
+      "source_size_bytes": 618310074,
+      "sha256": "b250e94730fcbcf387e0a5494ce23fe7a17e00932982cab903d1bdff602b30e6",
+      "copied_path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-03.tif"
+    }
+  ],
+  "runtime": {
+    "generator_initialization_seconds": 0.4554735,
+    "process_peak_working_set_bytes": 18086445056,
+    "sampled_host_peak_working_set_bytes": 18086449152,
+    "total_process_elapsed_seconds": 121.8239783,
+    "host_memory_sample_interval_ms": 25
+  },
+  "runs": [
+    {
+      "name": "cold_fresh_pyramids",
+      "timing_class": "Cold benchmark scope with copied DEMs and no pyramid cache files.",
+      "pyramid_cache_present_before": false,
+      "pyramids_before": [
+        {
+          "dem_index": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-00.pyr.bin",
+          "exists": false,
+          "size_bytes": 0,
+          "sha256": null,
+          "last_write_utc": null
+        },
+        {
+          "dem_index": 1,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-01.pyr.bin",
+          "exists": false,
+          "size_bytes": 0,
+          "sha256": null,
+          "last_write_utc": null
+        },
+        {
+          "dem_index": 2,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-02.pyr.bin",
+          "exists": false,
+          "size_bytes": 0,
+          "sha256": null,
+          "last_write_utc": null
+        },
+        {
+          "dem_index": 3,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-03.pyr.bin",
+          "exists": false,
+          "size_bytes": 0,
+          "sha256": null,
+          "last_write_utc": null
+        }
+      ],
+      "pyramids_after": [
+        {
+          "dem_index": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-00.pyr.bin",
+          "exists": true,
+          "size_bytes": 69908,
+          "sha256": "a32dc464e843f7b57fdccf9108d1e0ae0d55c4b20e00e95524fc88c043ffe11d",
+          "last_write_utc": "2026-07-17T16:23:10.9052942Z"
+        },
+        {
+          "dem_index": 1,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-01.pyr.bin",
+          "exists": true,
+          "size_bytes": 6986252,
+          "sha256": "38a002d4e4d8f6035507f2d33b9f456fa9d1037fa01d5089b61eb5b6aa5bd00e",
+          "last_write_utc": "2026-07-17T16:23:10.9552943Z"
+        },
+        {
+          "dem_index": 2,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-02.pyr.bin",
+          "exists": true,
+          "size_bytes": 7211324,
+          "sha256": "77f7e233163115ba392e23b2f48055011d8b51a894f0a71cfd649587ba79f860",
+          "last_write_utc": "2026-07-17T16:23:10.9512943Z"
+        },
+        {
+          "dem_index": 3,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-03.pyr.bin",
+          "exists": true,
+          "size_bytes": 246443020,
+          "sha256": "8d4a037540853e572144a4220950a8eacbc2c063a506e97542e174b0514b0767",
+          "last_write_utc": "2026-07-17T16:23:12.4362970Z"
+        }
+      ],
+      "elapsed_seconds": 56.1352683,
+      "patches_per_second": 0.2850258043569376,
+      "host_peak_working_set_bytes": 13678456832,
+      "per_patch_profiles": [
+        {
+          "patch_index": 0,
+          "tile_x": 0,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 1,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.561534406,
+          "patch_enqueue_wait_seconds": 7.4904e-05,
+          "buffer_wait_seconds": 0.007966696,
+          "stream_wait_seconds": 4.2536e-05,
+          "buffer_reset_seconds": 0.049051412,
+          "segment_upload_seconds": 0.013524408,
+          "kernel_launch_seconds": 0.002071964,
+          "stream_sync_seconds": 3.012274273,
+          "copy_back_seconds": 0.01414651,
+          "degree_conversion_seconds": 0.194049847,
+          "compression_and_write_seconds": 0.407168525,
+          "gpu_worker_total_seconds": 3.288632556
+        },
+        {
+          "patch_index": 1,
+          "tile_x": 128,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.752223656,
+          "patch_enqueue_wait_seconds": 2.7326e-05,
+          "buffer_wait_seconds": 0.010735046,
+          "stream_wait_seconds": 1.294e-06,
+          "buffer_reset_seconds": 0.057975484,
+          "segment_upload_seconds": 0.010652461,
+          "kernel_launch_seconds": 4.8244e-05,
+          "stream_sync_seconds": 3.295478872,
+          "copy_back_seconds": 0.014535232,
+          "degree_conversion_seconds": 0.209074244,
+          "compression_and_write_seconds": 0.400534448,
+          "gpu_worker_total_seconds": 3.587856065
+        },
+        {
+          "patch_index": 2,
+          "tile_x": 256,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.505819355,
+          "patch_enqueue_wait_seconds": 1.2451e-05,
+          "buffer_wait_seconds": 0.000216258,
+          "stream_wait_seconds": 1.591e-06,
+          "buffer_reset_seconds": 0.059473368,
+          "segment_upload_seconds": 0.012318111,
+          "kernel_launch_seconds": 3.5287e-05,
+          "stream_sync_seconds": 4.317545382,
+          "copy_back_seconds": 0.012756508,
+          "degree_conversion_seconds": 0.18673557,
+          "compression_and_write_seconds": 0.370760507,
+          "gpu_worker_total_seconds": 4.588937951
+        },
+        {
+          "patch_index": 3,
+          "tile_x": 384,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 2,
+          "segment_generation_seconds": 2.458717074,
+          "patch_enqueue_wait_seconds": 1.24e-05,
+          "buffer_wait_seconds": 6.975e-06,
+          "stream_wait_seconds": 1.794e-06,
+          "buffer_reset_seconds": 0.064946688,
+          "segment_upload_seconds": 0.012646063,
+          "kernel_launch_seconds": 3.4523e-05,
+          "stream_sync_seconds": 5.917911852,
+          "copy_back_seconds": 0.014874275,
+          "degree_conversion_seconds": 0.205746444,
+          "compression_and_write_seconds": 0.371046948,
+          "gpu_worker_total_seconds": 6.216211053
+        },
+        {
+          "patch_index": 4,
+          "tile_x": 0,
+          "tile_y": 128,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 2,
+          "segment_generation_seconds": 2.57684175,
+          "patch_enqueue_wait_seconds": 1.6061e-05,
+          "buffer_wait_seconds": 6.669e-06,
+          "stream_wait_seconds": 1.843e-06,
+          "buffer_reset_seconds": 0.071433783,
+          "segment_upload_seconds": 0.012326831,
+          "kernel_launch_seconds": 4.9788e-05,
+          "stream_sync_seconds": 5.541870085,
+          "copy_back_seconds": 0.015240312,
+          "degree_conversion_seconds": 0.214048335,
+          "compression_and_write_seconds": 0.365475597,
+          "gpu_worker_total_seconds": 5.855025402
+        },
+        {
+          "patch_index": 5,
+          "tile_x": 128,
+          "tile_y": 128,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 2,
+          "segment_generation_seconds": 2.705664079,
+          "patch_enqueue_wait_seconds": 1.0397e-05,
+          "buffer_wait_seconds": 0.007535157,
+          "stream_wait_seconds": 2.42e-06,
+          "buffer_reset_seconds": 0.065167012,
+          "segment_upload_seconds": 0.011493936,
+          "kernel_launch_seconds": 5.3894e-05,
+          "stream_sync_seconds": 7.059606157,
+          "copy_back_seconds": 0.015482832,
+          "degree_conversion_seconds": 0.224226987,
+          "compression_and_write_seconds": 0.374354759,
+          "gpu_worker_total_seconds": 7.376083102
+        },
+        {
+          "patch_index": 6,
+          "tile_x": 256,
+          "tile_y": 128,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.791481924,
+          "patch_enqueue_wait_seconds": 1.3029e-05,
+          "buffer_wait_seconds": 9.879e-06,
+          "stream_wait_seconds": 1.946e-06,
+          "buffer_reset_seconds": 0.059147701,
+          "segment_upload_seconds": 0.012712568,
+          "kernel_launch_seconds": 5.3967e-05,
+          "stream_sync_seconds": 7.721671994,
+          "copy_back_seconds": 0.042950424,
+          "degree_conversion_seconds": 0.225044545,
+          "compression_and_write_seconds": 0.49152846,
+          "gpu_worker_total_seconds": 8.061644565
+        },
+        {
+          "patch_index": 7,
+          "tile_x": 384,
+          "tile_y": 128,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.599600886,
+          "patch_enqueue_wait_seconds": 1.0344e-05,
+          "buffer_wait_seconds": 5.342e-06,
+          "stream_wait_seconds": 2.616e-06,
+          "buffer_reset_seconds": 0.078088157,
+          "segment_upload_seconds": 0.011635317,
+          "kernel_launch_seconds": 5.9189e-05,
+          "stream_sync_seconds": 8.383553843,
+          "copy_back_seconds": 0.049154437,
+          "degree_conversion_seconds": 0.213972983,
+          "compression_and_write_seconds": 0.425948867,
+          "gpu_worker_total_seconds": 8.736508516
+        },
+        {
+          "patch_index": 8,
+          "tile_x": 0,
+          "tile_y": 256,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.687591034,
+          "patch_enqueue_wait_seconds": 1.8551e-05,
+          "buffer_wait_seconds": 5.563e-06,
+          "stream_wait_seconds": 1.448e-06,
+          "buffer_reset_seconds": 0.073466652,
+          "segment_upload_seconds": 0.010823239,
+          "kernel_launch_seconds": 3.8947e-05,
+          "stream_sync_seconds": 8.846867151,
+          "copy_back_seconds": 0.046823112,
+          "degree_conversion_seconds": 0.231901911,
+          "compression_and_write_seconds": 0.414903899,
+          "gpu_worker_total_seconds": 9.209967121
+        },
+        {
+          "patch_index": 9,
+          "tile_x": 128,
+          "tile_y": 256,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.953506263,
+          "patch_enqueue_wait_seconds": 1.4893e-05,
+          "buffer_wait_seconds": 0.000438371,
+          "stream_wait_seconds": 2.176e-06,
+          "buffer_reset_seconds": 0.088743898,
+          "segment_upload_seconds": 0.011709415,
+          "kernel_launch_seconds": 4.2437e-05,
+          "stream_sync_seconds": 9.235310956,
+          "copy_back_seconds": 0.043569129,
+          "degree_conversion_seconds": 0.216790962,
+          "compression_and_write_seconds": 0.391128976,
+          "gpu_worker_total_seconds": 9.596211566
+        },
+        {
+          "patch_index": 10,
+          "tile_x": 256,
+          "tile_y": 256,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.88518767,
+          "patch_enqueue_wait_seconds": 1.0296e-05,
+          "buffer_wait_seconds": 5.497e-06,
+          "stream_wait_seconds": 2.277e-06,
+          "buffer_reset_seconds": 0.083727328,
+          "segment_upload_seconds": 0.011065913,
+          "kernel_launch_seconds": 4.4585e-05,
+          "stream_sync_seconds": 9.903192867,
+          "copy_back_seconds": 0.044116479,
+          "degree_conversion_seconds": 0.237144024,
+          "compression_and_write_seconds": 0.41663565,
+          "gpu_worker_total_seconds": 10.279336276
+        },
+        {
+          "patch_index": 11,
+          "tile_x": 384,
+          "tile_y": 256,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.690577284,
+          "patch_enqueue_wait_seconds": 1.4897e-05,
+          "buffer_wait_seconds": 5.449e-06,
+          "stream_wait_seconds": 1.951e-06,
+          "buffer_reset_seconds": 0.09249221,
+          "segment_upload_seconds": 0.012270088,
+          "kernel_launch_seconds": 5.2395e-05,
+          "stream_sync_seconds": 11.02539857,
+          "copy_back_seconds": 0.034829965,
+          "degree_conversion_seconds": 0.156685713,
+          "compression_and_write_seconds": 0.292703051,
+          "gpu_worker_total_seconds": 11.321780399
+        },
+        {
+          "patch_index": 12,
+          "tile_x": 0,
+          "tile_y": 384,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.609079799,
+          "patch_enqueue_wait_seconds": 1.3156e-05,
+          "buffer_wait_seconds": 5.535e-06,
+          "stream_wait_seconds": 1.977e-06,
+          "buffer_reset_seconds": 0.086990773,
+          "segment_upload_seconds": 0.012319511,
+          "kernel_launch_seconds": 4.8711e-05,
+          "stream_sync_seconds": 12.76683167,
+          "copy_back_seconds": 0.03890461,
+          "degree_conversion_seconds": 0.158915066,
+          "compression_and_write_seconds": 0.279725651,
+          "gpu_worker_total_seconds": 13.064061696
+        },
+        {
+          "patch_index": 13,
+          "tile_x": 128,
+          "tile_y": 384,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 2,
+          "segment_generation_seconds": 2.742670785,
+          "patch_enqueue_wait_seconds": 1.324e-05,
+          "buffer_wait_seconds": 6.39e-06,
+          "stream_wait_seconds": 1.783e-06,
+          "buffer_reset_seconds": 0.091011647,
+          "segment_upload_seconds": 0.010926319,
+          "kernel_launch_seconds": 0.001182962,
+          "stream_sync_seconds": 11.24064043,
+          "copy_back_seconds": 0.036438771,
+          "degree_conversion_seconds": 0.143198799,
+          "compression_and_write_seconds": 0.262709891,
+          "gpu_worker_total_seconds": 11.523447464
+        },
+        {
+          "patch_index": 14,
+          "tile_x": 256,
+          "tile_y": 384,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.857821637,
+          "patch_enqueue_wait_seconds": 1.4507e-05,
+          "buffer_wait_seconds": 5.062e-06,
+          "stream_wait_seconds": 1.926e-06,
+          "buffer_reset_seconds": 0.089209479,
+          "segment_upload_seconds": 0.011577815,
+          "kernel_launch_seconds": 3.1086e-05,
+          "stream_sync_seconds": 11.678857639,
+          "copy_back_seconds": 0.033058398,
+          "degree_conversion_seconds": 0.141168142,
+          "compression_and_write_seconds": 0.26961647,
+          "gpu_worker_total_seconds": 11.953940256
+        },
+        {
+          "patch_index": 15,
+          "tile_x": 384,
+          "tile_y": 384,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 0,
+          "segment_generation_seconds": 2.62798035,
+          "patch_enqueue_wait_seconds": 4.384e-06,
+          "buffer_wait_seconds": 4.386e-06,
+          "stream_wait_seconds": 1.442e-06,
+          "buffer_reset_seconds": 0.060646479,
+          "segment_upload_seconds": 0.011193518,
+          "kernel_launch_seconds": 3.0201e-05,
+          "stream_sync_seconds": 10.202155301,
+          "copy_back_seconds": 0.034373368,
+          "degree_conversion_seconds": 0.136315633,
+          "compression_and_write_seconds": 0.253091672,
+          "gpu_worker_total_seconds": 10.444773324
+        }
+      ],
+      "selected_traversal_profiles": [],
+      "stage_aggregates": {
+        "buffer_reset_seconds": {
+          "samples": 16,
+          "total_seconds": 1.1715720710000002,
+          "average_seconds": 0.07322325443750001,
+          "minimum_seconds": 0.049051412,
+          "maximum_seconds": 0.09249221
+        },
+        "buffer_wait_seconds": {
+          "samples": 16,
+          "total_seconds": 0.026958275,
+          "average_seconds": 0.0016848921875,
+          "minimum_seconds": 4.386e-06,
+          "maximum_seconds": 0.010735046
+        },
+        "compression_and_write_seconds": {
+          "samples": 16,
+          "total_seconds": 5.787333371,
+          "average_seconds": 0.3617083356875,
+          "minimum_seconds": 0.253091672,
+          "maximum_seconds": 0.49152846
+        },
+        "copy_back_seconds": {
+          "samples": 16,
+          "total_seconds": 0.491254362,
+          "average_seconds": 0.030703397625,
+          "minimum_seconds": 0.012756508,
+          "maximum_seconds": 0.049154437
+        },
+        "degree_conversion_seconds": {
+          "samples": 16,
+          "total_seconds": 3.0950192050000003,
+          "average_seconds": 0.19343870031250002,
+          "minimum_seconds": 0.136315633,
+          "maximum_seconds": 0.237144024
+        },
+        "gpu_worker_total_seconds": {
+          "samples": 16,
+          "total_seconds": 135.10441731199998,
+          "average_seconds": 8.444026081999999,
+          "minimum_seconds": 3.288632556,
+          "maximum_seconds": 13.064061696
+        },
+        "kernel_launch_seconds": {
+          "samples": 16,
+          "total_seconds": 0.00387818,
+          "average_seconds": 0.00024238625,
+          "minimum_seconds": 3.0201e-05,
+          "maximum_seconds": 0.002071964
+        },
+        "patch_enqueue_wait_seconds": {
+          "samples": 16,
+          "total_seconds": 0.0002808359999999999,
+          "average_seconds": 1.7552249999999994e-05,
+          "minimum_seconds": 4.384e-06,
+          "maximum_seconds": 7.4904e-05
+        },
+        "segment_generation_seconds": {
+          "samples": 16,
+          "total_seconds": 43.00629795200001,
+          "average_seconds": 2.6878936220000007,
+          "minimum_seconds": 2.458717074,
+          "maximum_seconds": 2.953506263
+        },
+        "segment_upload_seconds": {
+          "samples": 16,
+          "total_seconds": 0.18919551299999998,
+          "average_seconds": 0.011824719562499999,
+          "minimum_seconds": 0.010652461,
+          "maximum_seconds": 0.013524408
+        },
+        "stream_sync_seconds": {
+          "samples": 16,
+          "total_seconds": 130.149167042,
+          "average_seconds": 8.134322940125,
+          "minimum_seconds": 3.012274273,
+          "maximum_seconds": 12.76683167
+        },
+        "stream_wait_seconds": {
+          "samples": 16,
+          "total_seconds": 7.102e-05,
+          "average_seconds": 4.43875e-06,
+          "minimum_seconds": 1.294e-06,
+          "maximum_seconds": 4.2536e-05
+        }
+      },
+      "outputs": [
+        {
+          "patch_index": 0,
+          "tile_x": 0,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00000/horizon_00000_00000_000.cbin",
+          "size_bytes": 23672772,
+          "sha256": "eb4876bb678316cdb9926845d801120d03639ef770cd1ae3670ed70d3bf97ef1"
+        },
+        {
+          "patch_index": 1,
+          "tile_x": 128,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00000/horizon_00000_00128_000.cbin",
+          "size_bytes": 23656625,
+          "sha256": "8b5c247cb4efc9d3c9d50b16faaf29d7cc6bd089541f86c430b3c54bf8e2ed23"
+        },
+        {
+          "patch_index": 2,
+          "tile_x": 256,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00000/horizon_00000_00256_000.cbin",
+          "size_bytes": 23651112,
+          "sha256": "a10b1dd47a684a3d324e19e291dbdbe78ca852ef11b270fe827eb3e2c0684ef4"
+        },
+        {
+          "patch_index": 3,
+          "tile_x": 384,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00000/horizon_00000_00384_000.cbin",
+          "size_bytes": 23647011,
+          "sha256": "7f5fdea3555dc8a95ea2d270bf9d0250e0b111cccc61baa2d9782d6dec8e51c2"
+        },
+        {
+          "patch_index": 4,
+          "tile_x": 0,
+          "tile_y": 128,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00128/horizon_00128_00000_000.cbin",
+          "size_bytes": 23669667,
+          "sha256": "fd51bb9cba603ca25e4f69d9a08108ef1157fde27e67dfdea26e6c9b83d2d4d1"
+        },
+        {
+          "patch_index": 5,
+          "tile_x": 128,
+          "tile_y": 128,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00128/horizon_00128_00128_000.cbin",
+          "size_bytes": 23666523,
+          "sha256": "b7ae35a327210c6695db0dff1d604529426ec3dd382d481b0148a4d8b92d0199"
+        },
+        {
+          "patch_index": 6,
+          "tile_x": 256,
+          "tile_y": 128,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00128/horizon_00128_00256_000.cbin",
+          "size_bytes": 23644945,
+          "sha256": "6c0f2c7d94084cec78a1d8a2004a82f7dd85be695653f23e388354d32bc614a3"
+        },
+        {
+          "patch_index": 7,
+          "tile_x": 384,
+          "tile_y": 128,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00128/horizon_00128_00384_000.cbin",
+          "size_bytes": 23644730,
+          "sha256": "e3c81615bec4b33713cbec9b07745fa2b38bc44ff4a444f9ecd01f225941bcbf"
+        },
+        {
+          "patch_index": 8,
+          "tile_x": 0,
+          "tile_y": 256,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00256/horizon_00256_00000_000.cbin",
+          "size_bytes": 23672496,
+          "sha256": "7aad6eca0156ff813fbe61c6bc8bce88d443275a6416920587ee32ba4af40e2c"
+        },
+        {
+          "patch_index": 9,
+          "tile_x": 128,
+          "tile_y": 256,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00256/horizon_00256_00128_000.cbin",
+          "size_bytes": 23665275,
+          "sha256": "e6ce85c935c7c26a574cefa1498b25c4939ae3f23b26f2e3bb7091faea61d0fa"
+        },
+        {
+          "patch_index": 10,
+          "tile_x": 256,
+          "tile_y": 256,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00256/horizon_00256_00256_000.cbin",
+          "size_bytes": 23646145,
+          "sha256": "6129d540cd59895fdb1fc783b02e04bf418c0c279f753bb0dbbe43e8821efc76"
+        },
+        {
+          "patch_index": 11,
+          "tile_x": 384,
+          "tile_y": 256,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00256/horizon_00256_00384_000.cbin",
+          "size_bytes": 23643669,
+          "sha256": "81aa008bbc34c7d1bf7e69c02e5c3b30b3b7ce96165d95a130111dc7cc742c6b"
+        },
+        {
+          "patch_index": 12,
+          "tile_x": 0,
+          "tile_y": 384,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00384/horizon_00384_00000_000.cbin",
+          "size_bytes": 23665867,
+          "sha256": "7820716084961cbd8640310d11b7c7f76c5222bffca99610cfb4fb609a5b4111"
+        },
+        {
+          "patch_index": 13,
+          "tile_x": 128,
+          "tile_y": 384,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00384/horizon_00384_00128_000.cbin",
+          "size_bytes": 23664626,
+          "sha256": "2c824ed4b46846edefa33346b564e87433c753132252f3f3b0eed24254676a16"
+        },
+        {
+          "patch_index": 14,
+          "tile_x": 256,
+          "tile_y": 384,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00384/horizon_00384_00256_000.cbin",
+          "size_bytes": 23662006,
+          "sha256": "8795f6d9cc381ae8c18f205c10ad405c8fa79628d5871b6007af3558c0a885c2"
+        },
+        {
+          "patch_index": 15,
+          "tile_x": 384,
+          "tile_y": 384,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-cold_fresh_pyramids/00384/horizon_00384_00384_000.cbin",
+          "size_bytes": 23645067,
+          "sha256": "8a427414f2ea46af25b6bfd068ad9b8dcb3934971262098973d8f593cab64686"
+        }
+      ],
+      "combined_output_sha256": "78c26d4e9b51689116abd3399fa8b1ac8dbb3554ffd5576c685c7971294ba6da"
+    },
+    {
+      "name": "warm_cached_pyramids",
+      "timing_class": "Warm benchmark scope in the same process and generator, with pyramid cache files and reusable pipeline resources retained from the cold run.",
+      "pyramid_cache_present_before": true,
+      "pyramids_before": [
+        {
+          "dem_index": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-00.pyr.bin",
+          "exists": true,
+          "size_bytes": 69908,
+          "sha256": "a32dc464e843f7b57fdccf9108d1e0ae0d55c4b20e00e95524fc88c043ffe11d",
+          "last_write_utc": "2026-07-17T16:23:10.9052942Z"
+        },
+        {
+          "dem_index": 1,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-01.pyr.bin",
+          "exists": true,
+          "size_bytes": 6986252,
+          "sha256": "38a002d4e4d8f6035507f2d33b9f456fa9d1037fa01d5089b61eb5b6aa5bd00e",
+          "last_write_utc": "2026-07-17T16:23:10.9552943Z"
+        },
+        {
+          "dem_index": 2,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-02.pyr.bin",
+          "exists": true,
+          "size_bytes": 7211324,
+          "sha256": "77f7e233163115ba392e23b2f48055011d8b51a894f0a71cfd649587ba79f860",
+          "last_write_utc": "2026-07-17T16:23:10.9512943Z"
+        },
+        {
+          "dem_index": 3,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-03.pyr.bin",
+          "exists": true,
+          "size_bytes": 246443020,
+          "sha256": "8d4a037540853e572144a4220950a8eacbc2c063a506e97542e174b0514b0767",
+          "last_write_utc": "2026-07-17T16:23:12.4362970Z"
+        }
+      ],
+      "pyramids_after": [
+        {
+          "dem_index": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-00.pyr.bin",
+          "exists": true,
+          "size_bytes": 69908,
+          "sha256": "a32dc464e843f7b57fdccf9108d1e0ae0d55c4b20e00e95524fc88c043ffe11d",
+          "last_write_utc": "2026-07-17T16:23:10.9052942Z"
+        },
+        {
+          "dem_index": 1,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-01.pyr.bin",
+          "exists": true,
+          "size_bytes": 6986252,
+          "sha256": "38a002d4e4d8f6035507f2d33b9f456fa9d1037fa01d5089b61eb5b6aa5bd00e",
+          "last_write_utc": "2026-07-17T16:23:10.9552943Z"
+        },
+        {
+          "dem_index": 2,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-02.pyr.bin",
+          "exists": true,
+          "size_bytes": 7211324,
+          "sha256": "77f7e233163115ba392e23b2f48055011d8b51a894f0a71cfd649587ba79f860",
+          "last_write_utc": "2026-07-17T16:23:10.9512943Z"
+        },
+        {
+          "dem_index": 3,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/inputs/dem-03.pyr.bin",
+          "exists": true,
+          "size_bytes": 246443020,
+          "sha256": "8d4a037540853e572144a4220950a8eacbc2c063a506e97542e174b0514b0767",
+          "last_write_utc": "2026-07-17T16:23:12.4362970Z"
+        }
+      ],
+      "elapsed_seconds": 56.953318,
+      "patches_per_second": 0.2809318326282588,
+      "host_peak_working_set_bytes": 18086236160,
+      "per_patch_profiles": [
+        {
+          "patch_index": 0,
+          "tile_x": 0,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 1,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.451327431,
+          "patch_enqueue_wait_seconds": 5.1273e-05,
+          "buffer_wait_seconds": 4.639e-06,
+          "stream_wait_seconds": 1.744e-06,
+          "buffer_reset_seconds": 0.065778501,
+          "segment_upload_seconds": 0.011584893,
+          "kernel_launch_seconds": 3.6858e-05,
+          "stream_sync_seconds": 3.103095608,
+          "copy_back_seconds": 0.015277,
+          "degree_conversion_seconds": 0.237234177,
+          "compression_and_write_seconds": 0.411272269,
+          "gpu_worker_total_seconds": 3.433048368
+        },
+        {
+          "patch_index": 1,
+          "tile_x": 128,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.811264953,
+          "patch_enqueue_wait_seconds": 1.2333e-05,
+          "buffer_wait_seconds": 6.087e-06,
+          "stream_wait_seconds": 2.033e-06,
+          "buffer_reset_seconds": 0.057957782,
+          "segment_upload_seconds": 0.011881901,
+          "kernel_launch_seconds": 3.2861e-05,
+          "stream_sync_seconds": 3.42142748,
+          "copy_back_seconds": 0.016578704,
+          "degree_conversion_seconds": 0.241671957,
+          "compression_and_write_seconds": 0.395459866,
+          "gpu_worker_total_seconds": 3.749591724
+        },
+        {
+          "patch_index": 2,
+          "tile_x": 256,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.636485032,
+          "patch_enqueue_wait_seconds": 1.2577e-05,
+          "buffer_wait_seconds": 6.008e-06,
+          "stream_wait_seconds": 1.657e-06,
+          "buffer_reset_seconds": 0.066638193,
+          "segment_upload_seconds": 0.012231233,
+          "kernel_launch_seconds": 2.6673e-05,
+          "stream_sync_seconds": 4.404167121,
+          "copy_back_seconds": 0.019132333,
+          "degree_conversion_seconds": 0.217299293,
+          "compression_and_write_seconds": 0.426058602,
+          "gpu_worker_total_seconds": 4.7195343
+        },
+        {
+          "patch_index": 3,
+          "tile_x": 384,
+          "tile_y": 0,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 2,
+          "active_streams": 2,
+          "segment_generation_seconds": 2.472486631,
+          "patch_enqueue_wait_seconds": 1.0988e-05,
+          "buffer_wait_seconds": 5.952e-06,
+          "stream_wait_seconds": 1.961e-06,
+          "buffer_reset_seconds": 0.057987661,
+          "segment_upload_seconds": 0.012791782,
+          "kernel_launch_seconds": 3.4645e-05,
+          "stream_sync_seconds": 6.120687677,
+          "copy_back_seconds": 0.016202743,
+          "degree_conversion_seconds": 0.2237666,
+          "compression_and_write_seconds": 0.36560847,
+          "gpu_worker_total_seconds": 6.431523572
+        },
+        {
+          "patch_index": 4,
+          "tile_x": 0,
+          "tile_y": 128,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 2,
+          "segment_generation_seconds": 2.671417587,
+          "patch_enqueue_wait_seconds": 1.5487e-05,
+          "buffer_wait_seconds": 5.199e-06,
+          "stream_wait_seconds": 1.999e-06,
+          "buffer_reset_seconds": 0.071029602,
+          "segment_upload_seconds": 0.010861879,
+          "kernel_launch_seconds": 3.4564e-05,
+          "stream_sync_seconds": 5.695634093,
+          "copy_back_seconds": 0.019495704,
+          "degree_conversion_seconds": 0.21782934,
+          "compression_and_write_seconds": 0.402787739,
+          "gpu_worker_total_seconds": 6.014930851
+        },
+        {
+          "patch_index": 5,
+          "tile_x": 128,
+          "tile_y": 128,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 2,
+          "segment_generation_seconds": 2.958907832,
+          "patch_enqueue_wait_seconds": 9.521e-06,
+          "buffer_wait_seconds": 5.694e-06,
+          "stream_wait_seconds": 2.068e-06,
+          "buffer_reset_seconds": 0.064330183,
+          "segment_upload_seconds": 0.011452919,
+          "kernel_launch_seconds": 3.7885e-05,
+          "stream_sync_seconds": 7.060503202,
+          "copy_back_seconds": 0.013303635,
+          "degree_conversion_seconds": 0.254715764,
+          "compression_and_write_seconds": 0.389699854,
+          "gpu_worker_total_seconds": 7.404383506
+        },
+        {
+          "patch_index": 6,
+          "tile_x": 256,
+          "tile_y": 128,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 2,
+          "segment_generation_seconds": 2.827216019,
+          "patch_enqueue_wait_seconds": 1.699e-05,
+          "buffer_wait_seconds": 1.448e-05,
+          "stream_wait_seconds": 2.07e-06,
+          "buffer_reset_seconds": 0.067317598,
+          "segment_upload_seconds": 0.015684811,
+          "kernel_launch_seconds": 3.3427e-05,
+          "stream_sync_seconds": 7.738025944,
+          "copy_back_seconds": 0.013755904,
+          "degree_conversion_seconds": 0.229901077,
+          "compression_and_write_seconds": 0.428959997,
+          "gpu_worker_total_seconds": 8.064763797
+        },
+        {
+          "patch_index": 7,
+          "tile_x": 384,
+          "tile_y": 128,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.685393142,
+          "patch_enqueue_wait_seconds": 8.615e-06,
+          "buffer_wait_seconds": 5.748e-06,
+          "stream_wait_seconds": 1.709e-06,
+          "buffer_reset_seconds": 0.063776618,
+          "segment_upload_seconds": 0.011719764,
+          "kernel_launch_seconds": 3.3894e-05,
+          "stream_sync_seconds": 8.395359431,
+          "copy_back_seconds": 0.015136651,
+          "degree_conversion_seconds": 0.217682529,
+          "compression_and_write_seconds": 0.447234774,
+          "gpu_worker_total_seconds": 8.703750773
+        },
+        {
+          "patch_index": 8,
+          "tile_x": 0,
+          "tile_y": 256,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.755992941,
+          "patch_enqueue_wait_seconds": 1.6586e-05,
+          "buffer_wait_seconds": 5.283e-06,
+          "stream_wait_seconds": 1.707e-06,
+          "buffer_reset_seconds": 0.079535875,
+          "segment_upload_seconds": 0.011576437,
+          "kernel_launch_seconds": 3.397e-05,
+          "stream_sync_seconds": 8.819148876,
+          "copy_back_seconds": 0.020408593,
+          "degree_conversion_seconds": 0.232438502,
+          "compression_and_write_seconds": 0.396080807,
+          "gpu_worker_total_seconds": 9.163186035
+        },
+        {
+          "patch_index": 9,
+          "tile_x": 128,
+          "tile_y": 256,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 3,
+          "active_streams": 3,
+          "segment_generation_seconds": 3.154881251,
+          "patch_enqueue_wait_seconds": 1.1371e-05,
+          "buffer_wait_seconds": 5.532e-06,
+          "stream_wait_seconds": 1.809e-06,
+          "buffer_reset_seconds": 0.075077463,
+          "segment_upload_seconds": 0.0111609,
+          "kernel_launch_seconds": 3.3628e-05,
+          "stream_sync_seconds": 9.079857642,
+          "copy_back_seconds": 0.021965667,
+          "degree_conversion_seconds": 0.233346103,
+          "compression_and_write_seconds": 0.41592315,
+          "gpu_worker_total_seconds": 9.421476568
+        },
+        {
+          "patch_index": 10,
+          "tile_x": 256,
+          "tile_y": 256,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 3,
+          "segment_generation_seconds": 3.141443055,
+          "patch_enqueue_wait_seconds": 2.1745e-05,
+          "buffer_wait_seconds": 5.661e-06,
+          "stream_wait_seconds": 2.308e-06,
+          "buffer_reset_seconds": 0.0667704,
+          "segment_upload_seconds": 0.013404643,
+          "kernel_launch_seconds": 3.9284e-05,
+          "stream_sync_seconds": 9.543542796,
+          "copy_back_seconds": 0.021162019,
+          "degree_conversion_seconds": 0.211046128,
+          "compression_and_write_seconds": 0.412861123,
+          "gpu_worker_total_seconds": 9.856007858
+        },
+        {
+          "patch_index": 11,
+          "tile_x": 384,
+          "tile_y": 256,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.790800346,
+          "patch_enqueue_wait_seconds": 1.911e-05,
+          "buffer_wait_seconds": 6.297e-06,
+          "stream_wait_seconds": 1.071e-06,
+          "buffer_reset_seconds": 0.067026568,
+          "segment_upload_seconds": 0.01171833,
+          "kernel_launch_seconds": 3.2269e-05,
+          "stream_sync_seconds": 9.774986949,
+          "copy_back_seconds": 0.019206957,
+          "degree_conversion_seconds": 0.2230282,
+          "compression_and_write_seconds": 0.4389959,
+          "gpu_worker_total_seconds": 10.096039055
+        },
+        {
+          "patch_index": 12,
+          "tile_x": 0,
+          "tile_y": 384,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 3,
+          "segment_generation_seconds": 2.597097667,
+          "patch_enqueue_wait_seconds": 1.1722e-05,
+          "buffer_wait_seconds": 6.287e-06,
+          "stream_wait_seconds": 2.162e-06,
+          "buffer_reset_seconds": 0.064434705,
+          "segment_upload_seconds": 0.011259248,
+          "kernel_launch_seconds": 3.5251e-05,
+          "stream_sync_seconds": 12.436242787,
+          "copy_back_seconds": 0.017473228,
+          "degree_conversion_seconds": 0.14845599,
+          "compression_and_write_seconds": 0.267198747,
+          "gpu_worker_total_seconds": 12.677942492
+        },
+        {
+          "patch_index": 13,
+          "tile_x": 128,
+          "tile_y": 384,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 2,
+          "segment_generation_seconds": 2.829665381,
+          "patch_enqueue_wait_seconds": 1.8455e-05,
+          "buffer_wait_seconds": 0.000545157,
+          "stream_wait_seconds": 1.699e-06,
+          "buffer_reset_seconds": 0.076205578,
+          "segment_upload_seconds": 0.012210692,
+          "kernel_launch_seconds": 3.643e-05,
+          "stream_sync_seconds": 10.829099508,
+          "copy_back_seconds": 0.015742526,
+          "degree_conversion_seconds": 0.175322435,
+          "compression_and_write_seconds": 0.310324265,
+          "gpu_worker_total_seconds": 11.108681539
+        },
+        {
+          "patch_index": 14,
+          "tile_x": 256,
+          "tile_y": 384,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 1,
+          "segment_generation_seconds": 2.854463157,
+          "patch_enqueue_wait_seconds": 1.1112e-05,
+          "buffer_wait_seconds": 1.8762e-05,
+          "stream_wait_seconds": 8.486e-06,
+          "buffer_reset_seconds": 0.066134846,
+          "segment_upload_seconds": 0.012744365,
+          "kernel_launch_seconds": 3.2622e-05,
+          "stream_sync_seconds": 11.316117537,
+          "copy_back_seconds": 0.016081472,
+          "degree_conversion_seconds": 0.151278441,
+          "compression_and_write_seconds": 0.28248398,
+          "gpu_worker_total_seconds": 11.56247373
+        },
+        {
+          "patch_index": 15,
+          "tile_x": 384,
+          "tile_y": 384,
+          "queue_depth_after_enqueue": 1,
+          "queue_depth_on_dequeue": 0,
+          "active_gpu_workers": 4,
+          "active_streams": 0,
+          "segment_generation_seconds": 2.694889561,
+          "patch_enqueue_wait_seconds": 3.1786e-05,
+          "buffer_wait_seconds": 2.7e-06,
+          "stream_wait_seconds": 7.26e-07,
+          "buffer_reset_seconds": 0.054994972,
+          "segment_upload_seconds": 0.011699407,
+          "kernel_launch_seconds": 2.7131e-05,
+          "stream_sync_seconds": 10.551116645,
+          "copy_back_seconds": 0.015978677,
+          "degree_conversion_seconds": 0.143174354,
+          "compression_and_write_seconds": 0.268185204,
+          "gpu_worker_total_seconds": 10.777046752
+        }
+      ],
+      "selected_traversal_profiles": [],
+      "stage_aggregates": {
+        "buffer_reset_seconds": {
+          "samples": 16,
+          "total_seconds": 1.064996545,
+          "average_seconds": 0.0665622840625,
+          "minimum_seconds": 0.054994972,
+          "maximum_seconds": 0.079535875
+        },
+        "buffer_wait_seconds": {
+          "samples": 16,
+          "total_seconds": 0.000649486,
+          "average_seconds": 4.0592875e-05,
+          "minimum_seconds": 2.7e-06,
+          "maximum_seconds": 0.000545157
+        },
+        "compression_and_write_seconds": {
+          "samples": 16,
+          "total_seconds": 6.059134747000001,
+          "average_seconds": 0.37869592168750005,
+          "minimum_seconds": 0.267198747,
+          "maximum_seconds": 0.447234774
+        },
+        "copy_back_seconds": {
+          "samples": 16,
+          "total_seconds": 0.276901813,
+          "average_seconds": 0.0173063633125,
+          "minimum_seconds": 0.013303635,
+          "maximum_seconds": 0.021965667
+        },
+        "degree_conversion_seconds": {
+          "samples": 16,
+          "total_seconds": 3.3581908900000004,
+          "average_seconds": 0.20988693062500002,
+          "minimum_seconds": 0.143174354,
+          "maximum_seconds": 0.254715764
+        },
+        "gpu_worker_total_seconds": {
+          "samples": 16,
+          "total_seconds": 133.18438092,
+          "average_seconds": 8.3240238075,
+          "minimum_seconds": 3.433048368,
+          "maximum_seconds": 12.677942492
+        },
+        "kernel_launch_seconds": {
+          "samples": 16,
+          "total_seconds": 0.000541392,
+          "average_seconds": 3.3837e-05,
+          "minimum_seconds": 2.6673e-05,
+          "maximum_seconds": 3.9284e-05
+        },
+        "patch_enqueue_wait_seconds": {
+          "samples": 16,
+          "total_seconds": 0.00027967100000000005,
+          "average_seconds": 1.7479437500000003e-05,
+          "minimum_seconds": 8.615e-06,
+          "maximum_seconds": 5.1273e-05
+        },
+        "segment_generation_seconds": {
+          "samples": 16,
+          "total_seconds": 44.33373198599999,
+          "average_seconds": 2.7708582491249993,
+          "minimum_seconds": 2.451327431,
+          "maximum_seconds": 3.154881251
+        },
+        "segment_upload_seconds": {
+          "samples": 16,
+          "total_seconds": 0.193983204,
+          "average_seconds": 0.01212395025,
+          "minimum_seconds": 0.010861879,
+          "maximum_seconds": 0.015684811
+        },
+        "stream_sync_seconds": {
+          "samples": 16,
+          "total_seconds": 128.289013296,
+          "average_seconds": 8.018063331,
+          "minimum_seconds": 3.103095608,
+          "maximum_seconds": 12.436242787
+        },
+        "stream_wait_seconds": {
+          "samples": 16,
+          "total_seconds": 3.5208999999999994e-05,
+          "average_seconds": 2.2005624999999997e-06,
+          "minimum_seconds": 7.26e-07,
+          "maximum_seconds": 8.486e-06
+        }
+      },
+      "outputs": [
+        {
+          "patch_index": 0,
+          "tile_x": 0,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00000/horizon_00000_00000_000.cbin",
+          "size_bytes": 23672772,
+          "sha256": "eb4876bb678316cdb9926845d801120d03639ef770cd1ae3670ed70d3bf97ef1"
+        },
+        {
+          "patch_index": 1,
+          "tile_x": 128,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00000/horizon_00000_00128_000.cbin",
+          "size_bytes": 23656625,
+          "sha256": "8b5c247cb4efc9d3c9d50b16faaf29d7cc6bd089541f86c430b3c54bf8e2ed23"
+        },
+        {
+          "patch_index": 2,
+          "tile_x": 256,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00000/horizon_00000_00256_000.cbin",
+          "size_bytes": 23651112,
+          "sha256": "a10b1dd47a684a3d324e19e291dbdbe78ca852ef11b270fe827eb3e2c0684ef4"
+        },
+        {
+          "patch_index": 3,
+          "tile_x": 384,
+          "tile_y": 0,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00000/horizon_00000_00384_000.cbin",
+          "size_bytes": 23647011,
+          "sha256": "7f5fdea3555dc8a95ea2d270bf9d0250e0b111cccc61baa2d9782d6dec8e51c2"
+        },
+        {
+          "patch_index": 4,
+          "tile_x": 0,
+          "tile_y": 128,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00128/horizon_00128_00000_000.cbin",
+          "size_bytes": 23669667,
+          "sha256": "fd51bb9cba603ca25e4f69d9a08108ef1157fde27e67dfdea26e6c9b83d2d4d1"
+        },
+        {
+          "patch_index": 5,
+          "tile_x": 128,
+          "tile_y": 128,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00128/horizon_00128_00128_000.cbin",
+          "size_bytes": 23666523,
+          "sha256": "b7ae35a327210c6695db0dff1d604529426ec3dd382d481b0148a4d8b92d0199"
+        },
+        {
+          "patch_index": 6,
+          "tile_x": 256,
+          "tile_y": 128,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00128/horizon_00128_00256_000.cbin",
+          "size_bytes": 23644945,
+          "sha256": "6c0f2c7d94084cec78a1d8a2004a82f7dd85be695653f23e388354d32bc614a3"
+        },
+        {
+          "patch_index": 7,
+          "tile_x": 384,
+          "tile_y": 128,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00128/horizon_00128_00384_000.cbin",
+          "size_bytes": 23644730,
+          "sha256": "e3c81615bec4b33713cbec9b07745fa2b38bc44ff4a444f9ecd01f225941bcbf"
+        },
+        {
+          "patch_index": 8,
+          "tile_x": 0,
+          "tile_y": 256,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00256/horizon_00256_00000_000.cbin",
+          "size_bytes": 23672496,
+          "sha256": "7aad6eca0156ff813fbe61c6bc8bce88d443275a6416920587ee32ba4af40e2c"
+        },
+        {
+          "patch_index": 9,
+          "tile_x": 128,
+          "tile_y": 256,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00256/horizon_00256_00128_000.cbin",
+          "size_bytes": 23665275,
+          "sha256": "e6ce85c935c7c26a574cefa1498b25c4939ae3f23b26f2e3bb7091faea61d0fa"
+        },
+        {
+          "patch_index": 10,
+          "tile_x": 256,
+          "tile_y": 256,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00256/horizon_00256_00256_000.cbin",
+          "size_bytes": 23646145,
+          "sha256": "6129d540cd59895fdb1fc783b02e04bf418c0c279f753bb0dbbe43e8821efc76"
+        },
+        {
+          "patch_index": 11,
+          "tile_x": 384,
+          "tile_y": 256,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00256/horizon_00256_00384_000.cbin",
+          "size_bytes": 23643669,
+          "sha256": "81aa008bbc34c7d1bf7e69c02e5c3b30b3b7ce96165d95a130111dc7cc742c6b"
+        },
+        {
+          "patch_index": 12,
+          "tile_x": 0,
+          "tile_y": 384,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00384/horizon_00384_00000_000.cbin",
+          "size_bytes": 23665867,
+          "sha256": "7820716084961cbd8640310d11b7c7f76c5222bffca99610cfb4fb609a5b4111"
+        },
+        {
+          "patch_index": 13,
+          "tile_x": 128,
+          "tile_y": 384,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00384/horizon_00384_00128_000.cbin",
+          "size_bytes": 23664626,
+          "sha256": "2c824ed4b46846edefa33346b564e87433c753132252f3f3b0eed24254676a16"
+        },
+        {
+          "patch_index": 14,
+          "tile_x": 256,
+          "tile_y": 384,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00384/horizon_00384_00256_000.cbin",
+          "size_bytes": 23662006,
+          "sha256": "8795f6d9cc381ae8c18f205c10ad405c8fa79628d5871b6007af3558c0a885c2"
+        },
+        {
+          "patch_index": 15,
+          "tile_x": 384,
+          "tile_y": 384,
+          "path": "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a/outputs-warm_cached_pyramids/00384/horizon_00384_00384_000.cbin",
+          "size_bytes": 23645067,
+          "sha256": "8a427414f2ea46af25b6bfd068ad9b8dcb3934971262098973d8f593cab64686"
+        }
+      ],
+      "combined_output_sha256": "78c26d4e9b51689116abd3399fa8b1ac8dbb3554ffd5576c685c7971294ba6da"
+    }
+  ],
+  "repeatability": {
+    "cold_and_warm_output_hashes_equal": true
+  },
+  "timing_notes": [
+    "Each run elapsed scope is GenerateHorizonsForPatches, including pyramid build/load, segment generation, GPU work, compression, and writes.",
+    "The cold run excludes input copying, input hashing, DEM loading, generator construction/kernel compilation, and output hashing.",
+    "The warm run uses the same process and generator after the cold run; pyramid files and reusable pipeline buffers/streams may be reused.",
+    "Stage totals overlap across producer and GPU workers and must not be summed to estimate wall time.",
+    "kernel_launch_sec measures asynchronous enqueue time; stream_sync_sec includes waiting for queued CUDA work to complete."
+  ],
+  "limitations": [
+    "The production shared SubpatchSegmentCache is hard-coded off, so neighboring patches recompute segment centers.",
+    "The first-N selection is a bounded contiguous row-major batch, not a whole-region throughput claim.",
+    "Peak GPU memory is sampled rather than an allocation-level high-water mark."
+  ],
+  "gpu_memory": {
+    "method": "Repeated nvidia-smi --query-compute-apps sampling matched to the benchmark process PID.",
+    "sample_interval_seconds": 0.05,
+    "units": "MiB as reported by nvidia-smi",
+    "phases": {
+      "between_runs": {
+        "sample_count": 9,
+        "peak_process_gpu_memory_mib": 1522,
+        "minimum_process_gpu_memory_mib": 204
+      },
+      "cold_fresh_pyramids": {
+        "sample_count": 798,
+        "peak_process_gpu_memory_mib": 5504,
+        "minimum_process_gpu_memory_mib": 470
+      },
+      "startup": {
+        "sample_count": 4,
+        "peak_process_gpu_memory_mib": 254,
+        "minimum_process_gpu_memory_mib": 20
+      },
+      "warm_cached_pyramids": {
+        "sample_count": 803,
+        "peak_process_gpu_memory_mib": 5504,
+        "minimum_process_gpu_memory_mib": 1742
+      }
+    },
+    "error_count": 0,
+    "errors": [],
+    "limitations": [
+      "Sampled peaks can understate allocations shorter than the polling interval.",
+      "Per-process nvidia-smi memory is CUDA context/allocation accounting, not device-wide memory.used."
+    ],
+    "device_before": {
+      "command": [
+        "nvidia-smi",
+        "--query-gpu=index,uuid,name,driver_version,memory.total,memory.used",
+        "--format=csv,noheader,nounits"
+      ],
+      "exit_code": 0,
+      "stdout": "0, GPU-af0214a8-2b36-e02e-5c5d-cacb95f862c3, NVIDIA GeForce RTX 5090 Laptop GPU, 580.159.03, 24463, 2",
+      "stderr": ""
+    },
+    "device_after": {
+      "command": [
+        "nvidia-smi",
+        "--query-gpu=index,uuid,name,driver_version,memory.total,memory.used",
+        "--format=csv,noheader,nounits"
+      ],
+      "exit_code": 0,
+      "stdout": "0, GPU-af0214a8-2b36-e02e-5c5d-cacb95f862c3, NVIDIA GeForce RTX 5090 Laptop GPU, 580.159.03, 24463, 2",
+      "stderr": ""
+    }
+  },
+  "launcher": {
+    "script": "scripts/numba_horizon/run_phase0_production_benchmark.py",
+    "command": [
+      "dotnet",
+      "run",
+      "--project",
+      "scripts/numba_horizon/CSharpMultiPatchBenchmark.csproj",
+      "--",
+      "/tmp/lunarscout-phase6-csharp-sustained-16-20260717a",
+      "16",
+      "0.0",
+      "4",
+      "6",
+      "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+      "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+      "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+      "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif"
+    ],
+    "elapsed_seconds": 125.03513904600004
+  }
+}

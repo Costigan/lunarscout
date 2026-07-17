@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "python_compressed_synthetic_bytes": 23642112,
+  "csharp_decoded_samples": 23592960,
+  "csharp_roundtrip_uncompressed_bytes": 94371840,
+  "synthetic_max_abs_degrees": 0.000762939453125,
+  "synthetic_padding_max_abs_degrees": 0.0,
+  "real_tile": {
+    "python_compressed_bytes": 23672772,
+    "python_uncompressed_bytes": 94371840,
+    "csharp_decoded_value_sha256": "88229a6a636f6d14fddbea29b7f3fbbcfa5372d2df81cf3f0eaef6893adc3b74",
+    "sample_count": 23592960,
+    "max_abs_degrees": 0.0007638931274414062,
+    "mean_abs_degrees": 0.00038065831176936626,
+    "count_above_0_001_degrees": 0
+  },
+  "interpretation": "Differences are the expected C# HorizonCompressor quantization, not horizon-kernel disagreement."
+}

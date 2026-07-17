@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import threading
 from types import SimpleNamespace
 
 import numpy as np
@@ -179,6 +180,7 @@ def test_cuda_session_reuses_unchanged_production_pyramids() -> None:
     session._cuda = FakeCuda()
     session._production_pyramids = None
     session._production_device_pyramids = None
+    session._production_pyramid_lock = threading.Lock()
     first = (pyramid(), pyramid())
     first_device = session._prepare_production_pyramids(first)
     assert len(session._cuda.uploads) == 10
@@ -334,6 +336,28 @@ def test_cuda_partial_patch_edges_match_selected_cpu_subpatch_rays() -> None:
                 assert gpu_passes[pass_index][pixel, azimuth] == pytest.approx(
                     float(cpu.maximum_slope), abs=2e-6
                 )
+
+
+@pytest.mark.skipif(
+    os.environ.get("LUNARSCOUT_REQUIRE_NUMBA_CUDA") != "1",
+    reason="set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 for the explicit real-GPU probe",
+)
+def test_cuda_fixed_shape_edge_patch_leaves_outside_dem_pixels_at_sentinel() -> None:
+    values, pyramids = _boundary_patch_inputs()
+    output = CudaSession().subpatch_hierarchical_pass(
+        values,
+        pyramids[0],
+        pyramids[0],
+        tile_column=33,
+        tile_row=0,
+        tile_width=16,
+        tile_height=16,
+        subpatch_size=8,
+        pass_index=0,
+    ).reshape(16, 16, 16)
+
+    assert not np.any(np.isnan(output[:, :8]))
+    assert np.all(np.isneginf(output[:, 8:]))
 
 
 @pytest.mark.skipif(

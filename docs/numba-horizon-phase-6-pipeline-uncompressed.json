@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "mode": "pipeline",
+  "compressed": false,
+  "patch_count": 4,
+  "elapsed_seconds": 23.875951161000103,
+  "patches_per_second": 0.16753259265053924,
+  "wall_seconds_per_patch": 5.968987790250026,
+  "preparation_seconds": [
+    1.688246960000015,
+    2.194106981999994,
+    2.148572515000069,
+    2.151153372000408
+  ],
+  "cuda_call_seconds": [
+    5.151256411999839,
+    5.276182244000211,
+    5.550835473999996,
+    5.466148346999944
+  ],
+  "degree_conversion_seconds": [
+    0.10000601799993092,
+    0.09817261500029417,
+    0.09538352500021574,
+    0.0940275439998004
+  ],
+  "write_seconds": [
+    0.35046422199957306
+  ],
+  "pass_kernel_seconds": [
+    [
+      0.40816708374023436,
+      1.4298912353515625,
+      1.2070020751953126,
+      2.06008544921875
+    ],
+    [
+      0.5069764099121093,
+      1.5075020751953125,
+      1.164022705078125,
+      2.0115548095703124
+    ],
+    [
+      0.41765313720703123,
+      1.9661578369140624,
+      1.1361884765625,
+      1.9885198974609375
+    ],
+    [
+      0.42770144653320313,
+      1.8770748291015624,
+      1.1325767822265624,
+      1.9852615966796876
+    ]
+  ],
+  "maximum_prepared_queue_depth": 1,
+  "peak_host_rss_bytes": 8994709504,
+  "peak_process_gpu_memory_mib": 5338,
+  "gpu_memory_samples": 333,
+  "files": [
+    {
+      "path": "/tmp/lunarscout-phase6-pipeline-raw/00000/horizon_00000_00000_000.bin",
+      "bytes": 94371840,
+      "sha256": "b67d363ad4a40e4e313dc3d5831b411a95e4355ab0bca2a70d443d54dde40893"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-pipeline-raw/00000/horizon_00000_00128_000.bin",
+      "bytes": 94371840,
+      "sha256": "3a40691e489da681c89408523aa754b89b8fc5e5bb5e6a1d461968a269580e8c"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-pipeline-raw/00000/horizon_00000_00256_000.bin",
+      "bytes": 94371840,
+      "sha256": "9e3d14715cc41ca36c06de8d4ecaec40cbda4bc5abc1eb06fcd5f05df9fbdd28"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-pipeline-raw/00000/horizon_00000_00384_000.bin",
+      "bytes": 94371840,
+      "sha256": "efb6f3d436569c26ed6dd51adc91ef8cf9224feb8011e7bd0ae57d4ece49effc"
+    }
+  ],
+  "total_output_bytes": 377487360,
+  "inputs": [
+    "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+    "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+    "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+    "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif"
+  ],
+  "notes": [
+    "Warm timing follows one unrecorded segment/CUDA/compression warm-up patch.",
+    "CUDA call includes segment upload, kernel events, synchronization, and result copy.",
+    "Pipeline mode uses one producer, one CUDA consumer, and one default CUDA stream.",
+    "Pyramids remain device-resident; transient segment and output buffers are not yet reused."
+  ]
+}

@@ -6,6 +6,37 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Expanded the Python/Numba replacement evaluation to require a shared bounded
+  downstream product pipeline for time-series lightmaps, optimized Metonic PSR,
+  safe-haven maps, landed mission-duration maps, and dtype-generic
+  horizon/vector reductions. The new gate requires a patch-major pipeline that
+  loads one horizon tile, computes a 128 by 128 tile for each requested time,
+  and writes it to that time's timestamped band in a tiled compressed BigTIFF.
+  It also requires high-level SpiceyPy vector generation with explicit-vector
+  override, full-DEM validity masks with configurable deterministic invalid
+  payloads, durable per-patch restart journals, file staging, C#-oracle parity
+  where available, and fresh-process execution without Python.NET or moonlib
+  before downstream C# product code can be retired.
+- Added the first private Phase 6 Numba horizon production pipeline: row-major
+  full and partial patch enumeration, structurally validated skip/resume,
+  bounded CPU preparation and CUDA work queues, cancellation boundaries,
+  immediately flushed progress, fixed-contract partial-edge padding, and
+  staged atomic `.bin`/`.cbin` writes. Python compressed files are readable by
+  moonlib and existing Scenario readers; a 23,592,960-value real tile has at
+  most `0.0007639` degrees of expected compression quantization error. In a
+  matched warm four-patch, four-DEM compressed run, the serial pipeline reaches
+  `0.1385` patches/second and the one-item-ahead pipeline reaches `0.1673`
+  patches/second. A sustained 16-patch run with a bounded writer queue and
+  reusable device buffers reaches `0.1793` patches/second, 63.8 percent of the
+  matched C# throughput. It uses `4,458` MiB peak GPU memory and `9.02` GB peak
+  host RSS. Preparation remains fully hidden after initial pipeline fill, so
+  neighboring segment-cache reuse is intentionally deferred. Two- and
+  four-stream runs produce byte-identical files but no material throughput gain,
+  so the selected default remains one stream. Cross-process Numba disk caching
+  reduces combined first CPU/CUDA-call time by `6.54` seconds with a `2.33` MB
+  cache and falls back safely when no writable cache locator exists. The full
+  failure matrix remains production-pipeline work; the implementation is still
+  private.
 - Added diagnostic Numba CUDA mechanics on a real GPU, including lazy device
   selection, launch/copy synchronization, pixel/azimuth indexing, C#-matching
   arithmetic helpers, fixed-step and adaptive level-0 traversal, exact

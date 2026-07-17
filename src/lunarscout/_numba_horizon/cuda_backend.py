@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+from queue import Queue
+import threading
+import time
 
 import numpy as np
 
@@ -23,6 +26,14 @@ _KERNELS = None
 def _build_kernels(cuda):
     from numba import float32, int32
     from numba.cuda import libdevice
+
+    def cuda_jit_cached(function):
+        try:
+            return cuda.jit(cache=True)(function)
+        except RuntimeError as error:
+            if "no locator available" not in str(error):
+                raise
+            return cuda.jit(function)
 
     @cuda.jit(device=True)
     def valid_elevation(value):
@@ -966,7 +977,7 @@ def _build_kernels(cuda):
         for field in range(18):
             output[index, field] = segment[field]
 
-    @cuda.jit
+    @cuda_jit_cached
     def subpatch_hierarchy_kernel(
         segments, primary_level0, primary_map, active_level0, active_mips,
         active_levels, active_map, active_projection, tile_column, tile_row,
@@ -983,6 +994,14 @@ def _build_kernels(cuda):
         azimuth = linear_index // pixel_count
         row = pixel // tile_width
         column = pixel % tile_width
+        # Production files are always 128x128, including partial DEM edge
+        # patches. Keep the established square segment/interpolation layout but
+        # leave padded observer threads at the initialized -infinity sentinel.
+        if (
+            tile_column + column >= primary_level0.shape[1]
+            or tile_row + row >= primary_level0.shape[0]
+        ):
+            return
         active_column_resolution = float32(math.sqrt(float32(
             float32(active_map[6] * active_map[6])
             + float32(active_map[9] * active_map[9])
@@ -1099,11 +1118,21 @@ class CudaDeviceInfo:
     compute_capability: tuple[int, int]
 
 
+@dataclass(slots=True)
+class _ProductionWorkSlot:
+    stream: object | None
+    device_segments: object
+    device_output: object
+    output_reset: np.ndarray
+
+
 class CudaSession:
     """An explicitly initialized diagnostic CUDA session."""
 
-    def __init__(self, device_id: int = 0) -> None:
+    def __init__(self, device_id: int = 0, *, production_concurrency: int = 1) -> None:
         global _KERNELS
+        if production_concurrency < 1:
+            raise ValueError("production_concurrency must be positive")
         try:
             from numba import cuda
         except ImportError as error:
@@ -1128,34 +1157,74 @@ class CudaSession:
         ) = _KERNELS
         self._production_pyramids = None
         self._production_device_pyramids = None
+        self._production_pyramid_lock = threading.Lock()
+        self._production_concurrency = production_concurrency
+        self._production_slots = None
+        self._production_slot_signature = None
+        self._production_slot_lock = threading.Lock()
+        self._production_timings = threading.local()
+
+    @property
+    def last_production_timings(self):
+        return getattr(self._production_timings, "value", None)
+
+    def _prepare_production_slots(self, segment_shape, output_shape):
+        signature = (segment_shape, output_shape)
+        with self._production_slot_lock:
+            if self._production_slots is not None:
+                if signature != self._production_slot_signature:
+                    raise ValueError(
+                        "production work-buffer shape changed within one CUDA session"
+                    )
+                return self._production_slots
+            slots = Queue(maxsize=self._production_concurrency)
+            output_reset = np.full(output_shape, -np.inf, dtype=np.float32)
+            for _ in range(self._production_concurrency):
+                stream = (
+                    None
+                    if self._production_concurrency == 1
+                    else self._cuda.stream()
+                )
+                slots.put(
+                    _ProductionWorkSlot(
+                        stream,
+                        self._cuda.device_array(segment_shape, dtype=np.float32),
+                        self._cuda.device_array(output_shape, dtype=np.float32),
+                        output_reset,
+                    )
+                )
+            self._production_slot_signature = signature
+            self._production_slots = slots
+            return slots
 
     def _prepare_production_pyramids(self, pyramids):
         """Keep immutable production pyramid inputs resident across patches."""
         host_pyramids = tuple(pyramids)
-        if (
-            self._production_pyramids is not None
-            and len(host_pyramids) == len(self._production_pyramids)
-            and all(
-                current is cached
-                for current, cached in zip(
-                    host_pyramids, self._production_pyramids, strict=True
+        with self._production_pyramid_lock:
+            if (
+                self._production_pyramids is not None
+                and len(host_pyramids) == len(self._production_pyramids)
+                and all(
+                    current is cached
+                    for current, cached in zip(
+                        host_pyramids, self._production_pyramids, strict=True
+                    )
                 )
-            )
-        ):
-            return self._production_device_pyramids
-        device_pyramids = [
-            (
-                self._cuda.to_device(pyramid.level0),
-                self._cuda.to_device(pyramid.mips),
-                self._cuda.to_device(pyramid.levels),
-                self._cuda.to_device(pyramid.map_parameters),
-                self._cuda.to_device(pyramid.projection_parameters),
-            )
-            for pyramid in host_pyramids
-        ]
-        self._production_pyramids = host_pyramids
-        self._production_device_pyramids = device_pyramids
-        return device_pyramids
+            ):
+                return self._production_device_pyramids
+            device_pyramids = [
+                (
+                    self._cuda.to_device(pyramid.level0),
+                    self._cuda.to_device(pyramid.mips),
+                    self._cuda.to_device(pyramid.levels),
+                    self._cuda.to_device(pyramid.map_parameters),
+                    self._cuda.to_device(pyramid.projection_parameters),
+                )
+                for pyramid in host_pyramids
+            ]
+            self._production_pyramids = host_pyramids
+            self._production_device_pyramids = device_pyramids
+            return device_pyramids
 
     def index_mapping(self, pixel_count: int, azimuth_count: int) -> np.ndarray:
         if pixel_count <= 0 or azimuth_count <= 0:
@@ -1343,46 +1412,90 @@ class CudaSession:
 
         pixel_count = tile_width * tile_height
         output_shape = (pixel_count, segments.shape[0])
-        device_segments = self._cuda.to_device(segments)
         device_pyramids = self._prepare_production_pyramids(pyramids)
         device_primary_level0 = device_pyramids[0][0]
         device_primary_map = device_pyramids[0][3]
-        device_output = self._cuda.to_device(
-            np.full(output_shape, -np.inf, dtype=np.float32)
-        )
-        threads = 256
-        total_threads = pixel_count * segments.shape[0]
-        blocks = (total_threads + threads - 1) // threads
-        events = [self._cuda.event(timing=True) for _ in range(len(pyramids) + 1)]
-        events[0].record()
-        for pass_index, device_pyramid in enumerate(device_pyramids):
-            (
-                active_level0,
-                active_mips,
-                active_levels,
-                active_map,
-                active_projection,
-            ) = device_pyramid
-            self._subpatch_hierarchy_kernel[blocks, threads](
-                device_segments,
-                device_primary_level0,
-                device_primary_map,
-                active_level0,
-                active_mips,
-                active_levels,
-                active_map,
-                active_projection,
-                np.int32(tile_column), np.int32(tile_row), np.int32(tile_width),
-                np.int32(tile_height), np.int32(subpatch_size), np.int32(pass_index),
-                np.float32(observer_elevation_m), device_output,
-            )
-            events[pass_index + 1].record()
-        events[-1].synchronize()
-        pass_kernel_seconds = [
-            events[index].elapsed_time(events[index + 1]) / 1000.0
-            for index in range(len(pyramids))
-        ]
-        return device_output.copy_to_host(), pass_kernel_seconds
+        slots = self._prepare_production_slots(segments.shape, output_shape)
+        slot = slots.get()
+        try:
+            stream = slot.stream
+            upload_started = time.perf_counter()
+            if stream is None:
+                slot.device_segments.copy_to_device(segments)
+            else:
+                slot.device_segments.copy_to_device(segments, stream=stream)
+            segment_upload_seconds = time.perf_counter() - upload_started
+            reset_started = time.perf_counter()
+            if stream is None:
+                slot.device_output.copy_to_device(slot.output_reset)
+            else:
+                slot.device_output.copy_to_device(slot.output_reset, stream=stream)
+            output_reset_seconds = time.perf_counter() - reset_started
+            threads = 256
+            total_threads = pixel_count * segments.shape[0]
+            blocks = (total_threads + threads - 1) // threads
+            events = [
+                self._cuda.event(timing=True) for _ in range(len(pyramids) + 1)
+            ]
+            kernel_started = time.perf_counter()
+            if stream is None:
+                events[0].record()
+            else:
+                events[0].record(stream)
+            for pass_index, device_pyramid in enumerate(device_pyramids):
+                (
+                    active_level0,
+                    active_mips,
+                    active_levels,
+                    active_map,
+                    active_projection,
+                ) = device_pyramid
+                arguments = (
+                    slot.device_segments,
+                    device_primary_level0,
+                    device_primary_map,
+                    active_level0,
+                    active_mips,
+                    active_levels,
+                    active_map,
+                    active_projection,
+                    np.int32(tile_column), np.int32(tile_row), np.int32(tile_width),
+                    np.int32(tile_height), np.int32(subpatch_size),
+                    np.int32(pass_index), np.float32(observer_elevation_m),
+                    slot.device_output,
+                )
+                if stream is None:
+                    self._subpatch_hierarchy_kernel[blocks, threads](*arguments)
+                else:
+                    self._subpatch_hierarchy_kernel[blocks, threads, stream](
+                        *arguments
+                    )
+                if stream is None:
+                    events[pass_index + 1].record()
+                else:
+                    events[pass_index + 1].record(stream)
+            events[-1].synchronize()
+            kernel_wall_seconds = time.perf_counter() - kernel_started
+            pass_kernel_seconds = [
+                events[index].elapsed_time(events[index + 1]) / 1000.0
+                for index in range(len(pyramids))
+            ]
+            copy_started = time.perf_counter()
+            if stream is None:
+                host_output = slot.device_output.copy_to_host()
+            else:
+                host_output = slot.device_output.copy_to_host(stream=stream)
+                stream.synchronize()
+            copy_back_seconds = time.perf_counter() - copy_started
+            self._production_timings.value = {
+                "segment_upload_seconds": segment_upload_seconds,
+                "output_reset_seconds": output_reset_seconds,
+                "kernel_wall_seconds": kernel_wall_seconds,
+                "copy_back_seconds": copy_back_seconds,
+            }
+            return host_output, pass_kernel_seconds
+        finally:
+            slots.put(slot)
 
     def subpatch_interpolation(
         self, segment_values, primary_pyramid, active_pyramid, *, tile_column,

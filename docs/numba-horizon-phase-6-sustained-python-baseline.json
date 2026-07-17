@@ -1,0 +1,310 @@
+{
+  "schema_version": 1,
+  "mode": "pipeline",
+  "compressed": true,
+  "patch_count": 16,
+  "elapsed_seconds": 92.66997339199952,
+  "patches_per_second": 0.17265570944235675,
+  "wall_seconds_per_patch": 5.79187333699997,
+  "preparation_seconds": [
+    1.782130791999407,
+    2.1274144550006895,
+    2.0697159929995905,
+    2.140546481000456,
+    2.2012934700005644,
+    2.4612958970001273,
+    2.4470970809998107,
+    2.314501238000048,
+    2.2859875289996126,
+    2.2596455579996473,
+    2.429254922999462,
+    2.285083990000203,
+    2.2529921710001872,
+    2.492636876000688,
+    2.4264201219993993,
+    2.334787108000455
+  ],
+  "cuda_call_seconds": [
+    5.092353097999876,
+    5.176693635999982,
+    5.59376952599996,
+    5.50434130099984,
+    5.221932090000337,
+    5.323151643000529,
+    5.659779729000547,
+    5.8201175159993,
+    5.236515099000826,
+    5.23890525600018,
+    5.73337368600005,
+    6.038535976000276,
+    5.201864134000061,
+    5.264910806000444,
+    5.577434236000045,
+    5.850821892999193
+  ],
+  "degree_conversion_seconds": [
+    0.09974419100035448,
+    0.10204897299990989,
+    0.10065983599997708,
+    0.09892939200017281,
+    0.09693345399955433,
+    0.09524957600024209,
+    0.09534462299961888,
+    0.09856834699985484,
+    0.0983918950005318,
+    0.09276424899962876,
+    0.09468587299943465,
+    0.10913779499969678,
+    0.09820258200034004,
+    0.09860055500030285,
+    0.10000130899970827,
+    0.09939463499995327
+  ],
+  "write_seconds": [
+    1.7583565989989438
+  ],
+  "pass_kernel_seconds": [
+    [
+      0.4039527587890625,
+      1.41454150390625,
+      1.19269775390625,
+      2.038552490234375
+    ],
+    [
+      0.4527813720703125,
+      1.48533447265625,
+      1.1528602294921875,
+      1.9916256103515626
+    ],
+    [
+      0.4139794616699219,
+      1.944205322265625,
+      1.124526123046875,
+      1.9718348388671876
+    ],
+    [
+      0.42443136596679687,
+      1.8605198974609376,
+      1.1231314697265624,
+      1.972093017578125
+    ],
+    [
+      0.44148248291015624,
+      1.4256363525390625,
+      1.21666552734375,
+      2.0378900146484376
+    ],
+    [
+      0.483417724609375,
+      1.5032373046875,
+      1.175783203125,
+      2.0104991455078123
+    ],
+    [
+      0.489617919921875,
+      1.884837890625,
+      1.145802978515625,
+      1.9887921142578124
+    ],
+    [
+      0.4622210693359375,
+      2.1568408203125,
+      1.152373779296875,
+      1.9907474365234374
+    ],
+    [
+      0.4383997802734375,
+      1.42724560546875,
+      1.2339957275390625,
+      2.042514404296875
+    ],
+    [
+      0.4837322998046875,
+      1.46983935546875,
+      1.2006871337890626,
+      2.024090576171875
+    ],
+    [
+      0.521945068359375,
+      1.91292041015625,
+      1.1704910888671876,
+      2.00519775390625
+    ],
+    [
+      0.45220623779296876,
+      2.300532470703125,
+      1.1765526123046874,
+      1.9989041748046874
+    ],
+    [
+      0.38904537963867186,
+      1.40079931640625,
+      1.2588277587890624,
+      2.061770751953125
+    ],
+    [
+      0.42459481811523436,
+      1.4011842041015625,
+      1.2492257080078124,
+      2.05376220703125
+    ],
+    [
+      0.4223388671875,
+      1.883452392578125,
+      1.1958927001953126,
+      2.03320849609375
+    ],
+    [
+      0.39232119750976563,
+      2.2071318359375,
+      1.1911044921875,
+      2.0128165283203123
+    ]
+  ],
+  "maximum_prepared_queue_depth": 1,
+  "pipeline_metrics": {
+    "preparation_seconds": 36.3108491590001,
+    "compute_seconds": 89.11637446699933,
+    "finalization_seconds": 0.00332161400183395,
+    "write_seconds": 1.7583565989989438,
+    "maximum_prepared_queue_depth": 1,
+    "maximum_writer_queue_depth": 0,
+    "producer_enqueue_wait_seconds": [
+      1.425099981133826e-05,
+      1.1704999451467302e-05,
+      1.104714520000016,
+      3.2421946020003816,
+      3.6116705629992794,
+      3.2397977989994615,
+      2.9757742540004983,
+      3.2205197220000628,
+      3.5882758529996863,
+      3.781333741000708,
+      3.0097444279999763,
+      3.157475178999448,
+      3.683198457999424,
+      3.7756920589999936,
+      2.9766344359995855,
+      3.127293376000125
+    ],
+    "consumer_dequeue_wait_seconds": [
+      1.7829564000003302,
+      0.0003304150004623807,
+      0.00027603499984252267,
+      0.00031657500039727893,
+      0.0003239859997847816,
+      0.0006229539994819788,
+      0.0004659320002247114,
+      0.00044757500018022256,
+      0.00044100800005253404,
+      0.0002754679999270593,
+      0.0002710590006245184,
+      0.0005131280004206928,
+      0.0003102690006926423,
+      0.00039652899977227207,
+      0.00041967300057876855,
+      0.0003751579997697263
+    ],
+    "writer_enqueue_wait_seconds": [],
+    "writer_dequeue_wait_seconds": []
+  },
+  "peak_host_rss_bytes": 9003520000,
+  "peak_process_gpu_memory_mib": 5558,
+  "gpu_memory_samples": 1233,
+  "files": [
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00000/horizon_00000_00000_000.cbin",
+      "bytes": 23672772,
+      "sha256": "1144fbb30c72b2bf992c0d592863c662aac321019e17f4650db0900e3dbd22eb"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00000/horizon_00000_00128_000.cbin",
+      "bytes": 23656625,
+      "sha256": "7b49aba1bfb741befcc6c8cbe03063fd70e1eb7cbf24f371be843340327177a3"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00000/horizon_00000_00256_000.cbin",
+      "bytes": 23651112,
+      "sha256": "cfc841263de05bf50ec6e59125b09469cd0d4fd64a1c5cf98acef9b8ea63a52d"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00000/horizon_00000_00384_000.cbin",
+      "bytes": 23647011,
+      "sha256": "4f7bd2c9a034447bc919391fcc5c24f0627be8932dff02517720b120b8ac6ec2"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00128/horizon_00128_00000_000.cbin",
+      "bytes": 23669667,
+      "sha256": "b7eec2bfabef1ed6630b041f054b81e2db91ad55b452ab68ea89549eb53f0ef4"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00128/horizon_00128_00128_000.cbin",
+      "bytes": 23666523,
+      "sha256": "ea7d9e36a6ad7dc16fdeb9db6b162e959564d0c77951b77676c55b5d4c41cd1e"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00128/horizon_00128_00256_000.cbin",
+      "bytes": 23644945,
+      "sha256": "ea47c2e1d69324df383495cc26927f275042c9f6379c8662fa98401bd74940e2"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00128/horizon_00128_00384_000.cbin",
+      "bytes": 23644730,
+      "sha256": "c4a6e7af72833bc58b09ee365ab3d26c0559816bed911e2ef072a452a77d150c"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00256/horizon_00256_00000_000.cbin",
+      "bytes": 23672496,
+      "sha256": "8ba9504b4a33b41b87fc2c03a929cbdd19cb6fdaa91f1b80c34bc8d96537efd3"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00256/horizon_00256_00128_000.cbin",
+      "bytes": 23665275,
+      "sha256": "907285a552feb949782d1520f68653c5e360ea7fd9f0d1a349c8f12dddd5c217"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00256/horizon_00256_00256_000.cbin",
+      "bytes": 23646145,
+      "sha256": "673d51740b02c79766f3fd50254033cd242e231bd51b0c0cdde712f43aea1f56"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00256/horizon_00256_00384_000.cbin",
+      "bytes": 23643669,
+      "sha256": "ac30cae497030f1f0c4ed429bbbd6f399960d8f735323a1157df4fea77921a6e"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00384/horizon_00384_00000_000.cbin",
+      "bytes": 23665867,
+      "sha256": "af71baabcf1e9cdfa5e031cd39702b7ec70794bcb5c92a97b3fcfc8a6c120731"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00384/horizon_00384_00128_000.cbin",
+      "bytes": 23664626,
+      "sha256": "c2142f55d886d04c13f3098011156e90cb376211271c1b81d832bda04ca21fca"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00384/horizon_00384_00256_000.cbin",
+      "bytes": 23662006,
+      "sha256": "ac4abd0e3830ddd11ec8e7db2cac5517099798619085b9d58b50fb2fd35ebe5d"
+    },
+    {
+      "path": "/tmp/lunarscout-phase6-sustained-python-baseline/00384/horizon_00384_00384_000.cbin",
+      "bytes": 23645067,
+      "sha256": "30dba30ab609799ffea90ff151c628b7bbb5042ba27696912a58e437f2fb67df"
+    }
+  ],
+  "total_output_bytes": 378518536,
+  "inputs": [
+    "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+    "/d/datasets/viper_v71_2024_medium/other/dem.tif",
+    "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+    "/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif"
+  ],
+  "notes": [
+    "Warm timing follows one unrecorded segment/CUDA/compression warm-up patch.",
+    "CUDA call includes segment upload, kernel events, synchronization, and result copy.",
+    "Pipeline modes use one producer, one CUDA consumer, and one default CUDA stream.",
+    "Writer-pipeline mode moves degree conversion, compression, and staged writing to a one-item bounded writer queue.",
+    "Pyramids remain device-resident; transient segment and output buffers are not yet reused."
+  ]
+}

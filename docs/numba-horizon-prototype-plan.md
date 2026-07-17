@@ -132,14 +132,21 @@ the same fixtures and benchmarks.
       environment.
 - [ ] Verify the chosen CUDA package does not initialize CUDA during an
       ordinary `import lunarscout`.
-- [ ] Decide whether cached compiled kernels are part of the supported setup or
-      only an optimization; measure both cold and warm behavior.
+- [x] Treat Numba's compiled CPU/CUDA disk cache as a transparent optimization;
+      measure population, cross-process reuse, and no-locator fallback.
 - [ ] Store machine-readable environment and benchmark metadata with every
       result set.
 
 Do not spend time on a multi-version dependency matrix until the core kernel
 has passed the first correctness gate. The first goal is one completely
 specified, repeatable environment.
+
+A long-lived worker process is not an acceptable substitute for compiled-kernel
+caching because supported use includes notebooks, throwaway Python scripts, and
+agent-launched processes. Adoption therefore requires a cross-process Numba
+CPU/CUDA cache or another stored compiled artifact, with invalidation by code,
+toolchain, CUDA, and GPU architecture. Implementation may wait until the
+production pipeline is otherwise stable.
 
 ## 6. Phase 0: Inventory and Freeze the Baseline
 
@@ -460,15 +467,15 @@ hardware, output scope, and concurrency settings for C#/ILGPU and Numba.
 - [x] Warm generator initialization.
 - [x] Pyramid construction or cache loading.
 - [x] Segment construction and cache lookup.
-- [ ] Host-to-device segment transfer.
+- [x] Host-to-device segment transfer.
 - [x] Kernel execution per DEM pass.
-- [ ] Device synchronization and device-to-host transfer.
+- [x] Device synchronization and device-to-host transfer.
 - [x] Slope-to-degree conversion.
-- [ ] Compression and file writing when end-to-end testing begins.
+- [x] Compression and file writing when end-to-end testing begins.
 - [x] Total latency for one patch and throughput for many patches.
 - [x] Peak host RAM, device RAM, and retained cache size.
 - [ ] GPU utilization, occupancy, and major causes of warp divergence.
-- [ ] Scaling with patch count and concurrent streams.
+- [x] Scaling with patch count and one, two, and four concurrent streams.
 
 ### Benchmark Matrix
 
@@ -485,7 +492,8 @@ hardware, output scope, and concurrency settings for C#/ILGPU and Numba.
 
 - [x] Measure before changing the algorithm or memory layout.
 - [x] Remove redundant transfers and allocations.
-- [ ] Reuse device buffers and streams.
+- [x] Reuse fixed-shape device buffers.
+- [x] Reuse and measure multiple CUDA streams; retain one stream by default.
 - [x] Improve segment and pyramid memory access.
 - [x] Tune launch geometry and register pressure.
 - [x] Evaluate overlap of CPU segment generation, transfers, kernels, and output
@@ -512,31 +520,205 @@ the accepted cost must be stated rather than hidden in an aggregate benchmark.
 Only begin this phase after the kernel correctness and initial performance
 gates pass.
 
-- [ ] Reproduce patch enumeration and partial-edge handling.
-- [ ] Reproduce skip-existing behavior based on the final output contract.
-- [ ] Implement bounded CPU preparation and GPU work queues.
-- [ ] Reuse segment caches across neighboring patches without unbounded growth.
-- [ ] Reuse device buffers and CUDA streams safely.
-- [ ] Implement progress events with the existing user-visible semantics.
-- [ ] Check cancellation between bounded units of work.
-- [ ] Stage file outputs so failure cannot corrupt an existing completed product.
-- [ ] Write files readable by the existing horizon readers and downstream
+- [x] Reproduce patch enumeration and partial-edge handling.
+- [x] Reproduce skip-existing behavior based on the final output contract.
+- [x] Implement bounded CPU preparation and GPU work queues.
+- [ ] Reuse segment caches across neighboring patches without unbounded growth,
+      only if measured CPU preparation cannot keep later CUDA scheduling fed.
+- [x] Reuse fixed-shape transient device buffers safely.
+- [x] Reuse and measure multiple CUDA streams safely; retain one by default.
+- [x] Implement progress events with the existing user-visible semantics.
+- [x] Check cancellation between bounded units of work.
+- [x] Stage file outputs so failure cannot corrupt an existing completed product.
+- [x] Write files readable by the existing horizon readers and downstream
       lighting code.
-- [ ] Compare compressed and uncompressed output, including metadata and
+- [x] Compare compressed and uncompressed output, including metadata and
       completion detection.
-- [ ] Test interruption, CUDA failure, disk-full simulation where practical,
-      overwrite failure, and restart/skip behavior.
-- [ ] Confirm large runs stream results instead of retaining the full regional
+- [x] Test cancellation, simulated CUDA/worker and disk-write failures,
+      overwrite preservation, and restart/skip behavior.
+- [x] Confirm large runs stream results instead of retaining the full regional
       horizon cube in memory.
+
+The initial Phase 6 unit implements the checked items in the private
+`_numba_horizon` package. Structurally invalid canonical files are not treated
+as completed for resumption. Full aligned patch enumeration matches C#; for
+non-multiple DEM dimensions Python deliberately retains partial right and
+bottom patches, whereas the current C# `GeneratePatchList` rejects such DEMs.
+Partial products preserve the fixed 128 by 128 reader contract by padding only
+pixels outside the DEM-valid rectangle with `-50` degrees. The bounded pipeline
+currently uses one CPU producer, one default-stream CUDA consumer, and a
+one-item writer queue. It keeps pyramids and fixed-shape segment/output device
+buffers resident while still recomputing neighboring patch segments. A
+sustained 16-patch run shows that the producer blocks on a full prepared queue
+while the consumer has no steady-state preparation wait, so neither a segment
+cache nor CPU-parallel preparation is justified for the single-stream path.
+Two- and four-stream runs are byte-identical but provide no material sustained
+throughput gain while consuming more host and GPU memory, so one stream remains
+the selected default. The full failure matrix remains open. See
+`docs/numba-horizon-phase-6-production-pipeline.md`.
+
+The current decision is to retain per-patch segment recomputation. Preparation
+is hidden, so cache complexity is not justified without measured prepared-queue
+starvation. If CUDA scheduling changes, measure CPU-parallel preparation as
+well as cache reuse; multiple CUDA streams alone do not imply that a segment
+cache is necessary.
 
 ### Pipeline Gate
 
-- [ ] A representative real scenario completes without Python.NET or moonlib
+- [x] A representative real scenario completes without Python.NET or moonlib
       after the DEM arrays and metadata have been supplied.
-- [ ] Existing downstream code consumes the generated horizon product.
-- [ ] Failure and cancellation leave no output that appears complete.
-- [ ] Progress, resumption, and overwrite behavior are documented and tested.
-- [ ] End-to-end throughput and memory meet the recorded acceptance criteria.
+- [x] Existing downstream code consumes the generated horizon product.
+- [x] Failure and cancellation leave no output that appears complete.
+- [x] Progress, resumption, and overwrite behavior are documented and tested.
+- [x] End-to-end throughput and memory meet the recorded acceptance criteria.
+
+## 13A. Phase 6B: Downstream Tiled-Product Pipeline
+
+Eliminating the C# horizon implementation is not sufficient for the intended
+adoption. The Python/Numba path must also express the downstream product family
+without Python.NET, .NET, or moonlib:
+
+- time-series lightmaps, normally `uint8` sunlight fractions scaled to 0-255;
+- optimized single-band permanent-shadow maps using a reduced Metonic-cycle
+  vector set;
+- safe-haven maps;
+- landed mission-duration maps; and
+- future horizon/vector reductions with other GeoTIFF datatypes, including
+  `float32` hours.
+
+These products share one production pattern: read one fixed 128 by 128 horizon
+tile, combine it with precomputed Sun and/or Earth vectors, and write one or
+more matching windows in tiled compressed GeoTIFF products. Patch-major
+scheduling is primarily an I/O-amortization requirement, not merely a
+memory-layout preference: compressed horizon reads and decompression are
+expected to be slow relative to most per-patch calculations. Each horizon tile
+must therefore be loaded once and reused across all of that patch's requested
+times, vectors, thresholds, and reductions before release.
+
+### Shared pipeline contract
+
+- [ ] Inventory the active and near-production C# algorithms, including
+      `Lightmaps`, `GeneratePSRGeotiff`, `GeneratePermanentShadowMap`,
+      `GenerateSafeHavenDurations`, `GenerateLightingFunction`, and landed
+      mission-duration threshold reductions. Treat the existing PSR path as a
+      parity requirement; if no authoritative parity implementation is
+      supplied for another product, specify and test the new Python behavior
+      directly rather than waiting for a C# example.
+- [ ] Capture small deterministic C# oracles for the authoritative PSR path and
+      for any other calculation that has an identified parity implementation.
+      For products without one, define independent synthetic expected results
+      for local-frame construction, horizon interpolation, solar-disk fraction,
+      Sun/Earth thresholds, safe-haven duration, and mission-duration reduction.
+- [ ] Implement a private full-patch `.bin`/`.cbin` reader that returns the
+      existing pixel-major `(128, 128, 1440)` horizon contract without moonlib.
+- [ ] Provide two vector-input levels. The high-level path accepts UTC times or
+      a start/stop/step specification and lazily uses Lunarscout/SpiceyPy to
+      generate Sun and, when required, Earth positions in the Moon-ME frame.
+      The low-level path accepts explicit `(time, 3)` vectors for controlled
+      tests and advanced callers. Explicit vectors override generated vectors,
+      but must still have an unambiguous timestamp mapping where the output is
+      time-indexed.
+- [ ] Capture realistic Python-generated SPICE vector fixtures and controlled
+      synthetic-vector fixtures. Compare the Python Moon-ME positions with the
+      current C# SPICE positions before using them as product oracles.
+- [ ] Make the horizon patch the primary bounded work unit. Load one patch,
+      iterate its requested mission times, compute one 128 by 128 result per
+      time, and enqueue that tile for the matching output band before releasing
+      the horizon patch. Optional GPU time batching must remain bounded and
+      must not change this storage contract.
+- [ ] Define reduced `(patch, product)` work units for PSR, safe-haven, and
+      mission-duration products. Keep horizon, DEM, vector, device, temporal,
+      and writer buffers explicitly bounded.
+- [ ] Share the pixel-to-CRS, stereographic inverse, Moon-ME-to-ENU, body
+      azimuth/elevation, horizon interpolation, and solar-disk calculations
+      across product kernels without forcing every product to materialize a
+      time cube.
+- [ ] Keep vector arrays resident when practical and pool fixed-shape horizon,
+      DEM, optional time-batch, and reduced-output buffers.
+- [ ] Use one bounded GeoTIFF writer queue; do not call one raster dataset
+      concurrently from arbitrary compute workers.
+- [ ] Check cancellation between horizon reads, time iterations/batches, patch
+      kernels, and durable writes. A running CUDA kernel remains
+      non-interruptible.
+
+### GeoTIFF output contract
+
+- [ ] Implement a private staged patch-window writer supporting one or many
+      bands, 128 by 128 internal tiles, compression, predictor selection,
+      BigTIFF, arbitrary supported NumPy/GDAL dtypes, nodata or validity masks,
+      georeferencing, and per-band time metadata. Band `t` must represent the
+      corresponding supplied time `times[t]`; store an unambiguous UTC timestamp
+      in each band and an ordered dataset-level time mapping.
+- [ ] For a time-series lightmap, create one band per time and use band
+      interleaving so each band consists of independently compressed 128 by 128
+      pixel tiles. Write window `(patch_x, patch_y, 128, 128)` to band `t` as
+      soon as that patch/time result reaches the writer.
+- [ ] Write partial right/bottom windows without retaining a full raster or
+      regional time cube.
+- [ ] Cover the full DEM even when horizon tiles are missing or invalid. Write
+      a validity mask of 255 for computed pixels and 0 for invalid pixels. The
+      deterministic invalid data value is configurable and defaults to zero;
+      initialize invalid or absent regions to that value for every band.
+- [ ] Validate the requested time count against the TIFF band-count limit. The
+      intended mission products (normally no more than about two years at a
+      six-hour step) fit within the limit; a full Metonic lightmap cube is not
+      a supported output requirement.
+- [ ] Make resume the default for incomplete staged products and provide an
+      explicit start-from-scratch option. Bind resumability to a durable job
+      manifest containing the grid, dtype, bands/times, vector/configuration
+      identity, invalid value, horizon inventory, and algorithm version; reject
+      incompatible partial products rather than silently mixing results.
+- [ ] Keep final validity separate from temporary completion state. Maintain a
+      durable per-patch completion journal beside the staged GeoTIFF. Mark a
+      patch complete only after all of its bands/products have been written and
+      the dataset has been flushed; then persist and synchronize the journal.
+      On restart, recompute every band/result for any unmarked patch, safely
+      overwriting tiles that may have been partially written.
+- [ ] For a single-band product, also evaluate recovery by inspecting allocated
+      GeoTIFF blocks so an intact staged image can be recovered if its journal
+      is missing. Do not infer completion from pixel values because zero may be
+      both valid data and the configured invalid payload.
+- [ ] Preserve completed outputs on failed overwrite. Publish the staged file
+      or multi-file product set only after every patch is complete, metadata and
+      masks are finalized, and the dataset closes successfully; then remove the
+      temporary completion journal.
+- [ ] Verify the multi-band BigTIFF with existing readers using the same tile,
+      compression, band-time metadata, and downstream-access workload.
+
+### Product proofs
+
+- [ ] Time-series lightmap: for each loaded horizon patch, stream one byte-valued
+      128 by 128 tile to each time band of a multi-band BigTIFF and compare every
+      value and timestamp with C#.
+- [ ] PSR: reduce the full Metonic-cycle vector set in the kernel to one
+      `uint8` tile without writing or retaining the intermediate lightmap cube;
+      reproduce the established solar-limb behavior. Reproduce the exact vector
+      heuristic: at each of the DEM's four corners and center, retain the
+      highest-elevation Sun vector in each of 1,440 azimuth bins, then use the
+      union of those selected vector indices.
+- [ ] Safe haven: reproduce Earth-below-threshold interval selection and the
+      longest contiguous low-sun duration for every selected interval.
+- [ ] Landed mission duration: reproduce threshold/reduction semantics and
+      write the selected integer or floating-hour datatype without clipping
+      unless the product contract explicitly requires it.
+- [ ] Demonstrate at least one additional dtype-generic reduction through the
+      same scheduler and writer rather than a product-specific file pipeline.
+
+### Downstream no-.NET gate
+
+- [ ] Run representative products from a fresh Python process after DEM arrays,
+      georeferencing, timestamps, and vectors are supplied; verify that `clr`,
+      `pythonnet`, and `moonlib` are not loaded.
+- [ ] Verify output grids, bands/times, compression, masks/nodata, dtypes,
+      metadata, edge tiles, and values with existing Lunarscout readers and
+      independent GDAL/Rasterio inspection.
+- [ ] Measure kernel, decompression, transfer, compression/write, end-to-end
+      throughput, host memory, and GPU memory for short and long time series.
+- [ ] Confirm that memory is bounded by configured queues, worker buffers, and
+      optional GPU time-batch size rather than region size or total time count.
+- [ ] Do not approve removal of the downstream C# lightmap/product code until
+      all five product classes either pass this gate or are explicitly removed
+      from the supported replacement scope.
 
 ## 14. Phase 7: Packaging and Operational Evaluation
 
@@ -648,7 +830,7 @@ Flattened arrays and duplicated device helpers can obscure scientific intent.
 
 - [ ] Build and install from a clean artifact rather than the source checkout.
 - [ ] Test supported driver and CUDA combinations explicitly.
-- [ ] Record compilation cache and first-use behavior.
+- [x] Record compilation cache and first-use behavior.
 
 ### R6: The Prototype Accidentally Narrows Product Behavior
 
@@ -782,10 +964,12 @@ public API. Select the backend internally only after Gate E passes.
 - [x] Phase 0: baseline inventoried and frozen.
 - [x] Phase 1: independent oracles and fixtures established.
 - [x] Phase 2: Python/device data contract validated.
-- [ ] Phase 3: host geometry and segment generation validated.
-- [ ] Phase 4: CUDA kernel passes correctness gates.
-- [ ] Phase 5: performance and resource evaluation passes.
-- [ ] Phase 6: production pipeline prototype passes.
+- [x] Phase 3: host geometry and segment generation validated.
+- [x] Phase 4: CUDA kernel passes correctness gates.
+- [x] Phase 5: performance and resource evaluation passes.
+- [x] Phase 6: production pipeline prototype passes with the documented
+      private-API and packaging deferrals.
+- [ ] Phase 6B: downstream tiled-product pipeline passes without .NET.
 - [ ] Phase 7: packaging and operational evaluation passes.
 - [ ] Final evaluation report completed.
 - [ ] Replacement decision recorded.
