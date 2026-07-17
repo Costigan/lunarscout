@@ -239,8 +239,8 @@ def test_generated_vectors_match_csharp_geometric_moon_me_convention(
     calls = []
 
     def spkpos(target, et, frame, correction, observer):
-        calls.append((target, et, frame, correction, observer))
-        return [1.0, 2.0, 3.0], 0.0
+        calls.append((target, np.asarray(et).tolist(), frame, correction, observer))
+        return np.tile((1.0, 2.0, 3.0), (len(et), 1)), np.zeros(len(et))
 
     fake_spice = SimpleNamespace(utc2et=lambda _value: 42.0, spkpos=spkpos)
     monkeypatch.setitem(sys.modules, "spiceypy", fake_spice)
@@ -249,8 +249,39 @@ def test_generated_vectors_match_csharp_geometric_moon_me_convention(
         "earth", ("2027-01-01T00:00:00Z",), ensure_kernels=False
     )
 
-    assert calls == [("EARTH", 42.0, "MOON_ME", "NONE", "MOON")]
+    assert calls == [("EARTH", [42.0], "MOON_ME", "NONE", "MOON")]
     np.testing.assert_array_equal(result.vectors_m, ((1000.0, 2000.0, 3000.0),))
+
+
+def test_linear_vector_time_conversion_uses_one_anchor_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    utc_calls = []
+    ephemeris_calls = []
+
+    def utc2et(value):
+        utc_calls.append(value)
+        return 1000.0
+
+    def spkpos(_target, et, _frame, _correction, _observer):
+        ephemeris_calls.append(np.asarray(et).copy())
+        return np.zeros((len(et), 3)), np.zeros(len(et))
+
+    monkeypatch.setitem(
+        sys.modules,
+        "spiceypy",
+        SimpleNamespace(utc2et=utc2et, spkpos=spkpos),
+    )
+
+    generate_moon_me_vectors(
+        "sun",
+        ("2023-12-01T00:00:00Z", "2023-12-01T06:00:00Z"),
+        ensure_kernels=False,
+        time_conversion="linear_from_anchor",
+    )
+
+    assert utc_calls == ["2023-12-01T00:00:00.000000"]
+    np.testing.assert_array_equal(ephemeris_calls[0], (1000.0, 22600.0))
 
 
 def _georef(width: int, height: int) -> GeoReference:

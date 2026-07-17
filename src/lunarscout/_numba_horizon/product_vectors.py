@@ -15,6 +15,7 @@ from lunarscout.temporal import TimeInput, TimeRange, _parse_time
 
 
 BodyName = Literal["sun", "earth"]
+TimeConversion = Literal["utc2et", "linear_from_anchor"]
 _TARGETS = {"sun": "SUN", "earth": "EARTH"}
 
 
@@ -72,8 +73,18 @@ def generate_moon_me_vectors(
     times: Iterable[TimeInput] | TimeRange,
     *,
     ensure_kernels: bool = True,
+    time_conversion: TimeConversion = "utc2et",
+    linear_anchor: TimeInput = "2023-12-01T00:00:00Z",
 ) -> MoonMeVectorSeries:
-    """Generate geometric Moon-centered positions in Moon-ME, in meters."""
+    """Generate geometric Moon-centered positions in Moon-ME, in meters.
+
+    ``utc2et`` converts every timestamp independently and is the default for
+    mission-time pointing accuracy. ``linear_from_anchor`` converts one UTC
+    anchor and adds ordinary elapsed seconds. The latter reproduces the
+    current C# convention and may be selected only where equivalence to
+    per-timestamp ``utc2et`` has been demonstrated for the intended product;
+    it does not model leap seconds crossed relative to the anchor.
+    """
     key = str(body).strip().lower()
     if key not in _TARGETS:
         raise ValueError("body must be 'sun' or 'earth'")
@@ -86,13 +97,26 @@ def generate_moon_me_vectors(
         import spiceypy
     except ImportError as exc:
         raise RuntimeError("SpiceyPy is required to generate Moon-ME vectors") from exc
-    output = np.empty((len(time_values), 3), dtype=np.float64)
-    for index, time_value in enumerate(time_values):
-        et = spiceypy.utc2et(_spice_utc(time_value))
-        position_km, _light_time = spiceypy.spkpos(
-            _TARGETS[key], et, "MOON_ME", "NONE", "MOON"
+    if time_conversion == "utc2et":
+        ephemeris_times = np.fromiter(
+            (spiceypy.utc2et(_spice_utc(value)) for value in time_values),
+            dtype=np.float64,
+            count=len(time_values),
         )
-        output[index] = np.asarray(position_km, dtype=np.float64) * 1000.0
+    elif time_conversion == "linear_from_anchor":
+        anchor = _parse_time(linear_anchor, source_timezone=None).astimezone(timezone.utc)
+        anchor_et = float(spiceypy.utc2et(_spice_utc(anchor)))
+        ephemeris_times = np.fromiter(
+            (anchor_et + (value - anchor).total_seconds() for value in time_values),
+            dtype=np.float64,
+            count=len(time_values),
+        )
+    else:
+        raise ValueError("time_conversion must be 'utc2et' or 'linear_from_anchor'")
+    positions_km, _light_times = spiceypy.spkpos(
+        _TARGETS[key], ephemeris_times, "MOON_ME", "NONE", "MOON"
+    )
+    output = np.ascontiguousarray(positions_km, dtype=np.float64) * 1000.0
     return MoonMeVectorSeries(time_values, np.ascontiguousarray(output))
 
 
@@ -106,6 +130,8 @@ def resolve_moon_me_vectors(
     stop: TimeInput | None = None,
     step: timedelta | None = None,
     ensure_kernels: bool = True,
+    time_conversion: TimeConversion = "utc2et",
+    linear_anchor: TimeInput = "2023-12-01T00:00:00Z",
 ) -> MoonMeVectorSeries:
     """Resolve vectors, with explicit arrays overriding generation arguments."""
     if explicit_vectors_m is not None:
@@ -117,5 +143,9 @@ def resolve_moon_me_vectors(
         return MoonMeVectorSeries(time_values, vectors)
     time_values = _requested_times(times=times, start=start, stop=stop, step=step)
     return generate_moon_me_vectors(
-        body, time_values, ensure_kernels=ensure_kernels
+        body,
+        time_values,
+        ensure_kernels=ensure_kernels,
+        time_conversion=time_conversion,
+        linear_anchor=linear_anchor,
     )

@@ -6,6 +6,15 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added the private reference/storage slice for time-series lightmaps. It ports
+  the 16-slice C# `BuilderSunFraction` solar-disk calculation, encodes visible
+  fraction as truncating `uint8(255 * fraction)`, and processes horizons
+  patch-first while lazily yielding one 128 by 128 tile per time. The staged
+  BigTIFF writer writes each yielded tile directly to its timestamped band, so
+  neither a patch time cube nor a regional time cube is retained. Initial tests
+  cover full, half, and zero illumination, timestamp metadata, band interleave,
+  missing-patch invalid payloads, masks, and partial output edges. Numba CUDA
+  time batching and a C# numerical oracle remain open.
 - Added the first private Phase 6B downstream-product vertical slice. Python
   now reads complete `.bin`/`.cbin` horizon tiles, accepts explicit timestamped
   Moon-ME vectors or lazily generates geometric SpiceyPy vectors, reproduces
@@ -16,10 +25,16 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   partial-edge support. Deterministic Python CPU and Numba CUDA outputs match
   the actual C#/ILGPU PSR kernel byte-for-byte, including compressed-horizon
   quantization. A fresh-process compressed-horizon-to-GeoTIFF run loads no
-  Python.NET, CLR, or moonlib modules. The downstream scheduler is still
-  serial, real SPICE vector parity and sustained resource measurements remain
-  open, and lightmap, safe-haven, and mission-duration products are not yet
-  implemented.
+  Python.NET, CLR, or moonlib modules. Real SPICE evidence now covers 108,113
+  six-hour samples from 1970 through the start of 2044. Exact per-timestamp
+  `utc2et` conversion remains the default, including for future mission
+  periods after all published leap seconds. An explicit anchored-linear mode
+  exactly reproduces C#, but is selected only where equivalence to `utc2et` is
+  demonstrated for the intended calculation. That equivalence was established
+  for the retained 16-patch real-terrain PSR product: both modes produced
+  byte-identical results at about 1.19 patches/second. The downstream
+  scheduler is still serial, and lightmap, safe-haven, and mission-duration
+  products are not yet implemented.
 - Expanded the Python/Numba replacement evaluation to require a shared bounded
   downstream product pipeline for time-series lightmaps, optimized Metonic PSR,
   safe-haven maps, landed mission-duration maps, and dtype-generic

@@ -1,0 +1,86 @@
+{
+  "cuda_context_seconds": 3.2886344639991876,
+  "cuda_session_seconds": 0.005853664999449393,
+  "dem": {
+    "path": "/d/viper/maps/gsfc/site_20v2/Site20v2_final_adj_5mpp_surf.tif",
+    "sha256": "0e96c40987c0814eadd4f94f85dacbb33bcab5388dd0b1dc99dc59bf987f072f"
+  },
+  "exact_cuda_median_seconds": 0.014796248000493506,
+  "exact_cuda_seconds": [
+    0.014796248000493506,
+    0.015061302001413424,
+    0.013334923001821153
+  ],
+  "exact_linear_angle_difference_deg": {
+    "maximum": 0.003970382803411097,
+    "mean": 0.0010131293857072391,
+    "p95": 0.0035221769539980764,
+    "p99": 0.003953136851194327
+  },
+  "exact_linear_pipeline_mask_mismatch_count": 0,
+  "exact_linear_pipeline_mismatch_count": 0,
+  "exact_linear_position_difference_m": {
+    "maximum": 10514174.636746397,
+    "mean": 2645665.770995456,
+    "p95": 9103703.079598516,
+    "p99": 10394170.80074851
+  },
+  "exact_linear_psr_mismatch_count": 0,
+  "exact_only_reduced_indices": 17,
+  "exact_pipeline_invalid_pixels": 26777856,
+  "exact_pipeline_patches_per_second": 1.1973626076100117,
+  "exact_pipeline_seconds": 13.362702241000079,
+  "exact_pipeline_valid_pixels": 262144,
+  "exact_product_bytes": 139790,
+  "exact_product_file_sha256": "f9af364a5747993b230d24c05c1f6b1ec0c6e6f357575bb848047980eeef3ff7",
+  "exact_psr_sha256": "5bc3b559fbccb58c5d2768914691b07a060141b04a7f812b2fae2e0e6af012f6",
+  "exact_reduced_count": 2251,
+  "exact_reduction_seconds": 0.06900936199963326,
+  "exact_vector_seconds": 1.1516776339994976,
+  "forbidden_modules_loaded": [],
+  "gpu_session_and_vector_buffer_bytes": 98566144,
+  "gpu_session_buffer_bytes": 96468992,
+  "gpu_total_bytes": 25146949632,
+  "horizon": {
+    "path": "/tmp/lunarscout-phase6-sustained-python-writer/00000/horizon_00000_00000_000.cbin",
+    "sha256": "1144fbb30c72b2bf992c0d592863c662aac321019e17f4650db0900e3dbd22eb"
+  },
+  "linear_cuda_median_seconds": 0.014903044000675436,
+  "linear_cuda_seconds": [
+    0.014903044000675436,
+    0.015504330000112532,
+    0.013841124000464333
+  ],
+  "linear_only_reduced_indices": 19,
+  "linear_over_exact_vector_time_ratio": 0.40342218367789795,
+  "linear_pipeline_patches_per_second": 1.1881007479854295,
+  "linear_pipeline_seconds": 13.466871414002526,
+  "linear_product_bytes": 139790,
+  "linear_product_file_sha256": "f9af364a5747993b230d24c05c1f6b1ec0c6e6f357575bb848047980eeef3ff7",
+  "linear_psr_sha256": "5bc3b559fbccb58c5d2768914691b07a060141b04a7f812b2fae2e0e6af012f6",
+  "linear_reduced_count": 2253,
+  "linear_reduction_seconds": 0.06907731300088926,
+  "linear_vector_seconds": 0.4646123060010723,
+  "peak_host_rss_bytes": 926576640,
+  "pipeline_patch_count": 16,
+  "reduced_index_intersection_count": 2234,
+  "schema": "lunarscout-numba-phase6b-psr-vectors-v1",
+  "selected_csharp_earth_exact_angle_difference_deg": {
+    "maximum": 0.00047259818689063477,
+    "mean": 0.00010770100158068966,
+    "p95": 0.00039125593970235686,
+    "p99": 0.00045632973745297916
+  },
+  "selected_csharp_earth_linear_max_difference_m": 0.0,
+  "selected_csharp_sun_exact_angle_difference_deg": {
+    "maximum": 0.0039394472093338675,
+    "mean": 0.0009288051374840456,
+    "p95": 0.0032924261376850207,
+    "p99": 0.0038100429950040982
+  },
+  "selected_csharp_sun_linear_max_difference_m": 0.0,
+  "time_count": 108113,
+  "time_start_utc": "1970-01-01T00:00:00+00:00",
+  "time_step_hours": 6,
+  "time_stop_utc": "2044-01-01T00:00:00+00:00"
+}

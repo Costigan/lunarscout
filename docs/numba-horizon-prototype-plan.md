@@ -604,7 +604,7 @@ times, vectors, thresholds, and reductions before release.
       parity requirement; if no authoritative parity implementation is
       supplied for another product, specify and test the new Python behavior
       directly rather than waiting for a C# example.
-- [ ] Capture small deterministic C# oracles for the authoritative PSR path and
+- [x] Capture small deterministic C# oracles for the authoritative PSR path and
       for any other calculation that has an identified parity implementation.
       For products without one, define independent synthetic expected results
       for local-frame construction, horizon interpolation, solar-disk fraction,
@@ -618,10 +618,10 @@ times, vectors, thresholds, and reductions before release.
       tests and advanced callers. Explicit vectors override generated vectors,
       but must still have an unambiguous timestamp mapping where the output is
       time-indexed.
-- [ ] Capture realistic Python-generated SPICE vector fixtures and controlled
+- [x] Capture realistic Python-generated SPICE vector fixtures and controlled
       synthetic-vector fixtures. Compare the Python Moon-ME positions with the
       current C# SPICE positions before using them as product oracles.
-- [ ] Make the horizon patch the primary bounded work unit. Load one patch,
+- [x] Make the horizon patch the primary bounded work unit. Load one patch,
       iterate its requested mission times, compute one 128 by 128 result per
       time, and enqueue that tile for the matching output band before releasing
       the horizon patch. Optional GPU time batching must remain bounded and
@@ -649,7 +649,7 @@ times, vectors, thresholds, and reductions before release.
       georeferencing, and per-band time metadata. Band `t` must represent the
       corresponding supplied time `times[t]`; store an unambiguous UTC timestamp
       in each band and an ordered dataset-level time mapping.
-- [ ] For a time-series lightmap, create one band per time and use band
+- [x] For a time-series lightmap, create one band per time and use band
       interleaving so each band consists of independently compressed 128 by 128
       pixel tiles. Write window `(patch_x, patch_y, 128, 128)` to band `t` as
       soon as that patch/time result reaches the writer.
@@ -690,12 +690,24 @@ times, vectors, thresholds, and reductions before release.
 - [ ] Time-series lightmap: for each loaded horizon patch, stream one byte-valued
       128 by 128 tile to each time band of a multi-band BigTIFF and compare every
       value and timestamp with C#.
-- [ ] PSR: reduce the full Metonic-cycle vector set in the kernel to one
+- [x] PSR: reduce the full Metonic-cycle vector set in the kernel to one
       `uint8` tile without writing or retaining the intermediate lightmap cube;
       reproduce the established solar-limb behavior. Reproduce the exact vector
       heuristic: at each of the DEM's four corners and center, retain the
       highest-elevation Sun vector in each of 1,440 azimuth bins, then use the
       union of those selected vector indices.
+
+The PSR proof uses 108,113 six-hour Sun samples from 1970 through the start of
+2044 and the production five-viewpoint reduction. Exact per-timestamp
+`utc2et` conversion is the default, including for future mission periods after
+all published leap seconds. An explicit `linear_from_anchor` mode reproduces
+the C# 2023-anchor convention exactly, but it may be selected only where
+equivalence to per-timestamp `utc2et` has been demonstrated for the intended
+calculation. On the retained 16-patch real-terrain PSR case, that product-level
+equivalence was demonstrated: the two modes selected slightly different
+reduced index sets but produced byte-identical PSR pixels, masks, and GeoTIFF
+files. See
+`docs/numba-horizon-phase-6b-downstream-products.md`.
 - [ ] Safe haven: reproduce Earth-below-threshold interval selection and the
       longest contiguous low-sun duration for every selected interval.
 - [ ] Landed mission duration: reproduce threshold/reduction semantics and
