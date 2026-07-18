@@ -6,6 +6,14 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added reusable caller-owned horizon decode buffers and selected five pinned
+  buffers for the private bounded CUDA PSR pipeline. `.cbin` data decodes
+  directly into pinned memory, avoiding both per-patch 94 MiB allocations and
+  an extra host copy; static metadata and reduced vectors remain resident after
+  their first upload. A complete 1,599-patch run improved from `73.448` to
+  `62.690` seconds and from `21.7704` to `25.5064 patches/s`, with identical
+  values, masks, metadata, file size, and batched-file SHA-256. CPU and serial
+  paths retain ordinary allocation and do not initialize CUDA.
 - Replaced per-patch staged-TIFF reopen/close and journal writes in the private
   PSR path with a bounded 16-patch writer checkpoint. TIFF data is closed and
   synchronized before the journal advances, progress remains durable, and an

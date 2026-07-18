@@ -71,6 +71,8 @@ class PsrPipelineMetrics:
     writer_dequeue_wait_seconds: tuple[float, ...]
     durable_batch_size: int
     maximum_uncheckpointed_patches: int
+    host_horizon_buffer_kind: str
+    preallocated_host_horizon_bytes: int
 
 
 @dataclass(slots=True)
@@ -143,6 +145,9 @@ def run_psr_product(
     writer_queue_capacity: int = 1,
     reader_worker_count: int = 4,
     durable_batch_size: int = 16,
+    host_horizon_buffers: Literal[
+        "auto", "allocated", "pageable", "pinned"
+    ] = "auto",
 ) -> Path:
     """Generate a single-band PSR GeoTIFF with explicit backend selection."""
     pipeline_started = time.perf_counter()
@@ -170,6 +175,15 @@ def run_psr_product(
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     if pipeline_mode not in ("serial", "bounded"):
         raise ValueError("pipeline_mode must be 'serial' or 'bounded'")
+    if host_horizon_buffers not in ("auto", "allocated", "pageable", "pinned"):
+        raise ValueError(
+            "host_horizon_buffers must be 'auto', 'allocated', 'pageable', or 'pinned'"
+        )
+    if (
+        host_horizon_buffers in ("pageable", "pinned")
+        and pipeline_mode != "bounded"
+    ):
+        raise ValueError("preallocated horizon buffers require the bounded pipeline")
     if decoded_horizon_capacity < 1:
         raise ValueError("decoded_horizon_capacity must be positive")
     if pipeline_mode == "bounded" and decoded_horizon_capacity < 2:
@@ -192,6 +206,7 @@ def run_psr_product(
         )
     patches = enumerate_patches(dem.width, dem.height)
     patches_by_origin = {(patch.tile_y, patch.tile_x): patch for patch in patches}
+    cuda_session = None
     if patch_calculator is not None:
         calculate_patch = patch_calculator
     elif backend == "cpu":
@@ -220,9 +235,10 @@ def run_psr_product(
                 timing(stage, seconds, patch)
 
         try:
-            calculate_patch = PsrCudaSession(
+            cuda_session = PsrCudaSession(
                 timing_callback=cuda_timing if timing_callback is not None else None
-            ).compute_patch
+            )
+            calculate_patch = cuda_session.compute_patch
         except CudaBackendError:
             if backend == "cuda":
                 raise
@@ -266,6 +282,16 @@ def run_psr_product(
         return bool(cancellation_requested and cancellation_requested())
 
     completed = len(product.completed_patches)
+    horizon_buffer_pool: Queue[npt.NDArray[np.float32]] | None = None
+    selected_host_horizon_buffers = host_horizon_buffers
+    if selected_host_horizon_buffers == "auto":
+        selected_host_horizon_buffers = (
+            "pinned"
+            if pipeline_mode == "bounded" and cuda_session is not None
+            else "allocated"
+        )
+    elif selected_host_horizon_buffers == "pinned" and cuda_session is None:
+        selected_host_horizon_buffers = "allocated"
 
     def report(patch: PatchDescriptor | None, state: str) -> None:
         event = PsrProgress(
@@ -296,7 +322,10 @@ def run_psr_product(
         patch: PatchDescriptor,
         *,
         acquire_decoded_slot: Callable[[], bool] | None = None,
-        release_decoded_slot: Callable[[], None] | None = None,
+        release_decoded_slot: Callable[
+            [npt.NDArray[np.float32] | None], None
+        ]
+        | None = None,
     ) -> _ReadPatch:
         patch_started = time.perf_counter()
         report(patch, "read")
@@ -309,6 +338,7 @@ def run_psr_product(
             horizon_path = None
         timing("horizon_lookup", time.perf_counter() - lookup_started, patch)
         owns_decoded_slot = False
+        decode_output = None
         if horizon_path is None:
             horizons = None
         else:
@@ -317,8 +347,11 @@ def run_psr_product(
                     if not acquire_decoded_slot():
                         return _ReadPatch(patch, None, patch_started, False)
                     owns_decoded_slot = True
+                    if horizon_buffer_pool is not None:
+                        decode_output = horizon_buffer_pool.get_nowait()
                 horizons, read_timings = read_horizon_tile_with_timings(
-                    horizon_path
+                    horizon_path,
+                    output=decode_output,
                 )
                 timing(
                     "compressed_file_read",
@@ -333,7 +366,7 @@ def run_psr_product(
             except (OSError, ValueError):
                 if owns_decoded_slot:
                     assert release_decoded_slot is not None
-                    release_decoded_slot()
+                    release_decoded_slot(decode_output)
                     owns_decoded_slot = False
                 horizons = None
         return _ReadPatch(patch, horizons, patch_started, owns_decoded_slot)
@@ -414,6 +447,23 @@ def run_psr_product(
         for patch in patches
         if not product.is_complete(patch.tile_y, patch.tile_x)
     ]
+    if selected_host_horizon_buffers != "allocated" and pending:
+        allocation_started = time.perf_counter()
+        horizon_buffer_pool = Queue(maxsize=decoded_horizon_capacity)
+        for _ in range(decoded_horizon_capacity):
+            if selected_host_horizon_buffers == "pinned":
+                if cuda_session is None:
+                    break
+                buffer = cuda_session.allocate_pinned_horizon_buffer()
+            else:
+                buffer = np.empty((128, 128, 1440), dtype=np.float32)
+            horizon_buffer_pool.put_nowait(buffer)
+        if horizon_buffer_pool.qsize() != decoded_horizon_capacity:
+            horizon_buffer_pool = None
+        timing(
+            "host_horizon_buffer_allocation",
+            time.perf_counter() - allocation_started,
+        )
     if pipeline_mode == "serial":
         with product.batch_writer(durable_batch_size) as batch_writer:
             for patch in pending:
@@ -441,6 +491,16 @@ def run_psr_product(
             writer_dequeue_wait_seconds=(),
             durable_batch_size=durable_batch_size,
             maximum_uncheckpointed_patches=maximum_uncheckpointed_patches,
+            host_horizon_buffer_kind=(
+                selected_host_horizon_buffers
+                if horizon_buffer_pool is not None
+                else "allocated"
+            ),
+            preallocated_host_horizon_bytes=(
+                decoded_horizon_capacity * 128 * 128 * 1440 * 4
+                if horizon_buffer_pool is not None
+                else 0
+            ),
         )
     else:
         reader_queue: Queue[_ReadPatch | object] = Queue(
@@ -484,8 +544,13 @@ def run_psr_product(
                     return True
             return False
 
-        def release_slot() -> None:
+        def release_slot(
+            horizons: npt.NDArray[np.float32] | None = None,
+        ) -> None:
             nonlocal live_decoded_horizons
+            if horizon_buffer_pool is not None:
+                assert horizons is not None
+                horizon_buffer_pool.put_nowait(horizons)
             with metrics_lock:
                 live_decoded_horizons -= 1
             decoded_slots.release()
@@ -561,11 +626,11 @@ def run_psr_product(
                         )
                         if stop.is_set():
                             if item.owns_decoded_slot:
-                                release_slot()
+                                release_slot(item.horizons)
                             break
                         if not put_reader(item):
                             if item.owns_decoded_slot:
-                                release_slot()
+                                release_slot(item.horizons)
                             break
                 else:
                     patch_iterator = iter(pending)
@@ -598,11 +663,11 @@ def run_psr_product(
                                 item = futures.popleft().result()
                                 if stop.is_set():
                                     if item.owns_decoded_slot:
-                                        release_slot()
+                                        release_slot(item.horizons)
                                     break
                                 if not put_reader(item):
                                     if item.owns_decoded_slot:
-                                        release_slot()
+                                        release_slot(item.horizons)
                                     break
                                 submit_one()
                         finally:
@@ -612,7 +677,7 @@ def run_psr_product(
                                 except BaseException:
                                     continue
                                 if unused.owns_decoded_slot:
-                                    release_slot()
+                                    release_slot(unused.horizons)
             except BaseException as error:
                 fail(error)
             finally:
@@ -664,7 +729,7 @@ def run_psr_product(
                 timing("cuda_dequeue_wait", wait_seconds, item.patch)
                 if stop.is_set():
                     if item.owns_decoded_slot:
-                        release_slot()
+                        release_slot(item.horizons)
                     continue
                 try:
                     if cancelled():
@@ -677,7 +742,7 @@ def run_psr_product(
                     fail(error)
                 finally:
                     if item.owns_decoded_slot:
-                        release_slot()
+                        release_slot(item.horizons)
             finally:
                 reader_queue.task_done()
         reader_thread.join()
@@ -697,6 +762,16 @@ def run_psr_product(
             writer_dequeue_wait_seconds=tuple(writer_dequeue_wait_seconds),
             durable_batch_size=durable_batch_size,
             maximum_uncheckpointed_patches=maximum_uncheckpointed_patches,
+            host_horizon_buffer_kind=(
+                selected_host_horizon_buffers
+                if horizon_buffer_pool is not None
+                else "allocated"
+            ),
+            preallocated_host_horizon_bytes=(
+                decoded_horizon_capacity * 128 * 128 * 1440 * 4
+                if horizon_buffer_pool is not None
+                else 0
+            ),
         )
         if errors:
             if metrics_callback is not None:

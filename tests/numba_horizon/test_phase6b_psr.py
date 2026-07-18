@@ -208,20 +208,74 @@ def test_numba_cuda_psr_matches_actual_csharp_ilgpu_kernel_fixture() -> None:
         base64.b64decode(case["output_base64"]), dtype=np.uint8
     ).reshape(128, 128)
 
+    vectors = np.asarray(case["sun_vectors_m"], dtype=np.float64).reshape(-1, 3)
     timing = []
-    actual = PsrCudaSession(timing_callback=timing.append).compute_patch(
+    session = PsrCudaSession(timing_callback=timing.append)
+    actual = session.compute_patch(
         dem,
         horizons,
-        np.asarray(case["sun_vectors_m"], dtype=np.float64).reshape(-1, 3),
+        vectors,
+        tile_y=0,
+        tile_x=0,
+    )
+    repeated = session.compute_patch(
+        dem,
+        horizons,
+        vectors,
         tile_y=0,
         tile_x=0,
     )
 
     np.testing.assert_array_equal(actual, expected)
-    assert len(timing) == 1
+    np.testing.assert_array_equal(repeated, expected)
+    assert len(timing) == 2
     assert timing[0].kernel_execution_seconds > 0.0
     assert timing[0].h2d_horizon_seconds >= 0.0
     assert timing[0].d2h_result_seconds >= 0.0
+    assert timing[0].h2d_metadata_seconds > 0.0
+    assert timing[0].h2d_vectors_seconds > 0.0
+    assert timing[1].h2d_metadata_seconds == 0.0
+    assert timing[1].h2d_vectors_seconds == 0.0
+
+
+@pytest.mark.skipif(
+    os.environ.get("LUNARSCOUT_REQUIRE_NUMBA_CUDA") != "1",
+    reason="set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 for the explicit real-GPU probe",
+)
+def test_bounded_cuda_psr_auto_selects_pinned_decode_buffers(
+    tmp_path: Path,
+) -> None:
+    dem = _dem()
+    horizons = HorizonTileStore(tmp_path / "horizons")
+    horizons.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+    metrics = []
+    result = run_psr_product(
+        dem=dem,
+        georef=_georef(1, 1),
+        horizon_store=horizons,
+        output_path=tmp_path / "pinned-auto.tif",
+        sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
+        backend="cuda",
+        decoded_horizon_capacity=2,
+        reader_worker_count=1,
+        durable_batch_size=1,
+        metrics_callback=metrics.append,
+    )
+
+    assert len(metrics) == 1
+    assert metrics[0].host_horizon_buffer_kind == "pinned"
+    assert metrics[0].preallocated_host_horizon_bytes == 2 * 128 * 128 * 1440 * 4
+    with rasterio.open(result) as dataset:
+        assert dataset.read(1).item() == 0
+        assert dataset.dataset_mask().item() == 255
 
 
 def test_explicit_vectors_override_generation_arguments_without_spice(
@@ -478,6 +532,7 @@ def test_psr_auto_backend_falls_back_to_cpu(
         valid_height=1,
     )
 
+    metrics = []
     result = run_psr_product(
         dem=dem,
         georef=_georef(1, 1),
@@ -485,8 +540,11 @@ def test_psr_auto_backend_falls_back_to_cpu(
         output_path=tmp_path / "auto-psr.tif",
         sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
         backend="auto",
+        metrics_callback=metrics.append,
     )
 
+    assert metrics[0].host_horizon_buffer_kind == "allocated"
+    assert metrics[0].preallocated_host_horizon_bytes == 0
     with rasterio.open(result) as dataset:
         assert dataset.read(1).item() == 0
 

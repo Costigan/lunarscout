@@ -223,7 +223,15 @@ class PsrCudaSession:
         self._device_output = cuda.device_array(PATCH_SIZE * PATCH_SIZE, dtype=np.uint8)
         self._device_vectors = None
         self._vector_capacity = 0
+        self._resident_vectors: npt.NDArray[np.float32] | None = None
+        self._resident_metadata_key: tuple[float, ...] | None = None
         self._timing_callback = timing_callback
+
+    def allocate_pinned_horizon_buffer(self) -> npt.NDArray[np.float32]:
+        """Allocate one fixed-shape host buffer suitable for direct decode/H2D."""
+        return self._cuda.pinned_array(
+            (PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), dtype=np.float32
+        )
 
     def compute_patch(
         self,
@@ -277,20 +285,36 @@ class PsrCudaSession:
                     vectors.shape, dtype=np.float32
                 )
                 self._vector_capacity = vectors.shape[0]
+                self._resident_vectors = None
             device_vectors = self._device_vectors[: vectors.shape[0]]
             transfer_started = time.perf_counter()
             self._device_dem.copy_to_device(patch_dem)
             h2d_dem_seconds = time.perf_counter() - transfer_started
-            transfer_started = time.perf_counter()
-            self._device_geotransform.copy_to_device(dem.geo_transform)
-            self._device_projection.copy_to_device(projection)
-            h2d_metadata_seconds = time.perf_counter() - transfer_started
+            metadata_key = tuple(float(value) for value in dem.geo_transform) + tuple(
+                float(value) for value in projection
+            )
+            if metadata_key != self._resident_metadata_key:
+                transfer_started = time.perf_counter()
+                self._device_geotransform.copy_to_device(dem.geo_transform)
+                self._device_projection.copy_to_device(projection)
+                h2d_metadata_seconds = time.perf_counter() - transfer_started
+                self._resident_metadata_key = metadata_key
+            else:
+                h2d_metadata_seconds = 0.0
             transfer_started = time.perf_counter()
             self._device_horizons.copy_to_device(horizons)
             h2d_horizon_seconds = time.perf_counter() - transfer_started
-            transfer_started = time.perf_counter()
-            device_vectors.copy_to_device(vectors)
-            h2d_vectors_seconds = time.perf_counter() - transfer_started
+            if (
+                self._resident_vectors is None
+                or self._resident_vectors.shape != vectors.shape
+                or not np.array_equal(self._resident_vectors, vectors)
+            ):
+                transfer_started = time.perf_counter()
+                device_vectors.copy_to_device(vectors)
+                h2d_vectors_seconds = time.perf_counter() - transfer_started
+                self._resident_vectors = vectors.copy()
+            else:
+                h2d_vectors_seconds = 0.0
             threads = 128
             blocks = (PATCH_SIZE * PATCH_SIZE + threads - 1) // threads
             start_event = None

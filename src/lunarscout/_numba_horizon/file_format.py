@@ -132,11 +132,11 @@ def _write_compressed(handle: BinaryIO, degrees: npt.NDArray[np.float32]) -> Non
         handle.write(encoded[index, :length].tobytes())
 
 
-def _decode_compressed_payload_python(
+def _decode_compressed_payload_into_python(
     payload: npt.NDArray[np.uint8],
-) -> npt.NDArray[np.float32]:
+    output: npt.NDArray[np.float32],
+) -> None:
     """Decode and structurally validate a complete C# ``.cbin`` payload."""
-    output = np.empty((PIXEL_COUNT, AZIMUTH_COUNT), dtype=np.float32)
     offset = 0
     payload_size = payload.size
     for pixel_index in range(PIXEL_COUNT):
@@ -180,11 +180,19 @@ def _decode_compressed_payload_python(
             raise ValueError("compressed horizon block did not decode to 1440 samples")
     if offset != payload_size:
         raise ValueError("compressed horizon contains trailing bytes")
+
+
+def _decode_compressed_payload_python(
+    payload: npt.NDArray[np.uint8],
+) -> npt.NDArray[np.float32]:
+    output = np.empty((PIXEL_COUNT, AZIMUTH_COUNT), dtype=np.float32)
+    _decode_compressed_payload_into_python(payload, output)
     return output
 
 
 def _decode_compressed_payload(
     payload: npt.NDArray[np.uint8],
+    output: npt.NDArray[np.float32] | None = None,
 ) -> npt.NDArray[np.float32]:
     """Decode a complete payload, compiling the bounded loop when available."""
     global _COMPILED_DECODER
@@ -194,21 +202,40 @@ def _decode_compressed_payload(
                 try:
                     from numba import njit
                 except ImportError:
-                    _COMPILED_DECODER = _decode_compressed_payload_python
+                    _COMPILED_DECODER = _decode_compressed_payload_into_python
                 else:
                     # The bounded downstream pipeline decompresses ahead while
                     # the caller drives CUDA and durable output. Releasing the
                     # GIL permits overlap without changing decoder arithmetic.
                     _COMPILED_DECODER = njit(cache=False, nogil=True)(
-                        _decode_compressed_payload_python
+                        _decode_compressed_payload_into_python
                     )
-    return _COMPILED_DECODER(payload)
+    if output is None:
+        output = np.empty((PIXEL_COUNT, AZIMUTH_COUNT), dtype=np.float32)
+    _COMPILED_DECODER(payload, output)
+    return output
 
 
 def read_horizon_tile_with_timings(
     path: str | Path,
+    *,
+    output: npt.NDArray[np.float32] | None = None,
 ) -> tuple[npt.NDArray[np.float32], HorizonReadTimings]:
     """Read one horizon tile and return separate file/decompression timings."""
+    if output is not None:
+        if (
+            output.dtype != np.float32
+            or output.shape
+            != (PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT)
+            or not output.flags.c_contiguous
+            or not output.flags.writeable
+        ):
+            raise ValueError(
+                "output must be a writable contiguous float32 (128, 128, 1440) array"
+            )
+        flat_output = output.reshape(PIXEL_COUNT, AZIMUTH_COUNT)
+    else:
+        flat_output = None
     candidate = Path(path)
     suffix = candidate.suffix.lower()
     read_started = time.perf_counter()
@@ -223,7 +250,12 @@ def read_horizon_tile_with_timings(
             raise ValueError(f"unable to read horizon tile: {candidate}") from exc
         file_read_seconds = time.perf_counter() - read_started
         decode_started = time.perf_counter()
-        values = np.frombuffer(payload, dtype="<f4", count=TOTAL_SAMPLES).copy()
+        source = np.frombuffer(payload, dtype="<f4", count=TOTAL_SAMPLES)
+        if flat_output is None:
+            values = source.copy()
+        else:
+            np.copyto(flat_output.reshape(-1), source)
+            values = flat_output
     elif suffix == ".cbin":
         try:
             payload = np.frombuffer(candidate.read_bytes(), dtype=np.uint8)
@@ -231,13 +263,11 @@ def read_horizon_tile_with_timings(
             raise ValueError(f"unable to read horizon tile: {candidate}") from exc
         file_read_seconds = time.perf_counter() - read_started
         decode_started = time.perf_counter()
-        values = _decode_compressed_payload(payload)
+        values = _decode_compressed_payload(payload, flat_output)
     else:
         raise ValueError("horizon tile must have a .bin or .cbin extension")
     decompression_seconds = time.perf_counter() - decode_started
-    result = np.ascontiguousarray(
-        values.reshape(PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), dtype=np.float32
-    )
+    result = values.reshape(PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT)
     return result, HorizonReadTimings(
         file_read_seconds=file_read_seconds,
         decompression_seconds=decompression_seconds,

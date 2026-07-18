@@ -17,6 +17,7 @@ from lunarscout._numba_horizon.file_format import (
     _encode_horizons,
     _encode_horizons_python,
     read_horizon_tile,
+    read_horizon_tile_with_timings,
 )
 from lunarscout._numba_horizon.pipeline import (
     HorizonPipelineCancelled,
@@ -199,6 +200,33 @@ def test_full_tile_reader_returns_fixed_pixel_major_cube(
     np.testing.assert_allclose(actual[0, 2], -50.0, atol=tolerance)
     np.testing.assert_allclose(actual[1, 0], -50.0, atol=tolerance)
     np.testing.assert_allclose(store.read(0, 0, 0.0), actual)
+
+
+@pytest.mark.parametrize("compress", [False, True])
+def test_full_tile_reader_decodes_into_caller_owned_buffer(
+    tmp_path: Path, compress: bool
+) -> None:
+    store = HorizonTileStore(tmp_path)
+    path = store.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=compress,
+        valid_width=1,
+        valid_height=1,
+    )
+    destination = np.full(
+        (128, 128, AZIMUTH_COUNT), np.nan, dtype=np.float32
+    )
+
+    actual, timings = read_horizon_tile_with_timings(path, output=destination)
+
+    assert np.shares_memory(actual, destination)
+    assert timings.file_read_seconds >= 0.0
+    assert timings.decompression_seconds >= 0.0
+    assert actual[0, 0, 0] == pytest.approx(0.0, abs=0.002)
+    assert actual[0, 1, 0] == pytest.approx(-50.0, abs=0.002)
 
 
 def test_full_tile_reader_rejects_trailing_compressed_data(tmp_path: Path) -> None:

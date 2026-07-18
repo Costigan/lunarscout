@@ -1,0 +1,51 @@
+{
+  "identity": {
+    "pageable_pinned_equal": true
+  },
+  "input": {
+    "horizon_bytes": 94371840,
+    "horizon_path": "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00000_00000_000.cbin",
+    "iterations": 8
+  },
+  "pageable_decode": {
+    "count": 8,
+    "maximum_seconds": 0.12201104999985546,
+    "mean_seconds": 0.12141398200026288,
+    "median_seconds": 0.12163759750046665,
+    "minimum_seconds": 0.12053516800006037,
+    "total_seconds": 0.971311856002103
+  },
+  "pageable_h2d": {
+    "count": 8,
+    "maximum_seconds": 0.007286512000064249,
+    "mean_seconds": 0.006996270000172444,
+    "median_seconds": 0.006973490000291349,
+    "minimum_seconds": 0.0067606709999381565,
+    "total_seconds": 0.055970160001379554
+  },
+  "pinned_async_h2d_and_sync": {
+    "count": 8,
+    "maximum_seconds": 0.010365706999436952,
+    "mean_seconds": 0.004229329250165392,
+    "median_seconds": 0.003353389500261983,
+    "minimum_seconds": 0.0033474620004199096,
+    "total_seconds": 0.03383463400132314
+  },
+  "pinned_decode": {
+    "count": 8,
+    "maximum_seconds": 0.12223550699945918,
+    "mean_seconds": 0.12144105925005988,
+    "median_seconds": 0.12157955400016363,
+    "minimum_seconds": 0.11987014300029841,
+    "total_seconds": 0.971528474000479
+  },
+  "pinned_h2d": {
+    "count": 8,
+    "maximum_seconds": 0.0034346450001976336,
+    "mean_seconds": 0.003410321874980582,
+    "median_seconds": 0.0034058435003316845,
+    "minimum_seconds": 0.0033929510000234586,
+    "total_seconds": 0.027282574999844655
+  },
+  "schema": "lunarscout-numba-phase6b-psr-transfer-v1"
+}

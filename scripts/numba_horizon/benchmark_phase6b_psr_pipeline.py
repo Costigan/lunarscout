@@ -208,6 +208,11 @@ def main() -> int:
     parser.add_argument("--writer-queue-capacity", type=int, default=1)
     parser.add_argument("--reader-worker-count", type=int, default=1)
     parser.add_argument("--durable-batch-size", type=int, default=1)
+    parser.add_argument(
+        "--host-horizon-buffers",
+        choices=("allocated", "pageable", "pinned"),
+        default="allocated",
+    )
     parser.add_argument("--output-json", type=Path, required=True)
     arguments = parser.parse_args()
     if arguments.patch_rows < 1 or arguments.patch_columns < 1:
@@ -284,6 +289,7 @@ def main() -> int:
                 writer_queue_capacity=arguments.writer_queue_capacity,
                 reader_worker_count=arguments.reader_worker_count,
                 durable_batch_size=arguments.durable_batch_size,
+                host_horizon_buffers=arguments.host_horizon_buffers,
             )
         instrumented_seconds = time.perf_counter() - instrumented_started
         cpu_after = resource.getrusage(resource.RUSAGE_SELF)
@@ -399,6 +405,10 @@ def main() -> int:
             "configured_durable_batch_size": metrics.durable_batch_size,
             "maximum_uncheckpointed_patches": (
                 metrics.maximum_uncheckpointed_patches
+            ),
+            "host_horizon_buffer_kind": metrics.host_horizon_buffer_kind,
+            "preallocated_host_horizon_bytes": (
+                metrics.preallocated_host_horizon_bytes
             ),
             "maximum_live_decoded_horizons": metrics.maximum_live_decoded_horizons,
             "maximum_reader_queue_depth": metrics.maximum_reader_queue_depth,

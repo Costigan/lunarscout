@@ -824,9 +824,11 @@ CUDA was bypassed.
       of tiles per durable journal update. Preserve the rule that the journal
       never advances beyond flushed TIFF data and quantify the maximum
       recomputation after interruption.
-- [ ] Evaluate pinned host buffers, asynchronous transfers, and double-buffered
-      patch slots. Do not retain more decoded 128 by 128 by 1,440 horizon tiles
-      than the configured queue/buffer bound.
+- [x] Evaluate reusable pinned host buffers and direct `.cbin` decode into those
+      buffers. Do not retain more decoded 128 by 128 by 1,440 horizon tiles than
+      the configured queue/buffer bound.
+- [ ] Evaluate asynchronous transfers and double-buffered CUDA patch slots
+      independently of the accepted pinned-buffer change.
 - [ ] Evaluate batching multiple PSR patches per CUDA submission to increase
       launch occupancy, and compare it with multiple CUDA streams. Require
       identical classification and validity-mask output before accepting a
@@ -893,6 +895,22 @@ utilization was `10.97%`/`20%`. See
 An abrupt child-process exit with six unclosed writes leaves an empty journal;
 the staged TIFF reopens and all six patches recompute successfully. Broader
 kill-point and disk-full coverage remains part of the operational matrix.
+
+The accepted transfer-memory candidate preallocates the same five decoded
+horizon slots as pinned host arrays and decodes `.cbin` payloads directly into
+them. A microbenchmark found identical pageable/pinned values, unchanged decode
+time (`121.414` versus `121.441 ms`), and a synchronous 94 MiB H2D reduction
+from `6.996` to `3.410 ms`. The complete 1,599-patch candidate took `62.690 s`
+(`25.50637 patches/s`), compared with `73.448 s` (`21.77041 patches/s`) for
+the accepted batch-16 pageable run. Mean horizon H2D fell from `7.607` to
+`3.457 ms`; reusable buffers also remove repeated allocation during four-worker
+decode. Static metadata and vectors upload only on the first patch. Values,
+masks, metadata, file size, and the batched-file SHA-256
+`e246ac369b36d3e5f67f9c6c1f64284f0ddbc26448c17358b69cdd69c9ffed5d`
+match. Sampled peak RSS was `1,480,388,608` bytes, GPU memory remained 348 MiB,
+CPU use was `3.807` core equivalents, and mean/p95 GPU utilization was
+`12.72%`/`20%`. See the `psr-transfer-microbenchmark` and `psr-pinned-full`
+reports. Asynchronous double buffering remains a separate open experiment.
 
 ## 14. Phase 7: Packaging and Operational Evaluation
 

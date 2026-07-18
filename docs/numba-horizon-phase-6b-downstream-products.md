@@ -367,6 +367,57 @@ Machine-readable input identities, stage distributions, resource samples,
 queue bounds, and comparisons are in
 `docs/numba-horizon-phase-6b-psr-pipeline-batch16-full.json`.
 
+## Accepted reusable pinned horizon buffers
+
+The pageable pipeline previously allocated each 94,371,840-byte decoded
+horizon independently and uploaded static projection metadata and reduced
+vectors for every patch. The accepted bounded-CUDA path now preallocates five
+pinned arrays, decodes `.cbin` payloads directly into those caller-owned
+buffers, and returns each buffer to the bounded reader pool only after its CUDA
+calculation completes. The five-slot `471,859,200`-byte decoded-horizon bound is
+unchanged and no pageable-to-pinned copy is introduced. CPU, serial, and
+unavailable-CUDA fallback paths retain ordinary allocation.
+
+An eight-iteration single-tile microbenchmark separated direct decode from
+transfer. Pageable and pinned outputs match exactly. Mean decode time was
+`121.414 ms` pageable and `121.441 ms` pinned. Synchronous H2D fell from
+`6.996 ms` to `3.410 ms`; pinned asynchronous copy plus synchronization had a
+`3.353 ms` median. This establishes that pinning itself does not penalize the
+decoder and approximately halves the actual 94 MiB transfer boundary.
+
+A 64-patch matrix then separated allocation reuse from page locking. Reusable
+pageable buffers reduced mean decompression boundary time from `143.18` to
+`119.41 ms` while retaining `7.27 ms` H2D. Reusable pinned buffers measured
+`118.08 ms` decompression and `3.43 ms` H2D. Pinned allocation cost `93.6 ms`
+once, so the pinned and reusable-pageable paths were approximately even over
+only 64 patches; the transfer saving grows with patch count.
+
+The complete matched Mons Mouton result was:
+
+| Measurement | Batch-16 pageable | Batch-16 pinned |
+| --- | ---: | ---: |
+| End-to-end time | `73.448 s` | `62.690 s` |
+| Throughput | `21.77041 patches/s` | `25.50637 patches/s` |
+| Mean horizon H2D | `7.607 ms` | `3.457 ms` |
+| Mean complete CUDA boundary | `18.183 ms` | `12.413 ms` |
+| CPU core equivalents | `3.974` | `3.807` |
+| Mean/p95 GPU utilization | `10.97%` / `20%` | `12.72%` / `20%` |
+| Sampled peak RSS | `1,388,621,824` bytes | `1,480,388,608` bytes |
+| Peak process GPU memory | 348 MiB | 348 MiB |
+
+All 26,198,016 values, all mask values, metadata, and the 168,063-byte file
+size match. The pinned candidate SHA-256 is
+`e246ac369b36d3e5f67f9c6c1f64284f0ddbc26448c17358b69cdd69c9ffed5d`,
+exactly matching the previously accepted batch-16 physical TIFF. Static
+metadata and vectors transfer once; their remaining 1,598 timing samples are
+zero. One-time pinned allocation was `95.34 ms`. Reader and writer bounds,
+durable checkpoints, restart semantics, and GPU allocation are unchanged.
+
+Machine-readable evidence is in
+`docs/numba-horizon-phase-6b-psr-transfer-microbenchmark.json` and
+`docs/numba-horizon-phase-6b-psr-pinned-full.json`. Multiple streams and
+double-buffered CUDA device slots remain unaccepted until separately measured.
+
 ## Initial time-series lightmap slice
 
 The private lightmap reference path defines byte sunlight using the active C#
@@ -621,11 +672,12 @@ output hashes, timings, memory, comparisons, and mismatch samples are in
 
 ## Intentionally incomplete
 
-- The selected four-reader/five-slot pipeline with 16-patch durable checkpoints
-  provides `21.77041 patches/s` on the complete scenario with identical values,
-  masks, and metadata. CUDA still waits `21.7 ms` mean per patch for ordered
-  decompression results, so pinned/asynchronous transfers and multi-patch CUDA
-  submissions remain to be evaluated independently. More than four
+- The selected four-reader/five-pinned-slot pipeline with 16-patch durable
+  checkpoints provides `25.50637 patches/s` on the complete scenario with
+  identical values, masks, metadata, and batched TIFF hash. CUDA still waits
+  `20.9 ms` mean per patch for ordered decompression results, so asynchronous
+  transfers and multi-patch CUDA submissions remain to be evaluated
+  independently. More than four
   decompression workers is not part of the retained small-worker matrix and
   would require a separate memory tradeoff.
 - Physical TIFF block inspection when a single-band journal is missing is not
