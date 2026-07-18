@@ -5,19 +5,25 @@ import base64
 import json
 import os
 from pathlib import Path
+import threading
 
 import numpy as np
 import pytest
 import rasterio
 
 from lunarscout._numba_horizon.file_format import AZIMUTH_COUNT, HorizonTileStore
+from lunarscout._numba_horizon.cuda_backend import CudaBackendError
 from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
 from lunarscout._numba_horizon.lightmap import (
     _sun_fraction_reference,
     compute_lightmap_patch_reference,
 )
-from lunarscout._numba_horizon.lightmap_pipeline import run_lightmap_product
+from lunarscout._numba_horizon.lightmap_pipeline import (
+    LightmapPipelineCancelled,
+    run_lightmap_product,
+)
 from lunarscout._numba_horizon.lightmap_cuda import LightmapCudaSession
+from lunarscout._numba_horizon.lightmap_cpu import LightmapCpuSession
 from lunarscout._numba_horizon.psr import _pixel_frame
 from lunarscout.georeference import GeoReference
 
@@ -167,6 +173,42 @@ def test_lightmap_cuda_batches_match_cpu_reference() -> None:
     np.testing.assert_array_equal(actual, expected)
 
 
+def test_compiled_cpu_batches_match_reference() -> None:
+    dem = _dem(width=2, height=2)
+    horizons = np.zeros((128, 128, AZIMUTH_COUNT), dtype=np.float32)
+    vectors = np.stack(
+        tuple(
+            _position_for_local_angle(dem, 359.98, elevation)
+            for elevation in (1.0, 0.18, 0.0, -0.18, -1.0)
+        )
+    )
+    expected = compute_lightmap_patch_reference(
+        dem,
+        horizons,
+        vectors,
+        tile_y=0,
+        tile_x=0,
+        valid_height=2,
+        valid_width=2,
+    )
+
+    actual = np.stack(
+        tuple(
+            LightmapCpuSession(time_batch_size=2).iter_patch_tiles(
+                dem,
+                horizons,
+                vectors,
+                tile_y=0,
+                tile_x=0,
+                valid_height=2,
+                valid_width=2,
+            )
+        )
+    )
+
+    np.testing.assert_array_equal(actual, expected)
+
+
 def test_lightmap_pipeline_writes_timestamp_bands_and_invalid_patch(tmp_path: Path) -> None:
     dem = _dem(width=129, height=1)
     horizon_store = HorizonTileStore(tmp_path / "horizons")
@@ -213,3 +255,94 @@ def test_lightmap_pipeline_writes_timestamp_bands_and_invalid_patch(tmp_path: Pa
         np.testing.assert_array_equal(dataset.read()[:, 0, 128], (7, 7))
         np.testing.assert_array_equal(dataset.dataset_mask()[0, :128], 255)
         assert dataset.dataset_mask()[0, 128] == 0
+
+
+def test_auto_backend_falls_back_to_compiled_cpu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lunarscout._numba_horizon import lightmap_cuda
+
+    class UnavailableCudaSession:
+        def __init__(self, **_kwargs) -> None:
+            raise CudaBackendError("deliberately unavailable")
+
+    monkeypatch.setattr(lightmap_cuda, "LightmapCudaSession", UnavailableCudaSession)
+    dem = _dem()
+    horizon_store = HorizonTileStore(tmp_path / "horizons")
+    horizon_store.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+    result = run_lightmap_product(
+        dem=dem,
+        georef=_georef(1, 1),
+        horizon_store=horizon_store,
+        output_path=tmp_path / "auto.tif",
+        times_utc=("2027-01-01T00:00:00Z",),
+        sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
+        backend="auto",
+    )
+
+    with rasterio.open(result) as dataset:
+        assert dataset.read(1).item() == 255
+
+
+def test_interrupted_patch_recomputes_every_band_on_resume(tmp_path: Path) -> None:
+    dem = _dem()
+    horizon_store = HorizonTileStore(tmp_path / "horizons")
+    horizon_store.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+    cancelled = threading.Event()
+
+    def interrupted_calculator(*_args, **_kwargs):
+        yield np.asarray([[5]], dtype=np.uint8)
+        cancelled.set()
+        yield np.asarray([[6]], dtype=np.uint8)
+
+    common = dict(
+        dem=dem,
+        georef=_georef(1, 1),
+        horizon_store=horizon_store,
+        output_path=tmp_path / "restart.tif",
+        times_utc=("2027-01-01T00:00:00Z", "2027-01-01T06:00:00Z"),
+        sun_vectors_m=np.stack(
+            (
+                _position_for_local_angle(dem, 0.0, 1.0),
+                _position_for_local_angle(dem, 0.0, -1.0),
+            )
+        ),
+    )
+    with pytest.raises(LightmapPipelineCancelled):
+        run_lightmap_product(
+            **common,
+            patch_calculator=interrupted_calculator,
+            cancellation_requested=cancelled.is_set,
+        )
+
+    journal = json.loads(
+        (tmp_path / ".restart.tif.lunarscout-partial.journal.json").read_text()
+    )
+    assert journal["completed_patches"] == {}
+
+    def resumed_calculator(*_args, **_kwargs):
+        yield np.asarray([[9]], dtype=np.uint8)
+        yield np.asarray([[10]], dtype=np.uint8)
+
+    result = run_lightmap_product(
+        **common,
+        patch_calculator=resumed_calculator,
+    )
+    with rasterio.open(result) as dataset:
+        np.testing.assert_array_equal(dataset.read()[:, 0, 0], (9, 10))

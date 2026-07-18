@@ -703,7 +703,10 @@ times, vectors, thresholds, and reductions before release.
 Every proof below must pass on CPU. Where a CUDA implementation exists, compare
 CPU and CUDA output on identical inputs and report both performance paths. CPU
 performance need not match CUDA, but must be useful as an NVIDIA-independent
-fallback and must preserve bounded patch-major streaming.
+fallback and must preserve bounded patch-major streaming. CPU and CUDA results
+need not be byte-identical when their transcendental arithmetic differs. Report
+the count and magnitude of encoded differences and accept small deltas against
+the scientific product tolerance rather than forcing identical arithmetic.
 
 - [ ] Time-series lightmap: for each loaded horizon patch, stream one byte-valued
       128 by 128 tile to each time band of a multi-band BigTIFF and compare every
@@ -728,6 +731,16 @@ files. See
 `docs/numba-horizon-phase-6b-downstream-products.md`.
 - [ ] Safe haven: reproduce Earth-below-threshold interval selection and the
       longest contiguous low-sun duration for every selected interval.
+
+Safe-haven interval semantics use maximal half-open index ranges `[start,
+stop)` where the center-view Earth elevation is strictly below the threshold.
+Every sample in that range participates in the low-Sun run calculation, and
+the first minimum-Earth sample supplies the output timestamp. This intentionally
+does not reproduce the C# inclusive-high/index-loop mismatch that omits the
+last below-threshold sample. The default duration result is `float32` hours so
+fractional time steps and durations above 255 hours are not silently truncated
+or clamped; explicitly requested integer encodings may be added with documented
+conversion behavior.
 - [ ] Landed mission duration: reproduce threshold/reduction semantics and
       write the selected integer or floating-hour datatype without clipping
       unless the product contract explicitly requires it.

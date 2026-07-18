@@ -133,9 +133,8 @@ the output mask invalid.
 The initial independent tests cover full, half, and zero visible solar disks
 (`255`, `127`, and `0`), two timestamped band-interleaved tiles, a partial edge,
 and a missing horizon patch. This is a correctness-first CPU/storage slice.
-The compiled operational CPU fallback, resume interruption within a multi-band
-patch, and representative CPU/CUDA time-series performance measurements remain
-open.
+Resume interruption within a multi-band patch and representative CPU/CUDA
+time-series performance measurements remain open.
 
 The downstream execution contract now requires `auto`, `cpu`, and `cuda`
 backends for lightmaps, PSR, elevation products, safe-haven maps, and landed
@@ -150,9 +149,71 @@ all 24 oracle bytes across full, partial, zero, interpolated, and azimuth-wrap
 cases. A reusable Numba CUDA session keeps the horizon and vector buffers on
 device and bounds output to a configurable time batch; a 2/2/1 batch test is
 byte-identical to CPU. Explicit backend selection is wired into the private
-pipeline. The current Python-loop CPU implementation remains a correctness
-backend rather than a useful operational fallback; a compiled bounded CPU
-session and CPU performance evidence are still required.
+pipeline. A Numba-parallel CPU session now provides the same bounded time-batch
+contract for explicit CPU use and automatic fallback. Initial warm real-patch
+timing is comparable with CUDA for a 64-time batch; longer end-to-end CPU
+performance evidence is still required.
+
+The initial real-terrain comparison covered 1,048,576 byte values. CPU and
+CUDA differed at six values (`0.000572%`). Every difference was exactly one
+byte level: four CPU values were one lower and two were one higher. The maximum
+represented sunlight-fraction difference is therefore `1/255`, approximately
+`0.003922`. This is accepted as provisional CPU/CUDA agreement. Broader
+benchmarks must keep reporting the difference count and maximum delta, but byte
+identity is not required while differences remain scientifically small.
+
+The lightmap-specific restart test interrupts a two-band patch after its first
+band has reached the staged TIFF but before the patch is journaled. Restart
+recomputes and overwrites both bands, not only the missing second band, and the
+published result contains the two resumed values. This confirms the required
+per-horizon-patch recovery behavior for partial multi-band writes.
+
+## Two-year time-series lightmap benchmark
+
+The matched longer run uses a 256 by 256 real-terrain region, four compressed
+horizon patches, 2,921 exact `utc2et` Sun vectors at six-hour intervals, 2,921
+timestamped `uint8` BigTIFF bands, and a time-batch size of 32. CPU and CUDA use
+the same patch-major reader, staged writer, compression, masks, timestamps, and
+output validation. Vector generation (`0.0972 s`) is reported separately from
+the product pipeline.
+
+| Measurement | Compiled CPU | Numba CUDA |
+| --- | ---: | ---: |
+| One-patch calculation | `0.3542 s` | `0.03828 s` |
+| Four-patch staged BigTIFF | `3.4691 s` | `2.1648 s` |
+| End-to-end throughput | `1.1530 patches/s` | `1.8477 patches/s` |
+| Output bytes | `15,954,652` | `15,954,593` |
+
+CUDA is approximately 9.25 times faster for calculation alone and 1.60 times
+faster end-to-end; compressed horizon reads and 11,684 compressed tile writes
+reduce the end-to-end advantage. CPU is nevertheless a useful fallback rather
+than merely a correctness reference.
+
+The two products contain 191,430,656 values. They differ at 2,294 values
+(`0.00120%`), always by exactly one byte, and their validity masks are
+identical. Streaming band-by-band validation gives a conservative combined
+process peak RSS of `1,135,550,464` bytes. The CUDA session retains `96,468,992`
+bytes of device buffers on the 24 GB reference GPU. Memory is bounded by one
+horizon patch, resident vectors, and the configured 32-time output batch, not
+by the total regional cube. Evidence is recorded in
+`docs/numba-horizon-phase-6b-lightmap-benchmark.json`.
+
+## Initial safe-haven semantics
+
+The C# `GenerateSafeHavenDurations` path identifies center-view intervals where
+Earth elevation is below a threshold, then finds each pixel's longest
+contiguous low-Sun run within every interval. Its stored interval end is
+inclusive, while the calculation loops with an exclusive comparison, omitting
+the final below-threshold sample. It also truncates fractional hours and clamps
+the result into one byte.
+
+The Python reference uses explicit half-open intervals `[start, stop)`, includes
+every below-threshold sample, and uses the first minimum-Earth sample in each
+interval as its timestamp. Durations are `float32` hours by default, preserving
+fractional steps and values above 255 hours. Synthetic tests cover intervals at
+both ends of the time axis, repeated interior intervals, inclusion of the last
+sample, multiple pixels, and a 2.5-hour step. A bounded operational patch
+reducer and CPU/CUDA geometry calculation remain to be implemented.
 
 ## Fresh-process result
 

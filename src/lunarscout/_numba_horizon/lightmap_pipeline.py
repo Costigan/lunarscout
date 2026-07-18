@@ -73,7 +73,11 @@ def run_lightmap_product(
     if patch_calculator is not None:
         calculate_patch = patch_calculator
     elif backend == "cpu":
-        calculate_patch = iter_lightmap_patch_reference
+        from .lightmap_cpu import LightmapCpuSession
+
+        calculate_patch = LightmapCpuSession(
+            time_batch_size=time_batch_size
+        ).iter_patch_tiles
     else:
         from .cuda_backend import CudaBackendError
         from .lightmap_cuda import LightmapCudaSession
@@ -85,7 +89,11 @@ def run_lightmap_product(
         except CudaBackendError:
             if backend == "cuda":
                 raise
-            calculate_patch = iter_lightmap_patch_reference
+            from .lightmap_cpu import LightmapCpuSession
+
+            calculate_patch = LightmapCpuSession(
+                time_batch_size=time_batch_size
+            ).iter_patch_tiles
     inventory = _inventory_identity(
         horizon_store, patches, observer_elevation_m
     )
