@@ -76,7 +76,8 @@ def run_psr_product(
     overwrite: bool = False,
     start_fresh: bool = False,
     cancellation_requested: Callable[[], bool] | None = None,
-    progress_callback: Callable[[PsrProgress], None] | None = None,
+    progress_callback: Callable[[float], None] | None = None,
+    progress_event_callback: Callable[[PsrProgress], None] | None = None,
     progress_stream: TextIO | None = None,
     patch_calculator: Callable[..., npt.NDArray[np.uint8]] | None = None,
     backend: Literal["auto", "cpu", "cuda"] = "auto",
@@ -143,8 +144,8 @@ def run_psr_product(
             None if patch is None else patch.tile_x,
             state,
         )
-        if progress_callback is not None:
-            progress_callback(event)
+        if progress_event_callback is not None:
+            progress_event_callback(event)
         if progress_stream is not None:
             if patch is None:
                 line = f"PSR {state}: {completed}/{len(patches)} patches"
@@ -156,6 +157,8 @@ def run_psr_product(
             print(line, file=progress_stream, flush=True)
 
     report(None, "start")
+    if progress_callback is not None:
+        progress_callback(completed / len(patches))
     for patch in patches:
         if product.is_complete(patch.tile_y, patch.tile_x):
             continue
@@ -191,6 +194,8 @@ def run_psr_product(
             state = "valid"
         completed += 1
         report(patch, state)
+        if progress_callback is not None:
+            progress_callback(completed / len(patches))
     if cancelled():
         raise PsrPipelineCancelled("PSR generation was cancelled")
     result = product.finalize()

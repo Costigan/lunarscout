@@ -6,6 +6,17 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added a runnable Python/Numba Mons Mouton PSR example using 108,113 exact
+  Moon-ME Sun vectors and explicit CUDA execution. Its optional progress
+  callback receives the monotonic fraction of durably completed horizon tiles;
+  the example closure reports percentage, elapsed and remaining minutes, and
+  estimated local completion time with resume-aware rate calculation. The
+  complete 1,599-patch run finished in `306.45` seconds at `5.218 patches/s`
+  and wrote 467,099 PSR pixels with no invalid pixels. About five percent GPU
+  utilization, limited CPU use, and the much shorter retained warm-kernel time
+  identify substantial opportunity for bounded decompression, CUDA, and writer
+  overlap, batched durable checkpoints, asynchronous transfers, and
+  multi-patch GPU scheduling.
 - Unified private downstream backend and operational behavior. PSR now accepts
   explicit `auto`, `cpu`, and `cuda` selection, automatically falls back to
   its CPU implementation only for `auto`, and preserves explicit CUDA

@@ -8,7 +8,9 @@ scope. They are ordinary Python programs rather than notebook-only fragments.
 Use the repository-managed environment and make the package source available:
 
 ```bash
-export PYTHONPATH="$PWD:$PWD/packages/lunarscout/src"
+cd /e/projects/lunarscout-numba-horizon
+export PYTHONPATH="$PWD/src"
+export LUNARSCOUT_EXAMPLE_PYTHON=/e/projects/lunarscout/.venv/bin/python
 ```
 
 Non-native examples create a deterministic synthetic scenario under
@@ -16,7 +18,7 @@ Non-native examples create a deterministic synthetic scenario under
 `--workspace` or `LUNARSCOUT_EXAMPLE_WORKSPACE`.
 
 ```bash
-.venv/bin/python examples/00_geotiff_and_coordinates.py
+"$LUNARSCOUT_EXAMPLE_PYTHON" examples/00_geotiff_and_coordinates.py
 ```
 
 All deterministic scripts are safe to run repeatedly; their named output
@@ -42,6 +44,29 @@ already complete.
 | `12_native_performance_benchmark.py` | Representative native series generation, reads, reductions, and resource measurements | Yes |
 | `13_native_psr.py` | Native permanent-shadow byte-mask generation | Yes |
 | `14_timeseries_two_file_prototype.py` | Two-file BigTIFF/HDF5 time-series storage prototype and access benchmark | No |
+| `15_python_psr.py` | Python/Numba Mons Mouton permanent-shadow GeoTIFF generation | NVIDIA GPU |
+
+## Python/Numba PSR Example
+
+`15_python_psr.py` currently uses the private product prototype because its
+public facade has not yet been promoted. Run it from the prototype worktree
+with the shared repository virtual environment:
+
+```bash
+cd /e/projects/lunarscout-numba-horizon
+PYTHONPATH="$PWD/src" \
+  /e/projects/lunarscout/.venv/bin/python examples/15_python_psr.py
+```
+
+The defaults read `/e/lunar_analyst_scenarios/mons-mouton` and write
+`examples/mons-mouton-psr.tif`. The calculation uses exact six-hour Moon-ME Sun
+vectors from 1970-01-01 through 2044-01-01 and the CUDA backend. It resumes a
+compatible interrupted staging product. Pass `--overwrite` only when replacing
+an already completed output is intended. Its progress callback receives the
+fraction of fully processed horizon tiles and prints approximately once per
+percentage point, including elapsed minutes, estimated remaining minutes, and
+the estimated local completion time. A GUI or notebook can pass the same
+fraction directly to its progress-bar widget.
 
 ## Native Examples
 

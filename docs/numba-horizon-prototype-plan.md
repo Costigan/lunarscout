@@ -800,6 +800,45 @@ hours-to-days conversion. See
       all five product classes either pass this gate or are explicitly removed
       from the supported replacement scope.
 
+### PSR sustained-pipeline optimization
+
+A complete Mons Mouton run processed all 1,599 compressed horizon patches and
+wrote a 4,992 by 5,248 PSR GeoTIFF in `306.45 s`, or `5.218 patches/s`. The
+product contains 467,099 PSR pixels, 25,730,917 non-PSR pixels, and no invalid
+pixels. Explicit `backend="cuda"` completed successfully, but observed GPU
+utilization was about five percent and only about two CPU cores were active.
+The retained warm PSR kernel measurement is approximately `0.0148 s/patch`,
+compared with `0.1917 s/patch` end to end in this full run. These measurements
+show substantial pipeline-optimization headroom; they do not indicate that
+CUDA was bypassed.
+
+- [ ] Instrument horizon lookup/read, `.cbin` decompression, host preparation,
+      host-to-device transfer, kernel execution, synchronization,
+      device-to-host transfer, TIFF compression/write/flush, and journal
+      persistence separately on a sustained all-valid run.
+- [ ] Add bounded overlap so the CPU can read and decompress upcoming horizon
+      patches while CUDA processes the current patch and one writer owns TIFF
+      output for completed patches. Measure queue wait times and retain memory
+      bounds independent of region size.
+- [ ] Evaluate keeping the staged TIFF open and checkpointing a bounded batch
+      of tiles per durable journal update. Preserve the rule that the journal
+      never advances beyond flushed TIFF data and quantify the maximum
+      recomputation after interruption.
+- [ ] Evaluate pinned host buffers, asynchronous transfers, and double-buffered
+      patch slots. Do not retain more decoded 128 by 128 by 1,440 horizon tiles
+      than the configured queue/buffer bound.
+- [ ] Evaluate batching multiple PSR patches per CUDA submission to increase
+      launch occupancy, and compare it with multiple CUDA streams. Require
+      identical classification and validity-mask output before accepting a
+      scheduling change.
+- [ ] Measure decompression scaling with a small bounded number of CPU workers;
+      compare CPU time, memory bandwidth, storage throughput, host RSS, and GPU
+      starvation rather than assuming all available cores should be used.
+- [ ] Repeat the full-scenario benchmark after each accepted optimization and
+      report end-to-end throughput, stage overlap, CPU utilization, GPU
+      utilization, host memory, GPU memory, output identity, and restart/failure
+      behavior.
+
 ## 14. Phase 7: Packaging and Operational Evaluation
 
 - [ ] Test installation from a built wheel in a clean environment on the

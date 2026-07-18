@@ -206,6 +206,10 @@ dist/
 *.sln.doccache
 *.suo
 
+# Generated example products
+examples/mons-mouton-psr.tif
+examples/mons-mouton-psr.tif.aux.xml
+
 # Operating System Files
 Thumbs.db
 Desktop.ini

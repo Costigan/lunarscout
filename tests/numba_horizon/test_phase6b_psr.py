@@ -315,6 +315,7 @@ def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
     output = tmp_path / "psr.tif"
     cancelled = threading.Event()
     progress = []
+    fractions = []
 
     def on_progress(event):
         progress.append(event)
@@ -330,16 +331,19 @@ def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
             sun_vectors_m=_position_for_local_angle(dem, 0.0, 0.0)[None, :],
             invalid_value=9,
             cancellation_requested=cancelled.is_set,
-            progress_callback=on_progress,
+            progress_callback=fractions.append,
+            progress_event_callback=on_progress,
         )
 
     assert not output.exists()
+    assert fractions == [0.0, 0.5]
     journal = json.loads(
         (tmp_path / ".psr.tif.lunarscout-partial.journal.json").read_text()
     )
     assert journal["completed_patches"] == {"0,0": "valid"}
 
     progress_stream = StringIO()
+    resumed_fractions = []
     result = run_psr_product(
         dem=dem,
         georef=_georef(129, 1),
@@ -347,10 +351,12 @@ def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
         output_path=output,
         sun_vectors_m=_position_for_local_angle(dem, 0.0, 0.0)[None, :],
         invalid_value=9,
+        progress_callback=resumed_fractions.append,
         progress_stream=progress_stream,
     )
 
     assert result == output
+    assert resumed_fractions == [0.5, 1.0]
     assert progress_stream.getvalue().endswith("PSR complete: 2/2 patches\n")
     with rasterio.open(output) as dataset:
         assert np.all(dataset.read(1)[:, :128] == 255)

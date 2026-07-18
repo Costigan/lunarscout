@@ -367,8 +367,17 @@ output hashes, timings, memory, comparisons, and mismatch samples are in
 
 ## Intentionally incomplete
 
-- The current PSR pipeline is serial. It has no bounded horizon-reader/CUDA/
-  writer queue yet, and the staged TIFF is reopened once per durable patch.
+- The current PSR pipeline is serial. A full 1,599-patch Mons Mouton run
+  completed in `306.45 s` (`5.218 patches/s`) with only about five percent GPU
+  utilization. The retained `0.0148 s` warm kernel measurement versus `0.1917
+  s` full-run wall time per patch demonstrates material headroom outside the
+  kernel. There is no bounded horizon-reader/decompress, CUDA, and writer
+  pipeline yet, and the staged TIFF is reopened once per durable patch.
+- The follow-up must time every pipeline stage, then measure bounded
+  decompression/GPU/write overlap, batched durable checkpoints, pinned and
+  asynchronous transfers, multi-patch CUDA submissions, and limited CPU
+  decompression parallelism without weakening restart semantics or allowing
+  memory to scale with the region.
 - Physical TIFF block inspection when a single-band journal is missing is not
   implemented.
 - A broader disk-full, process-kill, failed-overwrite, and publication failure
