@@ -106,6 +106,7 @@ class ProductJob:
     dtype: np.dtype[Any] | type[np.generic] | str
     band_count: int = 1
     timestamps_utc: Sequence[datetime | str] = ()
+    band_metadata: Sequence[Mapping[str, Any]] = ()
     invalid_value: int | float = 0
     compression: str = "deflate"
     algorithm: str = "unspecified"
@@ -125,6 +126,17 @@ class ProductJob:
         timestamps = tuple(_utc_timestamp(value) for value in self.timestamps_utc)
         if timestamps and len(timestamps) != int(self.band_count):
             raise ValueError("timestamp count must equal band_count")
+        if self.band_metadata and len(self.band_metadata) != int(self.band_count):
+            raise ValueError("band metadata count must equal band_count")
+        band_metadata = (
+            [dict(item) for item in self.band_metadata]
+            if self.band_metadata
+            else [{} for _ in range(int(self.band_count))]
+        )
+        try:
+            _json_bytes(band_metadata)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("band metadata must be JSON-serializable") from exc
         if not np.isfinite(self.invalid_value):
             raise ValueError("invalid_value must be finite")
         try:
@@ -153,6 +165,7 @@ class ProductJob:
             "dtype": dtype.str,
             "band_count": int(self.band_count),
             "timestamps_utc": list(timestamps),
+            "band_metadata": band_metadata,
             "invalid_value": invalid,
             "compression": str(self.compression).lower(),
             "projection_wkt": self.georef.projection_wkt,
@@ -260,8 +273,17 @@ class ResumableTiledProduct:
                         TIMESTAMPS_TAG: json.dumps(timestamps, separators=(",", ":")),
                     }
                 )
-                for band_index, timestamp in enumerate(timestamps, start=1):
-                    dataset.update_tags(band_index, **{TIMESTAMP_TAG: timestamp})
+                for band_index in range(1, int(self._manifest["band_count"]) + 1):
+                    metadata = {
+                        str(key): str(value)
+                        for key, value in self._manifest["band_metadata"][
+                            band_index - 1
+                        ].items()
+                    }
+                    if timestamps:
+                        metadata[TIMESTAMP_TAG] = timestamps[band_index - 1]
+                    if metadata:
+                        dataset.update_tags(band_index, **metadata)
         self._sync_staging()
         _atomic_json(self.manifest_path, self._manifest)
         self._completed: dict[str, str] = {}

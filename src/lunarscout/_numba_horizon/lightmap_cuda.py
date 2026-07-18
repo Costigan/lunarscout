@@ -47,6 +47,8 @@ def _build_lightmap_kernel(cuda):
         valid_height,
         output,
         fraction_output,
+        margin_output,
+        margin_requested,
     ):
         index = cuda.grid(1)
         if index >= PATCH_SIZE * PATCH_SIZE:
@@ -57,6 +59,7 @@ def _build_lightmap_kernel(cuda):
             for batch_index in range(vector_count):
                 output[batch_index, index] = 0
                 fraction_output[batch_index, index] = 0.0
+                margin_output[batch_index, index] = 0.0
             return
 
         absolute_sample = tile_x + sample
@@ -119,6 +122,27 @@ def _build_lightmap_kernel(cuda):
             if azimuth < float32(0.0):
                 azimuth = float32(azimuth + float32(math.pi * 2.0))
             azimuth_deg = float32(azimuth * float32(57.29577951308232))
+            if margin_requested:
+                center_position = float32(azimuth_deg * float32(4.0))
+                center_left = int(center_position)
+                center_fraction = float32(center_position - float32(center_left))
+                if center_left >= AZIMUTH_COUNT:
+                    center_left -= AZIMUTH_COUNT
+                center_right = center_left + 1
+                if center_right >= AZIMUTH_COUNT:
+                    center_right = 0
+                center_horizon = float32(
+                    horizons[line, sample, center_left]
+                    + center_fraction
+                    * (
+                        horizons[line, sample, center_right]
+                        - horizons[line, sample, center_left]
+                    )
+                )
+                margin_output[batch_index, index] = float32(
+                    elevation - center_horizon
+                )
+                continue
             left_position = float32((azimuth_deg - float32(0.27) - float32(0.125)) * float32(4.0))
             left = int(left_position)
             fraction = float32(left_position - float32(left))
@@ -192,11 +216,14 @@ class LightmapCudaSession:
         self._fraction_output = cuda.device_array(
             (self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.float32
         )
+        self._margin_output = cuda.device_array(
+            (self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.float32
+        )
         self._vectors = None
         self._vector_key = None
 
-    def _iter_patch_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int, valid_width: int, fractions: bool):
-        vectors64 = _validate_vectors(sun_vectors_m)
+    def _iter_patch_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int, valid_width: int, signal: str):
+        vectors64 = _validate_vectors(body_vectors_m)
         vectors = np.ascontiguousarray(vectors64, dtype=np.float32)
         horizons = np.ascontiguousarray(horizons_deg, dtype=np.float32)
         if horizons.shape != (PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT):
@@ -219,18 +246,29 @@ class LightmapCudaSession:
             blocks = (PATCH_SIZE * PATCH_SIZE + threads - 1) // threads
             for start in range(0, vectors.shape[0], self.time_batch_size):
                 count = min(self.time_batch_size, vectors.shape[0] - start)
-                self._kernel[blocks, threads](self._dem, self._geotransform, self._projection, self._vectors, self._horizons, start, count, tile_x, tile_y, valid_width, valid_height, self._output, self._fraction_output)
+                self._kernel[blocks, threads](self._dem, self._geotransform, self._projection, self._vectors, self._horizons, start, count, tile_x, tile_y, valid_width, valid_height, self._output, self._fraction_output, self._margin_output, signal == "margin")
                 self._cuda.synchronize()
-                source = self._fraction_output if fractions else self._output
+                if signal == "fraction":
+                    source = self._fraction_output
+                elif signal == "margin":
+                    source = self._margin_output
+                else:
+                    source = self._output
                 batch = source[:count].copy_to_host().reshape(count, PATCH_SIZE, PATCH_SIZE)
                 yield batch[:, :valid_height, :valid_width]
 
     def iter_patch_fraction_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
-        for batch in self._iter_patch_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, fractions=True):
+        for batch in self._iter_patch_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, signal="fraction"):
+            for tile in batch:
+                yield np.ascontiguousarray(tile)
+
+    def iter_patch_margin_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
+        """Yield body-center elevation relative to the interpolated local horizon."""
+        for batch in self._iter_patch_batches(dem, horizons_deg, body_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, signal="margin"):
             for tile in batch:
                 yield np.ascontiguousarray(tile)
 
     def iter_patch_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.uint8]]:
-        for batch in self._iter_patch_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, fractions=False):
+        for batch in self._iter_patch_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, signal="encoded"):
             for tile in batch:
                 yield np.ascontiguousarray(tile)

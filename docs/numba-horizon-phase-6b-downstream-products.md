@@ -258,6 +258,86 @@ Tests cover interrupted multi-band writes, journal-write failure, incompatible
 resume, partial edge windows, timestamp metadata, and restart after PSR
 cancellation.
 
+## Initial landed mission-duration semantics
+
+The initial private landed-duration implementation defines four distinct
+product functions rather than one public mode argument: sunlight fraction,
+Sun-center elevation, sunlight fraction plus Earth-center elevation, and
+Sun-center plus Earth-center elevation. Here elevation is body-center margin
+above the bilinearly interpolated local terrain horizon at the body's azimuth.
+The shared CPU and CUDA lightmap sessions now emit this margin using the same
+pixel frame and horizon interpolation as sunlight calculation. Comparisons are
+inclusive, so values exactly equal to any Sun or Earth threshold qualify.
+
+Every product accepts an overall half-open evaluation interval and explicit
+half-open candidate-start intervals. The condition at sample `t[i]` owns
+`[t[i], t[i + 1])`, using the evaluation stop as the final boundary when the
+stop is not sampled. A candidate may begin after an already-qualifying period
+enters its start interval, continues beyond that smaller interval while the
+condition remains true, and is credited only through the evaluation stop when
+still active there. Sample-to-sample durations may be irregular. The output is
+one `float32` band per candidate-start interval in hours or days, with start,
+stop, unit, and UTC timestamp metadata. Month, start-anchored week, and fixed
+duration helpers construct common interval lists.
+
+Synthetic tests cover right-censoring, a qualifying period already active at
+the candidate boundary, irregular sample spacing, inclusive thresholds, all
+four product functions, missing horizons with configurable invalid payload,
+per-band metadata, cancellation, and durable patch-level resume. Controlled
+CPU geometry produces the expected local-horizon margin; the real-GPU test
+matches CUDA and CPU margin output. A controlled end-to-end combined
+Sun-center/Earth-center product is also identical between CPU and CUDA,
+including the published `float32` duration tile. The following benchmark adds
+representative regional performance and memory evidence.
+
+## Two-year landed mission-duration benchmark
+
+The representative landed-duration run covers a 256 by 256 real-terrain
+region, four compressed horizon patches, and the exact half-open interval
+`[2027-01-01, 2029-01-01)`. It uses 2,925 Sun and Earth samples at six-hour
+spacing and 24 calendar-month candidate-start bands. Sunlight-fraction
+thresholds are `>= 0.5`; Sun-center and Earth-center local-horizon-margin
+thresholds are `>= 0` degrees. Every output is a tiled, compressed, 24-band
+`float32` BigTIFF in days. CPU and CUDA kernels are warmed before measurement;
+SPICE vector generation and the separately reported compressed-horizon read are
+not included in the product timings.
+
+| Product | CPU calculation, one patch | CUDA calculation, one patch | CPU end-to-end, four patches | CUDA end-to-end, four patches | End-to-end speedup |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Sun elevation | `0.3547 s` | `0.1369 s` | `2.1902 s` | `1.3138 s` | `1.67x` |
+| Sun + Earth elevation | `0.6362 s` | `0.1733 s` | `3.3358 s` | `1.4544 s` | `2.29x` |
+| Sunlight fraction | `0.4127 s` | `0.1390 s` | `2.5748 s` | `1.3350 s` | `1.93x` |
+| Sunlight + Earth elevation | `0.6935 s` | `0.1747 s` | `3.5116 s` | `1.4568 s` | `2.41x` |
+
+The CPU fallback sustains `1.14` to `1.83` patches per second end-to-end;
+CUDA sustains `2.75` to `3.04` patches per second. Calculation-only CUDA
+speedups range from `2.59x` to `3.97x`. Margin-only execution now bypasses the
+unused 16-slice solar-disk calculation. The online reducer also skips interval
+array work when an interval can neither accept a new start nor has an active
+candidate.
+
+CPU and CUDA masks, timestamps, interval metadata, band counts, and dtypes all
+match. Across 1,572,864 values per product, only four to nine values differ
+(`0.000254%` to `0.000572%`). Most differences are one six-hour sample
+(`0.25 day`). The largest is one day at one Sun-margin pixel. This amplification
+is expected for a discontinuous thresholded-duration reduction: a very small
+CPU/CUDA signal difference at exactly the threshold can split or join a run.
+The artifact records every mismatching band, pixel, CPU value, CUDA value, and
+delta; it does not characterize the underlying margin difference as one day.
+
+Peak process RSS across all four CPU and CUDA products was `815,747,072` bytes.
+Two simultaneously retained CUDA sessions, sufficient for combined Sun/Earth
+products, allocated `199,229,440` bytes on the 24 GB reference GPU. Memory is
+bounded by one decoded horizon, two fixed-shape signal sessions, the configured
+32-time batches, and 24 interval states per patch; it does not scale with the
+regional time cube. Exact vectors took `0.0881 s` for the Sun and approximately
+`0.03 s` for Earth. One compressed horizon read took approximately `0.52 s`.
+No `clr`, `pythonnet`, or `moonlib` module was loaded.
+
+Machine-readable configuration, input identities, environment versions,
+output hashes, timings, memory, comparisons, and mismatch samples are in
+`docs/numba-horizon-phase-6b-mission-duration-benchmark.json`.
+
 ## Intentionally incomplete
 
 - The current PSR pipeline is serial. It has no bounded horizon-reader/CUDA/
@@ -268,14 +348,13 @@ cancellation.
   matrix remains to be run.
 - Decompression, transfer, calculation, and compression/write costs have not
   yet been separated within the 16-patch end-to-end result.
-- Time-series lightmaps have only a CPU-reference/storage slice; their Numba
-  CUDA kernel and performance evidence are not implemented. Safe-haven maps,
-  landed mission-duration maps, and an additional dtype-generic reduction are
-  not implemented.
+- Safe-haven performance remains synthetic; representative regional CPU/CUDA
+  throughput and memory evidence are not yet recorded for that product.
 - No public API, structured public exception mapping, packaging decision, or
   clean-wheel validation is included.
 
 This work supports the conclusion that the downstream tiled-product pattern is
 expressible in-process without Python.NET, .NET, or moonlib. It is not yet
-sufficient to retire the downstream C# code because only the first PSR slice
-has correctness evidence and the shared production scheduler is incomplete.
+sufficient to retire the downstream C# code because public API/error contracts,
+representative safe-haven performance, full operational failure evidence, and
+clean-wheel deployment remain incomplete.

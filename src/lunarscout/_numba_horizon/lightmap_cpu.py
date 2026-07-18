@@ -32,10 +32,12 @@ def _build_cpu_function():
         tile_y,
         valid_width,
         valid_height,
+        margin_requested,
     ):
         output = np.zeros(
             (vectors.shape[0], PATCH_SIZE, PATCH_SIZE), dtype=np.float32
         )
+        margin_output = np.zeros_like(output)
         for index in prange(PATCH_SIZE * PATCH_SIZE):
             sample = index % PATCH_SIZE
             line = index // PATCH_SIZE
@@ -116,6 +118,29 @@ def _build_cpu_function():
                 azimuth_deg = np.float32(
                     azimuth * np.float32(57.29577951308232)
                 )
+                if margin_requested:
+                    center_position = np.float32(azimuth_deg * np.float32(4.0))
+                    center_left = int(center_position)
+                    center_fraction = np.float32(
+                        center_position - np.float32(center_left)
+                    )
+                    if center_left >= AZIMUTH_COUNT:
+                        center_left -= AZIMUTH_COUNT
+                    center_right = center_left + 1
+                    if center_right >= AZIMUTH_COUNT:
+                        center_right = 0
+                    center_horizon = np.float32(
+                        horizons[line, sample, center_left]
+                        + center_fraction
+                        * (
+                            horizons[line, sample, center_right]
+                            - horizons[line, sample, center_left]
+                        )
+                    )
+                    margin_output[time_index, line, sample] = np.float32(
+                        elevation - center_horizon
+                    )
+                    continue
                 left_position = np.float32(
                     (azimuth_deg - np.float32(0.27) - np.float32(0.125))
                     * np.float32(4.0)
@@ -155,7 +180,7 @@ def _build_cpu_function():
                         fraction = np.float32(fraction - np.float32(1.0))
                 visible = np.float32(photons / np.float32(_MAX_PHOTONS))
                 output[time_index, line, sample] = visible
-        return output
+        return output, margin_output
 
     try:
         return njit(parallel=True, cache=True)(calculate)
@@ -178,8 +203,8 @@ class LightmapCpuSession:
         self._calculate = _CPU_FUNCTION
         self.time_batch_size = int(time_batch_size)
 
-    def _iter_fraction_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int, valid_width: int) -> Iterator[npt.NDArray[np.float32]]:
-        vectors = np.ascontiguousarray(_validate_vectors(sun_vectors_m), dtype=np.float32)
+    def _iter_signal_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int, valid_width: int, margin_requested: bool) -> Iterator[tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]]:
+        vectors = np.ascontiguousarray(_validate_vectors(body_vectors_m), dtype=np.float32)
         horizons = np.ascontiguousarray(horizons_deg, dtype=np.float32)
         if horizons.shape != (PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT):
             raise ValueError("horizons must have shape (128, 128, 1440)")
@@ -187,17 +212,26 @@ class LightmapCpuSession:
         patch_dem[:valid_height, :valid_width] = dem.elevation_m[tile_y:tile_y + valid_height, tile_x:tile_x + valid_width]
         projection = np.asarray((dem.projection.radius_m, dem.projection.latitude_origin_rad, dem.projection.longitude_origin_rad, dem.projection.scale, dem.projection.false_easting_m, dem.projection.false_northing_m), dtype=np.float64)
         for start in range(0, vectors.shape[0], self.time_batch_size):
-            batch = self._calculate(patch_dem, dem.geo_transform, projection, vectors[start:start + self.time_batch_size], horizons, tile_x, tile_y, valid_width, valid_height)
-            yield batch[:, :valid_height, :valid_width]
+            fractions, margins = self._calculate(patch_dem, dem.geo_transform, projection, vectors[start:start + self.time_batch_size], horizons, tile_x, tile_y, valid_width, valid_height, margin_requested)
+            yield (
+                fractions[:, :valid_height, :valid_width],
+                margins[:, :valid_height, :valid_width],
+            )
 
     def iter_patch_fraction_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
         """Yield unquantized float32 visible fractions in bounded batches."""
-        for batch in self._iter_fraction_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width):
+        for batch, _margins in self._iter_signal_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, margin_requested=False):
             for tile in batch:
                 yield np.ascontiguousarray(tile)
 
+    def iter_patch_margin_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
+        """Yield body-center elevation relative to the interpolated local horizon."""
+        for _fractions, margins in self._iter_signal_batches(dem, horizons_deg, body_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, margin_requested=True):
+            for tile in margins:
+                yield np.ascontiguousarray(tile)
+
     def iter_patch_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.uint8]]:
-        for batch in self._iter_fraction_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width):
+        for batch, _margins in self._iter_signal_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, margin_requested=False):
             encoded = (batch * np.float32(255.0)).astype(np.uint8)
             for tile in encoded:
                 yield np.ascontiguousarray(tile)

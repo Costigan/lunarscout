@@ -6,6 +6,17 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added private landed mission-duration products for four independently named
+  conditions: sunlight fraction, Sun-center local-horizon margin, sunlight plus
+  Earth-center margin, and Sun-center plus Earth-center margins. Inclusive
+  thresholds, explicit candidate-start intervals, following-sample time
+  ownership, right-censoring at the evaluation stop, irregular sample spacing,
+  `float32` hour/day output, interval helpers, per-band interval metadata,
+  missing-horizon masks, cancellation, and durable resume are covered. Shared
+  CPU and CUDA lightmap sessions now also emit body-center local-horizon margin.
+  A matched two-year real-terrain benchmark covers all four products on CPU and
+  CUDA, records bounded memory and sparse threshold-amplified deltas, and
+  optimizes margin-only calculation and inactive interval-state handling.
 - Defined the initial private safe-haven reference semantics. Earth outages are
   maximal half-open intervals below the center-view threshold, all samples are
   included in the longest low-Sun run, and the first minimum-Earth sample
@@ -50,8 +61,8 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   demonstrated for the intended calculation. That equivalence was established
   for the retained 16-patch real-terrain PSR product: both modes produced
   byte-identical results at about 1.19 patches/second. The downstream
-  scheduler is still serial, and lightmap, safe-haven, and mission-duration
-  products are not yet implemented.
+  scheduler was still serial at that initial slice; the later entries above
+  record the lightmap, safe-haven, and mission-duration implementations.
 - Expanded the Python/Numba replacement evaluation to require a shared bounded
   downstream product pipeline for time-series lightmaps, optimized Metonic PSR,
   safe-haven maps, landed mission-duration maps, and dtype-generic

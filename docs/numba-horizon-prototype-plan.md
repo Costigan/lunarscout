@@ -629,7 +629,7 @@ times, vectors, thresholds, and reductions before release.
       time, and enqueue that tile for the matching output band before releasing
       the horizon patch. Optional GPU time batching must remain bounded and
       must not change this storage contract.
-- [ ] Define reduced `(patch, product)` work units for PSR, safe-haven, and
+- [x] Define reduced `(patch, product)` work units for PSR, safe-haven, and
       mission-duration products. Keep horizon, DEM, vector, device, temporal,
       and writer buffers explicitly bounded.
 - [ ] Share the pixel-to-CRS, stereographic inverse, Moon-ME-to-ENU, body
@@ -708,7 +708,7 @@ need not be byte-identical when their transcendental arithmetic differs. Report
 the count and magnitude of encoded differences and accept small deltas against
 the scientific product tolerance rather than forcing identical arithmetic.
 
-- [ ] Time-series lightmap: for each loaded horizon patch, stream one byte-valued
+- [x] Time-series lightmap: for each loaded horizon patch, stream one byte-valued
       128 by 128 tile to each time band of a multi-band BigTIFF and compare every
       value and timestamp with C#.
 - [x] PSR: reduce the full Metonic-cycle vector set in the kernel to one
@@ -729,7 +729,7 @@ equivalence was demonstrated: the two modes selected slightly different
 reduced index sets but produced byte-identical PSR pixels, masks, and GeoTIFF
 files. See
 `docs/numba-horizon-phase-6b-downstream-products.md`.
-- [ ] Safe haven: reproduce Earth-below-threshold interval selection and the
+- [x] Safe haven: reproduce Earth-below-threshold interval selection and the
       longest contiguous low-sun duration for every selected interval.
 
 Safe-haven interval semantics use maximal half-open index ranges `[start,
@@ -741,10 +741,22 @@ last below-threshold sample. The default duration result is `float32` hours so
 fractional time steps and durations above 255 hours are not silently truncated
 or clamped; explicitly requested integer encodings may be added with documented
 conversion behavior.
-- [ ] Landed mission duration: reproduce threshold/reduction semantics and
-      write the selected integer or floating-hour datatype without clipping
-      unless the product contract explicitly requires it.
-- [ ] Demonstrate at least one additional dtype-generic reduction through the
+- [x] Landed mission duration: define and implement independent threshold and
+      reduction semantics, writing `float32` hours or days without clipping.
+
+The unfinished C# landed-duration method is not an executable parity oracle.
+The Python contract therefore exposes four distinct product functions for
+sunlight fraction, Sun-center local-horizon margin, sunlight plus Earth-center
+margin, and Sun-center plus Earth-center margins. All comparisons are
+inclusive. Each output band corresponds to a half-open candidate-start
+interval inside an overall evaluation interval. A qualifying candidate may
+continue beyond its start interval and receives credit through, but not beyond,
+the evaluation stop when still active there. Sample `t[i]` owns
+`[t[i], t[i + 1])`, with the evaluation stop serving as the last boundary when
+it is not sampled; actual sample spacing is accumulated before optional
+hours-to-days conversion. See
+`docs/numba-horizon-phase-6b-downstream-products.md`.
+- [x] Demonstrate at least one additional dtype-generic reduction through the
       same scheduler and writer rather than a product-specific file pipeline.
 
 ### Downstream no-.NET gate
@@ -757,7 +769,7 @@ conversion behavior.
       independent GDAL/Rasterio inspection.
 - [ ] Measure kernel, decompression, transfer, compression/write, end-to-end
       throughput, host memory, and GPU memory for short and long time series.
-- [ ] Confirm that memory is bounded by configured queues, worker buffers, and
+- [x] Confirm that memory is bounded by configured queues, worker buffers, and
       optional GPU time-batch size rather than region size or total time count.
 - [ ] Run representative downstream products with CUDA deliberately disabled
       and verify automatic CPU fallback, correct files, bounded memory, useful

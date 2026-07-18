@@ -1,0 +1,446 @@
+{
+  "candidate_interval_count": 24,
+  "candidate_start_intervals_utc": [
+    [
+      "2027-01-01T00:00:00+00:00",
+      "2027-02-01T00:00:00+00:00"
+    ],
+    [
+      "2027-02-01T00:00:00+00:00",
+      "2027-03-01T00:00:00+00:00"
+    ],
+    [
+      "2027-03-01T00:00:00+00:00",
+      "2027-04-01T00:00:00+00:00"
+    ],
+    [
+      "2027-04-01T00:00:00+00:00",
+      "2027-05-01T00:00:00+00:00"
+    ],
+    [
+      "2027-05-01T00:00:00+00:00",
+      "2027-06-01T00:00:00+00:00"
+    ],
+    [
+      "2027-06-01T00:00:00+00:00",
+      "2027-07-01T00:00:00+00:00"
+    ],
+    [
+      "2027-07-01T00:00:00+00:00",
+      "2027-08-01T00:00:00+00:00"
+    ],
+    [
+      "2027-08-01T00:00:00+00:00",
+      "2027-09-01T00:00:00+00:00"
+    ],
+    [
+      "2027-09-01T00:00:00+00:00",
+      "2027-10-01T00:00:00+00:00"
+    ],
+    [
+      "2027-10-01T00:00:00+00:00",
+      "2027-11-01T00:00:00+00:00"
+    ],
+    [
+      "2027-11-01T00:00:00+00:00",
+      "2027-12-01T00:00:00+00:00"
+    ],
+    [
+      "2027-12-01T00:00:00+00:00",
+      "2028-01-01T00:00:00+00:00"
+    ],
+    [
+      "2028-01-01T00:00:00+00:00",
+      "2028-02-01T00:00:00+00:00"
+    ],
+    [
+      "2028-02-01T00:00:00+00:00",
+      "2028-03-01T00:00:00+00:00"
+    ],
+    [
+      "2028-03-01T00:00:00+00:00",
+      "2028-04-01T00:00:00+00:00"
+    ],
+    [
+      "2028-04-01T00:00:00+00:00",
+      "2028-05-01T00:00:00+00:00"
+    ],
+    [
+      "2028-05-01T00:00:00+00:00",
+      "2028-06-01T00:00:00+00:00"
+    ],
+    [
+      "2028-06-01T00:00:00+00:00",
+      "2028-07-01T00:00:00+00:00"
+    ],
+    [
+      "2028-07-01T00:00:00+00:00",
+      "2028-08-01T00:00:00+00:00"
+    ],
+    [
+      "2028-08-01T00:00:00+00:00",
+      "2028-09-01T00:00:00+00:00"
+    ],
+    [
+      "2028-09-01T00:00:00+00:00",
+      "2028-10-01T00:00:00+00:00"
+    ],
+    [
+      "2028-10-01T00:00:00+00:00",
+      "2028-11-01T00:00:00+00:00"
+    ],
+    [
+      "2028-11-01T00:00:00+00:00",
+      "2028-12-01T00:00:00+00:00"
+    ],
+    [
+      "2028-12-01T00:00:00+00:00",
+      "2029-01-01T00:00:00+00:00"
+    ]
+  ],
+  "dem_path": "/d/lunar_analyst_scenarios/test_scenario/dem.tif",
+  "dem_sha256": "8f041cb7dba79bce23dd38de3de7a34a5a179b8c3e5455df197684e0aec2c6e6",
+  "earth_vector_seconds": 0.02948685900628334,
+  "environment": {
+    "cuda_compute_capability": [
+      12,
+      0
+    ],
+    "cuda_device_name": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "numba": "0.66.0",
+    "numpy": "2.2.6",
+    "platform": "Linux-6.18.7-76061807-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "rasterio": "1.5.0"
+  },
+  "evaluation_start_utc": "2027-01-01T00:00:00+00:00",
+  "evaluation_stop_utc": "2029-01-01T00:00:00+00:00",
+  "gpu_total_bytes": 25146949632,
+  "horizon_inventory_identity": "stat-sha256:b82db3844a401fe332a7740b5c9f6817fd8eb505475bdb6b060bb72039c92e4b",
+  "horizon_root": "/tmp/lunarscout-phase6-sustained-python-reuse",
+  "loaded_managed_modules": [],
+  "one_horizon_read_seconds": 0.5208394840010442,
+  "output_unit": "days",
+  "peak_host_rss_bytes": 815747072,
+  "products": {
+    "sun_elevation": {
+      "band_count": 24,
+      "calculation_maximum_absolute_delta_days": 0.5,
+      "calculation_mismatch_count": 2,
+      "candidate_interval_metadata_match": true,
+      "cpu_calculation_seconds_one_patch": 0.3546962969994638,
+      "cpu_file_bytes": 905016,
+      "cpu_file_sha256": "f10c686d0c1dfa2d4f1b4b59180127affd115a6e569b469c613474392164d28d",
+      "cpu_pipeline_patches_per_second": 1.8262873537993782,
+      "cpu_pipeline_seconds": 2.1902358310035197,
+      "cuda_calculation_seconds_one_patch": 0.1368634909958928,
+      "cuda_file_bytes": 905018,
+      "cuda_file_sha256": "e902cf6c6cade785df5e8d1bc1207cb24515d11e53e5196fc0aa956234d0dad5",
+      "cuda_pipeline_patches_per_second": 3.044551183870382,
+      "cuda_pipeline_seconds": 1.3138225500006229,
+      "dtype": "float32",
+      "earth_elevation_threshold_deg": null,
+      "mask_mismatch_count": 0,
+      "maximum_absolute_delta_days": 1.0,
+      "mismatch_samples": [
+        {
+          "band": 5,
+          "column": 205,
+          "cpu_days": 2.25,
+          "cuda_days": 2.0,
+          "delta_days": 0.25,
+          "row": 93
+        },
+        {
+          "band": 6,
+          "column": 126,
+          "cpu_days": 7.25,
+          "cuda_days": 7.0,
+          "delta_days": 0.25,
+          "row": 133
+        },
+        {
+          "band": 10,
+          "column": 24,
+          "cpu_days": 16.25,
+          "cuda_days": 16.0,
+          "delta_days": 0.25,
+          "row": 116
+        },
+        {
+          "band": 13,
+          "column": 131,
+          "cpu_days": 12.75,
+          "cuda_days": 12.5,
+          "delta_days": 0.25,
+          "row": 75
+        },
+        {
+          "band": 14,
+          "column": 37,
+          "cpu_days": 8.0,
+          "cuda_days": 8.5,
+          "delta_days": -0.5,
+          "row": 96
+        },
+        {
+          "band": 18,
+          "column": 58,
+          "cpu_days": 10.25,
+          "cuda_days": 9.25,
+          "delta_days": 1.0,
+          "row": 171
+        },
+        {
+          "band": 23,
+          "column": 156,
+          "cpu_days": 14.0,
+          "cuda_days": 13.75,
+          "delta_days": 0.25,
+          "row": 165
+        },
+        {
+          "band": 23,
+          "column": 28,
+          "cpu_days": 15.25,
+          "cuda_days": 15.0,
+          "delta_days": 0.25,
+          "row": 255
+        },
+        {
+          "band": 24,
+          "column": 28,
+          "cpu_days": 10.0,
+          "cuda_days": 9.75,
+          "delta_days": 0.25,
+          "row": 255
+        }
+      ],
+      "sun_signal": "margin",
+      "sun_threshold": 0.0,
+      "timestamps_match": true,
+      "valid_pixels": 65536,
+      "value_mismatch_count": 9
+    },
+    "sun_elevation_earth_elevation": {
+      "band_count": 24,
+      "calculation_maximum_absolute_delta_days": 0.25,
+      "calculation_mismatch_count": 1,
+      "candidate_interval_metadata_match": true,
+      "cpu_calculation_seconds_one_patch": 0.6362413269962417,
+      "cpu_file_bytes": 745456,
+      "cpu_file_sha256": "f70e8451e471fb08a9c8a6d84f6ba46907ba743cba4163814ec5ada7731a7095",
+      "cpu_pipeline_patches_per_second": 1.1991112608232095,
+      "cpu_pipeline_seconds": 3.335803882997425,
+      "cuda_calculation_seconds_one_patch": 0.17332151199661894,
+      "cuda_file_bytes": 745453,
+      "cuda_file_sha256": "fe27d5a5e08d8e7caadf057bcf4566eeeae0a0637aa3eba56e15139b0408b228",
+      "cuda_pipeline_patches_per_second": 2.7502469596298424,
+      "cuda_pipeline_seconds": 1.4544148429995403,
+      "dtype": "float32",
+      "earth_elevation_threshold_deg": 0.0,
+      "mask_mismatch_count": 0,
+      "maximum_absolute_delta_days": 1.0,
+      "mismatch_samples": [
+        {
+          "band": 2,
+          "column": 32,
+          "cpu_days": 3.5,
+          "cuda_days": 3.25,
+          "delta_days": 0.25,
+          "row": 63
+        },
+        {
+          "band": 13,
+          "column": 131,
+          "cpu_days": 7.75,
+          "cuda_days": 7.5,
+          "delta_days": 0.25,
+          "row": 75
+        },
+        {
+          "band": 18,
+          "column": 58,
+          "cpu_days": 6.75,
+          "cuda_days": 5.75,
+          "delta_days": 1.0,
+          "row": 171
+        },
+        {
+          "band": 23,
+          "column": 156,
+          "cpu_days": 10.0,
+          "cuda_days": 9.75,
+          "delta_days": 0.25,
+          "row": 165
+        }
+      ],
+      "sun_signal": "margin",
+      "sun_threshold": 0.0,
+      "timestamps_match": true,
+      "valid_pixels": 65536,
+      "value_mismatch_count": 4
+    },
+    "sunlight": {
+      "band_count": 24,
+      "calculation_maximum_absolute_delta_days": 0.25,
+      "calculation_mismatch_count": 3,
+      "candidate_interval_metadata_match": true,
+      "cpu_calculation_seconds_one_patch": 0.4126877279995824,
+      "cpu_file_bytes": 904230,
+      "cpu_file_sha256": "a9ceb86dc53847530f4e07e008d40912e69f1fc1ee4ee6cc2555a4001dab9350",
+      "cpu_pipeline_patches_per_second": 1.55350403678551,
+      "cpu_pipeline_seconds": 2.5748243360067136,
+      "cuda_calculation_seconds_one_patch": 0.13904804099729517,
+      "cuda_file_bytes": 904225,
+      "cuda_file_sha256": "388c8186f6066d0650ff874d8709015c658572f47ce6ea237cd998884234eca6",
+      "cuda_pipeline_patches_per_second": 2.996330943309974,
+      "cuda_pipeline_seconds": 1.3349660220046644,
+      "dtype": "float32",
+      "earth_elevation_threshold_deg": null,
+      "mask_mismatch_count": 0,
+      "maximum_absolute_delta_days": 0.75,
+      "mismatch_samples": [
+        {
+          "band": 4,
+          "column": 101,
+          "cpu_days": 0.75,
+          "cuda_days": 1.0,
+          "delta_days": -0.25,
+          "row": 48
+        },
+        {
+          "band": 8,
+          "column": 38,
+          "cpu_days": 11.0,
+          "cuda_days": 11.25,
+          "delta_days": -0.25,
+          "row": 86
+        },
+        {
+          "band": 10,
+          "column": 169,
+          "cpu_days": 16.0,
+          "cuda_days": 16.25,
+          "delta_days": -0.25,
+          "row": 221
+        },
+        {
+          "band": 13,
+          "column": 190,
+          "cpu_days": 13.75,
+          "cuda_days": 13.25,
+          "delta_days": 0.5,
+          "row": 153
+        },
+        {
+          "band": 13,
+          "column": 163,
+          "cpu_days": 13.25,
+          "cuda_days": 14.0,
+          "delta_days": -0.75,
+          "row": 174
+        },
+        {
+          "band": 16,
+          "column": 12,
+          "cpu_days": 7.25,
+          "cuda_days": 7.5,
+          "delta_days": -0.25,
+          "row": 234
+        },
+        {
+          "band": 19,
+          "column": 7,
+          "cpu_days": 8.0,
+          "cuda_days": 8.25,
+          "delta_days": -0.25,
+          "row": 53
+        },
+        {
+          "band": 23,
+          "column": 255,
+          "cpu_days": 11.25,
+          "cuda_days": 11.5,
+          "delta_days": -0.25,
+          "row": 79
+        }
+      ],
+      "sun_signal": "fraction",
+      "sun_threshold": 0.5,
+      "timestamps_match": true,
+      "valid_pixels": 65536,
+      "value_mismatch_count": 8
+    },
+    "sunlight_earth_elevation": {
+      "band_count": 24,
+      "calculation_maximum_absolute_delta_days": 0.25,
+      "calculation_mismatch_count": 2,
+      "candidate_interval_metadata_match": true,
+      "cpu_calculation_seconds_one_patch": 0.6934971280061291,
+      "cpu_file_bytes": 745533,
+      "cpu_file_sha256": "b4d9b2ab7a22c6fc1b17b97b0f21e03a23e4593524533dc3c3e3d83e88728601",
+      "cpu_pipeline_patches_per_second": 1.1390942799664006,
+      "cpu_pipeline_seconds": 3.5115618350027944,
+      "cuda_calculation_seconds_one_patch": 0.17467577399656875,
+      "cuda_file_bytes": 745536,
+      "cuda_file_sha256": "90657a99ad63f760eca8e2dc4d8faedcaf5bb2a208a17d941882057e9fd64206",
+      "cuda_pipeline_patches_per_second": 2.7456744464521865,
+      "cuda_pipeline_seconds": 1.4568369550033822,
+      "dtype": "float32",
+      "earth_elevation_threshold_deg": 0.0,
+      "mask_mismatch_count": 0,
+      "maximum_absolute_delta_days": 0.25,
+      "mismatch_samples": [
+        {
+          "band": 2,
+          "column": 32,
+          "cpu_days": 3.5,
+          "cuda_days": 3.25,
+          "delta_days": 0.25,
+          "row": 63
+        },
+        {
+          "band": 8,
+          "column": 38,
+          "cpu_days": 10.75,
+          "cuda_days": 11.0,
+          "delta_days": -0.25,
+          "row": 86
+        },
+        {
+          "band": 10,
+          "column": 169,
+          "cpu_days": 15.5,
+          "cuda_days": 15.75,
+          "delta_days": -0.25,
+          "row": 221
+        },
+        {
+          "band": 23,
+          "column": 255,
+          "cpu_days": 8.0,
+          "cuda_days": 8.25,
+          "delta_days": -0.25,
+          "row": 79
+        }
+      ],
+      "sun_signal": "fraction",
+      "sun_threshold": 0.5,
+      "timestamps_match": true,
+      "valid_pixels": 65536,
+      "value_mismatch_count": 4
+    }
+  },
+  "region": {
+    "height": 256,
+    "patch_count": 4,
+    "width": 256
+  },
+  "schema": "lunarscout-numba-phase6b-mission-duration-benchmark-v1",
+  "sun_vector_seconds": 0.08808446200418985,
+  "time_batch_size": 32,
+  "time_count": 2925,
+  "time_step_hours": 6,
+  "two_gpu_session_buffer_bytes": 199229440
+}
