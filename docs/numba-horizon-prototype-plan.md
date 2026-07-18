@@ -820,7 +820,7 @@ CUDA was bypassed.
       patches while CUDA processes the current patch and one writer owns TIFF
       output for completed patches. Measure queue wait times and retain memory
       bounds independent of region size.
-- [ ] Evaluate keeping the staged TIFF open and checkpointing a bounded batch
+- [x] Evaluate keeping the staged TIFF open and checkpointing a bounded batch
       of tiles per durable journal update. Preserve the rule that the journal
       never advances beyond flushed TIFF data and quantify the maximum
       recomputation after interruption.
@@ -874,6 +874,25 @@ The selected bound is `471,859,200` decoded bytes; sampled peak RSS is
 remains 348 MiB. Warm-page-cache compressed-input throughput is `451.14 MiB/s`
 and decoded output reaches `1.753 GiB/s` of pipeline wall time. See
 `docs/numba-horizon-phase-6b-psr-pipeline-readers4-full.json`.
+
+The accepted writer keeps GDAL open for 16 row-major patches, then closes and
+fsyncs the staged TIFF before atomically replacing and fsyncing the completion
+journal. The journal therefore never describes unflushed TIFF data. A hard
+interruption can leave at most 16 written but unjournaled patches to recompute;
+graceful progress is reported only after the checkpoint succeeds. The complete
+1,599-patch candidate took `73.448 s` (`21.77041 patches/s`), compared with
+`80.184 s` (`19.94168 patches/s`) for the retained four-reader per-patch
+checkpoint run. TIFF write time fell from `8.940 s` to `1.019 s`, and TIFF
+sync plus journal persistence fell from `9.009 s` to `1.664 s`. All
+26,198,016 values, mask values, metadata, and the 168,063-byte file size match.
+The physical TIFF SHA-256 changes because keeping GDAL open changes block
+layout. CPU use was `3.974` core equivalents, sampled peak RSS was
+`1,388,621,824` bytes, GPU memory remained 348 MiB, and mean/p95 GPU
+utilization was `10.97%`/`20%`. See
+`docs/numba-horizon-phase-6b-psr-pipeline-batch16-full.json`.
+An abrupt child-process exit with six unclosed writes leaves an empty journal;
+the staged TIFF reopens and all six patches recompute successfully. Broader
+kill-point and disk-full coverage remains part of the operational matrix.
 
 ## 14. Phase 7: Packaging and Operational Evaluation
 

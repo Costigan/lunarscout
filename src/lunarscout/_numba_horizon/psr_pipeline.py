@@ -22,7 +22,12 @@ from lunarscout.georeference import GeoReference
 from .file_format import HorizonTileStore, read_horizon_tile_with_timings
 from .geometry import DemGrid
 from .pipeline import PatchDescriptor, enumerate_patches
-from .product_store import ProductJob, ResumableTiledProduct
+from .product_store import (
+    ProductCheckpointTimings,
+    ProductJob,
+    ProductBatchWriter,
+    ResumableTiledProduct,
+)
 from .psr import compute_psr_patch_reference, reduce_sun_vectors_for_psr
 
 
@@ -64,6 +69,8 @@ class PsrPipelineMetrics:
     cuda_dequeue_wait_seconds: tuple[float, ...]
     writer_enqueue_wait_seconds: tuple[float, ...]
     writer_dequeue_wait_seconds: tuple[float, ...]
+    durable_batch_size: int
+    maximum_uncheckpointed_patches: int
 
 
 @dataclass(slots=True)
@@ -135,6 +142,7 @@ def run_psr_product(
     decoded_horizon_capacity: int = 5,
     writer_queue_capacity: int = 1,
     reader_worker_count: int = 4,
+    durable_batch_size: int = 16,
 ) -> Path:
     """Generate a single-band PSR GeoTIFF with explicit backend selection."""
     pipeline_started = time.perf_counter()
@@ -172,6 +180,12 @@ def run_psr_product(
         raise ValueError("writer_queue_capacity must be positive")
     if reader_worker_count < 1:
         raise ValueError("reader_worker_count must be positive")
+    if (
+        isinstance(durable_batch_size, bool)
+        or not isinstance(durable_batch_size, int)
+        or durable_batch_size < 1
+    ):
+        raise ValueError("durable_batch_size must be a positive integer")
     if pipeline_mode == "bounded" and reader_worker_count > decoded_horizon_capacity:
         raise ValueError(
             "reader_worker_count cannot exceed decoded_horizon_capacity"
@@ -346,31 +360,54 @@ def run_psr_product(
         )
         return _ComputedPatch(patch, tile, "valid", item.patch_started)
 
-    def write_patch(item: _ComputedPatch) -> None:
+    uncheckpointed: dict[str, _ComputedPatch] = {}
+    maximum_uncheckpointed_patches = 0
+
+    def record_checkpoint(values: ProductCheckpointTimings | None) -> None:
         nonlocal completed
-        patch = item.patch
-        report(patch, "write")
-        if item.state == "invalid":
-            write_timings = product.write_patch_with_timings(
-                patch.tile_y, patch.tile_x, (), valid=False
-            )
-        else:
-            assert item.tile is not None
-            write_timings = product.write_patch_with_timings(
-                patch.tile_y, patch.tile_x, (item.tile,)
-            )
-        timing("tiff_write_close", write_timings.tiff_write_close_seconds, patch)
-        timing("tiff_synchronize", write_timings.tiff_synchronize_seconds, patch)
+        if values is None:
+            return
+        last_item = uncheckpointed[values.completed_patch_keys[-1]]
+        timing("tiff_checkpoint_close", values.tiff_close_seconds, last_item.patch)
+        timing("tiff_synchronize", values.tiff_synchronize_seconds, last_item.patch)
         timing(
             "journal_persistence",
-            write_timings.journal_persistence_seconds,
-            patch,
+            values.journal_persistence_seconds,
+            last_item.patch,
         )
-        timing("patch_total", time.perf_counter() - item.patch_started, patch)
-        completed += 1
-        report(patch, item.state)
-        if progress_callback is not None:
-            progress_callback(completed / len(patches))
+        for key in values.completed_patch_keys:
+            item = uncheckpointed.pop(key)
+            patch = item.patch
+            timing("patch_total", time.perf_counter() - item.patch_started, patch)
+            completed += 1
+            report(patch, item.state)
+            if progress_callback is not None:
+                progress_callback(completed / len(patches))
+
+    def write_patch(writer: ProductBatchWriter, item: _ComputedPatch) -> None:
+        nonlocal maximum_uncheckpointed_patches
+        patch = item.patch
+        report(patch, "write")
+        key = product._patch_key(patch.tile_y, patch.tile_x)
+        uncheckpointed[key] = item
+        maximum_uncheckpointed_patches = max(
+            maximum_uncheckpointed_patches, len(uncheckpointed)
+        )
+        try:
+            if item.state == "invalid":
+                write_timings = writer.write_patch_with_timings(
+                    patch.tile_y, patch.tile_x, (), valid=False
+                )
+            else:
+                assert item.tile is not None
+                write_timings = writer.write_patch_with_timings(
+                    patch.tile_y, patch.tile_x, (item.tile,)
+                )
+        except BaseException:
+            uncheckpointed.pop(key, None)
+            raise
+        timing("tiff_write", write_timings.tiff_write_seconds, patch)
+        record_checkpoint(write_timings.checkpoint)
 
     pending = [
         patch
@@ -378,16 +415,18 @@ def run_psr_product(
         if not product.is_complete(patch.tile_y, patch.tile_x)
     ]
     if pipeline_mode == "serial":
-        for patch in pending:
-            if cancelled():
-                raise PsrPipelineCancelled("PSR generation was cancelled")
-            read_item = read_patch(patch)
-            if cancelled():
-                raise PsrPipelineCancelled("PSR generation was cancelled")
-            computed_item = compute_patch(read_item)
-            if cancelled():
-                raise PsrPipelineCancelled("PSR generation was cancelled")
-            write_patch(computed_item)
+        with product.batch_writer(durable_batch_size) as batch_writer:
+            for patch in pending:
+                if cancelled():
+                    raise PsrPipelineCancelled("PSR generation was cancelled")
+                read_item = read_patch(patch)
+                if cancelled():
+                    raise PsrPipelineCancelled("PSR generation was cancelled")
+                computed_item = compute_patch(read_item)
+                if cancelled():
+                    raise PsrPipelineCancelled("PSR generation was cancelled")
+                write_patch(batch_writer, computed_item)
+            record_checkpoint(batch_writer.checkpoint_with_timings())
         metrics = PsrPipelineMetrics(
             mode="serial",
             reader_worker_count=0,
@@ -400,6 +439,8 @@ def run_psr_product(
             cuda_dequeue_wait_seconds=(),
             writer_enqueue_wait_seconds=(),
             writer_dequeue_wait_seconds=(),
+            durable_batch_size=durable_batch_size,
+            maximum_uncheckpointed_patches=maximum_uncheckpointed_patches,
         )
     else:
         reader_queue: Queue[_ReadPatch | object] = Queue(
@@ -578,29 +619,33 @@ def run_psr_product(
                 put_reader_sentinel()
 
         def writer() -> None:
-            while True:
-                wait_started = time.perf_counter()
-                item = writer_queue.get()
-                wait_seconds = time.perf_counter() - wait_started
-                try:
-                    if item is writer_sentinel:
-                        return
-                    assert isinstance(item, _ComputedPatch)
-                    with metrics_lock:
-                        writer_dequeue_wait_seconds.append(wait_seconds)
-                    timing("writer_dequeue_wait", wait_seconds, item.patch)
-                    if stop.is_set():
-                        continue
-                    try:
-                        if cancelled():
-                            raise PsrPipelineCancelled(
-                                "PSR generation was cancelled"
-                            )
-                        write_patch(item)
-                    except BaseException as error:
-                        fail(error)
-                finally:
-                    writer_queue.task_done()
+            try:
+                with product.batch_writer(durable_batch_size) as batch_writer:
+                    while True:
+                        wait_started = time.perf_counter()
+                        item = writer_queue.get()
+                        wait_seconds = time.perf_counter() - wait_started
+                        try:
+                            if item is writer_sentinel:
+                                record_checkpoint(
+                                    batch_writer.checkpoint_with_timings()
+                                )
+                                return
+                            assert isinstance(item, _ComputedPatch)
+                            with metrics_lock:
+                                writer_dequeue_wait_seconds.append(wait_seconds)
+                            timing("writer_dequeue_wait", wait_seconds, item.patch)
+                            if stop.is_set():
+                                continue
+                            if cancelled():
+                                raise PsrPipelineCancelled(
+                                    "PSR generation was cancelled"
+                                )
+                            write_patch(batch_writer, item)
+                        finally:
+                            writer_queue.task_done()
+            except BaseException as error:
+                fail(error)
 
         reader_thread = threading.Thread(target=reader, name="psr-horizon-reader")
         writer_thread = threading.Thread(target=writer, name="psr-output-writer")
@@ -650,6 +695,8 @@ def run_psr_product(
             cuda_dequeue_wait_seconds=tuple(cuda_dequeue_wait_seconds),
             writer_enqueue_wait_seconds=tuple(writer_enqueue_wait_seconds),
             writer_dequeue_wait_seconds=tuple(writer_dequeue_wait_seconds),
+            durable_batch_size=durable_batch_size,
+            maximum_uncheckpointed_patches=maximum_uncheckpointed_patches,
         )
         if errors:
             if metrics_callback is not None:

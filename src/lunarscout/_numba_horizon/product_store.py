@@ -63,6 +63,24 @@ class ProductWriteTimings:
     journal_persistence_seconds: float
 
 
+@dataclass(frozen=True, slots=True)
+class ProductBatchWriteTimings:
+    """TIFF-write timing plus any durable checkpoint triggered by that write."""
+
+    tiff_write_seconds: float
+    checkpoint: ProductCheckpointTimings | None
+
+
+@dataclass(frozen=True, slots=True)
+class ProductCheckpointTimings:
+    """Close/sync/journal timings for one bounded durable checkpoint."""
+
+    tiff_close_seconds: float
+    tiff_synchronize_seconds: float
+    journal_persistence_seconds: float
+    completed_patch_keys: tuple[str, ...]
+
+
 def _utc_timestamp(value: datetime | str) -> str:
     if isinstance(value, datetime):
         parsed = value
@@ -449,6 +467,10 @@ class ResumableTiledProduct:
             journal_persistence_seconds=journal_persistence_seconds,
         )
 
+    def batch_writer(self, checkpoint_patch_count: int) -> ProductBatchWriter:
+        """Open a writer that checkpoints no more than this many patches at once."""
+        return ProductBatchWriter(self, checkpoint_patch_count)
+
     def write_invalid_patch(self, tile_y: int, tile_x: int) -> None:
         self.write_patch(tile_y, tile_x, (), valid=False)
 
@@ -472,3 +494,145 @@ class ResumableTiledProduct:
         self._mask_sidecar.unlink(missing_ok=True)
         _sync_directory(self.output_path.parent)
         return self.output_path
+
+
+class ProductBatchWriter:
+    """Keep GDAL open within a bounded batch and journal only flushed patches."""
+
+    def __init__(
+        self,
+        product: ResumableTiledProduct,
+        checkpoint_patch_count: int,
+    ) -> None:
+        if (
+            isinstance(checkpoint_patch_count, bool)
+            or not isinstance(checkpoint_patch_count, int)
+            or checkpoint_patch_count < 1
+        ):
+            raise ValueError("checkpoint_patch_count must be a positive integer")
+        self._product = product
+        self.checkpoint_patch_count = checkpoint_patch_count
+        self._environment: Env | None = None
+        self._dataset: Any | None = None
+        self._pending: dict[str, str] = {}
+        self._entered = False
+
+    @property
+    def pending_patch_count(self) -> int:
+        return len(self._pending)
+
+    def __enter__(self) -> ProductBatchWriter:
+        if self._entered:
+            raise ProductStoreError("batch writer is already open")
+        self._environment = Env(GDAL_TIFF_INTERNAL_MASK=True)
+        self._environment.__enter__()
+        self._entered = True
+        return self
+
+    def _require_open(self) -> None:
+        if not self._entered:
+            raise ProductStoreError("batch writer is not open")
+
+    def _open_dataset(self) -> Any:
+        self._require_open()
+        if self._dataset is None:
+            self._dataset = open_raster(self._product.staging_path, "r+")
+        return self._dataset
+
+    def _close_dataset(self) -> float:
+        started = time.perf_counter()
+        if self._dataset is not None:
+            self._dataset.close()
+            self._dataset = None
+        return time.perf_counter() - started
+
+    def write_patch_with_timings(
+        self,
+        tile_y: int,
+        tile_x: int,
+        band_tiles: Iterable[npt.ArrayLike],
+        *,
+        valid: bool = True,
+    ) -> ProductBatchWriteTimings:
+        """Write one tile, checkpointing when the configured bound is reached."""
+        self._require_open()
+        product = self._product
+        window, width, height, key = product._window(tile_y, tile_x)
+        if key in product._completed or key in self._pending:
+            return ProductBatchWriteTimings(0.0, None)
+        iterator = iter(band_tiles)
+        invalid_tile = np.full(
+            (height, width),
+            product._manifest["invalid_value"],
+            dtype=product._dtype,
+        )
+        write_started = time.perf_counter()
+        dataset = self._open_dataset()
+        for band_index in range(1, int(product._manifest["band_count"]) + 1):
+            if valid:
+                try:
+                    source = next(iterator)
+                except StopIteration as exc:
+                    raise ValueError(
+                        "band_tiles has fewer entries than band_count"
+                    ) from exc
+                tile = np.asarray(source, dtype=product._dtype)
+                if tile.shape != (height, width):
+                    raise ValueError(
+                        f"band tile must have shape {(height, width)}, got {tile.shape}"
+                    )
+                tile = np.ascontiguousarray(tile)
+            else:
+                tile = invalid_tile
+            dataset.write(tile, band_index, window=window)
+        if valid:
+            try:
+                next(iterator)
+            except StopIteration:
+                pass
+            else:
+                raise ValueError("band_tiles has more entries than band_count")
+        mask = np.full((height, width), 255 if valid else 0, dtype=np.uint8)
+        dataset.write_mask(mask, window=window)
+        tiff_write_seconds = time.perf_counter() - write_started
+        self._pending[key] = "valid" if valid else "invalid"
+        checkpoint = None
+        if len(self._pending) >= self.checkpoint_patch_count:
+            checkpoint = self.checkpoint_with_timings()
+        return ProductBatchWriteTimings(tiff_write_seconds, checkpoint)
+
+    def checkpoint_with_timings(self) -> ProductCheckpointTimings | None:
+        """Close and sync TIFF data before atomically advancing the journal."""
+        self._require_open()
+        if not self._pending:
+            return None
+        tiff_close_seconds = self._close_dataset()
+        sync_started = time.perf_counter()
+        self._product._sync_staging()
+        tiff_synchronize_seconds = time.perf_counter() - sync_started
+        completed = dict(self._product._completed)
+        completed.update(self._pending)
+        journal_started = time.perf_counter()
+        self._product._write_journal(completed)
+        journal_persistence_seconds = time.perf_counter() - journal_started
+        completed_patch_keys = tuple(self._pending)
+        self._product._completed = completed
+        self._pending.clear()
+        return ProductCheckpointTimings(
+            tiff_close_seconds=tiff_close_seconds,
+            tiff_synchronize_seconds=tiff_synchronize_seconds,
+            journal_persistence_seconds=journal_persistence_seconds,
+            completed_patch_keys=completed_patch_keys,
+        )
+
+    def __exit__(self, exception_type, _exception, _traceback) -> None:
+        try:
+            if exception_type is None:
+                self.checkpoint_with_timings()
+            else:
+                self._close_dataset()
+        finally:
+            self._entered = False
+            if self._environment is not None:
+                self._environment.__exit__(exception_type, _exception, _traceback)
+                self._environment = None

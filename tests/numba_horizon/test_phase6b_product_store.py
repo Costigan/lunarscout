@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import multiprocessing
+import os
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +45,16 @@ def _job(*, algorithm: str = "lightmap-test") -> ProductJob:
         configuration={"solar_disk": "uniform"},
         horizon_inventory_identity="sha256:test-inventory",
     )
+
+
+def _write_open_batch_then_exit(output: str) -> None:
+    store = ResumableTiledProduct(output, _job())
+    writer = store.batch_writer(16)
+    writer.__enter__()
+    for tile_y in (0, 128):
+        for tile_x in (0, 128, 256):
+            writer.write_patch_with_timings(tile_y, tile_x, (), valid=False)
+    os._exit(23)
 
 
 def test_product_store_resumes_by_patch_and_publishes_partial_edges(
@@ -160,3 +173,108 @@ def test_journal_failure_does_not_advance_patch_completion(
         store.write_invalid_patch(0, 0)
 
     assert store.completed_patches == {}
+
+
+def test_batch_writer_keeps_tiff_open_and_journals_only_after_checkpoint(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "batch.tif"
+    store = ResumableTiledProduct(output, _job())
+
+    with store.batch_writer(2) as writer:
+        first = writer.write_patch_with_timings(
+            0,
+            0,
+            (
+                np.full((128, 128), 1, dtype=np.uint8),
+                np.full((128, 128), 2, dtype=np.uint8),
+            ),
+        )
+        assert first.checkpoint is None
+        assert writer.pending_patch_count == 1
+        assert store.completed_patches == {}
+        journal = json.loads(store.journal_path.read_text())
+        assert journal["completed_patches"] == {}
+
+        second = writer.write_patch_with_timings(0, 128, (), valid=False)
+        assert second.checkpoint is not None
+        assert second.checkpoint.completed_patch_keys == ("0,0", "0,128")
+        assert writer.pending_patch_count == 0
+        assert store.completed_patches == {
+            "0,0": "valid",
+            "0,128": "invalid",
+        }
+
+
+def test_batch_writer_exception_leaves_at_most_one_batch_unjournaled(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "batch-abort.tif"
+    store = ResumableTiledProduct(output, _job())
+
+    with pytest.raises(RuntimeError, match="simulated interruption"):
+        with store.batch_writer(3) as writer:
+            writer.write_patch_with_timings(0, 0, (), valid=False)
+            writer.write_patch_with_timings(0, 128, (), valid=False)
+            raise RuntimeError("simulated interruption")
+
+    assert store.completed_patches == {}
+    resumed = ResumableTiledProduct(output, _job())
+    assert resumed.completed_patches == {}
+    with resumed.batch_writer(3) as writer:
+        writer.write_patch_with_timings(0, 0, (), valid=False)
+        writer.write_patch_with_timings(0, 128, (), valid=False)
+        checkpoint = writer.checkpoint_with_timings()
+    assert checkpoint is not None
+    assert checkpoint.completed_patch_keys == ("0,0", "0,128")
+
+
+def test_batch_journal_failure_never_advances_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "batch-journal-failure.tif"
+    store = ResumableTiledProduct(output, _job())
+    real_atomic_json = product_store._atomic_json
+
+    def fail_journal(path, value):
+        if path == store.journal_path:
+            raise OSError("simulated batch journal failure")
+        real_atomic_json(path, value)
+
+    monkeypatch.setattr(product_store, "_atomic_json", fail_journal)
+    with pytest.raises(OSError, match="simulated batch journal failure"):
+        with store.batch_writer(2) as writer:
+            writer.write_patch_with_timings(0, 0, (), valid=False)
+            writer.write_patch_with_timings(0, 128, (), valid=False)
+
+    assert store.completed_patches == {}
+
+
+def test_open_batch_survives_abrupt_process_exit_and_recomputes(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "batch-process-exit.tif"
+    process = multiprocessing.get_context("spawn").Process(
+        target=_write_open_batch_then_exit,
+        args=(str(output),),
+    )
+    process.start()
+    process.join(20)
+    if process.is_alive():
+        process.terminate()
+        process.join(5)
+        pytest.fail("abrupt-exit worker did not finish")
+    assert process.exitcode == 23
+
+    resumed = ResumableTiledProduct(output, _job())
+    assert resumed.completed_patches == {}
+    with resumed.batch_writer(16) as writer:
+        for tile_y in (0, 128):
+            for tile_x in (0, 128, 256):
+                writer.write_patch_with_timings(tile_y, tile_x, (), valid=False)
+        checkpoint = writer.checkpoint_with_timings()
+    assert checkpoint is not None
+    assert len(checkpoint.completed_patch_keys) == 6
+    resumed.finalize()
+    with rasterio.open(output) as dataset:
+        assert np.all(dataset.dataset_mask() == 0)

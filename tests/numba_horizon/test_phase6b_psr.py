@@ -32,7 +32,10 @@ from lunarscout._numba_horizon.psr_pipeline import (
     run_psr_product,
 )
 from lunarscout._numba_horizon.psr_cuda import PsrCudaSession
-from lunarscout._numba_horizon.product_store import ResumableTiledProduct
+from lunarscout._numba_horizon.product_store import (
+    ProductBatchWriter,
+    ResumableTiledProduct,
+)
 from lunarscout.georeference import GeoReference
 
 
@@ -349,6 +352,7 @@ def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
             pipeline_mode=pipeline_mode,
             reader_worker_count=reader_worker_count,
             decoded_horizon_capacity=decoded_horizon_capacity,
+            durable_batch_size=1,
         )
 
     assert not output.exists()
@@ -372,6 +376,7 @@ def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
         pipeline_mode=pipeline_mode,
         reader_worker_count=reader_worker_count,
         decoded_horizon_capacity=decoded_horizon_capacity,
+        durable_batch_size=1,
     )
 
     assert result == output
@@ -382,6 +387,73 @@ def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
         assert dataset.read(1)[0, 128] == 9
         assert np.all(dataset.dataset_mask()[:, :128] == 255)
         assert dataset.dataset_mask()[0, 128] == 0
+
+
+def test_psr_batched_cancellation_recomputes_unjournaled_tiles(
+    tmp_path: Path,
+) -> None:
+    dem = _dem(width=129, height=1)
+    horizons = HorizonTileStore(tmp_path / "horizons")
+    horizons.write(
+        0,
+        0,
+        0.0,
+        np.zeros((128, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=128,
+        valid_height=1,
+    )
+    horizons.write(
+        0,
+        128,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+    output = tmp_path / "batched-cancel.tif"
+    cancellation_checks = 0
+
+    def cancel_before_second_patch() -> bool:
+        nonlocal cancellation_checks
+        cancellation_checks += 1
+        return cancellation_checks == 4
+
+    with pytest.raises(PsrPipelineCancelled):
+        run_psr_product(
+            dem=dem,
+            georef=_georef(129, 1),
+            horizon_store=horizons,
+            output_path=output,
+            sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
+            backend="cpu",
+            pipeline_mode="serial",
+            durable_batch_size=2,
+            cancellation_requested=cancel_before_second_patch,
+        )
+
+    journal = json.loads(
+        (tmp_path / ".batched-cancel.tif.lunarscout-partial.journal.json")
+        .read_text()
+    )
+    assert journal["completed_patches"] == {}
+
+    progress = []
+    run_psr_product(
+        dem=dem,
+        georef=_georef(129, 1),
+        horizon_store=horizons,
+        output_path=output,
+        sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
+        backend="cpu",
+        pipeline_mode="serial",
+        durable_batch_size=2,
+        progress_callback=progress.append,
+    )
+    assert progress == [0.0, 0.5, 1.0]
+    with rasterio.open(output) as dataset:
+        assert np.all(dataset.dataset_mask() == 255)
 
 
 def test_psr_auto_backend_falls_back_to_cpu(
@@ -449,7 +521,8 @@ def test_psr_pipeline_reports_opt_in_stage_timings(tmp_path: Path) -> None:
         "compressed_file_read",
         "cbin_decompression",
         "calculation_boundary",
-        "tiff_write_close",
+        "tiff_write",
+        "tiff_checkpoint_close",
         "tiff_synchronize",
         "journal_persistence",
         "patch_total",
@@ -462,12 +535,18 @@ def test_psr_pipeline_reports_opt_in_stage_timings(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("reader_worker_count", "decoded_horizon_capacity"), ((1, 2), (2, 3))
+    (
+        "reader_worker_count",
+        "decoded_horizon_capacity",
+        "durable_batch_size",
+    ),
+    ((1, 2, 1), (2, 3, 2)),
 )
 def test_bounded_psr_pipeline_matches_serial_and_reports_queue_bounds(
     tmp_path: Path,
     reader_worker_count: int,
     decoded_horizon_capacity: int,
+    durable_batch_size: int,
 ) -> None:
     dem = _dem(width=129, height=1)
     horizons = HorizonTileStore(tmp_path / "horizons")
@@ -502,6 +581,7 @@ def test_bounded_psr_pipeline_matches_serial_and_reports_queue_bounds(
         decoded_horizon_capacity=decoded_horizon_capacity,
         writer_queue_capacity=1,
         reader_worker_count=reader_worker_count,
+        durable_batch_size=durable_batch_size,
         metrics_callback=metrics.append,
     )
 
@@ -520,6 +600,8 @@ def test_bounded_psr_pipeline_matches_serial_and_reports_queue_bounds(
     assert metrics[0].maximum_live_decoded_horizons <= decoded_horizon_capacity
     assert metrics[0].maximum_reader_queue_depth <= decoded_horizon_capacity - 1
     assert metrics[0].maximum_writer_queue_depth <= 1
+    assert metrics[0].durable_batch_size == durable_batch_size
+    assert metrics[0].maximum_uncheckpointed_patches <= durable_batch_size
     assert len(metrics[0].reader_enqueue_wait_seconds) == 2
     assert len(metrics[0].cuda_dequeue_wait_seconds) == 2
     assert len(metrics[0].writer_enqueue_wait_seconds) == 2
@@ -586,7 +668,7 @@ def test_bounded_psr_pipeline_drains_after_writer_failure(
         raise OSError("simulated PSR writer failure")
 
     monkeypatch.setattr(
-        ResumableTiledProduct, "write_patch_with_timings", fail_write
+        ProductBatchWriter, "write_patch_with_timings", fail_write
     )
     with pytest.raises(OSError, match="simulated PSR writer failure"):
         run_psr_product(

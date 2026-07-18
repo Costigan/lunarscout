@@ -305,6 +305,68 @@ Machine-readable evidence is in the one-reader `bounded-cap2` report, the
 two- through four-reader `readers*-cap*` reports, and the complete
 `docs/numba-horizon-phase-6b-psr-pipeline-readers4-full.json` report.
 
+## Accepted bounded PSR durability checkpoints
+
+The first product-store slice reopened, closed, synchronized, and journaled the
+staged TIFF for every 128 by 128 patch. That was a deliberately conservative
+correctness boundary, not an acceptable sustained writer. The selected private
+writer now holds one GDAL update handle open for 16 row-major patches. At each
+checkpoint it closes the dataset, synchronizes the staged TIFF and directory,
+then atomically replaces and synchronizes a journal containing the whole
+batch. Only after that journal succeeds does in-memory completion and user
+progress advance. Thus the journal cannot get ahead of durable TIFF data.
+
+A process interruption may leave physical TIFF blocks for no more than 16
+unjournaled patches. Resume ignores and deterministically overwrites those
+blocks, bounding recomputation at 16 patches. An abrupt child-process
+`os._exit(23)` after six writes without closing GDAL leaves the journal empty;
+the staged TIFF reopens, all six tiles are recomputed, and the product finalizes
+normally. Simulated exception and journal-failure tests likewise leave
+incomplete batch completion unchanged. Cancellation and writer failure do not
+publish a partial product. The existing atomic final rename and
+completed-output overwrite protection are unchanged. This targeted exit test
+does not replace the broader process-kill and disk-full matrix.
+
+The sequential 64-patch selector improved from `3.96252 s`
+(`16.15134 patches/s`) with per-patch checkpoints to `3.17583 s`
+(`20.15222 patches/s`) with batches of 16. Aggregate decompression time was
+effectively unchanged (`9.0714 s` versus `9.0955 s`). TIFF write time fell
+from `364.84 ms` to `47.94 ms`; TIFF close/sync/journal time fell from
+`455.93 ms` to `70.25 ms`.
+
+The warranted complete 1,599-patch run produced these results:
+
+| Measurement | Serial control | Four readers, batch 16 |
+| --- | ---: | ---: |
+| End-to-end time | `298.259 s` | `73.448 s` |
+| Throughput | `5.36110 patches/s` | `21.77041 patches/s` |
+| CPU core equivalents | -- | `3.974` |
+| Mean/p95 GPU utilization | -- | `10.97%` / `20%` |
+| Sampled peak RSS | -- | `1,388,621,824` bytes |
+| Peak process GPU memory | -- | 348 MiB |
+| Output bytes | `168,063` | `168,063` |
+
+Relative to the retained four-reader/per-patch-checkpoint full run, batching
+reduces wall time from `80.184 s` to `73.448 s` and raises throughput from
+`19.94168` to `21.77041 patches/s`. Across the two runs, TIFF write time falls
+from `8.940 s` to `1.019 s`, TIFF synchronization from `3.654 s` to
+`0.996 s`, and journal persistence from `5.355 s` to `0.668 s`. The candidate
+performed 100 durable checkpoints: 99 full batches and one final 15-patch
+batch.
+
+Every one of the 26,198,016 classification values and validity-mask values
+matches the serial control, as does all compared geospatial and product
+metadata. Both files are 168,063 bytes. The control SHA-256 is
+`a7309db5a168431765a9bde99670efd0bfd734d55b795cce51fccb66f86b0326`;
+the batched SHA-256 is
+`e246ac369b36d3e5f67f9c6c1f64284f0ddbc26448c17358b69cdd69c9ffed5d`.
+Keeping GDAL open changes the physical block layout, so binary file identity is
+not retained even though values, masks, metadata, and size are identical.
+
+Machine-readable input identities, stage distributions, resource samples,
+queue bounds, and comparisons are in
+`docs/numba-horizon-phase-6b-psr-pipeline-batch16-full.json`.
+
 ## Initial time-series lightmap slice
 
 The private lightmap reference path defines byte sunlight using the active C#
@@ -559,20 +621,20 @@ output hashes, timings, memory, comparisons, and mismatch samples are in
 
 ## Intentionally incomplete
 
-- The selected four-reader/five-slot pipeline provides 3.58 times matched
-  serial throughput with identical output. CUDA still waits `26.9 ms` mean per
-  patch for ordered decompression results, so durable checkpoint batching,
-  pinned/asynchronous transfers, and multi-patch CUDA submissions remain to be
-  evaluated independently. More than four decompression workers is not part of
-  the retained small-worker matrix and would require a separate memory tradeoff.
+- The selected four-reader/five-slot pipeline with 16-patch durable checkpoints
+  provides `21.77041 patches/s` on the complete scenario with identical values,
+  masks, and metadata. CUDA still waits `21.7 ms` mean per patch for ordered
+  decompression results, so pinned/asynchronous transfers and multi-patch CUDA
+  submissions remain to be evaluated independently. More than four
+  decompression workers is not part of the retained small-worker matrix and
+  would require a separate memory tradeoff.
 - Physical TIFF block inspection when a single-band journal is missing is not
   implemented.
 - A broader disk-full, process-kill, failed-overwrite, and publication failure
   matrix remains to be run.
-- The first 16-patch sustained serial instrumentation separates decompression,
-  transfer, calculation, write, synchronization, and journal costs. A complete
-  1,599-patch instrumented run remains open until a bounded overlap candidate
-  justifies repeating the scenario.
+- Full 1,599-patch evidence now covers serial execution, bounded overlap,
+  four-reader decompression, and 16-patch durable checkpoints. Pinned transfer
+  and multi-patch GPU scheduling evidence remains open.
 - Safe-haven performance remains synthetic; representative regional CPU/CUDA
   throughput and memory evidence are not yet recorded for that product.
 - No public API, structured public exception mapping, packaging decision, or

@@ -6,6 +6,14 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Replaced per-patch staged-TIFF reopen/close and journal writes in the private
+  PSR path with a bounded 16-patch writer checkpoint. TIFF data is closed and
+  synchronized before the journal advances, progress remains durable, and an
+  interruption can require recomputing at most 16 unjournaled patches. A
+  complete 1,599-patch run improved the retained four-reader pipeline from
+  `80.184` to `73.448` seconds and from `19.9417` to `21.7704 patches/s`.
+  Values, masks, metadata, and file size match; the physical TIFF hash changes
+  because the open writer produces a different block layout.
 - Added opt-in private PSR pipeline instrumentation separating horizon lookup,
   compressed read, decompression, host preparation, individual CUDA transfers,
   device-event kernel time, synchronization, result copy, TIFF write/close,

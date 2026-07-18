@@ -207,6 +207,7 @@ def main() -> int:
     parser.add_argument("--decoded-horizon-capacity", type=int, default=2)
     parser.add_argument("--writer-queue-capacity", type=int, default=1)
     parser.add_argument("--reader-worker-count", type=int, default=1)
+    parser.add_argument("--durable-batch-size", type=int, default=1)
     parser.add_argument("--output-json", type=Path, required=True)
     arguments = parser.parse_args()
     if arguments.patch_rows < 1 or arguments.patch_columns < 1:
@@ -260,6 +261,7 @@ def main() -> int:
             sun_vectors_m=vectors,
             backend="cuda",
             pipeline_mode="serial",
+            durable_batch_size=1,
         )
         control_seconds = time.perf_counter() - control_started
         control = _product_snapshot(control_path)
@@ -281,6 +283,7 @@ def main() -> int:
                 decoded_horizon_capacity=arguments.decoded_horizon_capacity,
                 writer_queue_capacity=arguments.writer_queue_capacity,
                 reader_worker_count=arguments.reader_worker_count,
+                durable_batch_size=arguments.durable_batch_size,
             )
         instrumented_seconds = time.perf_counter() - instrumented_started
         cpu_after = resource.getrusage(resource.RUSAGE_SELF)
@@ -393,6 +396,10 @@ def main() -> int:
             "configured_decoded_horizon_capacity": metrics.decoded_horizon_capacity,
             "configured_reader_worker_count": metrics.reader_worker_count,
             "configured_writer_queue_capacity": metrics.writer_queue_capacity,
+            "configured_durable_batch_size": metrics.durable_batch_size,
+            "maximum_uncheckpointed_patches": (
+                metrics.maximum_uncheckpointed_patches
+            ),
             "maximum_live_decoded_horizons": metrics.maximum_live_decoded_horizons,
             "maximum_reader_queue_depth": metrics.maximum_reader_queue_depth,
             "maximum_writer_queue_depth": metrics.maximum_writer_queue_depth,
