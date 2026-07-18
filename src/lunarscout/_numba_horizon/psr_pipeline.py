@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import TextIO
+from typing import Literal, TextIO
 
 import numpy as np
 import numpy.typing as npt
@@ -79,16 +79,28 @@ def run_psr_product(
     progress_callback: Callable[[PsrProgress], None] | None = None,
     progress_stream: TextIO | None = None,
     patch_calculator: Callable[..., npt.NDArray[np.uint8]] | None = None,
+    backend: Literal["auto", "cpu", "cuda"] = "auto",
 ) -> Path:
-    """Generate a single-band PSR GeoTIFF without Python.NET or moonlib.
-
-    The correctness-first CPU calculator is the default. Passing a reusable
-    ``PsrCudaSession.compute_patch`` selects the parity-tested CUDA kernel.
-    """
+    """Generate a single-band PSR GeoTIFF with explicit backend selection."""
     if (georef.width, georef.height) != (dem.width, dem.height):
         raise ValueError("GeoReference and DEM dimensions do not match")
+    if backend not in ("auto", "cpu", "cuda"):
+        raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     patches = enumerate_patches(dem.width, dem.height)
-    calculate_patch = patch_calculator or compute_psr_patch_reference
+    if patch_calculator is not None:
+        calculate_patch = patch_calculator
+    elif backend == "cpu":
+        calculate_patch = compute_psr_patch_reference
+    else:
+        from .cuda_backend import CudaBackendError
+        from .psr_cuda import PsrCudaSession
+
+        try:
+            calculate_patch = PsrCudaSession().compute_patch
+        except CudaBackendError:
+            if backend == "cuda":
+                raise
+            calculate_patch = compute_psr_patch_reference
     reduced_vectors, reduced_indices = reduce_sun_vectors_for_psr(
         dem, sun_vectors_m
     )

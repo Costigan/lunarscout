@@ -198,6 +198,25 @@ horizon patch, resident vectors, and the configured 32-time byte and fraction
 output batches, not by the total regional cube. Evidence is recorded in
 `docs/numba-horizon-phase-6b-lightmap-benchmark.json`.
 
+## Direct body-elevation products
+
+Separate private Sun and Earth product functions now write body-center
+elevation relative to the bilinearly interpolated local terrain horizon at the
+body's azimuth. The output is a tiled, compressed `float32` BigTIFF with one
+UTC-tagged band per supplied vector. Both functions use the same bounded
+CPU/CUDA margin stream as the landed mission-duration products, including
+`auto` CPU fallback, configurable time batches, patch-level cancellation, and
+durable resume.
+
+Synthetic file tests cover both bodies, timestamps, datatype, compressed-input
+quantization, forced CUDA unavailability, and interrupted-patch restart. An
+explicit real-GPU test runs the complete CPU and CUDA file pipelines on the
+same input and confirms matching validity masks and margin values within
+`2e-5` degrees. A representative long-workload elevation benchmark is already
+included in the landed mission-duration evidence because those products
+consume the identical margin stream; direct multi-band write throughput has
+not yet been measured separately.
+
 ## Initial safe-haven semantics
 
 The C# `GenerateSafeHavenDurations` path identifies center-view intervals where
@@ -218,8 +237,13 @@ only current and longest run counters per outage and pixel. Both compiled CPU
 and CUDA provide that bounded stream; `auto` falls back to CPU. A synthetic
 end-to-end product writes two correctly timestamped `float32` duration bands,
 and CPU/CUDA produce the same duration for the controlled reduction. Real
-safe-haven performance, cancellation/progress, missing-patch behavior, and
-restart evidence remain open.
+safe-haven performance remains open. The operational pipeline now emits
+immediately flushed patch progress, checks cancellation before and after
+horizon reads, within the streamed time calculation, before writes, and before
+publication, and resumes an interrupted patch as one durable work unit. Tests
+also force CUDA unavailability and verify `auto` CPU fallback. Missing horizon
+patches already use the configured invalid payload and validity mask through
+the shared product store.
 
 ## Fresh-process result
 
@@ -256,7 +280,10 @@ Missing or invalid horizon patches receive the configured invalid payload in
 every band and mask value zero. Computed patches receive mask value 255.
 Tests cover interrupted multi-band writes, journal-write failure, incompatible
 resume, partial edge windows, timestamp metadata, and restart after PSR
-cancellation.
+cancellation. PSR now uses the same explicit `auto`, `cpu`, and `cuda` backend
+policy as the other downstream pipelines: `auto` falls back to the CPU
+reference when CUDA is unavailable, while explicit `cuda` propagates the
+capability failure instead of silently changing backends.
 
 ## Initial landed mission-duration semantics
 

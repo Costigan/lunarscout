@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import rasterio
 
+from lunarscout._numba_horizon.cuda_backend import CudaBackendError
 from lunarscout._numba_horizon.file_format import AZIMUTH_COUNT, HorizonTileStore
 from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
 from lunarscout._numba_horizon.lightmap_cpu import LightmapCpuSession
@@ -278,6 +279,42 @@ def test_missing_horizon_uses_configured_invalid_payload_and_mask(tmp_path: Path
     with rasterio.open(output) as dataset:
         assert dataset.read(1)[0, 0] == -7.0
         assert dataset.dataset_mask()[0, 0] == 0
+
+
+def test_mission_duration_auto_backend_falls_back_to_cpu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lunarscout._numba_horizon import lightmap_cuda
+
+    class UnavailableCudaSession:
+        def __init__(self, **_kwargs) -> None:
+            raise CudaBackendError("deliberately unavailable")
+
+    monkeypatch.setattr(lightmap_cuda, "LightmapCudaSession", UnavailableCudaSession)
+    dem = _dem()
+    times = (
+        datetime(2027, 1, 1, tzinfo=UTC),
+        datetime(2027, 1, 2, tzinfo=UTC),
+    )
+    vectors = np.stack(tuple(_position(dem, 1.0) for _ in times))
+
+    output = run_sunlight_duration_product(
+        dem=dem,
+        georef=_georef(),
+        horizon_store=_write_horizon(tmp_path),
+        output_path=tmp_path / "auto-duration.tif",
+        times_utc=times,
+        evaluation_start_utc=times[0],
+        evaluation_stop_utc=times[-1],
+        start_intervals=((times[0], times[1]),),
+        sun_vectors_m=vectors,
+        sunlight_fraction_threshold=0.5,
+        output_unit="days",
+        backend="auto",
+    )
+
+    with rasterio.open(output) as dataset:
+        assert dataset.read(1).item() == 1.0
 
 
 def test_cancelled_patch_resumes_as_one_durable_work_unit(tmp_path: Path) -> None:

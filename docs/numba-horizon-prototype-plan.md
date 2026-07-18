@@ -632,11 +632,11 @@ times, vectors, thresholds, and reductions before release.
 - [x] Define reduced `(patch, product)` work units for PSR, safe-haven, and
       mission-duration products. Keep horizon, DEM, vector, device, temporal,
       and writer buffers explicitly bounded.
-- [ ] Share the pixel-to-CRS, stereographic inverse, Moon-ME-to-ENU, body
+- [x] Share the pixel-to-CRS, stereographic inverse, Moon-ME-to-ENU, body
       azimuth/elevation, horizon interpolation, and solar-disk calculations
       across product kernels without forcing every product to materialize a
       time cube.
-- [ ] Provide both CPU and Numba CUDA implementations for every downstream
+- [x] Provide both CPU and Numba CUDA implementations for every downstream
       horizon-consuming calculation: time-series lightmaps, PSR, elevation
       products, safe-haven maps, and landed mission-duration maps. CPU is a
       required operational fallback, not only a test reference. Horizon
@@ -650,9 +650,28 @@ times, vectors, thresholds, and reductions before release.
       DEM, optional time-batch, and reduced-output buffers.
 - [ ] Use one bounded GeoTIFF writer queue; do not call one raster dataset
       concurrently from arbitrary compute workers.
-- [ ] Check cancellation between horizon reads, time iterations/batches, patch
+- [x] Check cancellation between horizon reads, time iterations/batches, patch
       kernels, and durable writes. A running CUDA kernel remains
       non-interruptible.
+
+Lightmap, PSR, safe-haven, and landed mission-duration pipelines now share
+patch-boundary progress and cancellation semantics. Safe-haven cancellation is
+also checked within its streamed time tiles, and an interrupted patch is
+recomputed as one durable unit on resume. PSR now exposes the same
+`auto`/`cpu`/`cuda` selection as the other implemented products; ordinary tests
+force CUDA construction to fail and verify CPU fallback for `auto` plus no
+silent fallback for explicit `cuda`. The broader backend-policy checkbox
+remains open until public structured capability errors and the public
+elevation-product facade are implemented.
+
+The private direct elevation pipeline now supplies separate Sun and Earth
+functions that write one timestamped `float32` BigTIFF band per vector. It
+reuses the same CPU/CUDA body-center local-horizon-margin calculation used by
+mission duration, supports `auto` fallback and bounded time batches, and uses
+the shared resumable product store. CPU and CUDA file outputs agree on the
+explicit real-GPU test. The remaining facade work in the paragraph above means
+the public facade and structured error mapping, not the private product
+implementation.
 
 ### GeoTIFF output contract
 

@@ -10,7 +10,7 @@ public package surface is still settling.
 ## What Lunarscout Is
 
 Lunarscout is a Python library for lunar terrain, raster, temporal, and
-optional native lighting analysis. It is designed for notebook and script
+lighting analysis. It is designed for notebook and script
 workflows where raster values are ordinary NumPy arrays and geospatial metadata
 is carried explicitly.
 
@@ -24,8 +24,10 @@ The current package includes:
 - filesystem-safe scenario paths;
 - UTC-aware temporal arrays;
 - file-backed timestamped GeoTIFF series;
-- SPICE-backed Sun and Earth local-frame histories; and
-- optional native lighting and permanent-shadow products.
+- SPICE-backed Sun and Earth local-frame histories;
+- CUDA-accelerated horizon generation; and
+- patch-streamed lightmap, permanent-shadow, safe-haven, and landed
+  mission-duration product implementations with CPU fallbacks.
 
 Lunarscout was split from Lunar Analyst so the calculation library can mature
 independently of the agent, web UI, FastAPI service, application job framework,
@@ -47,7 +49,7 @@ The package root is the normal user-facing API:
 import lunarscout as ls
 ```
 
-### Root Functions
+### Common Root Functions
 
 | Function                                                                   | Summary                                                                             |
 | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -87,7 +89,6 @@ import lunarscout as ls
 | `ls.map_product_download_directory(root, product)`                         | Return the expected download directory for a map product.                           |
 | `ls.download_map_product(product, output_root, ...)`                       | Download a map product into a local scenario-style directory.                       |
 | `ls.open_scenario(path)`                                                   | Open a filesystem-backed `Scenario`.                                                |
-| `ls.GenerateHorizons(...)`                                                 | Low-level native horizon-generation wrapper. Prefer `scenario.generate_horizons()`. |
 
 ### Scenario Methods
 
@@ -102,11 +103,6 @@ import lunarscout as ls
 | `scenario.slope_path()`                                                 | Return `slope.tif` in the scenario root.                                                 |
 | `scenario.aspect_path()`                                                | Return `aspect.tif` in the scenario root.                                                |
 | `scenario.roughness_path()`                                             | Return `roughness.tif` in the scenario root.                                             |
-| `scenario.create_hillshade(...)`                                        | Create the native hillshade GeoTIFF.                                                     |
-| `scenario.create_slope(...)`                                            | Create the native slope GeoTIFF.                                                         |
-| `scenario.create_aspect(...)`                                           | Create the native aspect GeoTIFF.                                                        |
-| `scenario.create_roughness(...)`                                        | Create the native roughness GeoTIFF.                                                     |
-| `scenario.generate_horizons(...)`                                       | Generate native horizon files into `scenario.horizons_path()`.                           |
 | `scenario.horizon_patch_pixel(x, y)`                                    | Convert DEM pixel coordinates to pixel coordinates inside a 128x128 horizon patch.       |
 | `scenario.horizon_patch_row_col(x, y)`                                  | Return the horizon patch row and column containing a DEM pixel.                          |
 | `scenario.horizon_file_path(x, y, observer_height_decimeters)`          | Return the matching `.cbin` or `.bin` horizon file path, preferring `.cbin`, or `None`.  |
@@ -121,10 +117,6 @@ import lunarscout as ls
 | `scenario.plot_body_position(ax, point, body, time, ...)`               | Overlay a body center point or apparent limb on an azimuth/elevation axis.               |
 | `scenario.plot_body_path(ax, point, body, times, ...)`                  | Overlay a body center path and/or translucent limb band.                                 |
 | `scenario.plot_zoomed_body_path(point, bodies, times, ...)`             | Plot one or more body limb paths against the horizon in an equal-scale zoomed view.      |
-| `scenario.sun_fraction(...)`                                            | Generate a native temporal sun-fraction product.                                         |
-| `scenario.sun_over_horizon_deg(...)`                                    | Generate a native temporal Sun-over-horizon product.                                     |
-| `scenario.earth_over_horizon_deg(...)`                                  | Generate a native temporal Earth-over-horizon product.                                   |
-| `scenario.psr(...)`                                                     | Generate a native permanent-shadow product.                                              |
 
 ### File-Backed Temporal Objects
 
@@ -139,8 +131,7 @@ import lunarscout as ls
 | `TemporalGeoTiffSeries.read_time(time, ...)`           | Read one layer selected by time.                            |
 | `TemporalGeoTiffSeries.close()`                        | Close cached datasets held by the series.                   |
 
-Native runtime helpers are available under `ls.native`, and SPICE kernel
-management helpers are available under `ls.spice`.
+SPICE kernel management helpers are available under `ls.spice`.
 
 ## Installation
 
@@ -158,38 +149,27 @@ For development tools:
 .venv/bin/python -m pip install -e '.[dev]'
 ```
 
-For optional native calculations, install the native Python extra:
-
-```bash
-.venv/bin/python -m pip install -e '.[native]'
-```
-
 ### GDAL Requirement
 
 Lunarscout uses the GDAL Python bindings supplied by the supported runtime
 environment. GDAL is not listed as a normal PyPI dependency because the Python
-package must match the installed native GDAL library.
+package must match the installed GDAL library.
 
 TODO: Document supported GDAL installation paths for common platforms.
 
-### Native Runtime Requirement
+### Compute Backends
 
-Pure-Python installation works without building native code. Native features
-currently require either:
+Importing `lunarscout` does not import Numba, initialize CUDA, or load SPICE
+kernels. Those components are loaded only when a function needs them. This
+keeps ordinary scripts, notebooks, documentation builds, and CPU-only
+environments lightweight.
 
-- a local native build, for example:
-
-  ```bash
-  dotnet build native/moonlib/moonlib.csproj
-  ```
-
-- or an explicit `LUNARSCOUT_MOONLIB_DLL` environment variable pointing at the
-  built `moonlib.dll`.
-
-Prebuilt native wheels are deferred.
-
-TODO: Document exact native runtime setup once distribution packaging is
-finalized.
+Production horizon generation requires a supported NVIDIA GPU. Reading stored
+horizons and running horizon-derived calculations do not: lightmaps,
+permanent-shadow maps, safe-haven maps, and landed mission-duration maps have
+CPU implementations, with CUDA acceleration selected when requested and
+available. Distribution extras for these product APIs will be documented when
+the public wrappers are promoted.
 
 ## Quick Start
 
@@ -258,19 +238,6 @@ shade, shade_georef = ls.hillshade(dem, georef)
 ```
 
 TODO: Document nodata handling and units for each terrain operation.
-
-Native GDAL-backed terrain products can also be generated directly from a
-scenario DEM when the native runtime is available:
-
-```python
-scenario.create_hillshade(overwrite=False)
-scenario.create_slope(overwrite=False)
-scenario.create_aspect(overwrite=False)
-scenario.create_roughness(overwrite=False)
-```
-
-These methods write to the canonical scenario paths: `hillshade.tif`,
-`slope.tif`, `aspect.tif`, and `roughness.tif`.
 
 ### Grid Alignment
 
@@ -525,53 +492,29 @@ fig, ax = ls.plot_body_elevations(
 )
 ```
 
-## Optional Native Features
+## Horizons and Lighting Products
 
-Native compute is optional. Pure-Python imports and pure-Python functionality
-must not initialize Python.NET, CLR, GDAL native bindings, SPICE, or `moonlib`.
+### Current API Status
 
-Capability checks do not initialize CLR:
+Scenario helpers for locating, reading, and plotting existing horizon tiles
+are public today. The Python implementations of horizon generation,
+time-series lightmaps, permanent-shadow maps, safe-haven maps, and landed
+mission-duration maps have passed substantial prototype validation, but remain
+under the private `_numba_horizon` package while their public signatures,
+packaging, and failure exceptions are finalized.
 
-```python
-status = ls.native.status()
+Do not import private product modules in durable user code. The descriptions
+below document the intended product behavior and file contracts so existing
+files can be understood and the forthcoming public API can be evaluated. They
+do not promise that the illustrative product names are currently exported.
 
-if status["available"]:
-    loaded_status = ls.native.initialize()
-```
+### Reading Stored Horizons
 
-Native temporal generation requires an explicit storage choice:
-
-```python
-time_range = ls.times("2027-01-01", "2027-01-08", step_hours=2)
-
-illumination = scenario.sun_fraction(
-    times=time_range,
-    storage="memory",
-)
-
-illumination_series = scenario.sun_fraction(
-    times=time_range,
-    storage="geotiff_series",
-    output="analysis/sun_fraction.temporal",
-)
-```
-
-Memory requests are rejected before native initialization when their exact
-output allocation exceeds the configured limit. Storage is never changed
-automatically.
-
-Scenario helpers can locate and read existing horizon tiles. DEM pixel
+Scenario helpers locate and read existing horizon tiles. DEM pixel
 coordinates are zero-based, with `x` as column and `y` as row. Horizon patches
 are 128 by 128 pixels.
 
 ```python
-scenario.generate_horizons(
-    compress_horizons=True,
-    surrounding_dems=[
-        "surrounding/mosaic_outer.tif",
-    ],
-)
-
 patch_x, patch_y = scenario.horizon_patch_pixel(x=257, y=130)
 patch_row, patch_col = scenario.horizon_patch_row_col(x=257, y=130)
 
@@ -592,11 +535,6 @@ if horizon is not None:
 
 scenario.close_horizon_file()
 ```
-
-`generate_horizons()` writes to `scenario.horizons_path()`. Pass explicit
-`dem_paths` when you want full control over the ordered DEM list, or pass
-`surrounding_dems` to prepend `scenario.dem_path()` automatically. Relative DEM
-paths are resolved below the scenario root.
 
 `horizon_file_path()` and `horizon_for_pixel()` prefer compressed `.cbin`
 tiles, fall back to `.bin`, and return `None` when neither file exists. The
@@ -790,20 +728,204 @@ fig, ax = scenario.plot_body_elevations(
 If `horizon=` is provided, that explicit horizon is used and no scenario
 horizon is fetched, even when `over_horizon=True`.
 
-Native permanent-shadow generation is an explicit file-producing operation:
+### Horizon Generation Contract
 
-```python
-psr_path = scenario.psr("analysis/psr.tif", overwrite=False)
+Horizon generation enumerates the DEM in row-major 128 by 128 patches,
+including partial patches along the right and bottom edges. Every horizon file
+still has the fixed 128 by 128 shape. Pixels outside the valid DEM extent in an
+edge file are filled with `-50` degrees; downstream raster products also mark
+those pixels invalid so the padding cannot be mistaken for measured terrain.
+
+Each valid pixel has 1,440 `float32` elevation-angle samples at 0.25-degree
+azimuth spacing. Sample 0 is north and sample 360 is east. Files use a
+pixel-major layout with azimuth samples contiguous within each pixel:
+
+```text
+horizon[pixel_y, pixel_x, azimuth_index]
 ```
 
-The current PSR product is a native-grid `uint8` GeoTIFF. Value `255` means the
-Sun center never clears the local horizon across the native operation's
-six-hour samples from 1970-01-01 through 2044-01-01. Value `0` means it clears
-the horizon at least once. A GDAL validity mask distinguishes unknown pixels
-whose required horizon tile was missing or unreadable.
+Uncompressed `.bin` files contain little-endian `float32` values. Compressed
+`.cbin` files preserve the established Lunarscout horizon format. Readers
+prefer `.cbin` when both forms exist.
 
-TODO: Document native input data requirements, supported products, and
-platform support in a stable public format.
+The generator combines an ordered list of DEMs cumulatively: the horizon from
+an earlier DEM participates in hierarchy culling for later DEMs.
+Maximum-elevation pyramids remain resident on the GPU across patches. CPU
+preparation, CUDA work, compression, and file writing stream the region instead
+of retaining a regional horizon cube. The current scheduler uses a one-item
+prepared-patch queue, a one-item writer queue, one CUDA stream, and a reusable
+pool of segment and output device buffers. Multiple streams were measured but
+did not materially improve throughput on the evaluation workload.
+
+The one-patch queue bounds keep preparation and compression/writing hidden in
+steady state. Neighboring-patch segment caching is intentionally disabled:
+segment generation is already hidden by CUDA execution, so a row-sized cache
+would currently add memory and eviction complexity without measured benefit.
+This decision must be revisited if a future workload leaves the CUDA consumer
+waiting for prepared work; parallel CPU preparation should be measured at the
+same time.
+
+Completed files are skipped by default. New files are staged and atomically
+published so a failed calculation cannot look complete or destroy an existing
+completed file.
+
+There is intentionally no production CPU fallback for horizon generation; the
+CPU implementation is too slow for operational use. CUDA kernels cannot be
+interrupted while running, so cancellation is checked between bounded patch
+units. Kernel compilation is lazy. The CPU and CUDA functions request Numba
+disk caching so compatible compiled artifacts can be reused by a later Python
+process; requiring a long-lived worker would not suit notebooks or short
+scripts. In the measured fresh-process case, cache reuse reduced the first CPU
+segment generation plus first CUDA execution from 13.85 to 7.31 seconds. CUDA
+context creation and the real first kernel execution still have startup cost.
+
+On the representative 16-patch sustained benchmark, the selected pipeline
+processed 0.179 patches per second, used about 9.02 GB of host memory, and
+peaked at 4,458 MiB of GPU memory. These figures include compression and
+staged file writes, but are hardware- and terrain-specific; see the
+[Phase 6 pipeline evaluation](numba-horizon-phase-6-production-pipeline.md)
+for scope and detailed timings.
+
+### Shared Tiled-Product Pipeline
+
+Horizon-derived products are computed patch-major because reading a horizon
+tile is often more expensive than applying all requested times or reductions
+to that tile. The shared pipeline follows this pattern:
+
+1. load one horizon file;
+2. calculate every requested result for that 128 by 128 patch; and
+3. write the corresponding compressed GeoTIFF tile or tiles.
+
+Outputs cover the full DEM grid and use compressed 128 by 128 tiles. Missing,
+unreadable, and out-of-DEM horizon pixels receive a deterministic payload and
+are marked invalid with the dataset mask. The payload is configurable and
+defaults to zero. Consumers must use the validity mask rather than infer
+validity from the payload value.
+
+Multi-time products are BigTIFF files with one band per UTC time. Each band is
+made of compressed 128 by 128 tiles. The band stores its ISO-8601 UTC timestamp
+and the dataset stores the complete ordered timestamp list. This layout is
+intended for mission-scale histories, such as two years sampled every six
+hours, and stays within TIFF's 65,535-band limit. A 74-year Metonic history is
+reduced while calculating a PSR map rather than stored as a time-series TIFF.
+
+Product backends use `backend="auto"`, `"cpu"`, or `"cuda"`. `auto` selects
+CUDA when it is usable and otherwise runs the CPU implementation. CPU support
+is an operational fallback for every horizon-derived product described below,
+not merely a diagnostic reference. Small CPU/CUDA floating-point differences
+are acceptable; values close to a hard threshold can amplify a tiny numerical
+difference into a larger duration difference.
+
+### Sun and Earth Vectors
+
+Product-level functions accept explicit Moon-ME Cartesian vectors as
+`float64` arrays shaped `(time, 3)`, paired with UTC timestamps. Supplying
+vectors overrides time-driven vector generation, which makes controlled tests
+and externally generated ephemerides possible.
+
+At the higher level, Lunarscout generates realistic vectors with SpiceyPy.
+Exact per-timestamp UTC-to-ephemeris-time conversion is the default. A faster
+anchored conversion may be selected only for a calculation and time range
+where its equivalence to exact conversion has been demonstrated. In
+particular, mission pointing requires subsecond accuracy; a coarse historical
+PSR sampling can tolerate a different error budget, but still needs explicit
+product-level justification.
+
+### Time-Series Lightmaps
+
+A lightmap is a `uint8` BigTIFF with one band per requested time. Each pixel is
+the modeled visible fraction of the solar disk, encoded by truncating
+`255 * fraction`. The current model samples 16 solar-disk slices and uses a
+0.27-degree apparent solar half-angle.
+
+The calculation loads one horizon tile, loops over all time batches, and writes
+one 128 by 128 output tile to each time band before moving to the next horizon
+file. Time batching bounds working memory without changing the file's
+band-per-time organization.
+
+### Body-Elevation Products
+
+The shared vector and horizon-sampling primitives also calculate Sun- or
+Earth-center elevation relative to the interpolated local terrain horizon at
+the body's azimuth. Separate private Sun and Earth product functions stream
+these values into `float32` BigTIFF bands and the same patch-major writer; the
+calculation also feeds mission-duration products. Their public facade remains
+provisional. Geometric elevation above a smooth local horizontal plane is
+available from the SPICE angle APIs, but is not substituted for
+terrain-relative elevation in lighting products.
+
+### Permanent Shadow
+
+The permanent-shadow-region product is a single-band `uint8` GeoTIFF. Value
+255 means the upper solar limb never clears the interpolated local horizon
+under the defined sampling and apparent-diameter model; value 0 means that it
+does. Invalid pixels have the configurable invalid payload plus an invalid
+dataset mask.
+
+The calculation does not create a Metonic lightmap cube. It chooses the
+highest Sun vector in each horizon azimuth bin as seen from the four DEM
+corners and center, unions those candidates, and reduces them directly into
+one output tile per horizon patch.
+
+### Safe-Haven Maps
+
+Safe-haven products find Earth outages as maximal half-open intervals during
+which the Earth-center elevation relative to the local terrain horizon is
+strictly below an Earth threshold. For every pixel and outage, the reducer
+records the longest contiguous interval whose sunlight fraction is strictly
+below the sunlight threshold. Durations are `float32`, in hours by default,
+and no truncation or duration clamp is applied. Each Earth outage is one output
+band, timestamped with the first occurrence of its minimum Earth elevation.
+
+### Landed Mission-Duration Maps
+
+Landed mission-duration products are sunlight calculations. A landing-slope
+mask can be combined with their output separately. The private engine
+implements four separate top-level operations rather than one function with a
+mode argument:
+
+- longest continuous sunlight fraction greater than or equal to a threshold;
+- longest continuous Sun-center elevation greater than or equal to a
+  threshold;
+- longest continuous sunlight fraction and Earth-center elevation, each
+  greater than or equal to its threshold; and
+- longest continuous Sun-center and Earth-center elevation, each greater than
+  or equal to its threshold.
+
+Sun and Earth elevation here always means body-center elevation relative to
+the local terrain horizon at the body's azimuth, not elevation above a smooth
+local horizontal plane. Every threshold comparison is inclusive.
+
+The caller supplies one overall evaluation interval and a list of smaller
+candidate-start intervals. The result is a multi-band `float32` GeoTIFF with
+one band per candidate-start interval and durations in hours or days. Helpers
+construct common monthly, weekly, and fixed-width interval lists.
+
+The condition sampled at time `t[i]` applies over `[t[i], t[i+1])`, clipped to
+the overall evaluation stop. A qualifying run may begin at the first sample
+inside a candidate-start interval even if the condition was already true, and
+may continue beyond that smaller interval. A run still true at the overall
+stop receives credit only through that stop; the result does not claim the run
+ended there.
+
+The patch reducer streams time and carries compact state rather than retaining
+a full time cube. The same stateful-reducer design can later support bounded
+outages, battery state-of-charge models, and user-supplied output quantizers,
+but those extensions are not implemented.
+
+### Resume, Overwrite, and Failure Behavior
+
+Long-running products resume by default. The writer keeps a hidden staged
+BigTIFF, a manifest describing the immutable job inputs, and a durable
+per-patch completion journal. For a multi-band product, one horizon patch is
+the recovery unit: if any result for that patch is missing, all of its bands
+are recomputed from the one loaded horizon file. A start-fresh option discards
+compatible staging state and begins again.
+
+Final output publication is atomic. A failed overwrite preserves the prior
+completed product. Cancellation and exceptions leave resumable staging state
+but never publish an incomplete file. Progress events are emitted and flushed
+at patch boundaries with completed, skipped, and total counts.
 
 ## Examples
 
@@ -817,7 +939,7 @@ Start with:
 ```
 
 Then continue through terrain, regions, alignment, temporal cubes,
-file-backed series, streaming reductions, and native examples as needed.
+file-backed series, streaming reductions, and lighting examples as needed.
 
 TODO: Add a recommended learning path once the example set is finalized.
 
@@ -839,16 +961,21 @@ More mature areas:
 - region operations;
 - UTC temporal ranges and `TemporalCube`;
 - file-backed temporal GeoTIFF series;
-- SPICE-backed local Sun/Earth histories; and
+- SPICE-backed local Sun/Earth histories;
+- horizon `.bin` and `.cbin` readers;
+- validated horizon-generation mathematics and CUDA traversal;
+- patch-streamed, resumable tiled-product storage;
+- CPU and CUDA lightmap and landed mission-duration calculations;
+- permanent-shadow and safe-haven product calculations; and
 - source boundary separation from Lunar Analyst application code.
 
 Less mature or explicitly provisional areas:
 
 - default SPICE kernel selection and descriptions;
-- high-level native temporal APIs;
-- native binary packaging;
-- public native product contracts;
-- native source layout after extraction from Lunar Analyst;
+- public horizon-generation and horizon-derived product APIs;
+- compute-backend packaging and cached first-use behavior;
+- structured public exceptions for product failures;
+- safe-haven performance validation;
 - CI and release automation;
 - platform-specific installation documentation.
 
@@ -863,12 +990,17 @@ Not public API:
 
 - names beginning with `_`;
 - tests;
-- examples;
-- C# internals unless documented as Python-callable library API.
+- examples; and
+- prototype implementations until promoted through documented public
+  facades.
 
 ## Architecture Overview
 
-The public Python package lives under `src/lunarscout`.
+The public Python package lives under `src/lunarscout`. The normative design is
+described in [ARCHITECTURE.md](ARCHITECTURE.md). Public modules validate user
+inputs and present notebook-friendly APIs; private engines handle bounded
+patch scheduling, CPU/CUDA sessions, horizon storage, and resumable GeoTIFF
+products. Heavy dependencies remain lazy so `import lunarscout` is lightweight.
 
 Core modules:
 
@@ -882,21 +1014,8 @@ Core modules:
 - `spice.py`: SPICE kernel download, cache, and furnishing helpers.
 - `spice_geometry.py`: local-frame Sun/Earth vector and angle histories.
 - `scenario.py`: filesystem-safe scenario path helpers only.
-- `native.py`: native capability discovery and public native entry points.
-- `native_temporal.py`: native temporal and lightmap-buffer APIs.
-- `native_product.py`: native file-producing products such as PSR rasters.
-- `_native_runtime/`: private runtime discovery and bootstrap implementation.
-
-Native source currently lives in:
-
-```text
-native/moonlib
-```
-
-The initial standalone extraction includes `moonlib` wholesale. This is a
-temporary migration posture. The native source and tests should be trimmed
-later to the library-owned surface after the public Python/native API is
-better understood.
+- `_numba_horizon/`: private horizon generation, CPU/CUDA lighting kernels,
+  product reducers, vector resolution, and resumable tiled-product machinery.
 
 The package must not contain FastAPI routes, web UI code, assistant/RAG logic,
 Lunar Analyst job handlers, scenario database mutation, or notebook-runner
@@ -904,14 +1023,18 @@ helpers.
 
 ## Testing
 
-Pure-Python tests live in `tests/`. Native C# tests live in `native/tests/`.
+Python tests live in `tests/`. Ordinary tests must run without a GPU. CUDA
+integration tests are explicitly enabled and distinguish GPU visibility,
+backend selection, and actual kernel execution.
 
 Representative commands:
 
 ```bash
-PYTHONPATH=src python -m pytest tests -q
-dotnet build native/moonlib/moonlib.csproj
-dotnet test native/tests/HorizonGen.Tests/HorizonGen.Tests.csproj --filter FullyQualifiedName~FillLightmapBuffersTests
+.venv/bin/python -m pytest -q
+
+LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 \
+PYTHONPATH=src \
+.venv/bin/python -m pytest tests/numba_horizon -q -p no:cacheprovider
 ```
 
 TODO: Replace representative local commands with release-quality verification
@@ -921,14 +1044,17 @@ instructions once CI and packaging are finalized.
 
 Current open work:
 
-- replace or redesign the old high-level temporal reducer default path so it
-  uses standalone native APIs rather than Lunar Analyst streaming adapters;
-- mature the high-level native temporal APIs;
-- decide native binary and wheel packaging after license and redistribution
-  review;
+- promote the validated private horizon and derived-product implementations
+  behind small public functions and `Scenario` conveniences;
+- finish structured exceptions, path preflight, progress, and cancellation
+  contracts for those public functions;
+- complete safe-haven performance measurements and longer end-to-end horizon
+  benchmarks with identical compression and write scope;
+- package CPU dependencies and optional CUDA acceleration for ordinary
+  notebooks and short-lived scripts, including reusable compiled caches;
 - add CI;
-- trim native source and tests to the minimal library-owned surface after
-  behavior is stable; and
+- remove transitional implementation and dependency artifacts after the
+  Python product APIs satisfy their retirement gates; and
 - expand the user guide with complete installation, data, and product
   reference sections.
 
@@ -942,7 +1068,7 @@ The following sections are expected but not ready to fill in:
 - nodata and mask conventions;
 - performance guidance;
 - memory and disk sizing guidance;
-- native runtime troubleshooting;
+- CPU and CUDA backend troubleshooting;
 - release and compatibility policy;
 - contribution guide; and
 - security and data provenance notes.

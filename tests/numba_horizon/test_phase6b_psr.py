@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 import rasterio
 
+from lunarscout._numba_horizon.cuda_backend import CudaBackendError
 from lunarscout._numba_horizon.file_format import AZIMUTH_COUNT
 from lunarscout._numba_horizon.file_format import HorizonTileStore
 from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
@@ -356,3 +357,60 @@ def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
         assert dataset.read(1)[0, 128] == 9
         assert np.all(dataset.dataset_mask()[:, :128] == 255)
         assert dataset.dataset_mask()[0, 128] == 0
+
+
+def test_psr_auto_backend_falls_back_to_cpu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lunarscout._numba_horizon import psr_cuda
+
+    class UnavailableCudaSession:
+        def __init__(self, **_kwargs) -> None:
+            raise CudaBackendError("deliberately unavailable")
+
+    monkeypatch.setattr(psr_cuda, "PsrCudaSession", UnavailableCudaSession)
+    dem = _dem()
+    horizons = HorizonTileStore(tmp_path / "horizons")
+    horizons.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+
+    result = run_psr_product(
+        dem=dem,
+        georef=_georef(1, 1),
+        horizon_store=horizons,
+        output_path=tmp_path / "auto-psr.tif",
+        sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
+        backend="auto",
+    )
+
+    with rasterio.open(result) as dataset:
+        assert dataset.read(1).item() == 0
+
+
+def test_psr_explicit_cuda_does_not_silently_fall_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lunarscout._numba_horizon import psr_cuda
+
+    class UnavailableCudaSession:
+        def __init__(self, **_kwargs) -> None:
+            raise CudaBackendError("deliberately unavailable")
+
+    monkeypatch.setattr(psr_cuda, "PsrCudaSession", UnavailableCudaSession)
+
+    with pytest.raises(CudaBackendError, match="deliberately unavailable"):
+        run_psr_product(
+            dem=_dem(),
+            georef=_georef(1, 1),
+            horizon_store=HorizonTileStore(tmp_path / "horizons"),
+            output_path=tmp_path / "cuda-psr.tif",
+            sun_vectors_m=np.asarray(((1.0, 2.0, 3.0),)),
+            backend="cuda",
+        )

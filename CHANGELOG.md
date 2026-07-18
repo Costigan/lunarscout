@@ -6,6 +6,19 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Unified private downstream backend and operational behavior. PSR now accepts
+  explicit `auto`, `cpu`, and `cuda` selection, automatically falls back to
+  its CPU implementation only for `auto`, and preserves explicit CUDA
+  capability failures. Safe-haven generation now reports immediately flushed
+  patch progress, checks cancellation across horizon reads and streamed time
+  calculations, leaves resumable staging state, and resumes at the durable
+  patch boundary. Forced-unavailable-CUDA tests now cover automatic CPU
+  fallback for lightmaps, PSR, safe havens, and mission-duration products.
+- Added separate private Sun- and Earth-elevation products. Each streams the
+  shared CPU/CUDA body-center local-horizon-margin calculation into one
+  timestamped `float32` BigTIFF band per vector, with bounded time batches,
+  `auto` CPU fallback, masks, cancellation, and durable patch-level resume.
+  Complete CPU and CUDA file pipelines agree in the explicit GPU test.
 - Added private landed mission-duration products for four independently named
   conditions: sunlight fraction, Sun-center local-horizon margin, sunlight plus
   Earth-center margin, and Sun-center plus Earth-center margins. Inclusive

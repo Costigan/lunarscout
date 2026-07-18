@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TextIO
 
 import numpy as np
 import numpy.typing as npt
@@ -16,7 +17,7 @@ from lunarscout.georeference import GeoReference
 from .file_format import HorizonTileStore
 from .geometry import DemGrid
 from .lightmap_cpu import LightmapCpuSession
-from .pipeline import enumerate_patches
+from .pipeline import PatchDescriptor, enumerate_patches
 from .product_store import ProductJob, ResumableTiledProduct
 from .psr import _azimuth_elevation_deg, _pixel_frame, _validate_vectors
 from .psr_pipeline import _inventory_identity
@@ -24,6 +25,19 @@ from .safe_haven import find_earth_outages, reduce_safe_haven_patch_stream
 
 
 FractionCalculator = Callable[..., Iterable[npt.ArrayLike]]
+
+
+class SafeHavenPipelineCancelled(RuntimeError):
+    """Cancellation observed between bounded safe-haven work units."""
+
+
+@dataclass(frozen=True, slots=True)
+class SafeHavenProgress:
+    completed_patches: int
+    total_patches: int
+    tile_y: int | None
+    tile_x: int | None
+    state: str
 
 
 def run_safe_haven_product(
@@ -45,6 +59,9 @@ def run_safe_haven_product(
     time_batch_size: int = 32,
     fraction_calculator: FractionCalculator | None = None,
     backend: Literal["auto", "cpu", "cuda"] = "auto",
+    cancellation_requested: Callable[[], bool] | None = None,
+    progress_callback: Callable[[SafeHavenProgress], None] | None = None,
+    progress_stream: TextIO | None = None,
 ) -> Path:
     """Write one float32 duration band per center-view Earth outage."""
     if (georef.width, georef.height) != (dem.width, dem.height):
@@ -70,6 +87,8 @@ def run_safe_haven_product(
     )
     if backend not in ("auto", "cpu", "cuda"):
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
+    if time_batch_size < 1:
+        raise ValueError("time_batch_size must be positive")
     if fraction_calculator is not None:
         calculator = fraction_calculator
     elif backend == "cpu":
@@ -118,36 +137,93 @@ def run_safe_haven_product(
         overwrite=overwrite,
         start_fresh=start_fresh,
     )
+
+    def cancelled() -> bool:
+        return bool(cancellation_requested and cancellation_requested())
+
+    completed = len(product.completed_patches)
+
+    def report(patch: PatchDescriptor | None, state: str) -> None:
+        event = SafeHavenProgress(
+            completed,
+            len(patches),
+            None if patch is None else patch.tile_y,
+            None if patch is None else patch.tile_x,
+            state,
+        )
+        if progress_callback is not None:
+            progress_callback(event)
+        if progress_stream is not None:
+            location = "" if patch is None else f" row={patch.tile_y} col={patch.tile_x}"
+            print(
+                f"Safe haven {state}:{location} {completed}/{len(patches)} patches",
+                file=progress_stream,
+                flush=True,
+            )
+
+    report(None, "start")
     for patch in patches:
         if product.is_complete(patch.tile_y, patch.tile_x):
             continue
+        if cancelled():
+            raise SafeHavenPipelineCancelled(
+                "safe-haven generation was cancelled"
+            )
+        report(patch, "read")
         try:
             horizons = horizon_store.read(
                 patch.tile_y, patch.tile_x, observer_elevation_m
             )
         except (OSError, ValueError):
             horizons = None
+        if cancelled():
+            raise SafeHavenPipelineCancelled(
+                "safe-haven generation was cancelled"
+            )
         if horizons is None:
             product.write_invalid_patch(patch.tile_y, patch.tile_x)
-            continue
-        fractions = calculator(
-            dem,
-            horizons,
-            sun_vectors,
-            tile_y=patch.tile_y,
-            tile_x=patch.tile_x,
-            valid_height=patch.height,
-            valid_width=patch.width,
-        )
-        duration_tiles = reduce_safe_haven_patch_stream(
-            fractions,
-            len(timestamps),
-            outages,
-            sunlight_threshold=sunlight_threshold,
-            time_step_hours=time_step_hours,
-        )
-        product.write_patch(patch.tile_y, patch.tile_x, duration_tiles)
-    return product.finalize()
+            state = "invalid"
+        else:
+            report(patch, "calculate")
+            fractions = calculator(
+                dem,
+                horizons,
+                sun_vectors,
+                tile_y=patch.tile_y,
+                tile_x=patch.tile_x,
+                valid_height=patch.height,
+                valid_width=patch.width,
+            )
+
+            def checked_fractions() -> Iterable[npt.ArrayLike]:
+                for tile in fractions:
+                    if cancelled():
+                        raise SafeHavenPipelineCancelled(
+                            "safe-haven generation was cancelled"
+                        )
+                    yield tile
+
+            duration_tiles = reduce_safe_haven_patch_stream(
+                checked_fractions(),
+                len(timestamps),
+                outages,
+                sunlight_threshold=sunlight_threshold,
+                time_step_hours=time_step_hours,
+            )
+            if cancelled():
+                raise SafeHavenPipelineCancelled(
+                    "safe-haven generation was cancelled"
+                )
+            report(patch, "write")
+            product.write_patch(patch.tile_y, patch.tile_x, duration_tiles)
+            state = "valid"
+        completed += 1
+        report(patch, state)
+    if cancelled():
+        raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
+    result = product.finalize()
+    report(None, "complete")
+    return result
 
 
 def run_safe_haven_product_cpu(**kwargs) -> Path:

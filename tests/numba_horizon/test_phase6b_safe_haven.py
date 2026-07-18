@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from io import StringIO
 import numpy as np
 import os
 import pytest
 import rasterio
 from pathlib import Path
+import threading
 
+from lunarscout._numba_horizon.cuda_backend import CudaBackendError
 from lunarscout._numba_horizon.file_format import AZIMUTH_COUNT, HorizonTileStore
 from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
 from lunarscout._numba_horizon.psr import _pixel_frame
@@ -17,7 +20,11 @@ from lunarscout._numba_horizon.safe_haven import (
     reduce_safe_haven_patch,
     reduce_safe_haven_patch_stream,
 )
-from lunarscout._numba_horizon.safe_haven_pipeline import run_safe_haven_product_cpu
+from lunarscout._numba_horizon.safe_haven_pipeline import (
+    SafeHavenPipelineCancelled,
+    run_safe_haven_product,
+    run_safe_haven_product_cpu,
+)
 from lunarscout.georeference import GeoReference
 
 
@@ -137,6 +144,113 @@ def test_cpu_safe_haven_pipeline_writes_float_duration_bands(tmp_path: Path) -> 
         np.testing.assert_array_equal(dataset.read()[:, 0, 0], (5.0, 2.5))
         assert dataset.tags(1)["TIMESTAMP_UTC"] == "2027-01-01T06:00:00.000000Z"
         assert dataset.tags(2)["TIMESTAMP_UTC"] == "2027-01-01T18:00:00.000000Z"
+
+
+def test_safe_haven_auto_backend_falls_back_to_cpu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lunarscout._numba_horizon import lightmap_cuda
+
+    class UnavailableCudaSession:
+        def __init__(self, **_kwargs) -> None:
+            raise CudaBackendError("deliberately unavailable")
+
+    monkeypatch.setattr(lightmap_cuda, "LightmapCudaSession", UnavailableCudaSession)
+    dem = _dem()
+    store = HorizonTileStore(tmp_path / "horizons")
+    store.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+    times = ("2027-01-01T00:00:00Z", "2027-01-01T06:00:00Z")
+
+    output = run_safe_haven_product(
+        dem=dem,
+        georef=_georef(),
+        horizon_store=store,
+        output_path=tmp_path / "auto-safe-haven.tif",
+        times_utc=times,
+        sun_vectors_m=np.stack((_position(dem, -1.0), _position(dem, -1.0))),
+        earth_vectors_m=np.stack((_position(dem, 0.0), _position(dem, 0.0))),
+        time_step_hours=6.0,
+        backend="auto",
+    )
+
+    with rasterio.open(output) as dataset:
+        assert dataset.read(1).item() == 12.0
+
+
+def test_safe_haven_cancellation_is_checked_during_time_stream_and_resumes(
+    tmp_path: Path,
+) -> None:
+    dem = _dem()
+    store = HorizonTileStore(tmp_path / "horizons")
+    store.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+    times = ("2027-01-01T00:00:00Z", "2027-01-01T06:00:00Z")
+    cancelled = threading.Event()
+
+    def interrupted_fractions(*_args, **_kwargs):
+        yield np.asarray([[0.1]], dtype=np.float32)
+        cancelled.set()
+        yield np.asarray([[0.1]], dtype=np.float32)
+
+    common = dict(
+        dem=dem,
+        georef=_georef(),
+        horizon_store=store,
+        output_path=tmp_path / "resumed-safe-haven.tif",
+        times_utc=times,
+        sun_vectors_m=np.stack((_position(dem, -1.0), _position(dem, -1.0))),
+        earth_vectors_m=np.stack((_position(dem, 0.0), _position(dem, 0.0))),
+        time_step_hours=6.0,
+    )
+    with pytest.raises(SafeHavenPipelineCancelled):
+        run_safe_haven_product(
+            **common,
+            fraction_calculator=interrupted_fractions,
+            cancellation_requested=cancelled.is_set,
+        )
+
+    assert not common["output_path"].exists()
+    progress_stream = StringIO()
+    progress = []
+
+    def completed_fractions(*_args, **_kwargs):
+        yield np.asarray([[0.1]], dtype=np.float32)
+        yield np.asarray([[0.1]], dtype=np.float32)
+
+    result = run_safe_haven_product(
+        **common,
+        fraction_calculator=completed_fractions,
+        progress_callback=progress.append,
+        progress_stream=progress_stream,
+    )
+
+    assert result == common["output_path"]
+    assert [event.state for event in progress] == [
+        "start",
+        "read",
+        "calculate",
+        "write",
+        "valid",
+        "complete",
+    ]
+    assert progress_stream.getvalue().endswith(
+        "Safe haven complete: 1/1 patches\n"
+    )
 
 
 @pytest.mark.skipif(
