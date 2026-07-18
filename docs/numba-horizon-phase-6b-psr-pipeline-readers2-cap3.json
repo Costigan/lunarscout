@@ -1,0 +1,381 @@
+{
+  "bounds": {
+    "configured_decoded_horizon_capacity": 3,
+    "configured_maximum_decoded_horizon_bytes": 283115520,
+    "configured_reader_worker_count": 2,
+    "configured_writer_queue_capacity": 1,
+    "cuda_dequeue_wait": {
+      "count": 16,
+      "maximum_seconds": 0.17663733900008083,
+      "mean_seconds": 0.07517475806247376,
+      "median_seconds": 0.07077909499980706,
+      "p95_seconds": 0.15540292574974046,
+      "total_seconds": 1.20279612899958
+    },
+    "maximum_live_decoded_horizon_bytes": 283115520,
+    "maximum_live_decoded_horizons": 3,
+    "maximum_reader_queue_depth": 2,
+    "maximum_writer_queue_depth": 1,
+    "reader_enqueue_wait": {
+      "count": 16,
+      "maximum_seconds": 2.326499998162035e-05,
+      "mean_seconds": 9.104875005050417e-06,
+      "median_seconds": 7.321499879253679e-06,
+      "p95_seconds": 2.1336749910005892e-05,
+      "total_seconds": 0.00014567800008080667
+    },
+    "writer_dequeue_wait": {
+      "count": 16,
+      "maximum_seconds": 0.19777377699983845,
+      "mean_seconds": 0.07758165043753706,
+      "median_seconds": 0.07433714250009871,
+      "p95_seconds": 0.17050462600002447,
+      "total_seconds": 1.241306407000593
+    },
+    "writer_enqueue_wait": {
+      "count": 16,
+      "maximum_seconds": 1.3071000012132572e-05,
+      "mean_seconds": 7.282375008799136e-06,
+      "median_seconds": 6.5914998685912e-06,
+      "p95_seconds": 1.0829249845301092e-05,
+      "total_seconds": 0.00011651800014078617
+    }
+  },
+  "control": {
+    "elapsed_seconds": 3.11774533300013,
+    "file_bytes": 2640,
+    "file_sha256": "ad46d290db861fe210cfd48c7ef94779bb77d177ce392d3e85d4a0b15b9db6ed",
+    "patches_per_second": 5.131913703998265
+  },
+  "identity": {
+    "file_hash_equal": true,
+    "mask_mismatch_count": 0,
+    "metadata_equal": true,
+    "pixel_mismatch_count": 0
+  },
+  "input": {
+    "all_valid": true,
+    "dem_path": "/e/lunar_analyst_scenarios/mons-mouton/dem.tif",
+    "dem_sha256": "1b5cdb5c9d656cd6ff84dd3671ffd40ef8eeee99e85d0020b8d5b3e9e62d3497",
+    "height": 512,
+    "horizon_paths": [
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00000_00000_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00000_00128_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00000_00256_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00000_00384_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00128_00000_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00128_00128_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00128_00256_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00128_00384_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00256_00000_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00256_00128_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00256_00256_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00256_00384_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00384_00000_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00384_00128_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00384_00256_000.cbin",
+      "/e/lunar_analyst_scenarios/mons-mouton/horizons/horizon_00384_00384_000.cbin"
+    ],
+    "horizon_root": "/e/lunar_analyst_scenarios/mons-mouton/horizons",
+    "horizon_sha256": [
+      "7e85109c6afc7c47ec7792b7b2cc49846242949b0c76fe7f1e690bdbd4838eae",
+      "e6a9dd7b09b43f1a51c7fe3c75b8db5ce8d46af434c3b8573feee86b5c998520",
+      "29913b30c3511cb591bb6e0c0d705af674753b39ca685c14d1990794f807b0e8",
+      "c68214eff1f55edad91c45428bd5a78d8d5bc0bad4e8154abfb65ea9f4aeaef1",
+      "d960e19fbcc06a206ea8b89f661d8637c0019f6a16003cc2aef71ab815ccceb4",
+      "353277e00a5ebcaeb4965c4e3ad30e9c29541acff7ab5b8e5cd2dbc9df6908ec",
+      "f32ffc27062eba9a015aa9e371e294e5eae78a5fd6b7d34f2fac707cc836d191",
+      "67544d5a271b9e6300bfa70677d88fa5eed3164e7c6efac17413f989c5abb980",
+      "9a588a6ab20d5e23b282b7f1249202f50f4abe931c599166308b323d27905612",
+      "8c4fb249136e72c21e38bdc609d00601a6b1eb9e83ab9d67b1340fc647ba2ad3",
+      "1d6c454fa0e392cd90ce86db4e4aec85c8e897ff7af600fdf2f78c06fa67e123",
+      "76dda4aa6d17a20455bf2650a734376fd376a095234d175c7b8e627ca2712c8d",
+      "2805cc190af6384b16a6d0a65a56b2690acf41e2d8165b78de4c9a9d0d8083e8",
+      "11ebc8140d3c4a5e48700bb63ff81a251f447a673a879f132ccff9081ab7f0a4",
+      "cf6c8a9efaf1b1524f9a58a63300ff2f8772ede43b68a172e760336703cdde02",
+      "4d0b5c8b8c500eb6c4f984081fbbcef7bfe68c162706815c1ab9ce031459201d"
+    ],
+    "patch_columns": 4,
+    "patch_count": 16,
+    "patch_rows": 4,
+    "reduced_vector_count": 2205,
+    "reduced_vector_indices_sha256": "18cf3893d1daac2cf3403e4df93a338358cab9c974de7598b76d2266386946d6",
+    "scenario": "/e/lunar_analyst_scenarios/mons-mouton",
+    "vector_count": 108113,
+    "width": 512
+  },
+  "instrumented": {
+    "elapsed_seconds": 1.7176665619999767,
+    "file_bytes": 2640,
+    "file_sha256": "ad46d290db861fe210cfd48c7ef94779bb77d177ce392d3e85d4a0b15b9db6ed",
+    "patches_per_second": 9.314962725577129,
+    "pipeline_mode": "bounded",
+    "stages": {
+      "calculation_boundary": {
+        "count": 16,
+        "maximum_seconds": 0.02721643099994253,
+        "mean_seconds": 0.01861772399996653,
+        "median_seconds": 0.01805602750005164,
+        "minimum_seconds": 0.014865924000332598,
+        "p95_seconds": 0.022649476999731633,
+        "total_seconds": 0.29788358399946446
+      },
+      "cbin_decompression": {
+        "count": 16,
+        "maximum_seconds": 0.15520591799986505,
+        "mean_seconds": 0.1427476741250473,
+        "median_seconds": 0.14194149050013039,
+        "minimum_seconds": 0.13768990000016856,
+        "p95_seconds": 0.1515142702500043,
+        "total_seconds": 2.2839627860007568
+      },
+      "compressed_file_read": {
+        "count": 16,
+        "maximum_seconds": 0.007329623999794421,
+        "mean_seconds": 0.0034798918750027497,
+        "median_seconds": 0.0029152780000458733,
+        "minimum_seconds": 0.0027712139999493957,
+        "p95_seconds": 0.007225032750170612,
+        "total_seconds": 0.055678270000043995
+      },
+      "cuda_calculation_boundary": {
+        "count": 16,
+        "maximum_seconds": 0.02719213000000309,
+        "mean_seconds": 0.01858213624998939,
+        "median_seconds": 0.01802710400011165,
+        "minimum_seconds": 0.014837652000096568,
+        "p95_seconds": 0.02262419199996657,
+        "total_seconds": 0.29731417999983023
+      },
+      "cuda_dequeue_wait": {
+        "count": 16,
+        "maximum_seconds": 0.17663733900008083,
+        "mean_seconds": 0.07517475806247376,
+        "median_seconds": 0.07077909499980706,
+        "minimum_seconds": 0.002861528000266844,
+        "p95_seconds": 0.15540292574974046,
+        "total_seconds": 1.20279612899958
+      },
+      "cuda_synchronization_boundary": {
+        "count": 16,
+        "maximum_seconds": 0.0016029480002544005,
+        "mean_seconds": 0.0014787634375181824,
+        "median_seconds": 0.0014486390000456595,
+        "minimum_seconds": 0.0014228920003915846,
+        "p95_seconds": 0.0016007460000082574,
+        "total_seconds": 0.02366021500029092
+      },
+      "d2h_result": {
+        "count": 16,
+        "maximum_seconds": 7.635399970240542e-05,
+        "mean_seconds": 4.7107687464631454e-05,
+        "median_seconds": 4.323800021666102e-05,
+        "minimum_seconds": 3.3695000183797674e-05,
+        "p95_seconds": 7.503774997985602e-05,
+        "total_seconds": 0.0007537229994341033
+      },
+      "finalize": {
+        "count": 1,
+        "maximum_seconds": 0.0038653910000903124,
+        "mean_seconds": 0.0038653910000903124,
+        "median_seconds": 0.0038653910000903124,
+        "minimum_seconds": 0.0038653910000903124,
+        "p95_seconds": 0.0038653910000903124,
+        "total_seconds": 0.0038653910000903124
+      },
+      "h2d_dem": {
+        "count": 16,
+        "maximum_seconds": 0.0006040680000296561,
+        "mean_seconds": 0.00018531593758552845,
+        "median_seconds": 0.00015557999995507998,
+        "minimum_seconds": 0.00010531999987506424,
+        "p95_seconds": 0.0003334027502432946,
+        "total_seconds": 0.002965055001368455
+      },
+      "h2d_horizon": {
+        "count": 16,
+        "maximum_seconds": 0.010063811000236456,
+        "mean_seconds": 0.007793434875026151,
+        "median_seconds": 0.007428163999975368,
+        "minimum_seconds": 0.006184722000398324,
+        "p95_seconds": 0.009889720249930178,
+        "total_seconds": 0.12469495800041841
+      },
+      "h2d_metadata": {
+        "count": 16,
+        "maximum_seconds": 0.0002096729999720992,
+        "mean_seconds": 0.00015199056247183762,
+        "median_seconds": 0.00014951499997550854,
+        "minimum_seconds": 0.00010589000021354877,
+        "p95_seconds": 0.000207501749741823,
+        "total_seconds": 0.002431848999549402
+      },
+      "h2d_vectors": {
+        "count": 16,
+        "maximum_seconds": 0.00014611899996452848,
+        "mean_seconds": 0.00011028106246158131,
+        "median_seconds": 0.00011261450003985374,
+        "minimum_seconds": 7.527600018875091e-05,
+        "p95_seconds": 0.0001386580000826143,
+        "total_seconds": 0.001764496999385301
+      },
+      "horizon_inventory": {
+        "count": 1,
+        "maximum_seconds": 0.09463930399988385,
+        "mean_seconds": 0.09463930399988385,
+        "median_seconds": 0.09463930399988385,
+        "minimum_seconds": 0.09463930399988385,
+        "p95_seconds": 0.09463930399988385,
+        "total_seconds": 0.09463930399988385
+      },
+      "horizon_lookup": {
+        "count": 16,
+        "maximum_seconds": 0.04171260999964943,
+        "mean_seconds": 0.03546122024991405,
+        "median_seconds": 0.0358995584999775,
+        "minimum_seconds": 0.0243917490001877,
+        "p95_seconds": 0.04169147424977382,
+        "total_seconds": 0.5673795239986248
+      },
+      "host_patch_preparation": {
+        "count": 16,
+        "maximum_seconds": 0.015883264999956737,
+        "mean_seconds": 0.00829874999999447,
+        "median_seconds": 0.008001226000033057,
+        "minimum_seconds": 0.00613739699974758,
+        "p95_seconds": 0.011344883000106165,
+        "total_seconds": 0.13277999999991152
+      },
+      "journal_persistence": {
+        "count": 16,
+        "maximum_seconds": 0.007040147999759938,
+        "mean_seconds": 0.00480792493740978,
+        "median_seconds": 0.004861067499859928,
+        "minimum_seconds": 0.001657933999922534,
+        "p95_seconds": 0.006410832749907058,
+        "total_seconds": 0.07692679899855648
+      },
+      "kernel_execution_gpu": {
+        "count": 16,
+        "maximum_seconds": 0.0018616960048675538,
+        "mean_seconds": 0.0016250359937548637,
+        "median_seconds": 0.0016122400164604188,
+        "minimum_seconds": 0.0015807679891586303,
+        "p95_seconds": 0.001716207981109619,
+        "total_seconds": 0.02600057590007782
+      },
+      "kernel_launch": {
+        "count": 16,
+        "maximum_seconds": 0.00020938399984515854,
+        "mean_seconds": 0.00016853137492489623,
+        "median_seconds": 0.0001665135000621376,
+        "minimum_seconds": 0.00013821899983668118,
+        "p95_seconds": 0.0002023797499077773,
+        "total_seconds": 0.0026965019987983396
+      },
+      "patch_total": {
+        "count": 16,
+        "maximum_seconds": 0.2485562460001347,
+        "mean_seconds": 0.2357069327500767,
+        "median_seconds": 0.23574623050012633,
+        "minimum_seconds": 0.22120426300034524,
+        "p95_seconds": 0.2465347372500446,
+        "total_seconds": 3.7713109240012272
+      },
+      "pipeline_total": {
+        "count": 1,
+        "maximum_seconds": 1.7168509580001228,
+        "mean_seconds": 1.7168509580001228,
+        "median_seconds": 1.7168509580001228,
+        "minimum_seconds": 1.7168509580001228,
+        "p95_seconds": 1.7168509580001228,
+        "total_seconds": 1.7168509580001228
+      },
+      "product_initialize": {
+        "count": 1,
+        "maximum_seconds": 0.026429069000187155,
+        "mean_seconds": 0.026429069000187155,
+        "median_seconds": 0.026429069000187155,
+        "minimum_seconds": 0.026429069000187155,
+        "p95_seconds": 0.026429069000187155,
+        "total_seconds": 0.026429069000187155
+      },
+      "reader_enqueue_wait": {
+        "count": 16,
+        "maximum_seconds": 2.326499998162035e-05,
+        "mean_seconds": 9.104875005050417e-06,
+        "median_seconds": 7.321499879253679e-06,
+        "minimum_seconds": 1.731999873300083e-06,
+        "p95_seconds": 2.1336749910005892e-05,
+        "total_seconds": 0.00014567800008080667
+      },
+      "tiff_synchronize": {
+        "count": 16,
+        "maximum_seconds": 0.013994809999985591,
+        "mean_seconds": 0.0064908550624238615,
+        "median_seconds": 0.0034024499998395186,
+        "minimum_seconds": 0.00204813100026513,
+        "p95_seconds": 0.013738717999899563,
+        "total_seconds": 0.10385368099878178
+      },
+      "tiff_write_close": {
+        "count": 16,
+        "maximum_seconds": 0.015069962999859854,
+        "mean_seconds": 0.00612629618743199,
+        "median_seconds": 0.005145893000189972,
+        "minimum_seconds": 0.004150553999807016,
+        "p95_seconds": 0.009953306999932465,
+        "total_seconds": 0.09802073899891184
+      },
+      "vector_reduction": {
+        "count": 1,
+        "maximum_seconds": 0.06962898799974937,
+        "mean_seconds": 0.06962898799974937,
+        "median_seconds": 0.06962898799974937,
+        "minimum_seconds": 0.06962898799974937,
+        "p95_seconds": 0.06962898799974937,
+        "total_seconds": 0.06962898799974937
+      },
+      "writer_dequeue_wait": {
+        "count": 16,
+        "maximum_seconds": 0.19777377699983845,
+        "mean_seconds": 0.07758165043753706,
+        "median_seconds": 0.07433714250009871,
+        "minimum_seconds": 2.9960001484141685e-06,
+        "p95_seconds": 0.17050462600002447,
+        "total_seconds": 1.241306407000593
+      },
+      "writer_enqueue_wait": {
+        "count": 16,
+        "maximum_seconds": 1.3071000012132572e-05,
+        "mean_seconds": 7.282375008799136e-06,
+        "median_seconds": 6.5914998685912e-06,
+        "minimum_seconds": 4.648999947676202e-06,
+        "p95_seconds": 1.0829249845301092e-05,
+        "total_seconds": 0.00011651800014078617
+      }
+    }
+  },
+  "notes": [
+    "The control run is serial; the instrumented run uses the requested pipeline mode and bounds.",
+    "Horizon lookup includes the current structural completeness scan of each candidate file.",
+    "kernel_execution_gpu is CUDA event time; cuda_synchronization_boundary is wall time that includes waiting for the same kernel and is non-additive.",
+    "TIFF outputs were created under an isolated temporary directory and removed after comparison.",
+    "Process max RSS before the measured pair was 630145024 bytes."
+  ],
+  "resource_usage": {
+    "gpu_utilization_maximum_percent": 10,
+    "gpu_utilization_mean_percent": 3.9473684210526314,
+    "gpu_utilization_p95_percent": 10.0,
+    "gpu_utilization_sample_count": 19,
+    "logical_cpu_count": 24,
+    "process_cpu_core_equivalents": 2.0473362396397685,
+    "process_cpu_percent_of_one_core": 204.73362396397684,
+    "process_cpu_seconds": 3.5166410000000012,
+    "process_max_rss_bytes": 976793600,
+    "sampled_peak_host_rss_bytes": 903344128,
+    "sampled_peak_process_gpu_memory_mib": 348
+  },
+  "schema": "lunarscout-numba-phase6b-psr-pipeline-instrumentation-v1",
+  "vector_generation_seconds": 1.1331929209995906
+}

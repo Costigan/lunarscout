@@ -32,6 +32,7 @@ from lunarscout._numba_horizon.psr_pipeline import (
     run_psr_product,
 )
 from lunarscout._numba_horizon.psr_cuda import PsrCudaSession
+from lunarscout._numba_horizon.product_store import ResumableTiledProduct
 from lunarscout.georeference import GeoReference
 
 
@@ -204,7 +205,8 @@ def test_numba_cuda_psr_matches_actual_csharp_ilgpu_kernel_fixture() -> None:
         base64.b64decode(case["output_base64"]), dtype=np.uint8
     ).reshape(128, 128)
 
-    actual = PsrCudaSession().compute_patch(
+    timing = []
+    actual = PsrCudaSession(timing_callback=timing.append).compute_patch(
         dem,
         horizons,
         np.asarray(case["sun_vectors_m"], dtype=np.float64).reshape(-1, 3),
@@ -213,6 +215,10 @@ def test_numba_cuda_psr_matches_actual_csharp_ilgpu_kernel_fixture() -> None:
     )
 
     np.testing.assert_array_equal(actual, expected)
+    assert len(timing) == 1
+    assert timing[0].kernel_execution_seconds > 0.0
+    assert timing[0].h2d_horizon_seconds >= 0.0
+    assert timing[0].d2h_result_seconds >= 0.0
 
 
 def test_explicit_vectors_override_generation_arguments_without_spice(
@@ -298,8 +304,15 @@ def _georef(width: int, height: int) -> GeoReference:
     )
 
 
+@pytest.mark.parametrize(
+    ("pipeline_mode", "reader_worker_count", "decoded_horizon_capacity"),
+    (("serial", 1, 1), ("bounded", 1, 2), ("bounded", 2, 3)),
+)
 def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
     tmp_path: Path,
+    pipeline_mode: str,
+    reader_worker_count: int,
+    decoded_horizon_capacity: int,
 ) -> None:
     dem = _dem(width=129, height=1)
     horizons = HorizonTileStore(tmp_path / "horizons")
@@ -333,6 +346,9 @@ def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
             cancellation_requested=cancelled.is_set,
             progress_callback=fractions.append,
             progress_event_callback=on_progress,
+            pipeline_mode=pipeline_mode,
+            reader_worker_count=reader_worker_count,
+            decoded_horizon_capacity=decoded_horizon_capacity,
         )
 
     assert not output.exists()
@@ -353,6 +369,9 @@ def test_psr_pipeline_resumes_by_horizon_patch_and_marks_missing_tiles_invalid(
         invalid_value=9,
         progress_callback=resumed_fractions.append,
         progress_stream=progress_stream,
+        pipeline_mode=pipeline_mode,
+        reader_worker_count=reader_worker_count,
+        decoded_horizon_capacity=decoded_horizon_capacity,
     )
 
     assert result == output
@@ -398,6 +417,194 @@ def test_psr_auto_backend_falls_back_to_cpu(
 
     with rasterio.open(result) as dataset:
         assert dataset.read(1).item() == 0
+
+
+def test_psr_pipeline_reports_opt_in_stage_timings(tmp_path: Path) -> None:
+    dem = _dem()
+    horizons = HorizonTileStore(tmp_path / "horizons")
+    horizons.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+    timings = []
+
+    run_psr_product(
+        dem=dem,
+        georef=_georef(1, 1),
+        horizon_store=horizons,
+        output_path=tmp_path / "timed-psr.tif",
+        sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
+        backend="cpu",
+        timing_callback=timings.append,
+    )
+
+    by_stage = {item.stage: item for item in timings}
+    expected_patch_stages = {
+        "horizon_lookup",
+        "compressed_file_read",
+        "cbin_decompression",
+        "calculation_boundary",
+        "tiff_write_close",
+        "tiff_synchronize",
+        "journal_persistence",
+        "patch_total",
+    }
+    assert expected_patch_stages <= by_stage.keys()
+    assert {by_stage[stage].tile_y for stage in expected_patch_stages} == {0}
+    assert {by_stage[stage].tile_x for stage in expected_patch_stages} == {0}
+    assert all(item.seconds >= 0.0 for item in timings)
+    assert by_stage["pipeline_total"].seconds >= by_stage["patch_total"].seconds
+
+
+@pytest.mark.parametrize(
+    ("reader_worker_count", "decoded_horizon_capacity"), ((1, 2), (2, 3))
+)
+def test_bounded_psr_pipeline_matches_serial_and_reports_queue_bounds(
+    tmp_path: Path,
+    reader_worker_count: int,
+    decoded_horizon_capacity: int,
+) -> None:
+    dem = _dem(width=129, height=1)
+    horizons = HorizonTileStore(tmp_path / "horizons")
+    horizons.write(
+        0,
+        0,
+        0.0,
+        np.full((128, AZIMUTH_COUNT), 5.0, dtype=np.float32),
+        compress=True,
+        valid_width=128,
+        valid_height=1,
+    )
+    vectors = _position_for_local_angle(dem, 0.0, 0.0)[None, :]
+    serial = run_psr_product(
+        dem=dem,
+        georef=_georef(129, 1),
+        horizon_store=horizons,
+        output_path=tmp_path / "serial.tif",
+        sun_vectors_m=vectors,
+        backend="cpu",
+        pipeline_mode="serial",
+    )
+    metrics = []
+    bounded = run_psr_product(
+        dem=dem,
+        georef=_georef(129, 1),
+        horizon_store=horizons,
+        output_path=tmp_path / "bounded.tif",
+        sun_vectors_m=vectors,
+        backend="cpu",
+        pipeline_mode="bounded",
+        decoded_horizon_capacity=decoded_horizon_capacity,
+        writer_queue_capacity=1,
+        reader_worker_count=reader_worker_count,
+        metrics_callback=metrics.append,
+    )
+
+    with rasterio.open(serial) as serial_dataset, rasterio.open(
+        bounded
+    ) as bounded_dataset:
+        np.testing.assert_array_equal(
+            bounded_dataset.read(1), serial_dataset.read(1)
+        )
+        np.testing.assert_array_equal(
+            bounded_dataset.dataset_mask(), serial_dataset.dataset_mask()
+        )
+    assert len(metrics) == 1
+    assert metrics[0].mode == "bounded"
+    assert metrics[0].reader_worker_count == reader_worker_count
+    assert metrics[0].maximum_live_decoded_horizons <= decoded_horizon_capacity
+    assert metrics[0].maximum_reader_queue_depth <= decoded_horizon_capacity - 1
+    assert metrics[0].maximum_writer_queue_depth <= 1
+    assert len(metrics[0].reader_enqueue_wait_seconds) == 2
+    assert len(metrics[0].cuda_dequeue_wait_seconds) == 2
+    assert len(metrics[0].writer_enqueue_wait_seconds) == 2
+    assert len(metrics[0].writer_dequeue_wait_seconds) == 2
+
+
+def test_bounded_psr_pipeline_drains_after_calculation_failure(
+    tmp_path: Path,
+) -> None:
+    dem = _dem(width=129, height=1)
+    horizons = HorizonTileStore(tmp_path / "horizons")
+    horizons.write(
+        0,
+        0,
+        0.0,
+        np.zeros((128, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=128,
+        valid_height=1,
+    )
+    output = tmp_path / "calculation-failure.tif"
+
+    def fail_calculation(*_args, **_kwargs):
+        raise RuntimeError("simulated PSR calculation failure")
+
+    with pytest.raises(RuntimeError, match="simulated PSR calculation failure"):
+        run_psr_product(
+            dem=dem,
+            georef=_georef(129, 1),
+            horizon_store=horizons,
+            output_path=output,
+            sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
+            patch_calculator=fail_calculation,
+            pipeline_mode="bounded",
+            reader_worker_count=2,
+            decoded_horizon_capacity=3,
+        )
+
+    assert not output.exists()
+    journal = json.loads(
+        (tmp_path / ".calculation-failure.tif.lunarscout-partial.journal.json")
+        .read_text()
+    )
+    assert journal["completed_patches"] == {}
+
+
+def test_bounded_psr_pipeline_drains_after_writer_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dem = _dem()
+    horizons = HorizonTileStore(tmp_path / "horizons")
+    horizons.write(
+        0,
+        0,
+        0.0,
+        np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True,
+        valid_width=1,
+        valid_height=1,
+    )
+    output = tmp_path / "writer-failure.tif"
+
+    def fail_write(self, *_args, **_kwargs):
+        raise OSError("simulated PSR writer failure")
+
+    monkeypatch.setattr(
+        ResumableTiledProduct, "write_patch_with_timings", fail_write
+    )
+    with pytest.raises(OSError, match="simulated PSR writer failure"):
+        run_psr_product(
+            dem=dem,
+            georef=_georef(1, 1),
+            horizon_store=horizons,
+            output_path=output,
+            sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
+            backend="cpu",
+            pipeline_mode="bounded",
+        )
+
+    assert not output.exists()
+    journal = json.loads(
+        (tmp_path / ".writer-failure.tif.lunarscout-partial.journal.json")
+        .read_text()
+    )
+    assert journal["completed_patches"] == {}
 
 
 def test_psr_explicit_cuda_does_not_silently_fall_back(

@@ -113,6 +113,198 @@ uses `98,566,144` bytes. No `clr`, `pythonnet`, or `moonlib` module was loaded.
 The run used a populated Numba cache and therefore does not measure first-use
 kernel compilation.
 
+## Sustained serial PSR stage instrumentation
+
+The first optimization measurement uses the upper-left 512 by 512 all-valid
+rectangle of the Mons Mouton DEM: 16 compressed horizon patches and the full
+108,113-vector 1970--2044 input, reduced to 2,205 vectors for this cropped
+grid. A CUDA warm-up preceded a control product and an instrumented product.
+Both outputs were written beneath an isolated temporary directory, compared,
+and removed; the completed example output was not opened for writing.
+
+Opt-in instrumentation changed end-to-end time from `3.11961 s` to
+`3.11980 s`, a `0.0062%` increase. Control throughput was `5.12885 patches/s`
+and instrumented throughput was `5.12853 patches/s`. Pixels, masks, metadata,
+file size, and file SHA-256 all match exactly. Both files were 2,640 bytes with
+SHA-256
+`ad46d290db861fe210cfd48c7ef94779bb77d177ce392d3e85d4a0b15b9db6ed`.
+
+| Serial per-patch stage | Mean time |
+| --- | ---: |
+| Horizon lookup and structural completeness scan | `5.907 ms` |
+| Compressed file read | `2.502 ms` |
+| `.cbin` decompression | `136.432 ms` |
+| Host validation and patch preparation | `6.858 ms` |
+| Host-to-device DEM | `0.120 ms` |
+| Host-to-device static metadata | `0.099 ms` |
+| Host-to-device decoded horizon | `6.949 ms` |
+| Host-to-device reduced vectors | `0.094 ms` |
+| CUDA kernel launch boundary | `0.147 ms` |
+| CUDA kernel device-event duration | `1.589 ms` |
+| CUDA synchronization boundary | `1.443 ms` |
+| Device-to-host result | `0.035 ms` |
+| TIFF compression/write/close | `4.436 ms` |
+| TIFF and directory synchronization | `10.270 ms` |
+| Journal serialization/write/fsync | `6.584 ms` |
+| Durable patch total | `183.680 ms` |
+
+The CUDA event duration and synchronization wall boundary measure overlapping
+views of the same asynchronous work and must not be added. The complete CUDA
+calculation boundary, including host preparation, all transfers, kernel, sync,
+and result copy, averaged `15.894 ms`. One-time work included `69.530 ms` for
+vector reduction, `94.350 ms` for the 16-patch inventory, `8.910 ms` for
+product initialization, and `5.740 ms` for final publication.
+
+`.cbin` decompression accounts for approximately 74.3 percent of durable patch
+wall time and is the clear first overlap/parallelism target. Per-patch output
+durability costs total approximately 21.3 ms across TIFF write/close, TIFF
+synchronization, and the journal. Repeated horizon completeness scanning costs
+another approximately 5.9 ms per patch. Horizon device upload is materially
+larger than kernel execution, while other transfers are small.
+
+The process used `1.008` CPU-core equivalents during the instrumented run.
+Sampled GPU utilization averaged `1.61%`, with `5%` p95 and maximum across 18
+samples; the low sample count and `nvidia-smi` polling granularity make this a
+coarse utilization signal. Sampled peak host RSS was `806,244,352` bytes and
+process maximum RSS was `827,781,120` bytes. Peak per-process GPU memory from
+`nvidia-smi` was 348 MiB. The serial queue depths are zero, one decoded horizon
+is retained, and its fixed maximum payload is `94,371,840` bytes. Queue wait
+time is not applicable until bounded overlap is introduced.
+
+Machine-readable input hashes, per-stage distributions, resource samples,
+identity checks, and reproduction metadata are in
+`docs/numba-horizon-phase-6b-psr-pipeline-instrumentation.json`. The next
+experiment should overlap a small bounded decompression producer with the
+existing CUDA consumer and single TIFF owner before changing durability
+batching or CUDA scheduling.
+
+## Accepted initial bounded PSR overlap
+
+The initial bounded candidate used one horizon reader/decompressor, one
+CUDA consumer, and one TIFF writer. A semaphore bounds the total live decoded
+horizons rather than only bounding the reader queue: the selected capacity of
+two permits at most one queued tile and one CUDA-consumed tile. The reader
+queue therefore has capacity one, the writer queue has capacity one, and the
+maximum decoded-horizon payload is `188,743,680` bytes. The Numba `.cbin`
+decoder releases the GIL so its unchanged compiled arithmetic can overlap CUDA
+and output work. Explicit serial execution remains available for control and
+diagnosis.
+
+On the same 16-patch input as the serial instrumentation, the matched serial
+control took `3.14712 s` (`5.08402 patches/s`) and the bounded candidate took
+`2.63805 s` (`6.06509 patches/s`). This is a 16.2 percent wall-time reduction
+and a 19.3 percent throughput increase. The bounded run's per-patch means were
+`136.424 ms` decompression, `16.925 ms` for the complete CUDA calculation
+boundary, `5.744 ms` TIFF write/close, `10.229 ms` TIFF synchronization, and
+`6.466 ms` journal persistence. Reader and writer enqueue waits were only
+`10.7` and `7.5` microseconds per patch. CUDA dequeue wait averaged
+`133.912 ms`, confirming that the single decompressor remains the limiting
+stage and that additional queue depth alone would only increase memory.
+
+The warranted complete Mons Mouton comparison processed all 1,599 patches and
+26,198,016 pixels:
+
+| Measurement | Matched serial control | Capacity-two bounded |
+| --- | ---: | ---: |
+| End-to-end time | `299.925 s` | `250.052 s` |
+| Throughput | `5.33133 patches/s` | `6.39466 patches/s` |
+| Output bytes | `168,063` | `168,063` |
+| File SHA-256 | `a7309db5...b0326` | `a7309db5...b0326` |
+
+Wall time falls by 16.6 percent and throughput increases by 19.9 percent.
+Every pixel, validity-mask value, metadata item, file byte, and file hash
+matches between the serial and bounded products.
+
+Over the full bounded run, decompression averaged `136.199 ms`, compressed
+read `2.965 ms`, the complete CUDA calculation boundary `15.862 ms`, TIFF
+write/close `5.185 ms`, TIFF synchronization `9.937 ms`, and journal
+persistence `6.320 ms` per patch. The reader and writer queues both reached
+their one-item bounds. Reader and writer enqueue waits averaged only `10.2`
+and `8.4` microseconds, while CUDA dequeue wait averaged `134.534 ms` and the
+writer waited `128.972 ms`, so neither compute nor output backpressures the
+single decompressor.
+
+The full candidate used `1.145` CPU-core equivalents. Across 2,876 coarse
+samples, GPU utilization averaged `3.18%` with `5%` p95 and maximum. Sampled
+peak host RSS was `1,048,903,680` bytes, process maximum RSS was
+`1,052,897,280` bytes, and peak per-process GPU memory was 348 MiB. The GPU
+allocation is unchanged; the host-memory increase is the accepted cost of the
+second bounded decoded-horizon slot.
+
+Cancellation/resume tests run in both serial and bounded modes. Simulated
+calculation and writer failures drain their queues, do not publish a final
+product, and do not advance the completion journal. Existing partial-write,
+journal-failure, incompatible-resume, and failed-overwrite protections remain
+unchanged. Broader process-kill and disk-full testing is still required.
+
+Machine-readable evidence is in
+`docs/numba-horizon-phase-6b-psr-pipeline-bounded-cap2.json` and
+`docs/numba-horizon-phase-6b-psr-pipeline-bounded-full.json`.
+
+## Accepted bounded parallel decompression
+
+The retained small-worker matrix compared one through four ordered
+reader/decompressor workers. Results are emitted to CUDA in row-major patch
+order even if a later decompression finishes first, preserving progress,
+journal, TIFF block-order, and file-hash behavior. First-use decoder compilation
+is locked, and cancellation or downstream failure releases completed but unused
+decoded slots before the reader pool exits.
+
+| Readers | Decoded slots | 16-patch time | Throughput | CPU cores | Sampled peak RSS | Mean GPU utilization |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 2 | `2.63805 s` | `6.0651 patches/s` | `1.23` | `828.9 MB` | `3.17%` |
+| 2 | 3 | `1.71767 s` | `9.3150 patches/s` | `2.05` | `903.3 MB` | `3.95%` |
+| 3 | 4 | `1.41886 s` | `11.2767 patches/s` | `2.49` | `1,049.2 MB` | `6.13%` |
+| 4 | 5 | `1.04036 s` | `15.3793 patches/s` | `3.34` | `1,050.9 MB` | `8.18%` |
+
+Every matrix output matches its serial control in pixels, mask, metadata, file
+bytes, and SHA-256. Four readers are the selected private default for this
+reference machine: it is the largest tested small-worker configuration and
+continues to provide a material gain. The decoded-horizon capacity is five,
+or `471,859,200` bytes. This is an explicit memory/performance choice rather
+than an assumption that every available CPU core should be used.
+
+The complete four-reader Mons Mouton comparison processed all 1,599 patches:
+
+| Measurement | Matched serial control | Four readers/five slots |
+| --- | ---: | ---: |
+| End-to-end time | `286.654 s` | `80.184 s` |
+| Throughput | `5.57815 patches/s` | `19.94168 patches/s` |
+| Output bytes | `168,063` | `168,063` |
+| File SHA-256 | `a7309db5...b0326` | `a7309db5...b0326` |
+
+The selected candidate reduces matched wall time by 72.0 percent and provides
+3.58 times serial throughput. It is also 3.12 times faster than the retained
+one-reader full result (`6.39466 patches/s`). All 26,198,016 values, validity
+mask values, metadata, file bytes, and hashes match exactly.
+
+Four-worker aggregate `.cbin` decompression time is `230.966 s`, or
+`144.444 ms` per patch, but it overlaps to fit inside `80.184 s` end to end.
+The 37,931,649,938 compressed input bytes pass through the pipeline at
+`451.14 MiB/s`; because the serial control immediately precedes the candidate,
+this is a warm-page-cache throughput measurement rather than physical-device
+read bandwidth. Decoded output is produced at `1.753 GiB/s` of pipeline wall
+time and `0.608 GiB/s` per aggregate decompression-worker second. These rates,
+plus continued scaling through four workers, do not indicate host memory
+bandwidth saturation in the tested range.
+
+CUDA dequeue starvation falls from `134.534 ms` per patch with one reader to
+`26.949 ms` mean and `14.132 ms` median with four. Reader and writer enqueue
+waits remain only `9.6` and `7.8` microseconds. The reader queue reaches four
+items, the writer queue reaches one, and the exact maximum of five live decoded
+horizons is observed.
+
+The complete candidate uses `3.808` CPU-core equivalents. GPU utilization
+averages `10.19%`, with `19%` p95 and `21%` maximum over 897 samples. Sampled
+peak host RSS is `1,441,017,856` bytes, process maximum RSS is
+`1,471,651,840` bytes, and peak process GPU memory remains 348 MiB. The
+additional host memory is accepted for the measured throughput gain; device
+memory does not increase.
+
+Machine-readable evidence is in the one-reader `bounded-cap2` report, the
+two- through four-reader `readers*-cap*` reports, and the complete
+`docs/numba-horizon-phase-6b-psr-pipeline-readers4-full.json` report.
+
 ## Initial time-series lightmap slice
 
 The private lightmap reference path defines byte sunlight using the active C#
@@ -367,23 +559,20 @@ output hashes, timings, memory, comparisons, and mismatch samples are in
 
 ## Intentionally incomplete
 
-- The current PSR pipeline is serial. A full 1,599-patch Mons Mouton run
-  completed in `306.45 s` (`5.218 patches/s`) with only about five percent GPU
-  utilization. The retained `0.0148 s` warm kernel measurement versus `0.1917
-  s` full-run wall time per patch demonstrates material headroom outside the
-  kernel. There is no bounded horizon-reader/decompress, CUDA, and writer
-  pipeline yet, and the staged TIFF is reopened once per durable patch.
-- The follow-up must time every pipeline stage, then measure bounded
-  decompression/GPU/write overlap, batched durable checkpoints, pinned and
-  asynchronous transfers, multi-patch CUDA submissions, and limited CPU
-  decompression parallelism without weakening restart semantics or allowing
-  memory to scale with the region.
+- The selected four-reader/five-slot pipeline provides 3.58 times matched
+  serial throughput with identical output. CUDA still waits `26.9 ms` mean per
+  patch for ordered decompression results, so durable checkpoint batching,
+  pinned/asynchronous transfers, and multi-patch CUDA submissions remain to be
+  evaluated independently. More than four decompression workers is not part of
+  the retained small-worker matrix and would require a separate memory tradeoff.
 - Physical TIFF block inspection when a single-band journal is missing is not
   implemented.
 - A broader disk-full, process-kill, failed-overwrite, and publication failure
   matrix remains to be run.
-- Decompression, transfer, calculation, and compression/write costs have not
-  yet been separated within the 16-patch end-to-end result.
+- The first 16-patch sustained serial instrumentation separates decompression,
+  transfer, calculation, write, synchronization, and journal costs. A complete
+  1,599-patch instrumented run remains open until a bounded overlap candidate
+  justifies repeating the scenario.
 - Safe-haven performance remains synthetic; representative regional CPU/CUDA
   throughput and memory evidence are not yet recorded for that product.
 - No public API, structured public exception mapping, packaging decision, or

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import struct
+import threading
+import time
 from typing import BinaryIO
 from uuid import uuid4
 
@@ -22,6 +25,15 @@ _SHORT_SCALE = np.float32(32767.0) / np.float32(50.0)
 _ELEVATION_SCALE = np.float32(50.0) / np.float32(32767.0)
 _COMPILED_ENCODER = None
 _COMPILED_DECODER = None
+_COMPILED_DECODER_LOCK = threading.Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class HorizonReadTimings:
+    """Wall-clock boundaries for one complete horizon-tile read."""
+
+    file_read_seconds: float
+    decompression_seconds: float
 
 
 def _encode_horizons_python(
@@ -177,19 +189,29 @@ def _decode_compressed_payload(
     """Decode a complete payload, compiling the bounded loop when available."""
     global _COMPILED_DECODER
     if _COMPILED_DECODER is None:
-        try:
-            from numba import njit
-        except ImportError:
-            _COMPILED_DECODER = _decode_compressed_payload_python
-        else:
-            _COMPILED_DECODER = njit(cache=False)(_decode_compressed_payload_python)
+        with _COMPILED_DECODER_LOCK:
+            if _COMPILED_DECODER is None:
+                try:
+                    from numba import njit
+                except ImportError:
+                    _COMPILED_DECODER = _decode_compressed_payload_python
+                else:
+                    # The bounded downstream pipeline decompresses ahead while
+                    # the caller drives CUDA and durable output. Releasing the
+                    # GIL permits overlap without changing decoder arithmetic.
+                    _COMPILED_DECODER = njit(cache=False, nogil=True)(
+                        _decode_compressed_payload_python
+                    )
     return _COMPILED_DECODER(payload)
 
 
-def read_horizon_tile(path: str | Path) -> npt.NDArray[np.float32]:
-    """Read one complete production horizon tile as ``float32[y, x, azimuth]``."""
+def read_horizon_tile_with_timings(
+    path: str | Path,
+) -> tuple[npt.NDArray[np.float32], HorizonReadTimings]:
+    """Read one horizon tile and return separate file/decompression timings."""
     candidate = Path(path)
     suffix = candidate.suffix.lower()
+    read_started = time.perf_counter()
     if suffix == ".bin":
         try:
             size = candidate.stat().st_size
@@ -199,18 +221,33 @@ def read_horizon_tile(path: str | Path) -> npt.NDArray[np.float32]:
                 payload = handle.read(RAW_FILE_BYTES)
         except OSError as exc:
             raise ValueError(f"unable to read horizon tile: {candidate}") from exc
+        file_read_seconds = time.perf_counter() - read_started
+        decode_started = time.perf_counter()
         values = np.frombuffer(payload, dtype="<f4", count=TOTAL_SAMPLES).copy()
     elif suffix == ".cbin":
         try:
             payload = np.frombuffer(candidate.read_bytes(), dtype=np.uint8)
         except OSError as exc:
             raise ValueError(f"unable to read horizon tile: {candidate}") from exc
+        file_read_seconds = time.perf_counter() - read_started
+        decode_started = time.perf_counter()
         values = _decode_compressed_payload(payload)
     else:
         raise ValueError("horizon tile must have a .bin or .cbin extension")
-    return np.ascontiguousarray(
+    decompression_seconds = time.perf_counter() - decode_started
+    result = np.ascontiguousarray(
         values.reshape(PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), dtype=np.float32
     )
+    return result, HorizonReadTimings(
+        file_read_seconds=file_read_seconds,
+        decompression_seconds=decompression_seconds,
+    )
+
+
+def read_horizon_tile(path: str | Path) -> npt.NDArray[np.float32]:
+    """Read one complete production horizon tile as ``float32[y, x, azimuth]``."""
+    values, _timings = read_horizon_tile_with_timings(path)
+    return values
 
 
 class HorizonTileStore:

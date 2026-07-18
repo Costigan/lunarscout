@@ -6,6 +6,29 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added opt-in private PSR pipeline instrumentation separating horizon lookup,
+  compressed read, decompression, host preparation, individual CUDA transfers,
+  device-event kernel time, synchronization, result copy, TIFF write/close,
+  TIFF synchronization, durable journal persistence, patch total, and pipeline
+  total. A matched 16-patch all-valid Mons Mouton measurement found `.cbin`
+  decompression dominant at `136.432 ms` of `183.680 ms` per durable patch;
+  control and instrumented products have identical pixels, masks, metadata,
+  and file SHA-256, with effectively zero measured instrumentation overhead.
+- Added a bounded private PSR reader/CUDA/writer pipeline with an exact
+  capacity-two decoded-horizon bound and one-item writer queue. The compiled
+  `.cbin` decoder releases the GIL for overlap without changing arithmetic. A
+  complete matched 1,599-patch Mons Mouton run improved from `299.925` to
+  `250.052` seconds and from `5.3313` to `6.3947 patches/s`; pixels, masks,
+  metadata, file bytes, and SHA-256 match exactly. Cancellation/resume and
+  simulated calculation/writer failure draining preserve durable journals and
+  atomic publication.
+- Added ordered bounded parallel `.cbin` decompression with thread-safe first
+  compilation and exact decoded-buffer accounting. A one-to-four-worker matrix
+  selects four readers and five total decoded slots as the private default. A
+  complete matched 1,599-patch run improves from `286.654` to `80.184` seconds
+  and from `5.5782` to `19.9417 patches/s`; values, masks, metadata, file bytes,
+  and SHA-256 remain identical. The selected path uses `3.81` CPU cores,
+  1.441 GB sampled peak RSS, and the same 348 MiB process GPU memory.
 - Added a runnable Python/Numba Mons Mouton PSR example using 108,113 exact
   Moon-ME Sun vectors and explicit CUDA execution. Its optional progress
   callback receives the monotonic fraction of durably completed horizon tiles;

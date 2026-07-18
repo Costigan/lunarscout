@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 import math
 import threading
+import time
 
 import numpy as np
 import numpy.typing as npt
@@ -15,6 +18,29 @@ from .geometry import DemGrid
 
 _PSR_KERNEL = None
 _PSR_KERNEL_LOCK = threading.Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class PsrCudaPatchTimings:
+    """Detailed CUDA boundary timings for one PSR patch.
+
+    ``kernel_execution_seconds`` is device-event time. The synchronization
+    boundary is wall time and includes waiting for that kernel, so those two
+    values are deliberately non-additive.
+    """
+
+    tile_y: int
+    tile_x: int
+    host_preparation_seconds: float
+    h2d_dem_seconds: float
+    h2d_metadata_seconds: float
+    h2d_horizon_seconds: float
+    h2d_vectors_seconds: float
+    kernel_launch_seconds: float
+    kernel_execution_seconds: float
+    synchronization_boundary_seconds: float
+    d2h_result_seconds: float
+    total_seconds: float
 
 
 def _build_psr_kernel(cuda):
@@ -165,7 +191,12 @@ def _build_psr_kernel(cuda):
 class PsrCudaSession:
     """Reusable fixed-shape CUDA buffers and the production-shaped PSR kernel."""
 
-    def __init__(self, device_id: int = 0) -> None:
+    def __init__(
+        self,
+        device_id: int = 0,
+        *,
+        timing_callback: Callable[[PsrCudaPatchTimings], None] | None = None,
+    ) -> None:
         global _PSR_KERNEL
         try:
             from numba import cuda
@@ -192,6 +223,7 @@ class PsrCudaSession:
         self._device_output = cuda.device_array(PATCH_SIZE * PATCH_SIZE, dtype=np.uint8)
         self._device_vectors = None
         self._vector_capacity = 0
+        self._timing_callback = timing_callback
 
     def compute_patch(
         self,
@@ -204,6 +236,8 @@ class PsrCudaSession:
         valid_height: int = PATCH_SIZE,
         valid_width: int = PATCH_SIZE,
     ) -> npt.NDArray[np.uint8]:
+        total_started = time.perf_counter()
+        host_started = total_started
         if not 1 <= valid_width <= PATCH_SIZE or not 1 <= valid_height <= PATCH_SIZE:
             raise ValueError("valid patch dimensions must be between 1 and 128")
         if tile_x < 0 or tile_y < 0 or tile_x + valid_width > dem.width or tile_y + valid_height > dem.height:
@@ -236,6 +270,7 @@ class PsrCudaSession:
             ),
             dtype=np.float64,
         )
+        host_preparation_seconds = time.perf_counter() - host_started
         with self._lock:
             if vectors.shape[0] > self._vector_capacity:
                 self._device_vectors = self._cuda.device_array(
@@ -243,13 +278,28 @@ class PsrCudaSession:
                 )
                 self._vector_capacity = vectors.shape[0]
             device_vectors = self._device_vectors[: vectors.shape[0]]
+            transfer_started = time.perf_counter()
             self._device_dem.copy_to_device(patch_dem)
+            h2d_dem_seconds = time.perf_counter() - transfer_started
+            transfer_started = time.perf_counter()
             self._device_geotransform.copy_to_device(dem.geo_transform)
             self._device_projection.copy_to_device(projection)
+            h2d_metadata_seconds = time.perf_counter() - transfer_started
+            transfer_started = time.perf_counter()
             self._device_horizons.copy_to_device(horizons)
+            h2d_horizon_seconds = time.perf_counter() - transfer_started
+            transfer_started = time.perf_counter()
             device_vectors.copy_to_device(vectors)
+            h2d_vectors_seconds = time.perf_counter() - transfer_started
             threads = 128
             blocks = (PATCH_SIZE * PATCH_SIZE + threads - 1) // threads
+            start_event = None
+            end_event = None
+            if self._timing_callback is not None:
+                start_event = self._cuda.event(timing=True)
+                end_event = self._cuda.event(timing=True)
+                start_event.record()
+            launch_started = time.perf_counter()
             self._kernel[blocks, threads](
                 self._device_dem,
                 self._device_geotransform,
@@ -262,6 +312,38 @@ class PsrCudaSession:
                 valid_height,
                 self._device_output,
             )
-            self._cuda.synchronize()
+            kernel_launch_seconds = time.perf_counter() - launch_started
+            if end_event is not None:
+                end_event.record()
+            sync_started = time.perf_counter()
+            if end_event is None:
+                self._cuda.synchronize()
+                kernel_execution_seconds = 0.0
+            else:
+                end_event.synchronize()
+                kernel_execution_seconds = (
+                    start_event.elapsed_time(end_event) / 1000.0
+                )
+            synchronization_boundary_seconds = time.perf_counter() - sync_started
+            copy_started = time.perf_counter()
             output = self._device_output.copy_to_host().reshape(PATCH_SIZE, PATCH_SIZE)
-        return np.ascontiguousarray(output[:valid_height, :valid_width])
+            d2h_result_seconds = time.perf_counter() - copy_started
+        result = np.ascontiguousarray(output[:valid_height, :valid_width])
+        if self._timing_callback is not None:
+            self._timing_callback(
+                PsrCudaPatchTimings(
+                    tile_y=tile_y,
+                    tile_x=tile_x,
+                    host_preparation_seconds=host_preparation_seconds,
+                    h2d_dem_seconds=h2d_dem_seconds,
+                    h2d_metadata_seconds=h2d_metadata_seconds,
+                    h2d_horizon_seconds=h2d_horizon_seconds,
+                    h2d_vectors_seconds=h2d_vectors_seconds,
+                    kernel_launch_seconds=kernel_launch_seconds,
+                    kernel_execution_seconds=kernel_execution_seconds,
+                    synchronization_boundary_seconds=synchronization_boundary_seconds,
+                    d2h_result_seconds=d2h_result_seconds,
+                    total_seconds=time.perf_counter() - total_started,
+                )
+            )
+        return result

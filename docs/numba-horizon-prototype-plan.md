@@ -812,11 +812,11 @@ compared with `0.1917 s/patch` end to end in this full run. These measurements
 show substantial pipeline-optimization headroom; they do not indicate that
 CUDA was bypassed.
 
-- [ ] Instrument horizon lookup/read, `.cbin` decompression, host preparation,
+- [x] Instrument horizon lookup/read, `.cbin` decompression, host preparation,
       host-to-device transfer, kernel execution, synchronization,
       device-to-host transfer, TIFF compression/write/flush, and journal
       persistence separately on a sustained all-valid run.
-- [ ] Add bounded overlap so the CPU can read and decompress upcoming horizon
+- [x] Add bounded overlap so the CPU can read and decompress upcoming horizon
       patches while CUDA processes the current patch and one writer owns TIFF
       output for completed patches. Measure queue wait times and retain memory
       bounds independent of region size.
@@ -831,13 +831,49 @@ CUDA was bypassed.
       launch occupancy, and compare it with multiple CUDA streams. Require
       identical classification and validity-mask output before accepting a
       scheduling change.
-- [ ] Measure decompression scaling with a small bounded number of CPU workers;
+- [x] Measure decompression scaling with a small bounded number of CPU workers;
       compare CPU time, memory bandwidth, storage throughput, host RSS, and GPU
       starvation rather than assuming all available cores should be used.
 - [ ] Repeat the full-scenario benchmark after each accepted optimization and
       report end-to-end throughput, stage overlap, CPU utilization, GPU
       utilization, host memory, GPU memory, output identity, and restart/failure
       behavior.
+
+The initial 16-patch all-valid serial measurement identifies `.cbin`
+decompression as the dominant stage at `136.432 ms` of `183.680 ms` durable
+wall time per patch. The complete CUDA calculation boundary is `15.894 ms`,
+including `6.949 ms` for horizon upload and `1.589 ms` of device-event kernel
+time. TIFF write/close, TIFF synchronization, and durable journal persistence
+total approximately `21.3 ms` per patch. Control and instrumented throughput
+are `5.12885` and `5.12853 patches/s`; pixels, masks, metadata, and file hash
+match exactly. The serial run retains one `94,371,840`-byte decoded horizon,
+uses about one CPU core, samples 348 MiB peak process GPU memory and 806 MB peak
+RSS, and has no queues. See
+`docs/numba-horizon-phase-6b-psr-pipeline-instrumentation.json` and the detailed
+table in `docs/numba-horizon-phase-6b-downstream-products.md`.
+
+The accepted capacity-two bounded pipeline uses one reader/decompressor, one
+CUDA consumer, and one TIFF writer with one-item reader and writer queues. The
+complete 1,599-patch matched run improved from `299.925 s` and
+`5.33133 patches/s` serial to `250.052 s` and `6.39466 patches/s` bounded.
+Pixels, masks, metadata, file bytes, and SHA-256 match exactly. Maximum live
+decoded-horizon storage is two tiles (`188,743,680` bytes); sampled peak RSS is
+`1,048,903,680` bytes and peak process GPU memory is unchanged at 348 MiB.
+Reader/writer enqueue waits are microseconds, while CUDA waits `134.534 ms` per
+patch for the single decompressor. See
+`docs/numba-horizon-phase-6b-psr-pipeline-bounded-full.json`.
+
+The accepted bounded decompression matrix evaluates one, two, three, and four
+ordered workers with one additional decoded slot for CUDA. Four workers/five
+slots are selected: the complete matched run improves from `286.654 s`
+(`5.57815 patches/s`) serial to `80.184 s` (`19.94168 patches/s`). All values,
+masks, metadata, bytes, and SHA-256 match. CUDA dequeue wait falls from
+`134.534 ms` mean with one worker to `26.949 ms` mean and `14.132 ms` median.
+The selected bound is `471,859,200` decoded bytes; sampled peak RSS is
+`1,441,017,856` bytes, CPU use is `3.808` core equivalents, and GPU memory
+remains 348 MiB. Warm-page-cache compressed-input throughput is `451.14 MiB/s`
+and decoded output reaches `1.753 GiB/s` of pipeline wall time. See
+`docs/numba-horizon-phase-6b-psr-pipeline-readers4-full.json`.
 
 ## 14. Phase 7: Packaging and Operational Evaluation
 

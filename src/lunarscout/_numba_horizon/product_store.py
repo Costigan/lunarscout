@@ -10,6 +10,7 @@ import json
 from numbers import Integral
 import os
 from pathlib import Path
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -51,6 +52,15 @@ class ProductStoreError(RuntimeError):
 
 class IncompatibleProductJobError(ProductStoreError):
     """An existing staged product belongs to a different calculation."""
+
+
+@dataclass(frozen=True, slots=True)
+class ProductWriteTimings:
+    """Durability-stage timings for one patch write."""
+
+    tiff_write_close_seconds: float
+    tiff_synchronize_seconds: float
+    journal_persistence_seconds: float
 
 
 def _utc_timestamp(value: datetime | str) -> str:
@@ -376,13 +386,27 @@ class ResumableTiledProduct:
         valid: bool = True,
     ) -> None:
         """Durably write all bands for a patch, then journal it as one work unit."""
+        self.write_patch_with_timings(
+            tile_y, tile_x, band_tiles, valid=valid
+        )
+
+    def write_patch_with_timings(
+        self,
+        tile_y: int,
+        tile_x: int,
+        band_tiles: Iterable[npt.ArrayLike],
+        *,
+        valid: bool = True,
+    ) -> ProductWriteTimings:
+        """Durably write a patch and expose its compression/sync/journal costs."""
         window, width, height, key = self._window(tile_y, tile_x)
         if key in self._completed:
-            return
+            return ProductWriteTimings(0.0, 0.0, 0.0)
         iterator = iter(band_tiles)
         invalid_tile = np.full(
             (height, width), self._manifest["invalid_value"], dtype=self._dtype
         )
+        write_started = time.perf_counter()
         with Env(GDAL_TIFF_INTERNAL_MASK=True):
             with open_raster(self.staging_path, "r+") as dataset:
                 for band_index in range(1, int(self._manifest["band_count"]) + 1):
@@ -409,11 +433,21 @@ class ResumableTiledProduct:
                         raise ValueError("band_tiles has more entries than band_count")
                 mask = np.full((height, width), 255 if valid else 0, dtype=np.uint8)
                 dataset.write_mask(mask, window=window)
+        tiff_write_close_seconds = time.perf_counter() - write_started
+        sync_started = time.perf_counter()
         self._sync_staging()
+        tiff_synchronize_seconds = time.perf_counter() - sync_started
         completed = dict(self._completed)
         completed[key] = "valid" if valid else "invalid"
+        journal_started = time.perf_counter()
         self._write_journal(completed)
+        journal_persistence_seconds = time.perf_counter() - journal_started
         self._completed = completed
+        return ProductWriteTimings(
+            tiff_write_close_seconds=tiff_write_close_seconds,
+            tiff_synchronize_seconds=tiff_synchronize_seconds,
+            journal_persistence_seconds=journal_persistence_seconds,
+        )
 
     def write_invalid_patch(self, tile_y: int, tile_x: int) -> None:
         self.write_patch(tile_y, tile_x, (), valid=False)
