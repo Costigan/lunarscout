@@ -34,7 +34,7 @@ def _build_cpu_function():
         valid_height,
     ):
         output = np.zeros(
-            (vectors.shape[0], PATCH_SIZE, PATCH_SIZE), dtype=np.uint8
+            (vectors.shape[0], PATCH_SIZE, PATCH_SIZE), dtype=np.float32
         )
         for index in prange(PATCH_SIZE * PATCH_SIZE):
             sample = index % PATCH_SIZE
@@ -154,9 +154,7 @@ def _build_cpu_function():
                         delta = np.float32(right_elevation - left_elevation)
                         fraction = np.float32(fraction - np.float32(1.0))
                 visible = np.float32(photons / np.float32(_MAX_PHOTONS))
-                output[time_index, line, sample] = int(
-                    np.float32(255.0) * visible
-                )
+                output[time_index, line, sample] = visible
         return output
 
     try:
@@ -180,7 +178,7 @@ class LightmapCpuSession:
         self._calculate = _CPU_FUNCTION
         self.time_batch_size = int(time_batch_size)
 
-    def iter_patch_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.uint8]]:
+    def _iter_fraction_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int, valid_width: int) -> Iterator[npt.NDArray[np.float32]]:
         vectors = np.ascontiguousarray(_validate_vectors(sun_vectors_m), dtype=np.float32)
         horizons = np.ascontiguousarray(horizons_deg, dtype=np.float32)
         if horizons.shape != (PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT):
@@ -190,5 +188,16 @@ class LightmapCpuSession:
         projection = np.asarray((dem.projection.radius_m, dem.projection.latitude_origin_rad, dem.projection.longitude_origin_rad, dem.projection.scale, dem.projection.false_easting_m, dem.projection.false_northing_m), dtype=np.float64)
         for start in range(0, vectors.shape[0], self.time_batch_size):
             batch = self._calculate(patch_dem, dem.geo_transform, projection, vectors[start:start + self.time_batch_size], horizons, tile_x, tile_y, valid_width, valid_height)
+            yield batch[:, :valid_height, :valid_width]
+
+    def iter_patch_fraction_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
+        """Yield unquantized float32 visible fractions in bounded batches."""
+        for batch in self._iter_fraction_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width):
             for tile in batch:
-                yield np.ascontiguousarray(tile[:valid_height, :valid_width])
+                yield np.ascontiguousarray(tile)
+
+    def iter_patch_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.uint8]]:
+        for batch in self._iter_fraction_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width):
+            encoded = (batch * np.float32(255.0)).astype(np.uint8)
+            for tile in encoded:
+                yield np.ascontiguousarray(tile)

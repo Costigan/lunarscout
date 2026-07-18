@@ -11,14 +11,17 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   included in the longest low-Sun run, and the first minimum-Earth sample
   supplies the interval timestamp. Default results are `float32` hours without
   the legacy final-sample omission, integer-hour truncation, or 255-hour clamp.
+  A time-axis-bounded online reducer now consumes unquantized fraction batches
+  from either compiled CPU or CUDA, with `auto` fallback, and writes one
+  timestamped resumable BigTIFF band per Earth outage.
 - Required CPU fallbacks for all downstream horizon-consuming products when
   NVIDIA CUDA is unavailable, while retaining CUDA-only production horizon
   generation. The private lightmap pipeline now accepts `auto`, `cpu`, and
   `cuda`, and its reusable CUDA session bounds output by configurable time
   batches. CPU and CUDA match the production C# `BuilderSunFraction` byte
   oracle. A Numba-parallel bounded CPU backend provides automatic fallback. In
-  a four-patch, 2,921-band real-terrain BigTIFF run, CPU completed in 3.469
-  seconds and CUDA in 2.165 seconds; all CPU/CUDA differences were one byte.
+  a four-patch, 2,921-band real-terrain BigTIFF run, CPU completed in 3.569
+  seconds and CUDA in 2.178 seconds; all CPU/CUDA differences were one byte.
 - Added the private reference/storage slice for time-series lightmaps. It ports
   the 16-slice C# `BuilderSunFraction` solar-disk calculation, encodes visible
   fraction as truncating `uint8(255 * fraction)`, and processes horizons

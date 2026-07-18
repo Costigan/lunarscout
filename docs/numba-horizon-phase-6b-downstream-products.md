@@ -179,12 +179,12 @@ the product pipeline.
 
 | Measurement | Compiled CPU | Numba CUDA |
 | --- | ---: | ---: |
-| One-patch calculation | `0.3542 s` | `0.03828 s` |
-| Four-patch staged BigTIFF | `3.4691 s` | `2.1648 s` |
-| End-to-end throughput | `1.1530 patches/s` | `1.8477 patches/s` |
+| One-patch calculation | `0.3690 s` | `0.05392 s` |
+| Four-patch staged BigTIFF | `3.5691 s` | `2.1780 s` |
+| End-to-end throughput | `1.1207 patches/s` | `1.8365 patches/s` |
 | Output bytes | `15,954,652` | `15,954,593` |
 
-CUDA is approximately 9.25 times faster for calculation alone and 1.60 times
+CUDA is approximately 6.84 times faster for calculation alone and 1.64 times
 faster end-to-end; compressed horizon reads and 11,684 compressed tile writes
 reduce the end-to-end advantage. CPU is nevertheless a useful fallback rather
 than merely a correctness reference.
@@ -192,10 +192,10 @@ than merely a correctness reference.
 The two products contain 191,430,656 values. They differ at 2,294 values
 (`0.00120%`), always by exactly one byte, and their validity masks are
 identical. Streaming band-by-band validation gives a conservative combined
-process peak RSS of `1,135,550,464` bytes. The CUDA session retains `96,468,992`
+process peak RSS of `1,135,542,272` bytes. The CUDA session retains `98,566,144`
 bytes of device buffers on the 24 GB reference GPU. Memory is bounded by one
-horizon patch, resident vectors, and the configured 32-time output batch, not
-by the total regional cube. Evidence is recorded in
+horizon patch, resident vectors, and the configured 32-time byte and fraction
+output batches, not by the total regional cube. Evidence is recorded in
 `docs/numba-horizon-phase-6b-lightmap-benchmark.json`.
 
 ## Initial safe-haven semantics
@@ -213,7 +213,13 @@ interval as its timestamp. Durations are `float32` hours by default, preserving
 fractional steps and values above 255 hours. Synthetic tests cover intervals at
 both ends of the time axis, repeated interior intervals, inclusion of the last
 sample, multiple pixels, and a 2.5-hour step. A bounded operational patch
-reducer and CPU/CUDA geometry calculation remain to be implemented.
+reducer now consumes the unquantized `float32` fraction stream online, retaining
+only current and longest run counters per outage and pixel. Both compiled CPU
+and CUDA provide that bounded stream; `auto` falls back to CPU. A synthetic
+end-to-end product writes two correctly timestamped `float32` duration bands,
+and CPU/CUDA produce the same duration for the controlled reduction. Real
+safe-haven performance, cancellation/progress, missing-patch behavior, and
+restart evidence remain open.
 
 ## Fresh-process result
 

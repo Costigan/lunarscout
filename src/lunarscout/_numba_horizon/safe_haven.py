@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Iterable
 
 import numpy as np
 import numpy.typing as npt
@@ -67,3 +68,62 @@ def reduce_safe_haven_patch(
             longest = np.maximum(longest, current)
         output[outage_index] = longest * np.float32(time_step_hours)
     return output
+
+
+def reduce_safe_haven_patch_stream(
+    sunlight_fraction_tiles: Iterable[npt.ArrayLike],
+    time_count: int,
+    outages: tuple[EarthOutage, ...],
+    *,
+    sunlight_threshold: float,
+    time_step_hours: float,
+) -> tuple[npt.NDArray[np.float32], ...]:
+    """Online equivalent that never retains the time axis."""
+    if time_count < 1:
+        raise ValueError("time_count must be positive")
+    if not 0.0 <= sunlight_threshold <= 1.0:
+        raise ValueError("sunlight_threshold must be between zero and one")
+    if not np.isfinite(time_step_hours) or time_step_hours <= 0.0:
+        raise ValueError("time_step_hours must be positive and finite")
+    previous_stop = 0
+    for outage in outages:
+        if not previous_stop <= outage.start < outage.stop <= time_count:
+            raise ValueError("Earth outages must be ordered, disjoint, and in range")
+        previous_stop = outage.stop
+    iterator = iter(sunlight_fraction_tiles)
+    current = None
+    longest = None
+    shape = None
+    outage_index = 0
+    for time_index in range(time_count):
+        try:
+            tile = np.asarray(next(iterator), dtype=np.float32)
+        except StopIteration as exc:
+            raise ValueError("sunlight fraction iterator ended before time_count") from exc
+        if tile.ndim != 2 or not np.all(np.isfinite(tile)):
+            raise ValueError("sunlight fraction tiles must be finite 2D arrays")
+        if shape is None:
+            shape = tile.shape
+            current = np.zeros((len(outages), *shape), dtype=np.int32)
+            longest = np.zeros_like(current)
+        elif tile.shape != shape:
+            raise ValueError("all sunlight fraction tiles must have the same shape")
+        while outage_index < len(outages) and time_index >= outages[outage_index].stop:
+            outage_index += 1
+        if (
+            outage_index < len(outages)
+            and time_index >= outages[outage_index].start
+        ):
+            low = tile < np.float32(sunlight_threshold)
+            active = current[outage_index]
+            active[:] = np.where(low, active + 1, 0)
+            longest[outage_index] = np.maximum(longest[outage_index], active)
+    try:
+        next(iterator)
+    except StopIteration:
+        pass
+    else:
+        raise ValueError("sunlight fraction iterator has more entries than time_count")
+    assert longest is not None
+    durations = longest.astype(np.float32) * np.float32(time_step_hours)
+    return tuple(np.ascontiguousarray(tile) for tile in durations)

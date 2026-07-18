@@ -46,6 +46,7 @@ def _build_lightmap_kernel(cuda):
         valid_width,
         valid_height,
         output,
+        fraction_output,
     ):
         index = cuda.grid(1)
         if index >= PATCH_SIZE * PATCH_SIZE:
@@ -55,6 +56,7 @@ def _build_lightmap_kernel(cuda):
         if sample >= valid_width or line >= valid_height:
             for batch_index in range(vector_count):
                 output[batch_index, index] = 0
+                fraction_output[batch_index, index] = 0.0
             return
 
         absolute_sample = tile_x + sample
@@ -153,6 +155,7 @@ def _build_lightmap_kernel(cuda):
                     fraction = float32(fraction - float32(1.0))
             visible = float32(photons / float32(_MAX_PHOTONS))
             output[batch_index, index] = int(float32(255.0) * visible)
+            fraction_output[batch_index, index] = visible
 
     return lightmap_kernel
 
@@ -186,10 +189,13 @@ class LightmapCudaSession:
         self._projection = cuda.device_array(6, dtype=np.float64)
         self._horizons = cuda.device_array((PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), dtype=np.float32)
         self._output = cuda.device_array((self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.uint8)
+        self._fraction_output = cuda.device_array(
+            (self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.float32
+        )
         self._vectors = None
         self._vector_key = None
 
-    def iter_patch_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.uint8]]:
+    def _iter_patch_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int, valid_width: int, fractions: bool):
         vectors64 = _validate_vectors(sun_vectors_m)
         vectors = np.ascontiguousarray(vectors64, dtype=np.float32)
         horizons = np.ascontiguousarray(horizons_deg, dtype=np.float32)
@@ -213,8 +219,18 @@ class LightmapCudaSession:
             blocks = (PATCH_SIZE * PATCH_SIZE + threads - 1) // threads
             for start in range(0, vectors.shape[0], self.time_batch_size):
                 count = min(self.time_batch_size, vectors.shape[0] - start)
-                self._kernel[blocks, threads](self._dem, self._geotransform, self._projection, self._vectors, self._horizons, start, count, tile_x, tile_y, valid_width, valid_height, self._output)
+                self._kernel[blocks, threads](self._dem, self._geotransform, self._projection, self._vectors, self._horizons, start, count, tile_x, tile_y, valid_width, valid_height, self._output, self._fraction_output)
                 self._cuda.synchronize()
-                batch = self._output[:count].copy_to_host().reshape(count, PATCH_SIZE, PATCH_SIZE)
-                for tile in batch:
-                    yield np.ascontiguousarray(tile[:valid_height, :valid_width])
+                source = self._fraction_output if fractions else self._output
+                batch = source[:count].copy_to_host().reshape(count, PATCH_SIZE, PATCH_SIZE)
+                yield batch[:, :valid_height, :valid_width]
+
+    def iter_patch_fraction_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
+        for batch in self._iter_patch_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, fractions=True):
+            for tile in batch:
+                yield np.ascontiguousarray(tile)
+
+    def iter_patch_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.uint8]]:
+        for batch in self._iter_patch_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, fractions=False):
+            for tile in batch:
+                yield np.ascontiguousarray(tile)
