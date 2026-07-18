@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 from pathlib import Path
-from typing import TextIO
+from typing import Literal, TextIO
 
 import numpy as np
 import numpy.typing as npt
@@ -55,6 +55,8 @@ def run_lightmap_product(
     progress_callback: Callable[[LightmapProgress], None] | None = None,
     progress_stream: TextIO | None = None,
     patch_calculator: PatchCalculator | None = None,
+    backend: Literal["auto", "cpu", "cuda"] = "auto",
+    time_batch_size: int = 32,
 ) -> Path:
     """Write one timestamped uint8 band per vector without a regional cube."""
     if (georef.width, georef.height) != (dem.width, dem.height):
@@ -64,7 +66,26 @@ def run_lightmap_product(
     if len(timestamps) != vectors.shape[0]:
         raise ValueError("timestamp count must equal Sun vector count")
     patches = enumerate_patches(dem.width, dem.height)
-    calculate_patch = patch_calculator or iter_lightmap_patch_reference
+    if backend not in ("auto", "cpu", "cuda"):
+        raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
+    if time_batch_size < 1:
+        raise ValueError("time_batch_size must be positive")
+    if patch_calculator is not None:
+        calculate_patch = patch_calculator
+    elif backend == "cpu":
+        calculate_patch = iter_lightmap_patch_reference
+    else:
+        from .cuda_backend import CudaBackendError
+        from .lightmap_cuda import LightmapCudaSession
+
+        try:
+            calculate_patch = LightmapCudaSession(
+                time_batch_size=time_batch_size
+            ).iter_patch_tiles
+        except CudaBackendError:
+            if backend == "cuda":
+                raise
+            calculate_patch = iter_lightmap_patch_reference
     inventory = _inventory_identity(
         horizon_store, patches, observer_elevation_m
     )

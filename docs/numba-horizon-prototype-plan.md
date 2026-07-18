@@ -18,10 +18,13 @@ production-scale performance, memory feasibility, maintainability, and a
 reproducible installation path. Merely launching a CUDA kernel or matching a
 small synthetic example is not sufficient.
 
-The initial GPU target is NVIDIA CUDA on Linux. CPU execution is required for
-preprocessing and may provide a slow reference or fallback, but a fast CPU-only
-horizon generator is not required for this evaluation. AMD and Apple GPU
-support are future investigations and must not constrain the first prototype.
+The initial horizon-generation target is NVIDIA CUDA on Linux. A fast CPU-only
+horizon generator is not required because CPU horizon generation is too slow
+for production use. The downstream horizon-consuming calculations have a
+different requirement: time-series lightmaps, PSR, elevation products,
+safe-haven maps, and landed mission-duration maps must provide usable CPU
+fallbacks when NVIDIA CUDA is unavailable. AMD and Apple GPU support are future
+investigations and must not constrain the first prototype.
 
 ## 2. Decision to Be Made
 
@@ -633,6 +636,16 @@ times, vectors, thresholds, and reductions before release.
       azimuth/elevation, horizon interpolation, and solar-disk calculations
       across product kernels without forcing every product to materialize a
       time cube.
+- [ ] Provide both CPU and Numba CUDA implementations for every downstream
+      horizon-consuming calculation: time-series lightmaps, PSR, elevation
+      products, safe-haven maps, and landed mission-duration maps. CPU is a
+      required operational fallback, not only a test reference. Horizon
+      generation itself remains CUDA-only for production use.
+- [ ] Add an explicit backend policy supporting `auto`, `cpu`, and `cuda`.
+      `auto` must select CUDA when it is usable and otherwise fall back to CPU
+      without importing Python.NET, CLR, or moonlib. Explicit `cuda` must fail
+      with a structured actionable capability error rather than silently use
+      CPU.
 - [ ] Keep vector arrays resident when practical and pool fixed-shape horizon,
       DEM, optional time-batch, and reduced-output buffers.
 - [ ] Use one bounded GeoTIFF writer queue; do not call one raster dataset
@@ -687,6 +700,11 @@ times, vectors, thresholds, and reductions before release.
 
 ### Product proofs
 
+Every proof below must pass on CPU. Where a CUDA implementation exists, compare
+CPU and CUDA output on identical inputs and report both performance paths. CPU
+performance need not match CUDA, but must be useful as an NVIDIA-independent
+fallback and must preserve bounded patch-major streaming.
+
 - [ ] Time-series lightmap: for each loaded horizon patch, stream one byte-valued
       128 by 128 tile to each time band of a multi-band BigTIFF and compare every
       value and timestamp with C#.
@@ -728,6 +746,12 @@ files. See
       throughput, host memory, and GPU memory for short and long time series.
 - [ ] Confirm that memory is bounded by configured queues, worker buffers, and
       optional GPU time-batch size rather than region size or total time count.
+- [ ] Run representative downstream products with CUDA deliberately disabled
+      and verify automatic CPU fallback, correct files, bounded memory, useful
+      progress/cancellation behavior, and no Python.NET, CLR, or moonlib load.
+- [ ] Measure and document CPU fallback throughput for each downstream product
+      on representative short and long workloads. Do not treat the deliberately
+      slow CPU horizon generator as part of this requirement.
 - [ ] Do not approve removal of the downstream C# lightmap/product code until
       all five product classes either pass this gate or are explicitly removed
       from the supported replacement scope.
@@ -956,12 +980,16 @@ replacement or may remain deferred.
 
 ### P5: CPU Fallback
 
-**Recommended:** require CPU code for preprocessing and tests, but defer a
-production-speed CPU horizon backend. If the Numba port succeeds, separately
-decide whether systems without NVIDIA GPUs receive a slow fallback or an
-explicit unsupported-capability error.
+**Decision:** horizon generation may require NVIDIA CUDA and should return an
+explicit unsupported-capability error when CUDA is unavailable; a
+production-speed CPU horizon backend is out of scope. All downstream
+horizon-consuming products must instead support a CPU fallback, including
+time-series lightmaps, PSR, elevation products, safe-haven maps, and landed
+mission-duration maps. Backend selection must be explicit/testable, with
+`auto` preferring usable CUDA and otherwise selecting CPU.
 
-- [ ] Record the first-release behavior on systems without NVIDIA CUDA.
+- [ ] Verify and document the first-release backend behavior on systems without
+      NVIDIA CUDA for both horizon generation and every downstream product.
 
 ### P6: Adoption Boundary
 

@@ -6,6 +6,13 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Required CPU fallbacks for all downstream horizon-consuming products when
+  NVIDIA CUDA is unavailable, while retaining CUDA-only production horizon
+  generation. The private lightmap pipeline now accepts `auto`, `cpu`, and
+  `cuda`, and its reusable CUDA session bounds output by configurable time
+  batches. CPU and CUDA match the production C# `BuilderSunFraction` byte
+  oracle; a compiled operational CPU backend and performance evidence remain
+  open.
 - Added the private reference/storage slice for time-series lightmaps. It ports
   the 16-slice C# `BuilderSunFraction` solar-disk calculation, encodes visible
   fraction as truncating `uint8(255 * fraction)`, and processes horizons
@@ -14,7 +21,8 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   neither a patch time cube nor a regional time cube is retained. Initial tests
   cover full, half, and zero illumination, timestamp metadata, band interleave,
   missing-patch invalid payloads, masks, and partial output edges. Numba CUDA
-  time batching and a C# numerical oracle remain open.
+  time batching and a C# numerical oracle are now included in the follow-on
+  Phase 6B work described above.
 - Added the first private Phase 6B downstream-product vertical slice. Python
   now reads complete `.bin`/`.cbin` horizon tiles, accepts explicit timestamped
   Moon-ME vectors or lazily generates geometric SpiceyPy vectors, reproduces

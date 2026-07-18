@@ -133,9 +133,26 @@ the output mask invalid.
 The initial independent tests cover full, half, and zero visible solar disks
 (`255`, `127`, and `0`), two timestamped band-interleaved tiles, a partial edge,
 and a missing horizon patch. This is a correctness-first CPU/storage slice.
-The bounded Numba CUDA time-batch implementation, actual C# numerical oracle,
-resume interruption within a multi-band patch, and representative time-series
-performance measurements remain open.
+The compiled operational CPU fallback, resume interruption within a multi-band
+patch, and representative CPU/CUDA time-series performance measurements remain
+open.
+
+The downstream execution contract now requires `auto`, `cpu`, and `cuda`
+backends for lightmaps, PSR, elevation products, safe-haven maps, and landed
+mission-duration maps. `auto` prefers usable NVIDIA CUDA and otherwise falls
+back to CPU without .NET. This requirement does not add a CPU production path
+for horizon generation, which remains CUDA-only because its CPU implementation
+is too slow.
+
+The lightmap slice now has a deterministic oracle calling the production C#
+`LightmapGenerator.BuilderSunFraction` routine. The Python CPU backend matches
+all 24 oracle bytes across full, partial, zero, interpolated, and azimuth-wrap
+cases. A reusable Numba CUDA session keeps the horizon and vector buffers on
+device and bounds output to a configurable time batch; a 2/2/1 batch test is
+byte-identical to CPU. Explicit backend selection is wired into the private
+pipeline. The current Python-loop CPU implementation remains a correctness
+backend rather than a useful operational fallback; a compiled bounded CPU
+session and CPU performance evidence are still required.
 
 ## Fresh-process result
 

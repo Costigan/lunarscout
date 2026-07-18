@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import base64
+import json
+import os
 from pathlib import Path
 
 import numpy as np
+import pytest
 import rasterio
 
 from lunarscout._numba_horizon.file_format import AZIMUTH_COUNT, HorizonTileStore
 from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
-from lunarscout._numba_horizon.lightmap import compute_lightmap_patch_reference
+from lunarscout._numba_horizon.lightmap import (
+    _sun_fraction_reference,
+    compute_lightmap_patch_reference,
+)
 from lunarscout._numba_horizon.lightmap_pipeline import run_lightmap_product
+from lunarscout._numba_horizon.lightmap_cuda import LightmapCudaSession
 from lunarscout._numba_horizon.psr import _pixel_frame
 from lunarscout.georeference import GeoReference
 
@@ -83,6 +91,82 @@ def test_lightmap_reference_encodes_full_half_and_zero_solar_disk() -> None:
     np.testing.assert_array_equal(actual[:, 0, 0], (255, 127, 0))
 
 
+def test_sun_fraction_reference_matches_csharp_builder_oracle() -> None:
+    fixture_path = (
+        Path(__file__).parents[1]
+        / "data"
+        / "numba_horizon"
+        / "phase6b_lightmap_csharp.json"
+    )
+    artifact = json.loads(fixture_path.read_text(encoding="utf-8"))
+    for case in artifact["cases"]:
+        horizons = np.frombuffer(
+            base64.b64decode(case["horizons_float32_base64"]), dtype="<f4"
+        )
+        for sample in case["samples"]:
+            fraction = _sun_fraction_reference(
+                horizons, sample["azimuth_deg"], sample["elevation_deg"]
+            )
+            encoded = np.uint8(np.float32(255.0) * fraction)
+            assert int(encoded) == sample["encoded_byte"], (
+                case["name"],
+                sample,
+                float(fraction),
+            )
+
+
+@pytest.mark.skipif(
+    os.environ.get("LUNARSCOUT_REQUIRE_NUMBA_CUDA") != "1",
+    reason="set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 for the explicit real-GPU probe",
+)
+def test_lightmap_cuda_batches_match_cpu_reference() -> None:
+    dem = _dem(width=3, height=2)
+    pixel = np.arange(128 * 128, dtype=np.float32)[:, None]
+    azimuth = np.arange(AZIMUTH_COUNT, dtype=np.float32)[None, :]
+    horizons = (
+        np.float32(0.1)
+        + np.float32(0.01) * (pixel % np.float32(17.0))
+        + np.float32(0.0001) * (azimuth % np.float32(13.0))
+    ).reshape(128, 128, AZIMUTH_COUNT)
+    vectors = np.stack(
+        tuple(
+            _position_for_local_angle(dem, azimuth_deg, elevation_deg)
+            for azimuth_deg, elevation_deg in (
+                (0.02, 0.18),
+                (359.98, 0.18),
+                (10.12, 0.45),
+                (275.249, 0.52),
+                (123.456, -0.2),
+            )
+        )
+    )
+    expected = compute_lightmap_patch_reference(
+        dem,
+        horizons,
+        vectors,
+        tile_y=0,
+        tile_x=0,
+        valid_height=2,
+        valid_width=3,
+    )
+
+    actual = np.stack(
+        tuple(
+            LightmapCudaSession(time_batch_size=2).iter_patch_tiles(
+                dem,
+                horizons,
+                vectors,
+                tile_y=0,
+                tile_x=0,
+                valid_height=2,
+                valid_width=3,
+            )
+        )
+    )
+
+    np.testing.assert_array_equal(actual, expected)
+
+
 def test_lightmap_pipeline_writes_timestamp_bands_and_invalid_patch(tmp_path: Path) -> None:
     dem = _dem(width=129, height=1)
     horizon_store = HorizonTileStore(tmp_path / "horizons")
@@ -115,6 +199,7 @@ def test_lightmap_pipeline_writes_timestamp_bands_and_invalid_patch(tmp_path: Pa
         times_utc=times,
         sun_vectors_m=vectors,
         invalid_value=7,
+        backend="cpu",
     )
 
     assert result == output
