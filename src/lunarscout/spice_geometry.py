@@ -146,6 +146,51 @@ def _spice_utc(time: datetime) -> str:
     return utc.isoformat(timespec="microseconds")
 
 
+def body_vectors_moon_me(
+    body: BodyName,
+    times: Iterable[TimeInput] | TimeRange,
+    *,
+    ensure_kernels: bool = True,
+) -> NDArray[np.float64]:
+    """Return geometric Moon-to-body vectors in Moon-ME, in meters.
+
+    The returned C-contiguous array has shape ``(time, 3)`` and is directly
+    suitable for product ``sun_vectors_m`` or ``earth_vectors_m`` arguments.
+    Every UTC timestamp is converted independently to ephemeris time.
+    """
+    if ensure_kernels:
+        _kernel_state.ensure_default_kernels()
+    target = _body_target(body)
+    time_values = _time_list(times)
+    if not time_values:
+        raise SpiceGeometryError(
+            "At least one timestamp is required.",
+            code="spice_empty_times",
+            details={"body": body},
+        )
+    spiceypy = _spiceypy()
+    try:
+        ephemeris_times = np.fromiter(
+            (spiceypy.utc2et(_spice_utc(value)) for value in time_values),
+            dtype=np.float64,
+            count=len(time_values),
+        )
+        positions_km, _light_times = spiceypy.spkpos(
+            target,
+            ephemeris_times,
+            "MOON_ME",
+            "NONE",
+            "MOON",
+        )
+    except Exception as exc:
+        raise SpiceGeometryError(
+            "Unable to compute Moon-ME body vectors.",
+            code="spice_body_vector_failed",
+            details={"body": body, "error": str(exc)},
+        ) from exc
+    return np.ascontiguousarray(positions_km, dtype=np.float64) * 1000.0
+
+
 def _moon_surface_and_basis(
     point: LonLat,
     radii: Sequence[float],

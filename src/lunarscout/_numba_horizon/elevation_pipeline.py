@@ -17,7 +17,7 @@ from lunarscout.georeference import GeoReference
 from .file_format import HorizonTileStore
 from .geometry import DemGrid
 from .pipeline import PatchDescriptor, enumerate_patches
-from .product_store import ProductJob, ResumableTiledProduct
+from .product_store import ProductJob, ResumableTiledProduct, resolve_output_dtype
 from .psr import _validate_vectors
 from .psr_pipeline import _inventory_identity
 
@@ -51,7 +51,11 @@ def _run_body_elevation_product(
     times_utc: Sequence[datetime | str],
     body_vectors_m: npt.ArrayLike,
     observer_elevation_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     cancellation_requested: Callable[[], bool] | None = None,
@@ -70,6 +74,9 @@ def _run_body_elevation_product(
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     if time_batch_size < 1:
         raise ValueError("time_batch_size must be positive")
+    storage_dtype = resolve_output_dtype(
+        np.float32, output_transform, output_dtype, output_transform_id
+    )
     vectors = _validate_vectors(body_vectors_m)
     timestamps = tuple(times_utc)
     if len(timestamps) != len(vectors):
@@ -110,10 +117,12 @@ def _run_body_elevation_product(
         output_path,
         ProductJob(
             georef=georef,
-            dtype=np.float32,
+            dtype=storage_dtype,
             band_count=len(timestamps),
             timestamps_utc=timestamps,
-            invalid_value=invalid_value,
+            invalid_value=nodata,
+            nodata=nodata,
+            compression="deflate" if compress else "none",
             algorithm=f"{body}-center-local-horizon-elevation",
             configuration={
                 "body": body,
@@ -121,12 +130,14 @@ def _run_body_elevation_product(
                     vectors.astype("<f8", copy=False).tobytes()
                 ).hexdigest(),
                 "observer_elevation_m": float(observer_elevation_m),
+                "output_transform_id": output_transform_id,
             },
             horizon_inventory_identity=inventory,
         ),
         overwrite=overwrite,
         start_fresh=start_fresh,
         backend=selected_backend,
+        output_transform=output_transform,
     )
 
     def cancelled() -> bool:

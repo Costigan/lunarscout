@@ -18,7 +18,7 @@ from .file_format import HorizonTileStore
 from .geometry import DemGrid
 from .lightmap_cpu import LightmapCpuSession
 from .pipeline import PatchDescriptor, enumerate_patches
-from .product_store import ProductJob, ResumableTiledProduct
+from .product_store import ProductJob, ResumableTiledProduct, resolve_output_dtype
 from .psr import _azimuth_elevation_deg, _pixel_frame, _validate_vectors
 from .psr_pipeline import _inventory_identity
 from .safe_haven import find_earth_outages, reduce_safe_haven_patch_stream
@@ -54,7 +54,11 @@ def run_safe_haven_product(
     earth_threshold_deg: float = 2.0,
     sunlight_threshold: float = 0.2,
     observer_elevation_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     time_batch_size: int = 32,
@@ -90,6 +94,9 @@ def run_safe_haven_product(
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     if time_batch_size < 1:
         raise ValueError("time_batch_size must be positive")
+    storage_dtype = resolve_output_dtype(
+        np.float32, output_transform, output_dtype, output_transform_id
+    )
     selected_backend = None
     if fraction_calculator is not None:
         calculator = fraction_calculator
@@ -118,11 +125,13 @@ def run_safe_haven_product(
         output_path,
         ProductJob(
             georef=georef,
-            dtype=np.float32,
+            dtype=storage_dtype,
             band_count=len(outages),
             timestamps_utc=tuple(timestamps[item.minimum_index] for item in outages),
-            invalid_value=invalid_value,
-            algorithm="safe-haven-longest-low-sun-duration",
+            invalid_value=nodata,
+            nodata=nodata,
+            compression="deflate" if compress else "none",
+            algorithm="safe-haven-complete-low-sun-overlap-duration",
             configuration={
                 "time_step_hours": float(time_step_hours),
                 "earth_threshold_deg": float(earth_threshold_deg),
@@ -136,12 +145,14 @@ def run_safe_haven_product(
                 "earth_vectors_sha256": hashlib.sha256(
                     earth_vectors.astype("<f8", copy=False).tobytes()
                 ).hexdigest(),
+                "output_transform_id": output_transform_id,
             },
             horizon_inventory_identity=inventory,
         ),
         overwrite=overwrite,
         start_fresh=start_fresh,
         backend=selected_backend,
+        output_transform=output_transform,
     )
 
     def cancelled() -> bool:

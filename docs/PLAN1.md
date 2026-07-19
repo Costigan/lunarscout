@@ -162,6 +162,9 @@ No private `_numba_horizon` function should be re-exported unchanged merely to
 make it public. The public surface must be small, domain-named, typed, and free
 of prototype terminology.
 
+The complete candidate signature and docstring sign-off surface is
+[`PUBLIC_API_REVIEW.md`](PUBLIC_API_REVIEW.md).
+
 ### Naming and facade
 
 - [x] Approve a concise public naming table for root functions, focused
@@ -191,7 +194,7 @@ generate_earth_elevation
 generate_safe_havens
 mission_duration_from_sunlight
 mission_duration_from_sun_elevation
-mission_duration_from_sunlight_and_earth
+mission_duration_from_sunlight_and_earth_elevation
 mission_duration_from_sun_and_earth_elevation
 ```
 

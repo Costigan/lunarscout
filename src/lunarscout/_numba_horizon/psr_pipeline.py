@@ -27,6 +27,7 @@ from .product_store import (
     ProductJob,
     ProductBatchWriter,
     ResumableTiledProduct,
+    resolve_output_dtype,
 )
 from .psr import compute_psr_patch_reference, reduce_sun_vectors_for_psr
 
@@ -131,6 +132,10 @@ def run_psr_product(
     sun_vectors_m: npt.ArrayLike,
     observer_elevation_m: float = 0.0,
     invalid_value: int = 0,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     cancellation_requested: Callable[[], bool] | None = None,
@@ -201,6 +206,9 @@ def run_psr_product(
         or durable_batch_size < 1
     ):
         raise ValueError("durable_batch_size must be a positive integer")
+    storage_dtype = resolve_output_dtype(
+        np.uint8, output_transform, output_dtype, output_transform_id
+    )
     if pipeline_mode == "bounded" and reader_worker_count > decoded_horizon_capacity:
         raise ValueError(
             "reader_worker_count cannot exceed decoded_horizon_capacity"
@@ -263,9 +271,10 @@ def run_psr_product(
         output_path,
         ProductJob(
             georef=georef,
-            dtype=np.uint8,
+            dtype=storage_dtype,
             band_count=1,
             invalid_value=invalid_value,
+            compression="deflate" if compress else "none",
             algorithm="psr-upper-solar-limb",
             configuration={
                 "sun_angular_size_deg": 0.545,
@@ -275,12 +284,14 @@ def run_psr_product(
                     reduced_indices.astype("<i8", copy=False).tobytes()
                 ).hexdigest(),
                 "observer_elevation_m": float(observer_elevation_m),
+                "output_transform_id": output_transform_id,
             },
             horizon_inventory_identity=inventory,
         ),
         overwrite=overwrite,
         start_fresh=start_fresh,
         backend=selected_backend,
+        output_transform=output_transform,
     )
     timing("product_initialize", time.perf_counter() - product_started)
 

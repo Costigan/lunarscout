@@ -96,7 +96,7 @@ import lunarscout as ls
 | `ls.generate_safe_havens(dem, horizons, output, ...)`                      | Generate longest low-Sun durations for Earth outages.                               |
 | `ls.mission_duration_from_sunlight(...)`                                   | Generate landed-duration bands from a sunlight-fraction threshold.                  |
 | `ls.mission_duration_from_sun_elevation(...)`                              | Generate landed-duration bands from a Sun-elevation threshold.                      |
-| `ls.mission_duration_from_sunlight_and_earth(...)`                         | Generate durations satisfying sunlight and Earth-elevation thresholds.              |
+| `ls.mission_duration_from_sunlight_and_earth_elevation(...)`               | Generate durations satisfying sunlight and Earth-elevation thresholds.              |
 | `ls.mission_duration_from_sun_and_earth_elevation(...)`                    | Generate durations satisfying Sun- and Earth-elevation thresholds.                  |
 
 ### Scenario Methods
@@ -533,6 +533,10 @@ are public. Python-only public functions also generate lightmaps, PSR,
 Sun/Earth terrain-relative elevation, safe havens, and all four landed
 mission-duration products.
 
+The exact candidate signatures, defaults, shared behavior, open cleanup
+recommendations, and approval checklist are collected in
+[`PUBLIC_API_REVIEW.md`](PUBLIC_API_REVIEW.md).
+
 Do not import `_numba_horizon` modules in user code. Use the root functions or
 the corresponding `Scenario` conveniences. All downstream functions default
 to `backend="auto"`; use `"cpu"` to avoid touching CUDA or `"cuda"` to require
@@ -551,8 +555,10 @@ output = scenario.lightmap(
 )
 ```
 
-Supplying `sun_vectors_m=` or `earth_vectors_m=` with matching `times=` avoids
-SPICE import and kernel loading. `verbose=False` is the default. Applications
+Supplying `sun_vectors_m=` or `earth_vectors_m=` with a matching `TimeRange`
+avoids SPICE import and kernel loading. Generate those exact product-ready
+Moon-ME meter vectors explicitly with `ls.body_vectors_moon_me("sun", times)`
+or `ls.body_vectors_moon_me("earth", times)`. `verbose=False` is the default. Applications
 can instead use `progress_callback` for a monotonic durable fraction and
 `progress_event_callback` for immutable stage, backend, patch, and path detail.
 Cancellation uses `cancellation_requested`. Compatible staged jobs resume by
@@ -881,18 +887,33 @@ to that tile. The shared pipeline follows this pattern:
 2. calculate every requested result for that 128 by 128 patch; and
 3. write the corresponding compressed GeoTIFF tile or tiles.
 
-Outputs cover the full DEM grid and use compressed 128 by 128 tiles. Missing,
-unreadable, and out-of-DEM horizon pixels receive a deterministic payload and
-are marked invalid with the dataset mask. The payload is configurable and
-defaults to zero. Consumers must use the validity mask rather than infer
-validity from the payload value.
+Outputs cover the full DEM grid and use compressed 128 by 128 tiles by default;
+`compress=True` is the default on every downstream operation. Missing,
+unreadable, and out-of-DEM horizon pixels are marked invalid with the dataset
+mask. Byte products physically store zero at invalid pixels by default (or the
+caller's explicit `invalid_value`), but that payload remains a potentially
+valid science value and is not a nodata sentinel. Float products physically
+store and declare `nodata=np.nan` by default. Consumers should use the dataset
+mask as the authoritative validity representation for both families.
 
 Multi-time products are BigTIFF files with one band per UTC time. Each band is
-made of compressed 128 by 128 tiles. The band stores its ISO-8601 UTC timestamp
+made of 128 by 128 tiles, compressed by default. Pass `compress=False` for
+tiled but uncompressed output. The band stores its ISO-8601 UTC timestamp
 and the dataset stores the complete ordered timestamp list. This layout is
 intended for mission-scale histories, such as two years sampled every six
 hours, and stays within TIFF's 65,535-band limit. A 74-year Metonic history is
 reduced while calculating a PSR map rather than stored as a time-series TIFF.
+
+Downstream operations can transform each valid calculated patch just before it
+is written by supplying `output_transform`, `output_dtype`, and optionally
+`output_transform_id`. NumPy dtype forms such as `np.uint16`,
+`np.dtype("uint16")`, and `"uint16"` are equivalent. A supplied transform must
+preserve the patch shape and return exactly the requested dtype. An omitted
+transform ID matches another omitted ID on restart; callers may supply a
+stable ID when they want restart metadata to guard against inadvertently
+changing transform behavior. Integer conversion of a float product also
+requires an explicitly representable integer `nodata` value because NaN cannot
+be stored in an integer dtype.
 
 Product backends use `backend="auto"`, `"cpu"`, or `"cuda"`. `auto` selects
 CUDA when it is usable and otherwise runs the CPU implementation. CPU support
@@ -961,10 +982,13 @@ one output tile per horizon patch.
 Safe-haven products find Earth outages as maximal half-open intervals during
 which the Earth-center elevation relative to the local terrain horizon is
 strictly below an Earth threshold. For every pixel and outage, the reducer
-records the longest contiguous interval whose sunlight fraction is strictly
-below the sunlight threshold. Durations are `float32`, in hours by default,
-and no truncation or duration clamp is applied. Each Earth outage is one output
-band, timestamped with the first occurrence of its minimum Earth elevation.
+records the longest complete contiguous interval whose sunlight fraction is
+strictly below the sunlight threshold and whose interval overlaps the outage.
+The low-Sun interval may begin before the Earth outage or end after it, so the
+output reveals a location that remains shadowed when communication returns.
+Durations are `float32`, in hours by default, and no truncation or duration
+clamp is applied. Each Earth outage is one output band, timestamped with the
+first occurrence of its minimum Earth elevation.
 
 ### Landed Mission-Duration Maps
 
@@ -984,8 +1008,8 @@ Sun and Earth elevation here always means body-center elevation relative to
 the local terrain horizon at the body's azimuth, not elevation above a smooth
 local horizontal plane. Every threshold comparison is inclusive.
 
-The caller supplies one overall evaluation interval and a list of smaller
-candidate-start intervals. The result is a multi-band `float32` GeoTIFF with
+The caller supplies one overall evaluation interval, a `datetime.timedelta`
+sampling step, and a list of smaller candidate-start intervals. The result is a multi-band `float32` GeoTIFF with
 one band per candidate-start interval and durations in hours or days. Helpers
 construct common monthly, weekly, and fixed-width interval lists.
 

@@ -271,7 +271,7 @@ def test_missing_horizon_uses_configured_invalid_payload_and_mask(tmp_path: Path
         sun_vectors_m=vectors,
         sunlight_fraction_threshold=0.5,
         output_unit="days",
-        invalid_value=-7.0,
+        nodata=-7.0,
         backend="cpu",
         _sun_calculator=_signal((1.0, 1.0)),
     )

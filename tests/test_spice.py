@@ -391,6 +391,35 @@ def test_body_vectors_ned_returns_float64_time_by_three(fake_spiceypy) -> None:
     np.testing.assert_allclose(result, [[2.0, 3.0, 0.0]])
 
 
+def test_body_vectors_moon_me_returns_product_ready_meter_vectors(
+    fake_spiceypy, monkeypatch
+) -> None:
+    calls = []
+
+    def spkpos(target, et, frame, abcorr, observer):
+        calls.append((target, np.asarray(et), frame, abcorr, observer))
+        count = np.asarray(et).size
+        return np.tile((1.0, 2.0, 3.0), (count, 1)), np.zeros(count)
+
+    monkeypatch.setattr(fake_spiceypy, "spkpos", spkpos)
+    time_range = ls.times(
+        "2027-01-01T00:00:00Z",
+        "2027-01-01T06:00:00Z",
+        step_hours=6,
+    )
+
+    result = ls.body_vectors_moon_me(
+        "sun", time_range, ensure_kernels=False
+    )
+
+    assert result.shape == (2, 3)
+    assert result.dtype == np.dtype(np.float64)
+    assert result.flags.c_contiguous
+    np.testing.assert_array_equal(result, ((1000.0, 2000.0, 3000.0),) * 2)
+    assert calls[0][0] == "SUN"
+    assert calls[0][2:] == ("MOON_ME", "NONE", "MOON")
+
+
 def test_body_azimuth_elevation_uses_ned_convention(fake_spiceypy) -> None:
     fake_spiceypy.positions = [
         np.asarray([1.0 + math.sqrt(2.0), 1.0, 1.0], dtype=np.float64)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import inspect
 import os
 from pathlib import Path
 import sys
@@ -71,6 +72,65 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path]:
     return dem_path, horizons_path
 
 
+def test_public_product_storage_defaults_are_explicit() -> None:
+    byte_products = (ls.generate_lightmap, ls.generate_psr)
+    float_products = (
+        ls.generate_sun_elevation,
+        ls.generate_earth_elevation,
+        ls.generate_safe_havens,
+        ls.mission_duration_from_sunlight,
+        ls.mission_duration_from_sun_elevation,
+        ls.mission_duration_from_sunlight_and_earth_elevation,
+        ls.mission_duration_from_sun_and_earth_elevation,
+    )
+    for function in (*byte_products, *float_products):
+        parameters = inspect.signature(function).parameters
+        assert parameters["compress"].default is True
+        assert parameters["output_transform"].default is None
+        assert parameters["output_dtype"].default is None
+        assert parameters["output_transform_id"].default is None
+    for function in float_products:
+        assert np.isnan(inspect.signature(function).parameters["nodata"].default)
+
+
+def test_output_conversion_is_validated_before_file_access(tmp_path: Path) -> None:
+    with pytest.raises(ls.InputError) as raised:
+        ls.generate_lightmap(
+            tmp_path / "missing-dem.tif",
+            tmp_path / "missing-horizons",
+            tmp_path / "output.tif",
+            times=ls.times(
+                "2027-01-01T00:00:00Z",
+                "2027-01-02T00:00:00Z",
+                step_hours=24,
+            ),
+            output_transform=lambda values: values,
+        )
+    assert raised.value.code == "product_output_conversion_invalid"
+
+
+def test_public_lightmap_converts_patch_to_requested_dtype(tmp_path: Path) -> None:
+    dem_path, horizons_path = _inputs(tmp_path)
+    times = ls.times(
+        "2027-01-01T00:00:00Z",
+        "2027-01-02T00:00:00Z",
+        step_hours=24,
+    )
+    output = ls.generate_lightmap(
+        dem_path,
+        horizons_path,
+        tmp_path / "converted-lightmap.tif",
+        times=times,
+        sun_vectors_m=np.stack((_sun_vector(1.0), _sun_vector(1.0))),
+        backend="cpu",
+        output_transform=lambda values: values.astype(np.uint16) * 2,
+        output_dtype="uint16",
+    )
+    with rasterio.open(output) as dataset:
+        assert dataset.dtypes == ("uint16", "uint16")
+        assert np.all(dataset.read() == 510)
+
+
 def test_public_cpu_lightmap_uses_explicit_vectors_without_cuda_or_spice(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -139,6 +199,54 @@ def test_public_lightmap_default_auto_reports_cpu_fallback(
     assert events[0].backend == "cpu"
     with rasterio.open(output) as dataset:
         assert dataset.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
+
+
+def test_public_lightmap_can_disable_tile_compression(tmp_path: Path) -> None:
+    dem_path, horizons_path = _inputs(tmp_path)
+    output = ls.generate_lightmap(
+        dem_path,
+        horizons_path,
+        tmp_path / "uncompressed.tif",
+        times=ls.times(
+            "2027-01-01T00:00:00Z",
+            "2027-01-01T00:00:00Z",
+            step_hours=1,
+        ),
+        sun_vectors_m=_sun_vector(1.0)[None, :],
+        backend="cpu",
+        compress=False,
+    )
+
+    with rasterio.open(output) as dataset:
+        assert dataset.profile["tiled"] is True
+        assert dataset.block_shapes == [(128, 128)]
+        assert dataset.compression is None
+
+
+def test_existing_output_is_rejected_before_dem_spice_or_cuda(
+    tmp_path: Path,
+) -> None:
+    horizons = tmp_path / "horizons"
+    horizons.mkdir()
+    output = tmp_path / "existing.tif"
+    original = b"completed-output"
+    output.write_bytes(original)
+
+    with pytest.raises(ls.ProductStorageError) as raised:
+        ls.generate_lightmap(
+            tmp_path / "missing-dem.tif",
+            horizons,
+            output,
+            times=ls.times(
+                "2027-01-01T00:00:00Z",
+                "2027-01-01T00:00:00Z",
+                step_hours=1,
+            ),
+        )
+
+    assert raised.value.code == "product_output_exists"
+    assert output.read_bytes() == original
+    assert "spiceypy" not in sys.modules
 
 
 def test_public_explicit_cuda_failure_never_falls_back(
@@ -441,7 +549,7 @@ def test_public_safe_havens_reject_nonuniform_samples_before_output(
         ("mission_duration_from_sunlight", {"sunlight_fraction_threshold": 0.5}, False),
         ("mission_duration_from_sun_elevation", {"sun_elevation_threshold_deg": 0.0}, False),
         (
-            "mission_duration_from_sunlight_and_earth",
+            "mission_duration_from_sunlight_and_earth_elevation",
             {"sunlight_fraction_threshold": 0.5, "earth_elevation_threshold_deg": 0.0},
             True,
         ),
@@ -464,9 +572,9 @@ def test_public_cpu_mission_duration_families(
         "2027-01-02T00:00:00Z",
     )
     kwargs = {
-        "times": times,
         "evaluation_start": times[0],
         "evaluation_stop": times[1],
+        "step": timedelta(days=1),
         "candidate_start_intervals": ((times[0], times[1]),),
         "sun_vectors_m": np.stack((_sun_vector(1.0), _sun_vector(1.0))),
         "output_unit": "days",
@@ -497,18 +605,19 @@ def test_public_cpu_mission_duration_families(
 )
 def test_all_public_downstream_cpu_and_cuda_products_agree(tmp_path: Path) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
-    times = (
+    times = ls.times(
         "2027-01-01T00:00:00Z",
         "2027-01-02T00:00:00Z",
+        step_hours=24,
     )
     sun_high = np.stack((_sun_vector(1.0), _sun_vector(1.0)))
     sun_low = np.stack((_sun_vector(-1.0), _sun_vector(-1.0)))
     earth_high = np.stack((_sun_vector(1.0), _sun_vector(1.0)))
     mission_common = {
-        "times": times,
-        "evaluation_start": times[0],
-        "evaluation_stop": times[1],
-        "candidate_start_intervals": ((times[0], times[1]),),
+        "evaluation_start": times.start,
+        "evaluation_stop": times.stop,
+        "step": timedelta(days=1),
+        "candidate_start_intervals": ((times.start, times.stop),),
         "sun_vectors_m": sun_high,
         "output_unit": "hours",
     }
@@ -548,7 +657,7 @@ def test_all_public_downstream_cpu_and_cuda_products_agree(tmp_path: Path) -> No
         ),
         (
             "mission_sunlight_earth",
-            ls.mission_duration_from_sunlight_and_earth,
+            ls.mission_duration_from_sunlight_and_earth_elevation,
             {
                 **mission_common,
                 "earth_vectors_m": earth_high,

@@ -6,6 +6,25 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Made `compress=True` explicit as the default for every tiled downstream
+  GeoTIFF operation. Float products now expose `nodata=np.nan` while retaining
+  authoritative dataset masks; byte products retain a zero storage payload
+  without treating valid zero values as nodata. Added bounded patch output
+  transforms with an explicit NumPy-compatible output dtype and an optional
+  restart identity; omitting the identity on both runs is restart-compatible.
+  Transform results must preserve patch shape and return the exact requested
+  dtype. Added a single detailed public-signature review document covering
+  these defaults, scientific meanings, restart rules, and remaining decisions.
+- Revised the candidate API review: renamed the sunlight-and-Earth mission
+  function to `mission_duration_from_sunlight_and_earth_elevation`, made
+  `TimeRange` the ordinary product time input, derived mission samples from
+  evaluation start/stop plus a `timedelta` step, added public product-ready
+  Moon-ME vector generation, and exposed optional GeoTIFF tile compression.
+  Existing outputs are rejected before DEM, SPICE, or CUDA work begins.
+- Corrected safe-haven duration semantics to measure the complete contiguous
+  low-Sun interval that overlaps an Earth outage, including portions before or
+  after the outage. This intentionally changes safe-haven scientific output
+  where shadow crosses an outage boundary.
 - Added a public downstream-product example that defaults to CPU and can run
   lightmap, PSR, both terrain-relative elevation products, safe havens, and all
   four mission-duration operations from one existing scenario. It documents

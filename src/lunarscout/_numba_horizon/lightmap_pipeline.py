@@ -18,7 +18,7 @@ from .file_format import HorizonTileStore
 from .geometry import DemGrid
 from .lightmap import iter_lightmap_patch_reference
 from .pipeline import PatchDescriptor, enumerate_patches
-from .product_store import ProductJob, ResumableTiledProduct
+from .product_store import ProductJob, ResumableTiledProduct, resolve_output_dtype
 from .psr import _validate_vectors
 from .psr_pipeline import _inventory_identity
 
@@ -50,6 +50,10 @@ def run_lightmap_product(
     sun_vectors_m: npt.ArrayLike,
     observer_elevation_m: float = 0.0,
     invalid_value: int = 0,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     cancellation_requested: Callable[[], bool] | None = None,
@@ -71,6 +75,9 @@ def run_lightmap_product(
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     if time_batch_size < 1:
         raise ValueError("time_batch_size must be positive")
+    storage_dtype = resolve_output_dtype(
+        np.uint8, output_transform, output_dtype, output_transform_id
+    )
     selected_backend = None
     if patch_calculator is not None:
         calculate_patch = patch_calculator
@@ -106,10 +113,11 @@ def run_lightmap_product(
         output_path,
         ProductJob(
             georef=georef,
-            dtype=np.uint8,
+            dtype=storage_dtype,
             band_count=len(timestamps),
             timestamps_utc=timestamps,
             invalid_value=invalid_value,
+            compression="deflate" if compress else "none",
             algorithm="lightmap-builder-sun-fraction",
             configuration={
                 "sun_half_angle_deg": 0.27,
@@ -118,12 +126,14 @@ def run_lightmap_product(
                     vectors.astype("<f8", copy=False).tobytes()
                 ).hexdigest(),
                 "observer_elevation_m": float(observer_elevation_m),
+                "output_transform_id": output_transform_id,
             },
             horizon_inventory_identity=inventory,
         ),
         overwrite=overwrite,
         start_fresh=start_fresh,
         backend=selected_backend,
+        output_transform=output_transform,
     )
 
     def cancelled() -> bool:

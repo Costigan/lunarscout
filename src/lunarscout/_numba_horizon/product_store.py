@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -53,6 +53,29 @@ class ProductStoreError(RuntimeError):
 
 class IncompatibleProductJobError(ProductStoreError):
     """An existing staged product belongs to a different calculation."""
+
+
+def resolve_output_dtype(
+    native_dtype: npt.DTypeLike,
+    output_transform: Callable[[np.ndarray[Any, Any]], np.ndarray[Any, Any]] | None,
+    output_dtype: npt.DTypeLike | None,
+    output_transform_id: str | None,
+) -> np.dtype[Any]:
+    """Validate a patch conversion contract and return its storage dtype."""
+
+    if output_transform is None:
+        if output_dtype is not None or output_transform_id is not None:
+            raise ValueError(
+                "output_dtype and output_transform_id require output_transform"
+            )
+        return np.dtype(native_dtype)
+    if not callable(output_transform):
+        raise ValueError("output_transform must be callable or None")
+    if output_dtype is None:
+        raise ValueError("output_dtype is required with output_transform")
+    if output_transform_id is not None and not isinstance(output_transform_id, str):
+        raise ValueError("output_transform_id must be a string or None")
+    return np.dtype(output_dtype)
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +160,7 @@ class ProductJob:
     timestamps_utc: Sequence[datetime | str] = ()
     band_metadata: Sequence[Mapping[str, Any]] = ()
     invalid_value: int | float = 0
+    nodata: int | float | None = None
     compression: str = "deflate"
     algorithm: str = "unspecified"
     configuration: Mapping[str, Any] | None = None
@@ -166,8 +190,10 @@ class ProductJob:
             _json_bytes(band_metadata)
         except (TypeError, ValueError) as exc:
             raise ValueError("band metadata must be JSON-serializable") from exc
-        if not np.isfinite(self.invalid_value):
-            raise ValueError("invalid_value must be finite")
+        if not np.isfinite(self.invalid_value) and not (
+            np.issubdtype(dtype, np.floating) and np.isnan(self.invalid_value)
+        ):
+            raise ValueError("invalid_value must be finite or NaN for a float dtype")
         try:
             invalid = np.asarray(self.invalid_value, dtype=dtype).item()
         except (OverflowError, TypeError, ValueError) as exc:
@@ -179,7 +205,26 @@ class ProductJob:
         else:
             if np.isfinite(self.invalid_value) and not np.isfinite(invalid):
                 raise ValueError("invalid_value is not representable by the dtype")
-            invalid = float(invalid)
+            invalid = "NaN" if np.isnan(invalid) else float(invalid)
+        nodata: int | float | str | None = None
+        if self.nodata is not None:
+            try:
+                converted_nodata = np.asarray(self.nodata, dtype=dtype).item()
+            except (OverflowError, TypeError, ValueError) as exc:
+                raise ValueError("nodata is not representable by the dtype") from exc
+            if np.issubdtype(dtype, np.integer):
+                if (
+                    not np.isfinite(self.nodata)
+                    or float(self.nodata) != float(converted_nodata)
+                ):
+                    raise ValueError("nodata is not exactly representable by the dtype")
+                nodata = int(converted_nodata)
+            elif np.isnan(converted_nodata):
+                nodata = "NaN"
+            elif not np.isfinite(converted_nodata):
+                raise ValueError("nodata must be finite or NaN")
+            else:
+                nodata = float(converted_nodata)
         configuration = dict(self.configuration or {})
         try:
             _json_bytes(configuration)
@@ -196,6 +241,7 @@ class ProductJob:
             "timestamps_utc": list(timestamps),
             "band_metadata": band_metadata,
             "invalid_value": invalid,
+            "nodata": nodata,
             "compression": str(self.compression).lower(),
             "projection_wkt": self.georef.projection_wkt,
             "affine_transform": [float(value) for value in self.georef.affine_transform],
@@ -217,6 +263,8 @@ class ResumableTiledProduct:
         overwrite: bool = False,
         start_fresh: bool = False,
         backend: str | None = None,
+        output_transform: Callable[[np.ndarray[Any, Any]], np.ndarray[Any, Any]]
+        | None = None,
     ) -> None:
         self.output_path = Path(output_path).expanduser().resolve()
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -229,6 +277,7 @@ class ResumableTiledProduct:
         self._manifest = job.manifest()
         self._fingerprint = hashlib.sha256(_json_bytes(self._manifest)).hexdigest()
         self._dtype = np.dtype(self._manifest["dtype"])
+        self._output_transform = output_transform
         self._overwrite = bool(overwrite)
         if backend not in (None, "cpu", "cuda"):
             raise ValueError("backend must be 'cpu', 'cuda', or None")
@@ -284,7 +333,7 @@ class ResumableTiledProduct:
 
     def _profile(self) -> dict[str, Any]:
         predictor = 3 if np.issubdtype(self._dtype, np.floating) else 2
-        return {
+        profile = {
             "driver": "GTiff",
             "width": int(self._manifest["width"]),
             "height": int(self._manifest["height"]),
@@ -301,6 +350,38 @@ class ResumableTiledProduct:
             "SPARSE_OK": "TRUE",
             "interleave": "band",
         }
+        nodata = self._manifest["nodata"]
+        if nodata is not None:
+            profile["nodata"] = np.nan if nodata == "NaN" else nodata
+        return profile
+
+    def _invalid_value(self) -> int | float:
+        value = self._manifest["invalid_value"]
+        return np.nan if value == "NaN" else value
+
+    def _prepare_tile(
+        self, source: npt.ArrayLike, height: int, width: int
+    ) -> npt.NDArray[Any]:
+        tile = np.asarray(source)
+        if tile.shape != (height, width):
+            raise ValueError(
+                f"band tile must have shape {(height, width)}, got {tile.shape}"
+            )
+        if self._output_transform is not None:
+            tile = np.asarray(self._output_transform(tile))
+            if tile.shape != (height, width):
+                raise ValueError(
+                    "output_transform must preserve the band tile shape; "
+                    f"expected {(height, width)}, got {tile.shape}"
+                )
+            if tile.dtype != self._dtype:
+                raise ValueError(
+                    "output_transform returned dtype "
+                    f"{tile.dtype}; expected {self._dtype}"
+                )
+        else:
+            tile = np.asarray(tile, dtype=self._dtype)
+        return np.ascontiguousarray(tile)
 
     def _create(self) -> None:
         with Env(GDAL_TIFF_INTERNAL_MASK=True):
@@ -491,7 +572,7 @@ class ResumableTiledProduct:
             return ProductWriteTimings(0.0, 0.0, 0.0)
         iterator = iter(band_tiles)
         invalid_tile = np.full(
-            (height, width), self._manifest["invalid_value"], dtype=self._dtype
+            (height, width), self._invalid_value(), dtype=self._dtype
         )
         write_started = time.perf_counter()
         with Env(GDAL_TIFF_INTERNAL_MASK=True):
@@ -502,12 +583,7 @@ class ResumableTiledProduct:
                             source = next(iterator)
                         except StopIteration as exc:
                             raise ValueError("band_tiles has fewer entries than band_count") from exc
-                        tile = np.asarray(source, dtype=self._dtype)
-                        if tile.shape != (height, width):
-                            raise ValueError(
-                                f"band tile must have shape {(height, width)}, got {tile.shape}"
-                            )
-                        tile = np.ascontiguousarray(tile)
+                        tile = self._prepare_tile(source, height, width)
                     else:
                         tile = invalid_tile
                     dataset.write(tile, band_index, window=window)
@@ -644,7 +720,7 @@ class ProductBatchWriter:
         iterator = iter(band_tiles)
         invalid_tile = np.full(
             (height, width),
-            product._manifest["invalid_value"],
+            product._invalid_value(),
             dtype=product._dtype,
         )
         write_started = time.perf_counter()
@@ -657,12 +733,7 @@ class ProductBatchWriter:
                     raise ValueError(
                         "band_tiles has fewer entries than band_count"
                     ) from exc
-                tile = np.asarray(source, dtype=product._dtype)
-                if tile.shape != (height, width):
-                    raise ValueError(
-                        f"band tile must have shape {(height, width)}, got {tile.shape}"
-                    )
-                tile = np.ascontiguousarray(tile)
+                tile = product._prepare_tile(source, height, width)
             else:
                 tile = invalid_tile
             dataset.write(tile, band_index, window=window)

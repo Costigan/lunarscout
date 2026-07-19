@@ -1,5 +1,10 @@
 # Public Product API Proposal
 
+> Historical design record: the exact candidate signatures in this document
+> are superseded by [PUBLIC_API_REVIEW.md](PUBLIC_API_REVIEW.md). In particular,
+> the review uses `TimeRange`, `compress=True`, float `nodata=np.nan`, and the
+> approved patch-level output-conversion contract.
+
 Status: accepted decisions; public product facades implemented for PLAN1 M1
 
 Last updated: 2026-07-18
@@ -171,7 +176,7 @@ The proposed root functions and focused-module functions use the same names:
 | `generate_safe_havens` | `safe_havens` |
 | `mission_duration_from_sunlight` | `mission_duration_from_sunlight` |
 | `mission_duration_from_sun_elevation` | `mission_duration_from_sun_elevation` |
-| `mission_duration_from_sunlight_and_earth` | `mission_duration_from_sunlight_and_earth` |
+| `mission_duration_from_sunlight_and_earth_elevation` | `mission_duration_from_sunlight_and_earth_elevation` |
 | `mission_duration_from_sun_and_earth_elevation` | `mission_duration_from_sun_and_earth_elevation` |
 
 The focused modules are proposed as `lunarscout.horizon` for horizon formats
@@ -321,7 +326,7 @@ Their distinct threshold arguments are:
 
 - `mission_duration_from_sunlight`: `sunlight_fraction_threshold`;
 - `mission_duration_from_sun_elevation`: `sun_elevation_threshold_deg`;
-- `mission_duration_from_sunlight_and_earth`:
+- `mission_duration_from_sunlight_and_earth_elevation`:
   `sunlight_fraction_threshold` and `earth_elevation_threshold_deg`; and
 - `mission_duration_from_sun_and_earth_elevation`:
   `sun_elevation_threshold_deg` and `earth_elevation_threshold_deg`.

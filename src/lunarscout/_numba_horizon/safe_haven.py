@@ -48,7 +48,7 @@ def reduce_safe_haven_patch(
     sunlight_threshold: float,
     time_step_hours: float,
 ) -> npt.NDArray[np.float32]:
-    """Return longest low-light duration for each outage and pixel."""
+    """Return complete low-light runs overlapping each outage and pixel."""
     fractions = np.asarray(sunlight_fraction, dtype=np.float32)
     if fractions.ndim != 3 or not np.all(np.isfinite(fractions)):
         raise ValueError("sunlight fractions must be finite (time, y, x) values")
@@ -56,18 +56,15 @@ def reduce_safe_haven_patch(
         raise ValueError("sunlight_threshold must be between zero and one")
     if not np.isfinite(time_step_hours) or time_step_hours <= 0.0:
         raise ValueError("time_step_hours must be positive and finite")
-    output = np.zeros((len(outages), *fractions.shape[1:]), dtype=np.float32)
-    for outage_index, outage in enumerate(outages):
-        if not 0 <= outage.start < outage.stop <= fractions.shape[0]:
-            raise ValueError("Earth outage falls outside the sunlight time axis")
-        current = np.zeros(fractions.shape[1:], dtype=np.int32)
-        longest = np.zeros_like(current)
-        for time_index in range(outage.start, outage.stop):
-            low = fractions[time_index] < np.float32(sunlight_threshold)
-            current = np.where(low, current + 1, 0)
-            longest = np.maximum(longest, current)
-        output[outage_index] = longest * np.float32(time_step_hours)
-    return output
+    return np.stack(
+        reduce_safe_haven_patch_stream(
+            iter(fractions),
+            fractions.shape[0],
+            outages,
+            sunlight_threshold=sunlight_threshold,
+            time_step_hours=time_step_hours,
+        )
+    ) if outages else np.zeros((0, *fractions.shape[1:]), dtype=np.float32)
 
 
 def reduce_safe_haven_patch_stream(
@@ -78,7 +75,11 @@ def reduce_safe_haven_patch_stream(
     sunlight_threshold: float,
     time_step_hours: float,
 ) -> tuple[npt.NDArray[np.float32], ...]:
-    """Online equivalent that never retains the time axis."""
+    """Measure complete low-light runs that overlap each Earth outage.
+
+    A qualifying run may begin before an outage and end after it. The reducer
+    remains streaming and retains only per-pixel run and overlap state.
+    """
     if time_count < 1:
         raise ValueError("time_count must be positive")
     if not 0.0 <= sunlight_threshold <= 1.0:
@@ -93,8 +94,8 @@ def reduce_safe_haven_patch_stream(
     iterator = iter(sunlight_fraction_tiles)
     current = None
     longest = None
+    overlaps = None
     shape = None
-    outage_index = 0
     for time_index in range(time_count):
         try:
             tile = np.asarray(next(iterator), dtype=np.float32)
@@ -104,20 +105,21 @@ def reduce_safe_haven_patch_stream(
             raise ValueError("sunlight fraction tiles must be finite 2D arrays")
         if shape is None:
             shape = tile.shape
-            current = np.zeros((len(outages), *shape), dtype=np.int32)
-            longest = np.zeros_like(current)
+            current = np.zeros(shape, dtype=np.int32)
+            longest = np.zeros((len(outages), *shape), dtype=np.int32)
+            overlaps = np.zeros((len(outages), *shape), dtype=np.bool_)
         elif tile.shape != shape:
             raise ValueError("all sunlight fraction tiles must have the same shape")
-        while outage_index < len(outages) and time_index >= outages[outage_index].stop:
-            outage_index += 1
-        if (
-            outage_index < len(outages)
-            and time_index >= outages[outage_index].start
-        ):
-            low = tile < np.float32(sunlight_threshold)
-            active = current[outage_index]
-            active[:] = np.where(low, active + 1, 0)
-            longest[outage_index] = np.maximum(longest[outage_index], active)
+        low = tile < np.float32(sunlight_threshold)
+        current[:] = np.where(low, current + 1, 0)
+        for index, outage in enumerate(outages):
+            if outage.start <= time_index < outage.stop:
+                overlaps[index] |= low
+            active = overlaps[index] & low
+            longest[index] = np.maximum(
+                longest[index], np.where(active, current, 0)
+            )
+            overlaps[index] &= low
     try:
         next(iterator)
     except StopIteration:

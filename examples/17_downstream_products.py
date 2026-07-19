@@ -9,6 +9,7 @@ Use ``--backend cpu`` on a machine without an NVIDIA GPU.
 from __future__ import annotations
 
 import argparse
+from datetime import timedelta
 from pathlib import Path
 
 import lunarscout as ls
@@ -84,9 +85,12 @@ def main() -> int:
         "verbose": True,
     }
     mission_common = {
-        **common,
+        "backend": arguments.backend,
+        "overwrite": arguments.overwrite,
+        "verbose": True,
         "evaluation_start": times.start,
         "evaluation_stop": times.stop,
+        "step": timedelta(hours=arguments.step_hours),
         "candidate_start_intervals": ((times.start, times.stop),),
         "output_unit": "hours",
     }
@@ -118,7 +122,7 @@ def main() -> int:
             sun_elevation_threshold_deg=0.0,
             **mission_common,
         ),
-        "mission-sunlight-earth": lambda: scenario.mission_duration_from_sunlight_and_earth(
+        "mission-sunlight-earth": lambda: scenario.mission_duration_from_sunlight_and_earth_elevation(
             output_directory / "mission-sunlight-earth.tif",
             sunlight_fraction_threshold=0.5,
             earth_elevation_threshold_deg=0.0,

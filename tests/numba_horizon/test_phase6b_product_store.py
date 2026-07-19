@@ -116,6 +116,82 @@ def test_product_store_resumes_by_patch_and_publishes_partial_edges(
     assert second_band[129, 256] == 44
 
 
+def test_float_nodata_is_written_to_payload_metadata_and_mask(tmp_path: Path) -> None:
+    output = tmp_path / "float-nodata.tif"
+    job = ProductJob(
+        georef=_georef(width=256, height=128),
+        dtype=np.float32,
+        invalid_value=np.nan,
+        nodata=np.nan,
+    )
+    store = ResumableTiledProduct(output, job)
+    store.write_patch(0, 0, (np.ones((128, 128), dtype=np.float32),))
+    store.write_invalid_patch(0, 128)
+    store.finalize()
+
+    with rasterio.open(output) as dataset:
+        assert np.isnan(dataset.nodata)
+        assert np.all(np.isnan(dataset.read(1, window=((0, 128), (128, 256)))))
+        assert np.all(dataset.dataset_mask(window=((0, 128), (128, 256))) == 0)
+
+
+def test_omitted_transform_id_matches_after_restart(tmp_path: Path) -> None:
+    output = tmp_path / "converted.tif"
+    job = ProductJob(
+        georef=_georef(width=256, height=128),
+        dtype=np.uint16,
+        invalid_value=np.iinfo(np.uint16).max,
+        nodata=np.iinfo(np.uint16).max,
+        configuration={"output_transform_id": None},
+    )
+    first = ResumableTiledProduct(
+        output,
+        job,
+        output_transform=lambda values: values.astype(np.uint16),
+    )
+    first.write_patch(0, 0, (np.full((128, 128), 12.0, dtype=np.float32),))
+
+    resumed = ResumableTiledProduct(
+        output,
+        job,
+        output_transform=lambda values: np.rint(values).astype(np.uint16),
+    )
+    assert resumed.is_complete(0, 0)
+    resumed.write_invalid_patch(0, 128)
+    resumed.finalize()
+
+    with rasterio.open(output) as dataset:
+        assert dataset.dtypes == ("uint16",)
+        assert dataset.nodata == np.iinfo(np.uint16).max
+        assert np.all(dataset.read(1, window=((0, 128), (0, 128))) == 12)
+        assert np.all(
+            dataset.read(1, window=((0, 128), (128, 256)))
+            == np.iinfo(np.uint16).max
+        )
+
+
+@pytest.mark.parametrize(
+    ("transform", "message"),
+    (
+        (lambda values: values[:1], "preserve the band tile shape"),
+        (lambda values: values.astype(np.float32), "expected uint16"),
+    ),
+)
+def test_output_transform_validates_shape_and_exact_dtype(
+    tmp_path: Path,
+    transform,
+    message: str,
+) -> None:
+    output = tmp_path / "invalid-conversion.tif"
+    store = ResumableTiledProduct(
+        output,
+        ProductJob(georef=_georef(width=128, height=128), dtype=np.uint16),
+        output_transform=transform,
+    )
+    with pytest.raises(ValueError, match=message):
+        store.write_patch(0, 0, (np.ones((128, 128), dtype=np.float32),))
+
+
 def test_backend_provenance_survives_resume_and_records_mixed_execution(
     tmp_path: Path,
 ) -> None:

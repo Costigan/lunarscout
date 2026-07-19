@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from datetime import timedelta
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, Literal
 import warnings
 
 import numpy as np
@@ -31,6 +31,43 @@ from .temporal import TimeInput, TimeRange
 ProgressCallback = Callable[[float], None]
 ProgressEventCallback = Callable[[ProgressEvent], None]
 CancellationCheck = Callable[[], bool]
+
+
+def _validate_output_conversion(
+    output_transform: Callable[[np.ndarray], np.ndarray] | None,
+    output_dtype: npt.DTypeLike | None,
+    output_transform_id: str | None,
+) -> None:
+    if output_transform is None:
+        if output_dtype is not None or output_transform_id is not None:
+            raise InputError(
+                "output_dtype and output_transform_id require output_transform.",
+                code="product_output_conversion_invalid",
+            )
+        return
+    if not callable(output_transform):
+        raise InputError(
+            "output_transform must be callable or None.",
+            code="product_output_conversion_invalid",
+        )
+    if output_dtype is None:
+        raise InputError(
+            "output_dtype is required with output_transform.",
+            code="product_output_conversion_invalid",
+        )
+    try:
+        np.dtype(output_dtype)
+    except (TypeError, ValueError) as exc:
+        raise InputError(
+            "output_dtype is not a valid NumPy dtype.",
+            code="product_output_dtype_invalid",
+            details={"output_dtype": repr(output_dtype)},
+        ) from exc
+    if output_transform_id is not None and not isinstance(output_transform_id, str):
+        raise InputError(
+            "output_transform_id must be a string or None.",
+            code="product_output_conversion_invalid",
+        )
 
 
 def _is_cuda_runtime_failure(error: BaseException) -> bool:
@@ -179,28 +216,19 @@ def _resolve_vectors(
     body: str,
     *,
     vectors_m: npt.ArrayLike | None,
-    times: Iterable[TimeInput] | TimeRange | None,
-    start: TimeInput | None,
-    stop: TimeInput | None,
-    step: timedelta | None,
+    times: Iterable[TimeInput] | TimeRange,
 ):
     from ._numba_horizon.product_vectors import resolve_moon_me_vectors
 
-    if vectors_m is not None and any(value is not None for value in (start, stop, step)):
-        raise VectorError(
-            "Explicit vectors cannot be combined with start, stop, or step.",
-            code="product_vectors_time_arguments_conflict",
-            details={"body": body},
-        )
     try:
         return resolve_moon_me_vectors(
             body,
             explicit_vectors_m=vectors_m,
             explicit_times=times if vectors_m is not None else None,
             times=times if vectors_m is None else None,
-            start=start,
-            stop=stop,
-            step=step,
+            start=None,
+            stop=None,
+            step=None,
         )
     except ValueError as exc:
         error_type = VectorError if vectors_m is not None else ProductTimeError
@@ -289,14 +317,15 @@ def generate_lightmap(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange | None = None,
-    start: TimeInput | None = None,
-    stop: TimeInput | None = None,
-    step: timedelta | None = None,
+    times: TimeRange,
     sun_vectors_m: npt.ArrayLike | None = None,
     backend: Backend = "auto",
     observer_height_m: float = 0.0,
     invalid_value: int = 0,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     verbose: bool = False,
@@ -304,15 +333,20 @@ def generate_lightmap(
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> Path:
-    """Generate a timestamped uint8 visible-solar-fraction BigTIFF.
+    """Generate a timestamped, tiled uint8 visible-solar-fraction BigTIFF.
 
     Values are ``trunc(255 * visible_fraction)``. Invalid pixels carry
     ``invalid_value`` and are distinguished by the dataset validity mask.
     Compatible staged work resumes by default; ``start_fresh=True`` discards
     it. ``backend="cpu"`` never probes CUDA, explicit ``"cuda"`` never falls
     back, and ``"auto"`` falls back only when CUDA cannot be initialized.
+    Tiles are compressed by default; pass ``compress=False`` to disable
+    compression without disabling tiling.
     """
 
+    _validate_output_conversion(
+        output_transform, output_dtype, output_transform_id
+    )
     if backend not in ("auto", "cpu", "cuda"):
         raise InputError(
             "backend must be 'auto', 'cpu', or 'cuda'.",
@@ -342,9 +376,6 @@ def generate_lightmap(
         "sun",
         vectors_m=sun_vectors_m,
         times=times,
-        start=start,
-        stop=stop,
-        step=step,
     )
     from ._numba_horizon.cuda_backend import CudaBackendError
     from ._numba_horizon.file_format import HorizonTileStore
@@ -371,6 +402,10 @@ def generate_lightmap(
             sun_vectors_m=vectors.vectors_m,
             observer_elevation_m=observer_height_m,
             invalid_value=invalid_value,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
             cancellation_requested=cancellation_requested,
@@ -430,14 +465,15 @@ def generate_psr(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange | None = None,
-    start: TimeInput | None = None,
-    stop: TimeInput | None = None,
-    step: timedelta | None = None,
+    times: TimeRange,
     sun_vectors_m: npt.ArrayLike | None = None,
     backend: Backend = "auto",
     observer_height_m: float = 0.0,
     invalid_value: int = 0,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     verbose: bool = False,
@@ -445,14 +481,18 @@ def generate_psr(
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> Path:
-    """Generate a single-band permanent-shadow classification GeoTIFF.
+    """Generate a single-band tiled permanent-shadow classification GeoTIFF.
 
     Value 255 means that the upper solar limb never clears the interpolated
     terrain horizon for the supplied samples; value 0 means that it clears at
     least once. Both are valid science values. Invalid pixels are represented
-    by the dataset mask and carry ``invalid_value`` deterministically.
+    by the dataset mask and carry ``invalid_value`` deterministically. Tiles
+    are compressed unless ``compress=False``.
     """
 
+    _validate_output_conversion(
+        output_transform, output_dtype, output_transform_id
+    )
     if backend not in ("auto", "cpu", "cuda"):
         raise InputError(
             "backend must be 'auto', 'cpu', or 'cuda'.",
@@ -478,9 +518,6 @@ def generate_psr(
         "sun",
         vectors_m=sun_vectors_m,
         times=times,
-        start=start,
-        stop=stop,
-        step=step,
     )
     from ._numba_horizon.cuda_backend import CudaBackendError
     from ._numba_horizon.file_format import HorizonTileStore
@@ -503,6 +540,10 @@ def generate_psr(
             sun_vectors_m=vectors.vectors_m,
             observer_elevation_m=observer_height_m,
             invalid_value=invalid_value,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
             cancellation_requested=cancellation_requested,
@@ -563,14 +604,15 @@ def _generate_body_elevation(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange | None,
-    start: TimeInput | None,
-    stop: TimeInput | None,
-    step: timedelta | None,
+    times: TimeRange,
     vectors_m: npt.ArrayLike | None,
     backend: Backend,
     observer_height_m: float,
-    invalid_value: float,
+    nodata: float,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None,
+    output_dtype: npt.DTypeLike | None,
+    output_transform_id: str | None,
+    compress: bool,
     overwrite: bool,
     start_fresh: bool,
     verbose: bool,
@@ -578,6 +620,9 @@ def _generate_body_elevation(
     progress_event_callback: ProgressEventCallback | None,
     cancellation_requested: CancellationCheck | None,
 ) -> Path:
+    _validate_output_conversion(
+        output_transform, output_dtype, output_transform_id
+    )
     if backend not in ("auto", "cpu", "cuda"):
         raise InputError(
             "backend must be 'auto', 'cpu', or 'cuda'.",
@@ -603,9 +648,6 @@ def _generate_body_elevation(
         body,
         vectors_m=vectors_m,
         times=times,
-        start=start,
-        stop=stop,
-        step=step,
     )
     from ._numba_horizon.cuda_backend import CudaBackendError
     from ._numba_horizon.elevation_pipeline import (
@@ -642,7 +684,11 @@ def _generate_body_elevation(
             output_path=output,
             times_utc=vectors.times_utc,
             observer_elevation_m=observer_height_m,
-            invalid_value=invalid_value,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
             cancellation_requested=cancellation_requested,
@@ -703,14 +749,15 @@ def generate_sun_elevation(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange | None = None,
-    start: TimeInput | None = None,
-    stop: TimeInput | None = None,
-    step: timedelta | None = None,
+    times: TimeRange,
     sun_vectors_m: npt.ArrayLike | None = None,
     backend: Backend = "auto",
     observer_height_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     verbose: bool = False,
@@ -720,9 +767,11 @@ def generate_sun_elevation(
 ) -> Path:
     """Generate Sun-center elevation relative to the terrain horizon.
 
-    Each UTC sample becomes one ``float32`` BigTIFF band in degrees. Invalid
-    pixels carry ``invalid_value`` and are distinguished by the dataset mask.
-    The returned :class:`Path` identifies the completed output.
+    Each UTC sample becomes one tiled ``float32`` BigTIFF band in degrees. Invalid
+    pixels carry ``nodata`` (NaN by default) and are distinguished by the
+    dataset mask.
+    The returned :class:`Path` identifies the completed output. Tiles are
+    compressed unless ``compress=False``.
     """
 
     return _generate_body_elevation(
@@ -731,13 +780,14 @@ def generate_sun_elevation(
         horizons_path,
         output_path,
         times=times,
-        start=start,
-        stop=stop,
-        step=step,
         vectors_m=sun_vectors_m,
         backend=backend,
         observer_height_m=observer_height_m,
-        invalid_value=invalid_value,
+        nodata=nodata,
+        output_transform=output_transform,
+        output_dtype=output_dtype,
+        output_transform_id=output_transform_id,
+        compress=compress,
         overwrite=overwrite,
         start_fresh=start_fresh,
         verbose=verbose,
@@ -752,14 +802,15 @@ def generate_earth_elevation(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange | None = None,
-    start: TimeInput | None = None,
-    stop: TimeInput | None = None,
-    step: timedelta | None = None,
+    times: TimeRange,
     earth_vectors_m: npt.ArrayLike | None = None,
     backend: Backend = "auto",
     observer_height_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     verbose: bool = False,
@@ -769,9 +820,11 @@ def generate_earth_elevation(
 ) -> Path:
     """Generate Earth-center elevation relative to the terrain horizon.
 
-    Each UTC sample becomes one ``float32`` BigTIFF band in degrees. Invalid
-    pixels carry ``invalid_value`` and are distinguished by the dataset mask.
-    The returned :class:`Path` identifies the completed output.
+    Each UTC sample becomes one tiled ``float32`` BigTIFF band in degrees. Invalid
+    pixels carry ``nodata`` (NaN by default) and are distinguished by the
+    dataset mask.
+    The returned :class:`Path` identifies the completed output. Tiles are
+    compressed unless ``compress=False``.
     """
 
     return _generate_body_elevation(
@@ -780,13 +833,14 @@ def generate_earth_elevation(
         horizons_path,
         output_path,
         times=times,
-        start=start,
-        stop=stop,
-        step=step,
         vectors_m=earth_vectors_m,
         backend=backend,
         observer_height_m=observer_height_m,
-        invalid_value=invalid_value,
+        nodata=nodata,
+        output_transform=output_transform,
+        output_dtype=output_dtype,
+        output_transform_id=output_transform_id,
+        compress=compress,
         overwrite=overwrite,
         start_fresh=start_fresh,
         verbose=verbose,
@@ -801,17 +855,18 @@ def generate_safe_havens(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange | None = None,
-    start: TimeInput | None = None,
-    stop: TimeInput | None = None,
-    step: timedelta | None = None,
+    times: TimeRange,
     sun_vectors_m: npt.ArrayLike | None = None,
     earth_vectors_m: npt.ArrayLike | None = None,
     earth_elevation_threshold_deg: float = 2.0,
     sunlight_fraction_threshold: float = 0.2,
     backend: Backend = "auto",
     observer_height_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     verbose: bool = False,
@@ -823,13 +878,18 @@ def generate_safe_havens(
 
     Earth outages are maximal half-open intervals strictly below
     ``earth_elevation_threshold_deg``. Each float32 output band stores the
-    longest contiguous sunlight fraction strictly below
-    ``sunlight_fraction_threshold`` in hours. Input samples must be uniformly
-    spaced. Invalid pixels carry ``invalid_value`` and are distinguished by
-    the dataset mask. The returned :class:`Path` identifies the completed
-    output.
+    longest complete contiguous sunlight interval strictly below
+    ``sunlight_fraction_threshold`` that overlaps that outage, in hours. The
+    low-Sun interval may begin before the outage or end after it. Input samples
+    must be uniformly spaced. Invalid pixels carry ``nodata`` (NaN by default) and are
+    distinguished by the dataset mask. The returned :class:`Path` identifies
+    the completed tiled output. Tiles are compressed unless
+    ``compress=False``.
     """
 
+    _validate_output_conversion(
+        output_transform, output_dtype, output_transform_id
+    )
     if backend not in ("auto", "cpu", "cuda"):
         raise InputError(
             "backend must be 'auto', 'cpu', or 'cuda'.",
@@ -851,26 +911,16 @@ def generate_safe_havens(
         horizons_path, output_path, overwrite=overwrite
     )
     dem, georef = _load_dem(dem_path)
-    time_values = (
-        times
-        if isinstance(times, TimeRange) or times is None
-        else tuple(times)
-    )
+    time_values = times
     sun = _resolve_vectors(
         "sun",
         vectors_m=sun_vectors_m,
         times=time_values,
-        start=start,
-        stop=stop,
-        step=step,
     )
     earth = _resolve_vectors(
         "earth",
         vectors_m=earth_vectors_m,
         times=time_values,
-        start=start,
-        stop=stop,
-        step=step,
     )
     if sun.times_utc != earth.times_utc:
         raise ProductTimeError(
@@ -924,7 +974,11 @@ def generate_safe_havens(
             earth_threshold_deg=earth_elevation_threshold_deg,
             sunlight_threshold=sunlight_fraction_threshold,
             observer_elevation_m=observer_height_m,
-            invalid_value=invalid_value,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
             backend=backend,
@@ -985,19 +1039,23 @@ def _generate_mission_duration(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange,
     evaluation_start: TimeInput,
     evaluation_stop: TimeInput,
+    step: timedelta,
     candidate_start_intervals: Iterable[tuple[TimeInput, TimeInput]],
     sun_vectors_m: npt.ArrayLike | None,
     earth_vectors_m: npt.ArrayLike | None,
     sunlight_fraction_threshold: float | None,
     sun_elevation_threshold_deg: float | None,
     earth_elevation_threshold_deg: float | None,
-    output_unit: str,
+    output_unit: Literal["hours", "days"],
     backend: Backend,
     observer_height_m: float,
-    invalid_value: float,
+    nodata: float,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None,
+    output_dtype: npt.DTypeLike | None,
+    output_transform_id: str | None,
+    compress: bool,
     overwrite: bool,
     start_fresh: bool,
     verbose: bool,
@@ -1005,6 +1063,9 @@ def _generate_mission_duration(
     progress_event_callback: ProgressEventCallback | None,
     cancellation_requested: CancellationCheck | None,
 ) -> Path:
+    _validate_output_conversion(
+        output_transform, output_dtype, output_transform_id
+    )
     if backend not in ("auto", "cpu", "cuda"):
         raise InputError(
             "backend must be 'auto', 'cpu', or 'cuda'.",
@@ -1032,15 +1093,21 @@ def _generate_mission_duration(
         horizons_path, output_path, overwrite=overwrite
     )
     dem, georef = _load_dem(dem_path)
-    time_values = times if isinstance(times, TimeRange) else tuple(times)
+    from .spice_geometry import iter_times
+
+    try:
+        time_values = tuple(iter_times(evaluation_start, evaluation_stop, step))
+    except Exception as exc:
+        raise ProductTimeError(
+            "Mission-duration evaluation times are invalid.",
+            code="mission_duration_times_invalid",
+            details={"error": str(exc)},
+        ) from exc
     intervals = tuple(candidate_start_intervals)
     sun = _resolve_vectors(
         "sun",
         vectors_m=sun_vectors_m,
         times=time_values,
-        start=None,
-        stop=None,
-        step=None,
     )
     earth = None
     if earth_elevation_threshold_deg is not None:
@@ -1048,9 +1115,6 @@ def _generate_mission_duration(
             "earth",
             vectors_m=earth_vectors_m,
             times=time_values,
-            start=None,
-            stop=None,
-            step=None,
         )
         if earth.times_utc != sun.times_utc:
             raise ProductTimeError(
@@ -1104,7 +1168,11 @@ def _generate_mission_duration(
             sun_vectors_m=sun.vectors_m,
             output_unit=output_unit,
             observer_elevation_m=observer_height_m,
-            invalid_value=invalid_value,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
             cancellation_requested=cancellation_requested,
@@ -1165,16 +1233,20 @@ def mission_duration_from_sunlight(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange,
     evaluation_start: TimeInput,
     evaluation_stop: TimeInput,
+    step: timedelta,
     candidate_start_intervals: Iterable[tuple[TimeInput, TimeInput]],
     sunlight_fraction_threshold: float,
     sun_vectors_m: npt.ArrayLike | None = None,
-    output_unit: str = "hours",
+    output_unit: Literal["hours", "days"] = "hours",
     backend: Backend = "auto",
     observer_height_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     verbose: bool = False,
@@ -1187,21 +1259,24 @@ def mission_duration_from_sunlight(
     ``sunlight_fraction_threshold`` is a unitless inclusive lower bound.
     Evaluation and candidate-start intervals are half-open. Durations use
     actual UTC sample spacing and are stored as ``float32`` hours or days as
-    selected by ``output_unit``. Invalid pixels carry ``invalid_value`` and are
+    selected by ``output_unit``. Invalid pixels carry ``nodata`` and are
     distinguished by the dataset mask. The returned :class:`Path` identifies
     the completed output.
     """
 
     return _generate_mission_duration(
         "sunlight", dem_path, horizons_path, output_path,
-        times=times, evaluation_start=evaluation_start,
-        evaluation_stop=evaluation_stop,
+        evaluation_start=evaluation_start, evaluation_stop=evaluation_stop,
+        step=step,
         candidate_start_intervals=candidate_start_intervals,
         sun_vectors_m=sun_vectors_m, earth_vectors_m=None,
         sunlight_fraction_threshold=sunlight_fraction_threshold,
         sun_elevation_threshold_deg=None, earth_elevation_threshold_deg=None,
         output_unit=output_unit, backend=backend,
-        observer_height_m=observer_height_m, invalid_value=invalid_value,
+        observer_height_m=observer_height_m, nodata=nodata,
+        output_transform=output_transform, output_dtype=output_dtype,
+        output_transform_id=output_transform_id,
+        compress=compress,
         overwrite=overwrite, start_fresh=start_fresh, verbose=verbose,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
@@ -1214,16 +1289,20 @@ def mission_duration_from_sun_elevation(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange,
     evaluation_start: TimeInput,
     evaluation_stop: TimeInput,
+    step: timedelta,
     candidate_start_intervals: Iterable[tuple[TimeInput, TimeInput]],
     sun_elevation_threshold_deg: float,
     sun_vectors_m: npt.ArrayLike | None = None,
-    output_unit: str = "hours",
+    output_unit: Literal["hours", "days"] = "hours",
     backend: Backend = "auto",
     observer_height_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     verbose: bool = False,
@@ -1236,22 +1315,26 @@ def mission_duration_from_sun_elevation(
     ``sun_elevation_threshold_deg`` is an inclusive lower bound in degrees.
     Evaluation and candidate-start intervals are half-open. Durations use
     actual UTC sample spacing and are stored as ``float32`` hours or days as
-    selected by ``output_unit``. Invalid pixels carry ``invalid_value`` and are
+    selected by ``output_unit``. Invalid pixels carry ``nodata`` and are
     distinguished by the dataset mask. The returned :class:`Path` identifies
     the completed output.
     """
 
     return _generate_mission_duration(
         "sun_elevation", dem_path, horizons_path, output_path,
-        times=times, evaluation_start=evaluation_start,
-        evaluation_stop=evaluation_stop,
+        evaluation_start=evaluation_start, evaluation_stop=evaluation_stop,
+        step=step,
         candidate_start_intervals=candidate_start_intervals,
         sun_vectors_m=sun_vectors_m, earth_vectors_m=None,
         sunlight_fraction_threshold=None,
         sun_elevation_threshold_deg=sun_elevation_threshold_deg,
         earth_elevation_threshold_deg=None, output_unit=output_unit,
         backend=backend, observer_height_m=observer_height_m,
-        invalid_value=invalid_value, overwrite=overwrite,
+        nodata=nodata,
+        output_transform=output_transform,
+        output_dtype=output_dtype,
+        output_transform_id=output_transform_id,
+        compress=compress, overwrite=overwrite,
         start_fresh=start_fresh, verbose=verbose,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
@@ -1259,23 +1342,27 @@ def mission_duration_from_sun_elevation(
     )
 
 
-def mission_duration_from_sunlight_and_earth(
+def mission_duration_from_sunlight_and_earth_elevation(
     dem_path: str | Path,
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange,
     evaluation_start: TimeInput,
     evaluation_stop: TimeInput,
+    step: timedelta,
     candidate_start_intervals: Iterable[tuple[TimeInput, TimeInput]],
     sunlight_fraction_threshold: float,
     earth_elevation_threshold_deg: float,
     sun_vectors_m: npt.ArrayLike | None = None,
     earth_vectors_m: npt.ArrayLike | None = None,
-    output_unit: str = "hours",
+    output_unit: Literal["hours", "days"] = "hours",
     backend: Backend = "auto",
     observer_height_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     verbose: bool = False,
@@ -1289,22 +1376,25 @@ def mission_duration_from_sunlight_and_earth(
     in degrees. Both thresholds are inclusive lower bounds. Evaluation and
     candidate-start intervals are half-open. Durations use actual UTC sample
     spacing and are stored as ``float32`` hours or days as selected by
-    ``output_unit``. Invalid pixels carry ``invalid_value`` and are
+    ``output_unit``. Invalid pixels carry ``nodata`` and are
     distinguished by the dataset mask. The returned :class:`Path` identifies
     the completed output.
     """
 
     return _generate_mission_duration(
         "sunlight_earth", dem_path, horizons_path, output_path,
-        times=times, evaluation_start=evaluation_start,
-        evaluation_stop=evaluation_stop,
+        evaluation_start=evaluation_start, evaluation_stop=evaluation_stop,
+        step=step,
         candidate_start_intervals=candidate_start_intervals,
         sun_vectors_m=sun_vectors_m, earth_vectors_m=earth_vectors_m,
         sunlight_fraction_threshold=sunlight_fraction_threshold,
         sun_elevation_threshold_deg=None,
         earth_elevation_threshold_deg=earth_elevation_threshold_deg,
         output_unit=output_unit, backend=backend,
-        observer_height_m=observer_height_m, invalid_value=invalid_value,
+        observer_height_m=observer_height_m, nodata=nodata,
+        output_transform=output_transform, output_dtype=output_dtype,
+        output_transform_id=output_transform_id,
+        compress=compress,
         overwrite=overwrite, start_fresh=start_fresh, verbose=verbose,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
@@ -1317,18 +1407,22 @@ def mission_duration_from_sun_and_earth_elevation(
     horizons_path: str | Path,
     output_path: str | Path,
     *,
-    times: Iterable[TimeInput] | TimeRange,
     evaluation_start: TimeInput,
     evaluation_stop: TimeInput,
+    step: timedelta,
     candidate_start_intervals: Iterable[tuple[TimeInput, TimeInput]],
     sun_elevation_threshold_deg: float,
     earth_elevation_threshold_deg: float,
     sun_vectors_m: npt.ArrayLike | None = None,
     earth_vectors_m: npt.ArrayLike | None = None,
-    output_unit: str = "hours",
+    output_unit: Literal["hours", "days"] = "hours",
     backend: Backend = "auto",
     observer_height_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     verbose: bool = False,
@@ -1341,22 +1435,25 @@ def mission_duration_from_sun_and_earth_elevation(
     Both terrain-relative elevation thresholds are inclusive lower bounds in
     degrees. Evaluation and candidate-start intervals are half-open. Durations
     use actual UTC sample spacing and are stored as ``float32`` hours or days
-    as selected by ``output_unit``. Invalid pixels carry ``invalid_value`` and
+    as selected by ``output_unit``. Invalid pixels carry ``nodata`` and
     are distinguished by the dataset mask. The returned :class:`Path`
     identifies the completed output.
     """
 
     return _generate_mission_duration(
         "sun_earth_elevation", dem_path, horizons_path, output_path,
-        times=times, evaluation_start=evaluation_start,
-        evaluation_stop=evaluation_stop,
+        evaluation_start=evaluation_start, evaluation_stop=evaluation_stop,
+        step=step,
         candidate_start_intervals=candidate_start_intervals,
         sun_vectors_m=sun_vectors_m, earth_vectors_m=earth_vectors_m,
         sunlight_fraction_threshold=None,
         sun_elevation_threshold_deg=sun_elevation_threshold_deg,
         earth_elevation_threshold_deg=earth_elevation_threshold_deg,
         output_unit=output_unit, backend=backend,
-        observer_height_m=observer_height_m, invalid_value=invalid_value,
+        observer_height_m=observer_height_m, nodata=nodata,
+        output_transform=output_transform, output_dtype=output_dtype,
+        output_transform_id=output_transform_id,
+        compress=compress,
         overwrite=overwrite, start_fresh=start_fresh, verbose=verbose,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,

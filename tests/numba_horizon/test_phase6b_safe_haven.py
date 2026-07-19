@@ -68,7 +68,7 @@ def test_earth_outages_are_half_open_and_include_edge_regions() -> None:
     )
 
 
-def test_safe_haven_duration_includes_last_sample_and_preserves_float_hours() -> None:
+def test_safe_haven_duration_extends_outside_outage_and_preserves_float_hours() -> None:
     fractions = np.asarray(
         (
             ((0.1, 0.9),),
@@ -90,7 +90,7 @@ def test_safe_haven_duration_includes_last_sample_and_preserves_float_hours() ->
 
     np.testing.assert_array_equal(
         actual,
-        np.asarray((((5.0, 5.0),), ((5.0, 2.5),)), dtype=np.float32),
+        np.asarray((((5.0, 7.5),), ((5.0, 7.5),)), dtype=np.float32),
     )
 
     streamed = reduce_safe_haven_patch_stream(

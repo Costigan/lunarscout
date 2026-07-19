@@ -74,7 +74,7 @@ from .products import (
     mission_duration_from_sun_and_earth_elevation,
     mission_duration_from_sun_elevation,
     mission_duration_from_sunlight,
-    mission_duration_from_sunlight_and_earth,
+    mission_duration_from_sunlight_and_earth_elevation,
 )
 from .progress import ProgressEvent
 from .regions import (
@@ -91,6 +91,7 @@ from .spice_geometry import (
     body_azimuth_elevation_over_horizon,
     body_vectors_ned,
     body_vectors_ned_dataframe,
+    body_vectors_moon_me,
     iter_times,
     plot_body_elevation,
     plot_body_elevations,
@@ -179,6 +180,7 @@ __all__ = [
     "body_azimuth_elevation_over_horizon",
     "body_vectors_ned",
     "body_vectors_ned_dataframe",
+    "body_vectors_moon_me",
     "cuda",
     "download_map_product",
     "filesystem_safe_scenario_name",
@@ -193,7 +195,7 @@ __all__ = [
     "mission_duration_from_sun_and_earth_elevation",
     "mission_duration_from_sun_elevation",
     "mission_duration_from_sunlight",
-    "mission_duration_from_sunlight_and_earth",
+    "mission_duration_from_sunlight_and_earth_elevation",
     "hillshade",
     "iter_times",
     "label_regions",

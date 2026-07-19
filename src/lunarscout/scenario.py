@@ -344,14 +344,14 @@ class Scenario:
             self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
         )
 
-    def mission_duration_from_sunlight_and_earth(
+    def mission_duration_from_sunlight_and_earth_elevation(
         self, output: str | Path, **kwargs: Any
     ) -> Path:
         """Generate sunlight-and-Earth-threshold mission-duration bands."""
 
-        from .products import mission_duration_from_sunlight_and_earth
+        from .products import mission_duration_from_sunlight_and_earth_elevation
 
-        return mission_duration_from_sunlight_and_earth(
+        return mission_duration_from_sunlight_and_earth_elevation(
             self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
         )
 

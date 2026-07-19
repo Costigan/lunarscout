@@ -25,7 +25,7 @@ from .mission_duration import (
     validate_evaluation_samples,
 )
 from .pipeline import PatchDescriptor, enumerate_patches
-from .product_store import ProductJob, ResumableTiledProduct
+from .product_store import ProductJob, ResumableTiledProduct, resolve_output_dtype
 from .psr import _validate_vectors
 from .psr_pipeline import _inventory_identity
 
@@ -105,7 +105,11 @@ def _run_duration_product(
     earth_threshold_deg: float | None = None,
     output_unit: DurationUnit = "hours",
     observer_elevation_m: float = 0.0,
-    invalid_value: float = 0.0,
+    nodata: float = np.nan,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: npt.DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
     cancellation_requested: Callable[[], bool] | None = None,
@@ -120,6 +124,9 @@ def _run_duration_product(
         raise ValueError("GeoReference and DEM dimensions do not match")
     if output_unit not in ("hours", "days"):
         raise ValueError("output_unit must be 'hours' or 'days'")
+    storage_dtype = resolve_output_dtype(
+        np.float32, output_transform, output_dtype, output_transform_id
+    )
     timestamps, _sample_hours = validate_evaluation_samples(
         times_utc,
         evaluation_start_utc=evaluation_start_utc,
@@ -191,6 +198,7 @@ def _run_duration_product(
         "sun_threshold": float(sun_threshold),
         "sun_vectors_sha256": _vector_hash(sun_vectors),
         "observer_elevation_m": float(observer_elevation_m),
+        "output_transform_id": output_transform_id,
     }
     if earth_vectors is not None:
         configuration.update(
@@ -203,7 +211,7 @@ def _run_duration_product(
         output_path,
         ProductJob(
             georef=georef,
-            dtype=np.float32,
+            dtype=storage_dtype,
             band_count=len(intervals),
             timestamps_utc=tuple(item.start_utc for item in intervals),
             band_metadata=tuple(
@@ -214,7 +222,9 @@ def _run_duration_product(
                 }
                 for item in intervals
             ),
-            invalid_value=invalid_value,
+            invalid_value=nodata,
+            nodata=nodata,
+            compression="deflate" if compress else "none",
             algorithm=algorithm,
             configuration=configuration,
             horizon_inventory_identity=inventory,
@@ -222,6 +232,7 @@ def _run_duration_product(
         overwrite=overwrite,
         start_fresh=start_fresh,
         backend=selected_backend,
+        output_transform=output_transform,
     )
 
     def cancelled() -> bool:

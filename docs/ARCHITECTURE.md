@@ -416,9 +416,10 @@ stop)` in which center-view Earth elevation is strictly below the configured
 threshold. Every sample in an interval participates. The first occurrence of
 the minimum Earth elevation supplies that interval's output timestamp.
 
-For every pixel and outage interval, the product records the longest contiguous
-low-Sun duration. The default datatype is `float32` hours so fractional steps
-and durations above 255 hours are preserved. The reducer consumes sunlight
+For every pixel and outage interval, the product records the longest complete
+contiguous low-Sun interval that overlaps the outage. The low-Sun interval may
+start before the Earth outage or end after it. The default datatype is
+`float32` hours so fractional steps and durations above 255 hours are preserved. The reducer consumes sunlight
 fractions online and retains only current and maximum run state per pixel and
 outage, rather than a time cube. Each outage is a timestamped output band.
 
