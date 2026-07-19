@@ -38,6 +38,7 @@ class SafeHavenProgress:
     tile_y: int | None
     tile_x: int | None
     state: str
+    backend: Literal["cpu", "cuda"] | None = None
 
 
 def run_safe_haven_product(
@@ -155,6 +156,7 @@ def run_safe_haven_product(
             None if patch is None else patch.tile_y,
             None if patch is None else patch.tile_x,
             state,
+            selected_backend,
         )
         if progress_callback is not None:
             progress_callback(event)

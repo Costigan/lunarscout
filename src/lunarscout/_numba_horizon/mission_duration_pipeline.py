@@ -45,6 +45,7 @@ class MissionDurationProgress:
     tile_y: int | None
     tile_x: int | None
     state: str
+    backend: Literal["cpu", "cuda"] | None = None
 
 
 def _vector_hash(vectors: npt.NDArray[np.float64]) -> str:
@@ -235,6 +236,7 @@ def _run_duration_product(
             None if patch is None else patch.tile_y,
             None if patch is None else patch.tile_x,
             state,
+            selected_backend,
         )
         if progress_callback is not None:
             progress_callback(event)

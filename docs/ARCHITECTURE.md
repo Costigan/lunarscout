@@ -27,9 +27,9 @@ application, but Lunarscout neither requires nor owns one.
 "Python-only" describes the library, its orchestration, and its extension
 boundary. It does not mean that every numerical instruction is interpreted
 Python. Lunarscout uses NumPy, Numba, Rasterio/GDAL, PyProj, SciPy, SpiceyPy/
-CSPICE, HDF5, and an NVIDIA CUDA driver where the selected operation requires
-them. These dependencies are reached through maintained Python APIs; there is
-no second Lunarscout implementation hosted in another runtime.
+CSPICE, and an NVIDIA CUDA driver where the selected operation requires them.
+These dependencies are reached through maintained Python APIs; there is no
+second Lunarscout implementation hosted in another runtime.
 
 ## 2. Scope and dependency direction
 
@@ -100,7 +100,7 @@ Bounded execution and durable storage
   patch scheduler | CPU/CUDA sessions | horizon store | GeoTIFF product store
                                |
 Python ecosystem providers
-  NumPy/Numba | Rasterio/GDAL | PyProj | SpiceyPy/CSPICE | HDF5
+  NumPy/Numba | Rasterio/GDAL | PyProj | SpiceyPy/CSPICE
 ```
 
 ### 4.1 Core modules
@@ -637,20 +637,22 @@ because an array has the expected length.
 - import Numba CUDA or create a CUDA context;
 - import or initialize SpiceyPy/CSPICE;
 - furnish or download SPICE kernels;
-- open Rasterio/GDAL datasets;
-- initialize HDF5 plugins; or
+- open Rasterio/GDAL datasets; or
 - perform filesystem writes or network access.
 
-Raster, SPICE, HDF5, and CUDA dependencies are imported by focused modules at
-first use. Capability discovery is read-only and has no unrelated side effects.
+Raster, SPICE, and CUDA dependencies are imported by focused modules at first
+use. Capability discovery is read-only and has no unrelated side effects.
 Selecting `backend="cpu"` does not touch CUDA. Supplying explicit vectors does
-not touch SPICE. Reading an existing horizon on a CPU-only machine does not
-touch CUDA.
+not import SpiceyPy or touch the SPICE kernel pool. Reading an existing horizon
+on a CPU-only machine does not touch CUDA.
 
-Package extras group optional capabilities by user need, for example `spice`,
-`cuda`, and `hdf5`, while the base installation retains ordinary raster and
-array functionality. Exact grouping is a packaging concern, but `pythonnet`
-and .NET artifacts are absent from every group.
+SpiceyPy is a core installation dependency because generated Sun/Earth vectors
+are part of the supported product surface, while its runtime import and kernel
+loading remain lazy. Numba provides CPU execution from the base install; its
+CUDA support uses an existing compatible NVIDIA driver without installing the
+CUDA toolkit as a Lunarscout dependency. HDF5 is not a supported product format
+or declared dependency. `pythonnet` and .NET artifacts are absent from the base
+install and every optional group.
 
 ## 17. Testing and evidence
 

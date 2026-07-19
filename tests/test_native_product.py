@@ -9,6 +9,7 @@ import pytest
 import lunarscout as ls
 import rasterio
 import lunarscout.native as native
+from lunarscout.native_product import generate_psr_product
 
 
 def _georef() -> ls.GeoReference:
@@ -33,6 +34,22 @@ def _scenario(tmp_path: Path) -> ls.Scenario:
         _georef(),
     )
     return ls.open_scenario(root)
+
+
+def _legacy_psr(
+    scenario: ls.Scenario,
+    output: str | Path,
+    **kwargs,
+) -> Path:
+    """Exercise the transitional managed wrapper without occupying Scenario.psr."""
+
+    return generate_psr_product(
+        scenario_root=scenario.root,
+        dem_path=scenario.dem_path(),
+        horizons_path=scenario.horizons_path(),
+        output_path=scenario.output_path(output),
+        **kwargs,
+    )
 
 
 class _Bridge:
@@ -113,12 +130,13 @@ class _OutOfOrderProgressBridge(_Bridge):
         ls.write_geotiff(output_path, self.values, self.georef)
 
 
-def test_scenario_psr_generates_valid_atomic_byte_mask(tmp_path: Path) -> None:
+def test_transitional_psr_wrapper_generates_valid_atomic_byte_mask(tmp_path: Path) -> None:
     scenario = _scenario(tmp_path)
     bridge = _Bridge(_georef())
     progress: list[ls.native.NativeProductProgress] = []
 
-    output = scenario.psr(
+    output = _legacy_psr(
+        scenario,
         "analysis/psr.tif",
         progress_callback=progress.append,
         _bridge=bridge,
@@ -169,7 +187,7 @@ def test_psr_constructs_explicit_pythonnet_callback_delegates(
     monkeypatch.setattr(native, "_create_moonlib_bridge", lambda **_kwargs: bridge)
     monkeypatch.setattr(native, "_bootstrap_module", lambda: bootstrap)
 
-    scenario.psr("analysis/psr.tif")
+    _legacy_psr(scenario, "analysis/psr.tif")
 
     assert constructed == ["progress", "cancellation"]
 
@@ -182,7 +200,7 @@ def test_psr_accepts_internal_validity_mask_for_unknown_pixels(tmp_path: Path) -
         validity=np.asarray([[255, 0], [255, 255]], dtype=np.uint8),
     )
 
-    output = scenario.psr("analysis/psr.tif", _bridge=bridge)
+    output = _legacy_psr(scenario, "analysis/psr.tif", _bridge=bridge)
 
     with rasterio.open(output) as dataset:
         assert dataset.nodata is None
@@ -196,7 +214,8 @@ def test_psr_normalizes_out_of_order_native_progress(tmp_path: Path) -> None:
     scenario = _scenario(tmp_path)
     progress: list[ls.native.NativeProductProgress] = []
 
-    scenario.psr(
+    _legacy_psr(
+        scenario,
         "analysis/psr.tif",
         progress_callback=progress.append,
         _bridge=_OutOfOrderProgressBridge(_georef()),
@@ -215,7 +234,7 @@ def test_psr_rejects_existing_output_without_native_start(tmp_path: Path) -> Non
     bridge = _Bridge(_georef())
 
     with pytest.raises(ls.NativeInputError) as raised:
-        scenario.psr("analysis/psr.tif", _bridge=bridge)
+        _legacy_psr(scenario, "analysis/psr.tif", _bridge=bridge)
 
     assert raised.value.code == "native_psr_output_exists"
     assert output.read_bytes() == b"existing"
@@ -230,7 +249,9 @@ def test_failed_psr_overwrite_preserves_existing_output(tmp_path: Path) -> None:
     bridge = _Bridge(_georef(), failure=RuntimeError("native failure"))
 
     with pytest.raises(ls.NativeProductError) as raised:
-        scenario.psr("analysis/psr.tif", overwrite=True, _bridge=bridge)
+        _legacy_psr(
+            scenario, "analysis/psr.tif", overwrite=True, _bridge=bridge
+        )
 
     assert raised.value.code == "native_psr_generation_failed"
     assert raised.value.details["error"] == "native failure"
@@ -252,7 +273,8 @@ def test_cancelled_psr_cleans_staging_and_preserves_existing(tmp_path: Path) -> 
             cancelled = True
 
     with pytest.raises(ls.NativeProductError) as raised:
-        scenario.psr(
+        _legacy_psr(
+            scenario,
             "analysis/psr.tif",
             overwrite=True,
             progress_callback=progress,
@@ -277,7 +299,7 @@ def test_psr_rejects_invalid_native_mask(tmp_path: Path, values: np.ndarray) -> 
     bridge = _Bridge(_georef(), values=values)
 
     with pytest.raises(ls.NativeProductError) as raised:
-        scenario.psr("analysis/psr.tif", _bridge=bridge)
+        _legacy_psr(scenario, "analysis/psr.tif", _bridge=bridge)
 
     assert raised.value.code == "native_psr_values_invalid"
     assert not scenario.output_path("analysis/psr.tif").exists()
@@ -288,4 +310,4 @@ def test_psr_uses_scenario_path_safety(tmp_path: Path) -> None:
     scenario = _scenario(tmp_path)
 
     with pytest.raises(ls.ScenarioPathError):
-        scenario.psr("../psr.tif", _bridge=_Bridge(_georef()))
+        scenario.psr("../psr.tif")

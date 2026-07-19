@@ -13,15 +13,8 @@ numpy>=2.0,<2.3
 pyproj==3.7.2
 rasterio==1.5.0
 scipy==1.17.1
+numba==0.66.0
+spiceypy==8.1.2
 
 # Development and tests.
 pytest==9.0.3
-
-# Optional native bridge. Importing lunarscout does not require pythonnet, but
-# native calculations do.
-pythonnet==3.0.5
-
-# Optional prototype example:
-#   examples/14_timeseries_two_file_prototype.py
-h5py==3.16.0
-hdf5plugin==7.0.0

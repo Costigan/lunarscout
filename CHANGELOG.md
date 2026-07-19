@@ -6,6 +6,20 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Promoted Python-only public facades for lightmaps, PSR, Sun- and Earth-center
+  terrain-relative elevation, safe havens, and all four landed
+  mission-duration products. Root functions and `Scenario` conveniences share
+  explicit vector/time resolution, `backend="auto"`, quiet-by-default verbose
+  output, monotonic fraction and immutable structured progress callbacks,
+  cooperative cancellation, restart/overwrite arguments, structured domain
+  failures, and `Path` results. `Scenario.psr` now uses the Python product;
+  historical managed-wrapper tests call that transitional wrapper directly.
+- Replaced mandatory Python.NET and prototype HDF5 dependencies in package
+  metadata with the validated Numba CPU runtime. SpiceyPy remains a core
+  dependency because generated Sun/Earth vectors are part of the product
+  scope, but it is imported lazily so explicit-vector operations do not load
+  SPICE. No declared dependency or extra installs Python.NET, and HDF5 is not
+  advertised because no public product writes HDF5.
 - Adopted the initial Python-only public product API decisions: downstream
   products use keyword-only `backend="auto"` with strict `cpu` and `cuda`
   behavior, long operations default to `verbose=False`, and file-producing

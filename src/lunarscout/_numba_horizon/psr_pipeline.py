@@ -42,6 +42,7 @@ class PsrProgress:
     tile_y: int | None
     tile_x: int | None
     state: str
+    backend: Literal["cpu", "cuda"] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,6 +306,7 @@ def run_psr_product(
             None if patch is None else patch.tile_y,
             None if patch is None else patch.tile_x,
             state,
+            selected_backend,
         )
         with callback_lock:
             if progress_event_callback is not None:

@@ -89,6 +89,15 @@ import lunarscout as ls
 | `ls.map_product_download_directory(root, product)`                         | Return the expected download directory for a map product.                           |
 | `ls.download_map_product(product, output_root, ...)`                       | Download a map product into a local scenario-style directory.                       |
 | `ls.open_scenario(path)`                                                   | Open a filesystem-backed `Scenario`.                                                |
+| `ls.generate_lightmap(dem, horizons, output, ...)`                         | Generate timestamped uint8 visible-solar-fraction bands.                            |
+| `ls.generate_psr(dem, horizons, output, ...)`                              | Generate a permanent-shadow classification and validity mask.                       |
+| `ls.generate_sun_elevation(dem, horizons, output, ...)`                    | Generate Sun-center terrain-relative elevation bands.                               |
+| `ls.generate_earth_elevation(dem, horizons, output, ...)`                  | Generate Earth-center terrain-relative elevation bands.                             |
+| `ls.generate_safe_havens(dem, horizons, output, ...)`                      | Generate longest low-Sun durations for Earth outages.                               |
+| `ls.mission_duration_from_sunlight(...)`                                   | Generate landed-duration bands from a sunlight-fraction threshold.                  |
+| `ls.mission_duration_from_sun_elevation(...)`                              | Generate landed-duration bands from a Sun-elevation threshold.                      |
+| `ls.mission_duration_from_sunlight_and_earth(...)`                         | Generate durations satisfying sunlight and Earth-elevation thresholds.              |
+| `ls.mission_duration_from_sun_and_earth_elevation(...)`                    | Generate durations satisfying Sun- and Earth-elevation thresholds.                  |
 
 ### Scenario Methods
 
@@ -109,6 +118,11 @@ import lunarscout as ls
 | `scenario.horizon_from_open_file(file_handle, patch_x, patch_y)`        | Read one horizon from an open horizon file as a 1440-sample `float32` array.             |
 | `scenario.horizon_for_pixel(x, y, observer_height_decimeters)`          | Fetch one DEM pixel horizon, caching one open file handle.                               |
 | `scenario.close_horizon_file()`                                         | Close the cached open horizon file handle.                                               |
+| `scenario.lightmap(output, ...)`                                        | Generate a Python lightmap using canonical DEM and horizon paths.                        |
+| `scenario.psr(output, ...)`                                             | Generate a Python permanent-shadow product.                                               |
+| `scenario.sun_elevation(output, ...)`                                   | Generate Sun-center terrain-relative elevation bands.                                    |
+| `scenario.earth_elevation(output, ...)`                                 | Generate Earth-center terrain-relative elevation bands.                                  |
+| `scenario.safe_havens(output, ...)`                                     | Generate safe-haven duration bands.                                                       |
 | `scenario.lonlat_to_dem_pixel(point)`                                   | Convert a `LonLat` to DEM pixel coordinates.                                             |
 | `scenario.plot_azimuth_elevation_axes(...)`                             | Create an empty azimuth/elevation Matplotlib axis.                                       |
 | `scenario.plot_horizon(point, ...)`                                     | Plot the stored horizon for a lon/lat point.                                             |
@@ -497,16 +511,36 @@ fig, ax = ls.plot_body_elevations(
 ### Current API Status
 
 Scenario helpers for locating, reading, and plotting existing horizon tiles
-are public today. The Python implementations of horizon generation,
-time-series lightmaps, permanent-shadow maps, safe-haven maps, and landed
-mission-duration maps have passed substantial prototype validation, but remain
-under the private `_numba_horizon` package while their public signatures,
-packaging, and failure exceptions are finalized.
+are public. Python-only public functions now generate lightmaps, PSR,
+Sun/Earth terrain-relative elevation, safe havens, and all four landed
+mission-duration products. Horizon generation is still awaiting its promoted
+Python facade.
 
-Do not import private product modules in durable user code. The descriptions
-below document the intended product behavior and file contracts so existing
-files can be understood and the forthcoming public API can be evaluated. They
-do not promise that the illustrative product names are currently exported.
+Do not import `_numba_horizon` modules in user code. Use the root functions or
+the corresponding `Scenario` conveniences. All downstream functions default
+to `backend="auto"`; use `"cpu"` to avoid touching CUDA or `"cuda"` to require
+CUDA without fallback. They return the completed `Path`.
+
+```python
+output = scenario.lightmap(
+    "analysis/lightmap.tif",
+    times=ls.times(
+        "2029-01-01T00:00:00Z",
+        "2029-01-02T00:00:00Z",
+        step_hours=6,
+    ),
+    backend="auto",
+    verbose=True,
+)
+```
+
+Supplying `sun_vectors_m=` or `earth_vectors_m=` with matching `times=` avoids
+SPICE import and kernel loading. `verbose=False` is the default. Applications
+can instead use `progress_callback` for a monotonic durable fraction and
+`progress_event_callback` for immutable stage, backend, patch, and path detail.
+Cancellation uses `cancellation_requested`. Compatible staged jobs resume by
+default; `start_fresh=True` discards staged state, while `overwrite=True`
+protects an existing completed output until replacement publication.
 
 ### Reading Stored Horizons
 
@@ -972,7 +1006,8 @@ More mature areas:
 Less mature or explicitly provisional areas:
 
 - default SPICE kernel selection and descriptions;
-- public horizon-generation and horizon-derived product APIs;
+- public horizon-generation API and installed-wheel validation of the promoted
+  horizon-derived product APIs;
 - compute-backend packaging and cached first-use behavior;
 - structured public exceptions for product failures;
 - safe-haven performance validation;
@@ -1044,8 +1079,8 @@ instructions once CI and packaging are finalized.
 
 Current open work:
 
-- promote the validated private horizon and derived-product implementations
-  behind small public functions and `Scenario` conveniences;
+- promote the validated Python horizon generator behind a small public function
+  and `Scenario` convenience;
 - finish structured exceptions, path preflight, progress, and cancellation
   contracts for those public functions;
 - complete safe-haven performance measurements and longer end-to-end horizon

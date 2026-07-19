@@ -34,6 +34,7 @@ class LightmapProgress:
     tile_y: int | None
     tile_x: int | None
     state: str
+    backend: Literal["cpu", "cuda"] | None = None
 
 
 PatchCalculator = Callable[..., Iterable[npt.ArrayLike]]
@@ -137,6 +138,7 @@ def run_lightmap_product(
             None if patch is None else patch.tile_y,
             None if patch is None else patch.tile_x,
             state,
+            selected_backend,
         )
         if progress_callback is not None:
             progress_callback(event)

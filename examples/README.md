@@ -150,6 +150,12 @@ native generation.
 `14_timeseries_two_file_prototype.py` creates a small synthetic lighting cube
 and writes two synchronized products:
 
+This is retained as historical storage-evaluation evidence, not as a supported
+Lunarscout product or advertised package capability. Its `h5py` and
+`hdf5plugin` requirements are not installed with Lunarscout. The accepted
+public lightmap and mission-duration pipelines write tiled, compressed,
+resumable BigTIFF products.
+
 - `shadow_maps.tif`: BigTIFF with one band per time step and 128 x 128 tiled
   blocks for map-frame access.
 - `light_curves_chunk*.h5`: HDF5 files with shape `(y, x, time)` and tested

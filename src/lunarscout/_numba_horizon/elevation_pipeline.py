@@ -38,6 +38,7 @@ class BodyElevationProgress:
     tile_y: int | None
     tile_x: int | None
     state: str
+    backend: Literal["cpu", "cuda"] | None = None
 
 
 def _run_body_elevation_product(
@@ -141,6 +142,7 @@ def _run_body_elevation_product(
             None if patch is None else patch.tile_y,
             None if patch is None else patch.tile_x,
             state,
+            selected_backend,
         )
         if progress_callback is not None:
             progress_callback(event)

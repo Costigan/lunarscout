@@ -160,15 +160,15 @@ of prototype terminology.
 
 ### Naming and facade
 
-- [ ] Approve a concise public naming table for root functions, focused
+- [x] Approve a concise public naming table for root functions, focused
   modules, and `Scenario` convenience methods.
 - [ ] Provide a simple root-level or `Scenario` path for the operations users
   normally call in scripts and notebooks.
-- [ ] Keep detailed backend status, diagnostics, and tuning in a focused
+- [x] Keep detailed backend status, diagnostics, and tuning in a focused
   namespace rather than crowding the package root.
-- [ ] Avoid `native`, `managed`, `moonlib`, and implementation-specific
+- [x] Avoid `native`, `managed`, `moonlib`, and implementation-specific
   `numba` names in the scientific API.
-- [ ] Use four plainly named mission-duration functions rather than one
+- [x] Use four plainly named mission-duration functions rather than one
   function with a fragile string-valued mode.
 - [x] Decide whether product creation returns `Path` alone or a small immutable
   result object containing the path and summary metadata.
@@ -196,11 +196,11 @@ complete.
 
 ### Shared arguments and behavior
 
-- [ ] Standardize `backend="auto" | "cpu" | "cuda"` for downstream products.
+- [x] Standardize `backend="auto" | "cpu" | "cuda"` for downstream products.
 - [ ] Make `backend="cpu"` avoid importing or probing CUDA.
 - [ ] Make explicit `backend="cuda"` fail clearly if CUDA cannot be used; it
   must never silently switch to CPU.
-- [ ] Make `backend="auto"` expose which backend was actually selected through
+- [x] Make `backend="auto"` expose which backend was actually selected through
   diagnostics, progress metadata, or the result object.
 - [ ] Standardize `overwrite`, `start_fresh`, resume, invalid-payload,
   compression, and output-path arguments.
@@ -208,13 +208,13 @@ complete.
   inputs, including precedence and shape validation.
 - [ ] Preserve exact UTC-to-ET conversion as the default when generating
   vectors.
-- [ ] Standardize the simple monotonic fraction progress callback for normal
+- [x] Standardize the simple monotonic fraction progress callback for normal
   callers.
-- [ ] Retain a structured event callback for applications that need stage and
+- [x] Retain a structured event callback for applications that need stage and
   patch detail.
-- [ ] Define callback exception behavior and document that GUI callers may
+- [x] Define callback exception behavior and document that GUI callers may
   need to marshal updates onto their UI thread.
-- [ ] Expose cooperative cancellation without requiring an application job
+- [x] Expose cooperative cancellation without requiring an application job
   framework.
 - [ ] Validate cheap Python inputs and output paths before expensive SPICE,
   CUDA, or file initialization.
@@ -353,11 +353,11 @@ and all four mission-duration products:
 The former implementation may remain temporarily as migration evidence, but
 it must not be part of the installed product or required verification.
 
-- [ ] Remove `pythonnet` from package dependencies.
+- [x] Remove `pythonnet` from package dependencies.
 - [ ] Remove or replace public `native` initialization and status APIs.
 - [ ] Route all promoted product calls directly to the Python implementation.
 - [ ] Remove .NET and DLL configuration from normal installation and examples.
-- [ ] Ensure no wheel extra installs Python.NET or a managed assembly.
+- [x] Ensure no wheel extra installs Python.NET or a managed assembly.
 - [ ] Exclude C# build outputs and managed assemblies from wheel and sdist.
 - [ ] Convert any essential C# parity cases into immutable fixtures or
   independently specified Python scientific tests.
@@ -377,13 +377,16 @@ it must not be part of the installed product or required verification.
 
 - [ ] Review `pyproject.toml` metadata: version, description, license, authors,
   maintainers, URLs, classifiers, keywords, and supported Python versions.
-- [ ] Choose core dependencies and optional extras from actual import
-  boundaries. Candidate extras include `spice`, `cuda`, and `hdf5`.
-- [ ] Add the validated Numba dependency and remove `pythonnet`.
+- [ ] Choose core dependencies and optional extras from actual product scope
+  and import boundaries. SpiceyPy is a lazy core dependency because generated
+  vectors are in scope; do not advertise HDF5 unless a supported public product
+  requires it. CUDA must not require the toolkit or driver at installation.
+- [x] Add the validated Numba dependency and remove `pythonnet`.
 - [ ] Ensure CPU-only installation does not require the CUDA toolkit or an
   NVIDIA driver merely to resolve dependencies or import Lunarscout.
-- [ ] Decide whether Rasterio, PyProj, SciPy, HDF5, and SpiceyPy belong in the
-  base install or focused extras, then test every advertised combination.
+- [ ] Confirm the base-install placement of Rasterio, PyProj, SciPy, and
+  SpiceyPy, then test every advertised installation combination. Add HDF5 only
+  if a supported public product requires it.
 - [ ] Read the version from installed package metadata so source and wheel
   report the same value.
 - [ ] Add development-only build, test, lint, and package-validation tools to
@@ -469,8 +472,8 @@ it must not be part of the installed product or required verification.
 
 - [ ] Rewrite the README installation section around `pip install
   lunarscout`; remove the promised moonlib installation path.
-- [ ] Explain the optional CPU, CUDA, SPICE, and HDF5 capabilities and their
-  dependency groups.
+- [ ] Explain CPU and optional CUDA execution, lazy core SPICE support, and any
+  dependency groups the candidate actually advertises.
 - [ ] Update `docs/USER_GUIDE.md` from private/provisional product descriptions
   to the accepted public API.
 - [ ] Keep `docs/ARCHITECTURE.md` synchronized with any approved API or

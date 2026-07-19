@@ -69,6 +69,18 @@ from .map_products import (
     map_product_scenario_name,
     search_map_products,
 )
+from .products import (
+    generate_earth_elevation,
+    generate_lightmap,
+    generate_psr,
+    generate_safe_havens,
+    generate_sun_elevation,
+    mission_duration_from_sun_and_earth_elevation,
+    mission_duration_from_sun_elevation,
+    mission_duration_from_sunlight,
+    mission_duration_from_sunlight_and_earth,
+)
+from .progress import ProgressEvent
 from .native_horizon import GenerateHorizons, NativeHorizonProgress
 from .regions import (
     filter_regions_by_size,
@@ -148,6 +160,7 @@ __all__ = [
     "ProductError",
     "ProductStorageError",
     "ProductTimeError",
+    "ProgressEvent",
     "RegionOperationError",
     "Scenario",
     "ScenarioError",
@@ -184,6 +197,15 @@ __all__ = [
     "filesystem_safe_scenario_name",
     "filter_regions_by_size",
     "find_borders",
+    "generate_lightmap",
+    "generate_psr",
+    "generate_safe_havens",
+    "generate_earth_elevation",
+    "generate_sun_elevation",
+    "mission_duration_from_sun_and_earth_elevation",
+    "mission_duration_from_sun_elevation",
+    "mission_duration_from_sunlight",
+    "mission_duration_from_sunlight_and_earth",
     "hillshade",
     "iter_times",
     "label_regions",

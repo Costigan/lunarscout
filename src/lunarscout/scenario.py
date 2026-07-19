@@ -270,6 +270,94 @@ class Scenario:
 
         return self._resolve_relative(relative_path, allow_root=False)
 
+    def lightmap(
+        self,
+        output: str | Path,
+        **kwargs: Any,
+    ) -> Path:
+        """Generate a public Python lightmap at a scenario-relative path."""
+
+        from .products import generate_lightmap
+
+        return generate_lightmap(
+            self.dem_path(),
+            self.horizons_path(),
+            self.output_path(output),
+            **kwargs,
+        )
+
+    def sun_elevation(self, output: str | Path, **kwargs: Any) -> Path:
+        """Generate public Sun terrain-relative elevation bands."""
+
+        from .products import generate_sun_elevation
+
+        return generate_sun_elevation(
+            self.dem_path(),
+            self.horizons_path(),
+            self.output_path(output),
+            **kwargs,
+        )
+
+    def earth_elevation(self, output: str | Path, **kwargs: Any) -> Path:
+        """Generate public Earth terrain-relative elevation bands."""
+
+        from .products import generate_earth_elevation
+
+        return generate_earth_elevation(
+            self.dem_path(),
+            self.horizons_path(),
+            self.output_path(output),
+            **kwargs,
+        )
+
+    def safe_havens(self, output: str | Path, **kwargs: Any) -> Path:
+        """Generate public safe-haven duration bands."""
+
+        from .products import generate_safe_havens
+
+        return generate_safe_havens(
+            self.dem_path(),
+            self.horizons_path(),
+            self.output_path(output),
+            **kwargs,
+        )
+
+    def mission_duration_from_sunlight(
+        self, output: str | Path, **kwargs: Any
+    ) -> Path:
+        from .products import mission_duration_from_sunlight
+
+        return mission_duration_from_sunlight(
+            self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
+        )
+
+    def mission_duration_from_sun_elevation(
+        self, output: str | Path, **kwargs: Any
+    ) -> Path:
+        from .products import mission_duration_from_sun_elevation
+
+        return mission_duration_from_sun_elevation(
+            self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
+        )
+
+    def mission_duration_from_sunlight_and_earth(
+        self, output: str | Path, **kwargs: Any
+    ) -> Path:
+        from .products import mission_duration_from_sunlight_and_earth
+
+        return mission_duration_from_sunlight_and_earth(
+            self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
+        )
+
+    def mission_duration_from_sun_and_earth_elevation(
+        self, output: str | Path, **kwargs: Any
+    ) -> Path:
+        from .products import mission_duration_from_sun_and_earth_elevation
+
+        return mission_duration_from_sun_and_earth_elevation(
+            self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
+        )
+
     def _resolve_dem_input_path(self, path: str | Path) -> Path:
         candidate = Path(path).expanduser()
         if candidate.is_absolute():
@@ -1252,32 +1340,18 @@ class Scenario:
         output: str | Path,
         *,
         horizons: str | Path | None = None,
-        overwrite: bool = False,
-        progress_callback: Any | None = None,
-        cancellation_requested: Any | None = None,
-        _bridge: Any | None = None,
+        **kwargs: Any,
     ) -> Path:
-        """Generate a native permanent-shadow byte mask without registration.
+        """Generate a public Python permanent-shadow classification product."""
 
-        Value 255 means the Sun center never clears the local horizon across
-        the native operation's six-hour 1970-2044 samples; value 0 means it
-        clears the horizon at least once. GDAL validity mask 0 marks pixels
-        whose required horizon tile was unavailable; mask 255 marks calculated
-        pixels. Observer elevation is fixed at zero.
-        """
-
-        from .native_product import generate_psr_product
+        from .products import generate_psr
 
         horizons_path = self.horizons_path() if horizons is None else self.path(horizons)
-        return generate_psr_product(
-            scenario_root=self.root,
-            dem_path=self.dem_path(),
-            horizons_path=horizons_path,
-            output_path=self.output_path(output),
-            overwrite=overwrite,
-            progress_callback=progress_callback,
-            cancellation_requested=cancellation_requested,
-            _bridge=_bridge,
+        return generate_psr(
+            self.dem_path(),
+            horizons_path,
+            self.output_path(output),
+            **kwargs,
         )
 
 

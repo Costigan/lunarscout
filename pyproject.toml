@@ -10,13 +10,12 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
-    "h5py>=3.16",
-    "hdf5plugin>=7.0",
+    "numba>=0.66,<0.67",
     "numpy>=2.0",
     "pyproj>=3.7",
-    "pythonnet>=3.0",
     "rasterio>=1.5",
     "scipy>=1.14",
+    "spiceypy>=8.1,<9",
 ]
 
 [project.optional-dependencies]
