@@ -6,6 +6,13 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Verified the managed-code removal with the complete CPU suite, the explicitly
+  gated real-CUDA suite, clean installed-wheel CPU tests, and installed-wheel
+  CUDA horizon generation outside the checkout. Clean wheel and source
+  distribution inspection found no managed sources or artifacts. The
+  verification also exposed that setuptools can reuse stale files from an
+  existing `build/lib` directory, so release artifacts must be constructed by
+  a clean-build workflow rather than an in-place build with retained caches.
 - Removed the superseded managed implementation after the boundary commit
   `c9c4e66`: the complete `native/` C# tree and bundled native assets, C#
   metric/oracle projects, Python.NET bootstrap and wrapper modules, managed-only
