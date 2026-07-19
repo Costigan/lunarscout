@@ -6,6 +6,22 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added a clean-snapshot release-artifact workflow that refuses dirty release
+  builds and nonempty output directories, builds wheel and sdist in isolation,
+  runs Twine, enforces an explicit content policy, and records commit,
+  environment, target, sizes, hashes, and entry counts without uploading.
+  Added an explicit sdist manifest, installed-metadata `__version__`, and Linux
+  Python 3.11/3.12 project classifiers and repository URLs.
+- Added CPU CI for Python 3.11 and 3.12 plus a separate clean distribution job
+  that inspects artifacts, rebuilds a wheel from the sdist, installs the wheel
+  outside the checkout, runs `pip check`, verifies lightweight import, and runs
+  installed public smoke tests. Real CUDA acceptance remains separately gated.
+- Corrected the Rasterio requirement to `>=1.4.4,<1.6`: Rasterio 1.5 requires
+  Python 3.12, while the supported Python 3.11 environment resolves to 1.4.4.
+  Both interpreter environments remain covered by the same public API tests.
+- Removed the historical HDF5 storage prototype from mandatory base-package
+  example acceptance. It remains tested when its manual `h5py` and
+  `hdf5plugin` packages are present, while clean base installations skip it.
 - Verified the managed-code removal with the complete CPU suite, the explicitly
   gated real-CUDA suite, clean installed-wheel CPU tests, and installed-wheel
   CUDA horizon generation outside the checkout. Clean wheel and source

@@ -1040,10 +1040,7 @@ More mature areas:
 Less mature or explicitly provisional areas:
 
 - default SPICE kernel selection and descriptions;
-- public horizon-generation API and installed-wheel validation of the promoted
-  horizon-derived product APIs;
 - compute-backend packaging and cached first-use behavior;
-- structured public exceptions for product failures;
 - safe-haven performance validation;
 - CI and release automation;
 - platform-specific installation documentation.
@@ -1106,24 +1103,44 @@ PYTHONPATH=src \
 .venv/bin/python -m pytest tests/numba_horizon -q -p no:cacheprovider
 ```
 
-TODO: Replace representative local commands with release-quality verification
-instructions once CI and packaging are finalized.
+Release artifacts must not be built directly in a checkout that may contain a
+stale `build/lib` directory. Install the development extra, require a clean
+working tree, and build into a new or empty directory outside the repository:
+
+```bash
+python -m pip install -e '.[dev]'
+python scripts/build_release_artifacts.py \
+    /tmp/lunarscout-0.1.0rc1 \
+    --upload-target testpypi
+```
+
+The script copies only Git-visible source into a temporary directory, builds a
+wheel and sdist in isolation, runs Twine, enforces the distribution-content
+policy, and writes `release-artifacts.json` with the source commit, environment,
+target index, filenames, sizes, hashes, and entry counts. It never uploads.
+Release mode refuses a dirty tree or a nonempty output directory. The
+`--allow-dirty` and `--skip-twine` switches are diagnostic conveniences and
+always produce a report with `candidate_artifacts: false`. A true value means
+only that artifact construction passed; it does not supersede the other release
+gates in `docs/PLAN1.md`.
+
+The repository CI definition runs the ordinary CPU suite on Python 3.11 and
+3.12. Its separate packaging job uses the same release-artifact script, rebuilds
+a wheel from the sdist, installs the wheel into a fresh environment, runs
+`pip check`, verifies lightweight import outside the checkout, and executes the
+installed public smoke tests. CI has no .NET or managed-runtime step. Real CUDA
+acceptance remains explicitly gated and must run on the documented NVIDIA host.
 
 ## Roadmap
 
 Current open work:
 
-- promote the validated Python horizon generator behind a small public function
-  and `Scenario` convenience;
-- finish structured exceptions, path preflight, progress, and cancellation
-  contracts for those public functions;
 - complete safe-haven performance measurements and longer end-to-end horizon
   benchmarks with identical compression and write scope;
-- package CPU dependencies and optional CUDA acceleration for ordinary
-  notebooks and short-lived scripts, including reusable compiled caches;
-- add CI;
-- remove transitional implementation and dependency artifacts after the
-  Python product APIs satisfy their retirement gates; and
+- complete the CPU/CUDA scientific and operational failure matrices;
+- validate clean Python 3.11, Python 3.12, and NVIDIA installations;
+- finalize cache behavior and package metadata;
+- add CI; and
 - expand the user guide with complete installation, data, and product
   reference sections.
 

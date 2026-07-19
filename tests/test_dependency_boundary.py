@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from importlib.metadata import version
 import os
 from pathlib import Path
 import subprocess
@@ -43,6 +44,7 @@ def test_python_only_package_metadata_has_no_managed_runtime_dependency() -> Non
     )
 
     assert any(requirement.startswith("numba") for requirement in dependencies)
+    assert "rasterio>=1.4.4,<1.6" in dependencies
     assert any(requirement.startswith("spiceypy") for requirement in dependencies)
     assert project["version"] == "0.1.0rc1"
     assert any(requirement.startswith("build") for requirement in extras["dev"])
@@ -50,6 +52,12 @@ def test_python_only_package_metadata_has_no_managed_runtime_dependency() -> Non
     assert not any("pythonnet" in requirement.lower() for requirement in all_requirements)
     assert not any(requirement.startswith("h5py") for requirement in all_requirements)
     assert not any(requirement.startswith("hdf5plugin") for requirement in all_requirements)
+
+
+def test_root_version_comes_from_installed_distribution_metadata() -> None:
+    import lunarscout as ls
+
+    assert ls.__version__ == version("lunarscout")
 
 
 def test_curated_root_does_not_import_or_export_managed_runtime() -> None:

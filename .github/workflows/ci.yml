@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-tests:
+    name: CPU tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install development environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+      - name: Run ordinary CPU suite
+        run: python -m pytest -q -p no:cacheprovider
+
+  package:
+    name: Build and inspect distributions
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install development environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+      - name: Build, inspect, and record artifacts
+        run: >-
+          python scripts/build_release_artifacts.py
+          /tmp/lunarscout-dist
+          --upload-target testpypi
+      - name: Rebuild wheel from sdist
+        run: |
+          mkdir -p /tmp/lunarscout-sdist-wheel
+          python -m pip wheel /tmp/lunarscout-dist/*.tar.gz --no-deps --wheel-dir /tmp/lunarscout-sdist-wheel
+      - name: Install wheel outside checkout
+        run: |
+          python -m venv /tmp/lunarscout-wheel-venv
+          /tmp/lunarscout-wheel-venv/bin/python -m pip install --upgrade pip
+          /tmp/lunarscout-wheel-venv/bin/python -m pip install /tmp/lunarscout-dist/*.whl pytest
+      - name: Check installed wheel
+        working-directory: /tmp
+        run: |
+          /tmp/lunarscout-wheel-venv/bin/python -m pip check
+          /tmp/lunarscout-wheel-venv/bin/python -c "import sys, lunarscout; assert '/src/' not in lunarscout.__file__; assert not {'numba', 'spiceypy', 'clr', 'pythonnet', 'moonlib'} & sys.modules.keys()"
+          /tmp/lunarscout-wheel-venv/bin/python -m pytest "$GITHUB_WORKSPACE/tests/test_dependency_boundary.py" "$GITHUB_WORKSPACE/tests/test_public_horizon.py" "$GITHUB_WORKSPACE/tests/test_public_lightmap.py" -q -p no:cacheprovider
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lunarscout-0.1.0rc1-python3.12
+          path: /tmp/lunarscout-dist/
+          if-no-files-found: error

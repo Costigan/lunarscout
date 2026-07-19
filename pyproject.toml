@@ -9,14 +9,29 @@ description = "Notebook-first lunar mission analysis with NumPy and GeoTIFF data
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
+keywords = ["lunar", "terrain", "horizon", "illumination", "CUDA"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
     "numba>=0.66,<0.67",
     "numpy>=2.0",
     "pyproj>=3.7",
-    "rasterio>=1.5",
+    "rasterio>=1.4.4,<1.6",
     "scipy>=1.14",
     "spiceypy>=8.1,<9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Costigan/lunarscout"
+Issues = "https://github.com/Costigan/lunarscout/issues"
+Source = "https://github.com/Costigan/lunarscout"
 
 [project.optional-dependencies]
 dev = [

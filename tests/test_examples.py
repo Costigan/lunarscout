@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _EXAMPLES = _REPOSITORY_ROOT / "examples"
@@ -20,19 +22,7 @@ _DETERMINISTIC_SCRIPTS = [
     "06_streaming_reductions.py",
     "09_qgis_vrt.py",
     "10_landing_site_screening.py",
-    "14_timeseries_two_file_prototype.py",
 ]
-
-_SCRIPT_ARGS = {
-    "14_timeseries_two_file_prototype.py": [
-        "--width",
-        "256",
-        "--height",
-        "256",
-        "--time-count",
-        "64",
-    ],
-}
 
 
 def _environment() -> dict[str, str]:
@@ -48,10 +38,9 @@ def test_deterministic_example_sequence_runs(tmp_path: Path) -> None:
             [
                 sys.executable,
                 str(_EXAMPLES / script_name),
-                    "--workspace",
-                    str(tmp_path),
-                    *_SCRIPT_ARGS.get(script_name, []),
-                ],
+                "--workspace",
+                str(tmp_path),
+            ],
             cwd=_REPOSITORY_ROOT,
             env=_environment(),
             check=False,
@@ -68,6 +57,40 @@ def test_deterministic_example_sequence_runs(tmp_path: Path) -> None:
     assert (scenario / "analysis" / "terrain" / "slope_deg.tif").is_file()
     assert (scenario / "analysis" / "synthetic_sun.temporal" / "COMPLETE").is_file()
     assert (scenario / "analysis" / "screening" / "candidate_sites.tif").is_file()
+
+
+def test_historical_hdf5_prototype_when_manual_dependencies_are_present(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("h5py")
+    pytest.importorskip("hdf5plugin")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(_EXAMPLES / "14_timeseries_two_file_prototype.py"),
+            "--workspace",
+            str(tmp_path),
+            "--width",
+            "256",
+            "--height",
+            "256",
+            "--time-count",
+            "64",
+        ],
+        cwd=_REPOSITORY_ROOT,
+        env=_environment(),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert completed.returncode == 0, (
+        f"historical HDF5 prototype failed\nstdout:\n{completed.stdout}"
+        f"\nstderr:\n{completed.stderr}"
+    )
+
+    scenario = tmp_path / "synthetic_scenario"
     prototype = scenario / "analysis" / "timeseries_storage_prototype"
     assert (prototype / "shadow_maps.tif").is_file()
     assert (prototype / "light_curves_chunk16.h5").is_file()

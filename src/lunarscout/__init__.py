@@ -1,3 +1,5 @@
+from importlib.metadata import PackageNotFoundError, version as _distribution_version
+
 from . import cuda, spice
 from .alignment import (
     align,
@@ -113,6 +115,7 @@ from .temporal_store import (
 from .terrain import aspect, hillshade, slope
 
 __all__ = [
+    "__version__",
     "AlignmentError",
     "ComputeBackendError",
     "CoordinateTransformError",
@@ -221,3 +224,9 @@ __all__ = [
 # Kept as a root-level diagnostic type while capability functions stay under
 # ``ls.cuda``. Importing the type does not import Numba or initialize CUDA.
 CudaStatus = cuda.CudaStatus
+
+try:
+    __version__ = _distribution_version("lunarscout")
+except PackageNotFoundError:
+    # A source tree copied without its generated egg-info remains importable.
+    __version__ = "0+unknown"

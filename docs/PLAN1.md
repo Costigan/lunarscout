@@ -382,12 +382,12 @@ it must not be part of the installed product or required verification.
   vectors are in scope; do not advertise HDF5 unless a supported public product
   requires it. CUDA must not require the toolkit or driver at installation.
 - [x] Add the validated Numba dependency and remove `pythonnet`.
-- [ ] Ensure CPU-only installation does not require the CUDA toolkit or an
+- [x] Ensure CPU-only installation does not require the CUDA toolkit or an
   NVIDIA driver merely to resolve dependencies or import Lunarscout.
-- [ ] Confirm the base-install placement of Rasterio, PyProj, SciPy, and
+- [x] Confirm the base-install placement of Rasterio, PyProj, SciPy, and
   SpiceyPy, then test every advertised installation combination. Add HDF5 only
   if a supported public product requires it.
-- [ ] Read the version from installed package metadata so source and wheel
+- [x] Read the version from installed package metadata so source and wheel
   report the same value.
 - [ ] Add development-only build, test, lint, and package-validation tools to
   the development extra or documented development environment.
@@ -395,15 +395,15 @@ it must not be part of the installed product or required verification.
 ### Wheel and sdist contents
 
 - [x] Build both wheel and source distribution in a clean build environment.
-- [ ] Run `python -m twine check` on both artifacts.
-- [ ] Inspect artifact contents against an allowlist.
-- [ ] Include required SPICE manifests and other small static package data.
+- [x] Run `python -m twine check` on both artifacts.
+- [x] Inspect artifact contents against an allowlist.
+- [x] Include required SPICE manifests and other small static package data.
 - [x] Exclude generated GeoTIFFs, benchmark artifacts, caches, local DEMs,
   journals, staged files, native binaries, and repository virtual
   environments.
-- [ ] Ensure the sdist can build a wheel without access to the repository
+- [x] Ensure the sdist can build a wheel without access to the repository
   checkout or Git history.
-- [ ] Record artifact filenames, sizes, and SHA-256 hashes.
+- [x] Record artifact filenames, sizes, and SHA-256 hashes.
 - [ ] Verify license and third-party notices are present where required.
 
 ### Installed runtime behavior
@@ -425,10 +425,10 @@ it must not be part of the installed product or required verification.
 
 - [x] Maintain an ordinary test suite that does not require a GPU.
 - [x] Last recorded prototype result: 114 passed and 14 skipped.
-- [ ] Add public API, exception, import-boundary, and installed-wheel tests.
-- [ ] Run the complete suite with CUDA deliberately hidden or disabled.
-- [ ] Prove all downstream product families complete with `backend="cpu"`.
-- [ ] Prove all downstream product families complete with `backend="auto"`
+- [x] Add public API, exception, import-boundary, and installed-wheel tests.
+- [x] Run the complete suite with CUDA deliberately hidden or disabled.
+- [x] Prove all downstream product families complete with `backend="cpu"`.
+- [x] Prove all downstream product families complete with `backend="auto"`
   falling back to CPU.
 
 ### Explicitly gated CUDA suite
@@ -444,12 +444,12 @@ it must not be part of the installed product or required verification.
 
 ### Clean environments
 
-- [ ] Create clean Python 3.11 CPU-only environment and install the wheel.
-- [ ] Create clean Python 3.12 CPU-only environment and install the wheel.
+- [x] Create clean Python 3.11 CPU-only environment and install the wheel.
+- [x] Create clean Python 3.12 CPU-only environment and install the wheel.
 - [ ] Create a clean supported NVIDIA environment and install the same wheel.
 - [ ] Run `pip check` in every clean environment.
-- [ ] Run import and core raster/temporal smoke tests outside the checkout.
-- [ ] Run one small public product from every downstream family on CPU.
+- [x] Run import and core raster/temporal smoke tests outside the checkout.
+- [x] Run one small public product from every downstream family on CPU.
 - [ ] Run one small horizon generation and one product from every CUDA-backed
   downstream family on the NVIDIA host.
 - [ ] Reproduce the package and key scientific outputs in a second environment
@@ -599,7 +599,7 @@ All of these boxes must be checked before representing the candidate as ready:
 - [x] Package installation and use require no .NET, Python.NET, CLR, DLL, or
   `moonlib` artifact.
 - [ ] `import lunarscout` is side-effect-light on CPU-only and NVIDIA systems.
-- [ ] Ordinary CPU tests pass on every supported Python version.
+- [x] Ordinary CPU tests pass on every supported Python version.
 - [ ] Explicitly gated real-CUDA tests pass on the supported NVIDIA stack and
   prove actual kernel execution.
 - [ ] Every downstream product completes in a deliberately disabled-CUDA
