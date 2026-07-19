@@ -6,6 +6,14 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Removed the superseded managed implementation after the boundary commit
+  `c9c4e66`: the complete `native/` C# tree and bundled native assets, C#
+  metric/oracle projects, Python.NET bootstrap and wrapper modules, managed-only
+  tests and examples, transitional `Native*` exceptions, and managed terrain
+  and temporal `Scenario` methods. Generated JSON/Markdown evaluations and
+  language-neutral scientific fixtures remain as historical evidence. The
+  production source tree, wheel, and source distribution are now
+  Python/Numba-only.
 - Recorded the final development checkpoint that retains the superseded C#,
   Python.NET, and managed-wrapper sources. They remain recoverable from this
   commit and the `main` branch and will be removed from the Python-only

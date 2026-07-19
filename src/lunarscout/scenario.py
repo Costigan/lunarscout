@@ -11,9 +11,9 @@ import numpy as np
 
 from .errors import (
     GeoTiffMetadataError,
+    HorizonError,
+    HorizonFormatError,
     InputError,
-    NativeInputError,
-    NativeProductError,
     ScenarioError,
     ScenarioPathError,
     ScenarioStateError,
@@ -26,7 +26,6 @@ from .spice_geometry import (
     body_azimuth_elevation_over_horizon,
     plot_body_elevations,
 )
-from .temporal import TimeRange
 
 
 _PRIMARY_DEM_RELATIVE_PATH = Path("dem.tif")
@@ -416,84 +415,6 @@ class Scenario:
             cancellation_requested=cancellation_requested,
         )
 
-    def _native_terrain_product(
-        self,
-        kind: str,
-        output: Path,
-        *,
-        overwrite: bool,
-        _terrain_products: Any | None = None,
-    ) -> Path:
-        from .native_terrain import generate_terrain_product
-
-        return generate_terrain_product(
-            kind,  # type: ignore[arg-type]
-            dem_path=self.dem_path(),
-            output_path=output,
-            overwrite=overwrite,
-            _terrain_products=_terrain_products,
-        )
-
-    def create_hillshade(
-        self,
-        *,
-        overwrite: bool = False,
-        _terrain_products: Any | None = None,
-    ) -> Path:
-        """Create the canonical native GDAL hillshade product."""
-
-        return self._native_terrain_product(
-            "hillshade",
-            self.hillshade_path(),
-            overwrite=overwrite,
-            _terrain_products=_terrain_products,
-        )
-
-    def create_slope(
-        self,
-        *,
-        overwrite: bool = False,
-        _terrain_products: Any | None = None,
-    ) -> Path:
-        """Create the canonical native GDAL slope product."""
-
-        return self._native_terrain_product(
-            "slope",
-            self.slope_path(),
-            overwrite=overwrite,
-            _terrain_products=_terrain_products,
-        )
-
-    def create_aspect(
-        self,
-        *,
-        overwrite: bool = False,
-        _terrain_products: Any | None = None,
-    ) -> Path:
-        """Create the canonical native GDAL aspect product."""
-
-        return self._native_terrain_product(
-            "aspect",
-            self.aspect_path(),
-            overwrite=overwrite,
-            _terrain_products=_terrain_products,
-        )
-
-    def create_roughness(
-        self,
-        *,
-        overwrite: bool = False,
-        _terrain_products: Any | None = None,
-    ) -> Path:
-        """Create the canonical native GDAL roughness product."""
-
-        return self._native_terrain_product(
-            "roughness",
-            self.roughness_path(),
-            overwrite=overwrite,
-            _terrain_products=_terrain_products,
-        )
-
     @staticmethod
     def _validate_dem_pixel_coordinate(value: int, name: str) -> int:
         try:
@@ -571,7 +492,7 @@ class Scenario:
     @staticmethod
     def _decode_compressed_horizon_block(encoded: bytes) -> np.ndarray:
         if len(encoded) < 2:
-            raise NativeProductError(
+            raise HorizonFormatError(
                 "Compressed horizon block is too short.",
                 code="horizon_block_decode_failed",
             )
@@ -598,7 +519,7 @@ class Scenario:
             values[written] = acc * _HORIZON_SHORT_TO_ELEVATION_SCALE
             written += 1
         if written != _HORIZON_SAMPLES:
-            raise NativeProductError(
+            raise HorizonFormatError(
                 "Compressed horizon block did not decode to 1440 samples.",
                 code="horizon_block_decode_failed",
                 details={"decoded_samples": written},
@@ -629,7 +550,7 @@ class Scenario:
             file_handle.seek(byte_offset, os.SEEK_SET)
             data = file_handle.read(_HORIZON_SAMPLES * 4)
             if len(data) != _HORIZON_SAMPLES * 4:
-                raise NativeProductError(
+                raise HorizonFormatError(
                     "Uncompressed horizon file ended before the requested horizon.",
                     code="horizon_file_read_failed",
                 )
@@ -643,14 +564,14 @@ class Scenario:
             for horizon_index in range(pixel_index + 1):
                 length_data = file_handle.read(2)
                 if len(length_data) != 2:
-                    raise NativeProductError(
+                    raise HorizonFormatError(
                         "Compressed horizon file ended while reading a block length.",
                         code="horizon_file_read_failed",
                         details={"horizon_index": horizon_index},
                     )
                 encoded_len = int.from_bytes(length_data, "little", signed=False)
                 if encoded_len <= 0 or encoded_len > _HORIZON_MAX_COMPRESSED_BYTES:
-                    raise NativeProductError(
+                    raise HorizonFormatError(
                         "Compressed horizon block length is invalid.",
                         code="horizon_file_read_failed",
                         details={"horizon_index": horizon_index, "encoded_length": encoded_len},
@@ -658,7 +579,7 @@ class Scenario:
                 if horizon_index == pixel_index:
                     encoded = file_handle.read(encoded_len)
                     if len(encoded) != encoded_len:
-                        raise NativeProductError(
+                        raise HorizonFormatError(
                             "Compressed horizon file ended while reading encoded data.",
                             code="horizon_file_read_failed",
                             details={"horizon_index": horizon_index},
@@ -666,7 +587,7 @@ class Scenario:
                     return Scenario._decode_compressed_horizon_block(encoded)
                 file_handle.seek(encoded_len, os.SEEK_CUR)
 
-        raise NativeInputError(
+        raise HorizonFormatError(
             "Horizon file must have a .bin or .cbin extension.",
             code="horizon_file_unsupported_extension",
             details={"path": str(getattr(file_handle, "name", ""))},
@@ -770,7 +691,7 @@ class Scenario:
             observer_height_decimeters,
         )
         if horizon is None:
-            raise NativeProductError(
+            raise HorizonError(
                 "No horizon file exists for the requested lon/lat point.",
                 code="scenario_horizon_file_missing",
                 details={
@@ -822,7 +743,7 @@ class Scenario:
             observer_height_decimeters,
         )
         if horizon is None:
-            raise NativeProductError(
+            raise HorizonError(
                 "No horizon file exists for the requested lon/lat point.",
                 code="scenario_horizon_file_missing",
                 details={
@@ -868,7 +789,7 @@ class Scenario:
                 observer_height_decimeters,
             )
             if plot_horizon is None:
-                raise NativeProductError(
+                raise HorizonError(
                     "No horizon file exists for the requested lon/lat point.",
                     code="scenario_horizon_file_missing",
                     details={
@@ -1087,7 +1008,7 @@ class Scenario:
             observer_height_decimeters,
         )
         if horizon is None:
-            raise NativeProductError(
+            raise HorizonError(
                 "No horizon file exists for the requested lon/lat point.",
                 code="scenario_horizon_file_missing",
                 details={
@@ -1200,143 +1121,6 @@ class Scenario:
             ax.add_patch(initial_limb)
 
         return fig, ax
-
-    def _native_temporal(
-        self,
-        signal: str,
-        *,
-        times: TimeRange,
-        storage: str,
-        output: str | Path | None,
-        observer_elevation_meters: float,
-        overwrite: bool,
-        max_in_memory_bytes: int,
-        scratch_directory: str | Path | None,
-        progress_callback: Any | None,
-        cancellation_requested: Any | None,
-        _client: Any | None = None,
-        _components: Any | None = None,
-    ):
-        from .native_temporal import generate_temporal_signal
-        from .temporal_store import _layer_metadata
-
-        dem_path = self.dem_path()
-        _dtype, georef = _layer_metadata(dem_path)
-        output_path = self.output_path(output) if output is not None else None
-        return generate_temporal_signal(
-            signal=signal,
-            scenario_root=self.root,
-            dem_path=dem_path,
-            horizons_path=self.horizons_path(),
-            times=times,
-            georef=georef,
-            storage=storage,  # type: ignore[arg-type]
-            output_path=output_path,
-            observer_elevation_meters=observer_elevation_meters,
-            overwrite=overwrite,
-            max_in_memory_bytes=max_in_memory_bytes,
-            scratch_directory=scratch_directory,
-            progress_callback=progress_callback,
-            cancellation_requested=cancellation_requested,
-            _client=_client,
-            _components=_components,
-        )
-
-    def sun_fraction(
-        self,
-        *,
-        times: TimeRange,
-        storage: str,
-        output: str | Path | None = None,
-        observer_elevation_meters: float = 0.0,
-        overwrite: bool = False,
-        max_in_memory_bytes: int = 2 * 1024 * 1024 * 1024,
-        scratch_directory: str | Path | None = None,
-        progress_callback: Any | None = None,
-        cancellation_requested: Any | None = None,
-        _client: Any | None = None,
-        _components: Any | None = None,
-    ):
-        """Generate fractional solar visibility using explicit result storage."""
-
-        return self._native_temporal(
-            "sun_fraction",
-            times=times,
-            storage=storage,
-            output=output,
-            observer_elevation_meters=observer_elevation_meters,
-            overwrite=overwrite,
-            max_in_memory_bytes=max_in_memory_bytes,
-            scratch_directory=scratch_directory,
-            progress_callback=progress_callback,
-            cancellation_requested=cancellation_requested,
-            _client=_client,
-            _components=_components,
-        )
-
-    def sun_over_horizon_deg(
-        self,
-        *,
-        times: TimeRange,
-        storage: str,
-        output: str | Path | None = None,
-        observer_elevation_meters: float = 0.0,
-        overwrite: bool = False,
-        max_in_memory_bytes: int = 2 * 1024 * 1024 * 1024,
-        scratch_directory: str | Path | None = None,
-        progress_callback: Any | None = None,
-        cancellation_requested: Any | None = None,
-        _client: Any | None = None,
-        _components: Any | None = None,
-    ):
-        """Generate solar-center elevation above the local horizon in degrees."""
-
-        return self._native_temporal(
-            "sun_over_horizon_deg",
-            times=times,
-            storage=storage,
-            output=output,
-            observer_elevation_meters=observer_elevation_meters,
-            overwrite=overwrite,
-            max_in_memory_bytes=max_in_memory_bytes,
-            scratch_directory=scratch_directory,
-            progress_callback=progress_callback,
-            cancellation_requested=cancellation_requested,
-            _client=_client,
-            _components=_components,
-        )
-
-    def earth_over_horizon_deg(
-        self,
-        *,
-        times: TimeRange,
-        storage: str,
-        output: str | Path | None = None,
-        observer_elevation_meters: float = 0.0,
-        overwrite: bool = False,
-        max_in_memory_bytes: int = 2 * 1024 * 1024 * 1024,
-        scratch_directory: str | Path | None = None,
-        progress_callback: Any | None = None,
-        cancellation_requested: Any | None = None,
-        _client: Any | None = None,
-        _components: Any | None = None,
-    ):
-        """Generate Earth-center elevation above the local horizon in degrees."""
-
-        return self._native_temporal(
-            "earth_over_horizon_deg",
-            times=times,
-            storage=storage,
-            output=output,
-            observer_elevation_meters=observer_elevation_meters,
-            overwrite=overwrite,
-            max_in_memory_bytes=max_in_memory_bytes,
-            scratch_directory=scratch_directory,
-            progress_callback=progress_callback,
-            cancellation_requested=cancellation_requested,
-            _client=_client,
-            _components=_components,
-        )
 
     def psr(
         self,

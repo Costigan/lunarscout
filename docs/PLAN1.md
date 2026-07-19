@@ -354,18 +354,18 @@ The former implementation may remain temporarily as migration evidence, but
 it must not be part of the installed product or required verification.
 
 - [x] Remove `pythonnet` from package dependencies.
-- [ ] Remove or replace public `native` initialization and status APIs.
-- [ ] Route all promoted product calls directly to the Python implementation.
-- [ ] Remove .NET and DLL configuration from normal installation and examples.
+- [x] Remove or replace public `native` initialization and status APIs.
+- [x] Route all promoted product calls directly to the Python implementation.
+- [x] Remove .NET and DLL configuration from normal installation and examples.
 - [x] Ensure no wheel extra installs Python.NET or a managed assembly.
-- [ ] Exclude C# build outputs and managed assemblies from wheel and sdist.
-- [ ] Convert any essential C# parity cases into immutable fixtures or
+- [x] Exclude C# build outputs and managed assemblies from wheel and sdist.
+- [x] Convert any essential C# parity cases into immutable fixtures or
   independently specified Python scientific tests.
-- [ ] Remove C# execution from release acceptance.
-- [ ] Decide whether to delete `native/moonlib` and native tests before
+- [x] Remove C# execution from release acceptance.
+- [x] Decide whether to delete `native/moonlib` and native tests before
   `0.1.0`, or retain them temporarily as clearly historical, undistributed
   migration evidence.
-- [ ] Mark the managed-runtime sections of `docs/FRESH_PLAN.md`, old roadmaps,
+- [x] Mark the managed-runtime sections of `docs/FRESH_PLAN.md`, old roadmaps,
   and API sketches as superseded where readers could mistake them for current
   installation guidance.
 - [x] Verify `import lunarscout` and representative product runs never load
@@ -394,11 +394,11 @@ it must not be part of the installed product or required verification.
 
 ### Wheel and sdist contents
 
-- [ ] Build both wheel and source distribution in a clean build environment.
+- [x] Build both wheel and source distribution in a clean build environment.
 - [ ] Run `python -m twine check` on both artifacts.
 - [ ] Inspect artifact contents against an allowlist.
 - [ ] Include required SPICE manifests and other small static package data.
-- [ ] Exclude generated GeoTIFFs, benchmark artifacts, caches, local DEMs,
+- [x] Exclude generated GeoTIFFs, benchmark artifacts, caches, local DEMs,
   journals, staged files, native binaries, and repository virtual
   environments.
 - [ ] Ensure the sdist can build a wheel without access to the repository
@@ -416,7 +416,7 @@ it must not be part of the installed product or required verification.
   version, and integrity metadata.
 - [ ] Verify all file creation honors explicit caller paths and does not write
   during import.
-- [ ] Verify package behavior from a current working directory unrelated to
+- [x] Verify package behavior from a current working directory unrelated to
   the source tree.
 
 ## 9. Verification matrix
@@ -560,7 +560,7 @@ upload.
 - [x] Promote Sun- and Earth-center terrain-relative elevation.
 - [x] Promote safe havens.
 - [x] Promote all four mission-duration products.
-- [ ] Remove the managed-runtime path from public execution and dependencies.
+- [x] Remove the managed-runtime path from public execution and dependencies.
 
 ### M2: Scientific, operational, and performance acceptance
 
@@ -575,7 +575,7 @@ upload.
 
 - [ ] Finalize dependencies, extras, metadata, package data, and cache
   behavior.
-- [ ] Build and inspect clean wheel and sdist.
+- [x] Build and inspect clean wheel and sdist.
 - [ ] Complete documentation, public examples, CI, and changelog.
 
 ### M4: Clean-wheel reproduction
@@ -596,7 +596,7 @@ All of these boxes must be checked before representing the candidate as ready:
 
 - [ ] The public API is reviewed and documented for horizon, lightmap, PSR,
   Sun/Earth elevation, safe haven, and all four mission-duration products.
-- [ ] Package installation and use require no .NET, Python.NET, CLR, DLL, or
+- [x] Package installation and use require no .NET, Python.NET, CLR, DLL, or
   `moonlib` artifact.
 - [ ] `import lunarscout` is side-effect-light on CPU-only and NVIDIA systems.
 - [ ] Ordinary CPU tests pass on every supported Python version.

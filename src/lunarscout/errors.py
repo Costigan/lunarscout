@@ -179,34 +179,6 @@ class SpiceGeometryError(SpiceError):
     default_code = "spice_geometry_error"
 
 
-class NativeError(LunarscoutError):
-    default_code = "native_error"
-
-
-class NativeUnavailableError(NativeError):
-    default_code = "native_unavailable"
-
-
-class NativeBootstrapError(NativeError):
-    default_code = "native_bootstrap_error"
-
-
-class NativeInputError(NativeError):
-    default_code = "native_input_error"
-
-
-class NativeTemporalError(NativeError):
-    default_code = "native_temporal_error"
-
-
-class NativeAllocationError(NativeTemporalError):
-    default_code = "native_allocation_error"
-
-
-class NativeProductError(NativeError):
-    default_code = "native_product_error"
-
-
 class TemporalError(LunarscoutError):
     default_code = "temporal_error"
 

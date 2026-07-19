@@ -1,5 +1,10 @@
 # Lunarscout Python Surface Design and Implementation Plan
 
+> **Superseded:** This plan is retained as historical design evidence.
+> `docs/PLAN1.md` and `docs/ARCHITECTURE.md` govern current development; their
+> Python/Numba architecture replaces the C#/.NET, Python.NET, and `moonlib`
+> direction below.
+
 Date: 2026-06-18
 
 ## Purpose

@@ -1,5 +1,10 @@
 # Lunarscout Python API Sketch
 
+> **Superseded:** This sketch describes the former managed-runtime API.
+> `docs/PLAN1.md`, `docs/ARCHITECTURE.md`, and `docs/USER_GUIDE.md` define the
+> current Python/Numba API. Managed wrappers and initialization described below
+> are no longer shipped.
+
 Status: evolving implemented API with executable examples; later managed-state
 surfaces remain design proposals.
 

@@ -1,5 +1,10 @@
 # Numba Horizon Prototype and Evaluation Plan
 
+> **Completed and superseded:** This prototype plan established the evidence
+> used to select Python/Numba for production. `docs/PLAN1.md` and
+> `docs/ARCHITECTURE.md` now govern implementation and release work. References
+> below to the C# implementation remain historical comparison evidence only.
+
 **Plan date:** 2026-07-15
 
 **Status:** proposed

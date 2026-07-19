@@ -1,5 +1,10 @@
 # Lunarscout Roadmap
 
+> **Superseded:** This roadmap records the former managed-runtime direction.
+> `docs/PLAN1.md` and `docs/ARCHITECTURE.md` govern current development; C#,
+> .NET, Python.NET, `moonlib`, and HDF5 product proposals below are historical
+> context, not installation or release guidance.
+
 Date: 2026-06-29
 
 ## Progress Snapshot

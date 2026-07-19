@@ -1,6 +1,0 @@
-Observer: X=2304, Y=1789, Z=0
-Azimuth: 55 deg
-QT Horizon: <float> deg
-REF Horizon: <float> deg
-QT Emulator: <float> deg
-REF Emulator: <float> deg

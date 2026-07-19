@@ -5,9 +5,9 @@ Status: Normative target architecture for the Python-only Lunarscout library.
 ## 1. Architectural decision
 
 Lunarscout is a standalone, in-process Python library. Its implementation does
-not use Python.NET, the CLR, .NET, or `moonlib`. The C# source tree, C# build,
-managed-runtime bootstrap, and managed wrappers are migration artifacts and are
-not part of the architecture described here.
+not use Python.NET, the CLR, .NET, or `moonlib`. The former C# source tree, C#
+build, managed-runtime bootstrap, and managed wrappers were removed after the
+archival boundary commit `c9c4e66` and remain available from repository history.
 
 The normal execution model is deliberately simple:
 
@@ -150,9 +150,8 @@ The following have no counterpart in the final architecture:
 - `pythonnet` and `moonlib.dll` configuration;
 - .NET SDK/runtime requirements and C# binary packaging.
 
-Compatibility aliases may temporarily forward old public names to Python
-implementations with deprecation warnings. They must not retain the old
-runtime, error taxonomy, or initialization behavior.
+The former managed public names are not compatibility aliases. Applications
+must use the Python product functions and structured domain exceptions.
 
 ## 5. Public API and lifecycle
 

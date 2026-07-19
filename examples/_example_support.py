@@ -28,7 +28,7 @@ _PROJ4 = (
 )
 
 
-def example_parser(description: str, *, native: bool = False) -> argparse.ArgumentParser:
+def example_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--workspace",
@@ -36,22 +36,6 @@ def example_parser(description: str, *, native: bool = False) -> argparse.Argume
         default=Path(os.environ.get("LUNARSCOUT_EXAMPLE_WORKSPACE", "/tmp/lunarscout_examples")),
         help="Directory for deterministic fixtures and generated outputs.",
     )
-    if native:
-        parser.add_argument(
-            "--scenario",
-            type=Path,
-            default=(
-                Path(os.environ["LUNARSCOUT_EXAMPLE_SCENARIO"])
-                if "LUNARSCOUT_EXAMPLE_SCENARIO" in os.environ
-                else None
-            ),
-            help="Real scenario containing dem.tif and horizons.",
-        )
-        parser.add_argument("--start", default="2027-01-01T00:00:00Z")
-        parser.add_argument("--stop", default="2027-01-01T02:00:00Z")
-        parser.add_argument("--step-hours", type=float, default=1.0)
-        parser.add_argument("--observer-elevation-meters", type=float, default=0.0)
-        parser.add_argument("--overwrite", action="store_true")
     return parser
 
 
@@ -133,32 +117,3 @@ def ensure_synthetic_series(workspace: Path) -> ls.TemporalGeoTiffSeries:
         units="fraction",
         provenance={"source": "deterministic Lunarscout example"},
     )
-
-
-def require_native_scenario(path: Path | None) -> ls.Scenario:
-    if path is None:
-        raise SystemExit(
-            "A real scenario is required. Pass --scenario or set "
-            "LUNARSCOUT_EXAMPLE_SCENARIO."
-        )
-    scenario = ls.open_scenario(path)
-    missing = [
-        str(required)
-        for required in (scenario.dem_path(), scenario.horizons_path())
-        if not required.exists()
-    ]
-    if missing:
-        raise SystemExit("Scenario prerequisites are missing: " + ", ".join(missing))
-    native_status = ls.native.status()
-    if not native_status["available"]:
-        unavailable = [
-            name
-            for name, detail in native_status["components"].items()
-            if not detail.get("available", False)
-        ]
-        raise SystemExit("Native runtime is unavailable: " + ", ".join(unavailable))
-    return scenario
-
-
-def native_times(args: argparse.Namespace) -> ls.TimeRange:
-    return ls.times(args.start, args.stop, step_hours=args.step_hours)

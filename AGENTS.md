@@ -5,12 +5,9 @@ Guidance for coding agents working in this repository.
 ## Project Overview
 
 Lunarscout is a standalone Python library for lunar terrain, raster, temporal,
-and optional native lighting analysis. The public Python package lives in
-`src/lunarscout`.
-
-The native C# implementation currently lives under `native/moonlib`, with tests
-under `native/tests`. Native features are optional and are accessed from Python
-through Python.NET.
+horizon, lighting, visibility, and landed-mission analysis. The public Python
+package lives in `src/lunarscout`; production numerical work uses NumPy and
+Numba CPU/CUDA implementations.
 
 Read `docs/USER_GUIDE.md` before making broad API or architecture changes.
 
@@ -38,54 +35,38 @@ import lunarscout as ls
 It is acceptable for high-level functions to be exported from
 `src/lunarscout/__init__.py` when they are intended for normal user scripts.
 Implementation modules should stay focused by domain, for example
-`native_horizon.py`, `native_temporal.py`, and `native_product.py`.
+`horizon.py`, `products.py`, and `temporal_store.py`.
 
-Native-backed features may also be available through `ls.native`, especially
-for status, initialization, and native-specific details. Keep the simple user
-path available at the root when that is the expected API.
+CUDA status and diagnostics belong under `ls.cuda`. Scientific functions use
+domain names rather than implementation-specific names.
 
 Names beginning with `_` are private. Tests and examples are not public API.
 
-## Native Runtime Rules
+## Runtime Rules
 
-Pure-Python imports and pure-Python functionality must not initialize
-Python.NET, CLR, GDAL native bindings, SPICE, or `moonlib`.
+Importing Lunarscout must not initialize CUDA, load SPICE kernels, open raster
+datasets, write files, or perform network access. Explicit-vector product calls
+must not import SpiceyPy or touch the SPICE kernel pool.
 
-Native capability checks should remain lazy:
+CUDA capability checks remain lazy:
 
 ```python
 import lunarscout as ls
 
-status = ls.native.status()
-if status["available"]:
-    ls.native.initialize()
+status = ls.cuda.status()
 ```
 
-Native functions should validate cheap Python-side inputs before bootstrapping
-Python.NET where practical. If a native API needs `moonlib`, import it lazily
-through `src/lunarscout/_native_runtime/bootstrap.py` or helpers in
-`src/lunarscout/native.py`.
-
-Native features currently require either a local build:
-
-```bash
-dotnet build native/moonlib/moonlib.csproj
-```
-
-or `LUNARSCOUT_MOONLIB_DLL` pointing at the built `moonlib.dll`.
+Horizon generation is CUDA-only. Downstream products support `backend="auto"`,
+`"cpu"`, and `"cuda"`; explicit CUDA failures never fall back, while automatic
+selection may fall back to CPU. CPU selection must not probe CUDA.
 
 ## Error Handling
 
 Use structured Lunarscout exceptions from `src/lunarscout/errors.py`.
 
-Prefer:
-
-- `NativeInputError` for invalid user inputs detected before native execution.
-- `NativeBootstrapError` or `NativeUnavailableError` for runtime/bootstrap
-  failures.
-- `NativeTemporalError` for temporal native failures.
-- `NativeProductError` for file-producing native product failures, including
-  horizon and PSR generation.
+Use domain exceptions such as `InputError`, `GridError`, `VectorError`,
+`HorizonGenerationError`, `CudaError`, `ProductCalculationError`, and
+`ProductStorageError`.
 
 Include stable `code=` values and useful `details=` for failures that callers
 may inspect.
@@ -117,24 +98,14 @@ Use the repository virtual environment:
 Run focused Python tests during development, for example:
 
 ```bash
-.venv/bin/python -m pytest tests/test_native.py tests/test_native_horizon.py -q
+.venv/bin/python -m pytest tests/test_public_horizon.py \
+    tests/test_public_lightmap.py -q
 ```
 
-Build native C# when changing native code:
-
-```bash
-dotnet build native/moonlib/moonlib.csproj
-```
-
-Representative native C# tests:
-
-```bash
-dotnet test native/tests/HorizonGen.Tests/HorizonGen.Tests.csproj
-```
-
-Native Python tests should not require a real GPU or real `moonlib` unless the
-test is explicitly an integration test. Prefer fakes for public wrapper
-behavior and separate local scripts/examples for long-running native validation.
+Ordinary tests remain CPU-only. Real CUDA tests must be explicitly gated with
+`LUNARSCOUT_REQUIRE_NUMBA_CUDA=1` and run where the NVIDIA device is visible.
+Do not treat sandbox GPU visibility failures as evidence that the host lacks a
+GPU.
 
 ## Examples and Scripts
 
@@ -145,8 +116,8 @@ Scripts may include editable placeholder paths for local DEMs and output
 directories, but they should make it clear which values users must edit before
 running.
 
-For native example runs, ensure the native runtime is built and configured
-before Python starts.
+GPU examples must clearly state that a compatible NVIDIA device and driver are
+required.
 
 ## Editing Guidelines
 

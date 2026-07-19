@@ -74,26 +74,3 @@ def test_deterministic_example_sequence_runs(tmp_path: Path) -> None:
     report = json.loads((prototype / "report.json").read_text(encoding="utf-8"))
     assert report["prototype"] == "two_file_timeseries_storage"
     assert report["shape"] == {"height": 256, "time": 64, "width": 256}
-
-
-def test_native_examples_explain_missing_scenario() -> None:
-    environment = _environment()
-    environment.pop("LUNARSCOUT_EXAMPLE_SCENARIO", None)
-    for script_name in (
-        "07_native_sun_fraction.py",
-        "08_native_horizon_margins.py",
-        "11_native_end_to_end_validation.py",
-        "12_native_performance_benchmark.py",
-        "13_native_psr.py",
-    ):
-        completed = subprocess.run(
-            [sys.executable, str(_EXAMPLES / script_name)],
-            cwd=_REPOSITORY_ROOT,
-            env=environment,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert completed.returncode != 0
-        assert "Pass --scenario" in completed.stderr

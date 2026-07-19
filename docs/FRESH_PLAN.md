@@ -1,5 +1,10 @@
 # Plan for a Truthful and Reproducible Package
 
+> **Superseded:** This managed-runtime packaging plan is retained only as
+> historical evidence. `docs/PLAN1.md` and `docs/ARCHITECTURE.md` govern the
+> Python/Numba product; its .NET, Python.NET, `moonlib`, and native-package
+> directions are obsolete.
+
 **Plan date:** 2026-07-13
 
 **Source review:** `docs/FRESH_REVIEW.md`

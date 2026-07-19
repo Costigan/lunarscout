@@ -124,47 +124,6 @@ def test_open_scenario_rejects_attached_state_until_implemented(tmp_path: Path):
     assert raised.value.code == "scenario_state_unavailable"
 
 
-class _TerrainProducts:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str, str, bool]] = []
-
-    def GenerateHillshade(self, dem_path: str, output_path: str, overwrite: bool) -> None:
-        self.calls.append(("hillshade", dem_path, output_path, overwrite))
-        Path(output_path).write_bytes(b"hillshade")
-
-    def GenerateSlope(self, dem_path: str, output_path: str, overwrite: bool) -> None:
-        self.calls.append(("slope", dem_path, output_path, overwrite))
-        Path(output_path).write_bytes(b"slope")
-
-    def GenerateAspect(self, dem_path: str, output_path: str, overwrite: bool) -> None:
-        self.calls.append(("aspect", dem_path, output_path, overwrite))
-        Path(output_path).write_bytes(b"aspect")
-
-    def GenerateRoughness(self, dem_path: str, output_path: str, overwrite: bool) -> None:
-        self.calls.append(("roughness", dem_path, output_path, overwrite))
-        Path(output_path).write_bytes(b"roughness")
-
-
-def test_scenario_native_terrain_methods_use_canonical_paths(tmp_path: Path) -> None:
-    root = tmp_path / "scenario"
-    root.mkdir()
-    (root / "dem.tif").write_bytes(b"dem")
-    scenario = ls.open_scenario(root)
-    terrain_products = _TerrainProducts()
-
-    assert scenario.create_hillshade(_terrain_products=terrain_products) == root / "hillshade.tif"
-    assert scenario.create_slope(_terrain_products=terrain_products) == root / "slope.tif"
-    assert scenario.create_aspect(_terrain_products=terrain_products) == root / "aspect.tif"
-    assert scenario.create_roughness(overwrite=True, _terrain_products=terrain_products) == root / "roughness.tif"
-
-    assert terrain_products.calls == [
-        ("hillshade", str(root / "dem.tif"), str(root / "hillshade.tif"), False),
-        ("slope", str(root / "dem.tif"), str(root / "slope.tif"), False),
-        ("aspect", str(root / "dem.tif"), str(root / "aspect.tif"), False),
-        ("roughness", str(root / "dem.tif"), str(root / "roughness.tif"), True),
-    ]
-
-
 def test_scenario_generate_horizons_uses_primary_dem_by_default(tmp_path: Path) -> None:
     root = tmp_path / "scenario"
     root.mkdir()
