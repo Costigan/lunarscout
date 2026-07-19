@@ -13,6 +13,7 @@ from lunarscout.georeference import GeoReference
 from lunarscout.geotiff import read_geotiff
 import lunarscout._numba_horizon.product_store as product_store
 from lunarscout._numba_horizon.product_store import (
+    COMPUTE_BACKENDS_TAG,
     IncompatibleProductJobError,
     ProductJob,
     ResumableTiledProduct,
@@ -100,6 +101,7 @@ def test_product_store_resumes_by_patch_and_publishes_partial_edges(
         )
         assert dataset.tags(1)[TIMESTAMP_TAG] == "2027-01-01T00:00:00.000000Z"
         assert dataset.tags(2)[TIMESTAMP_TAG] == "2027-01-01T06:00:00.000000Z"
+        assert dataset.tags()[COMPUTE_BACKENDS_TAG] == "[]"
         assert np.all(dataset.read(1, window=((0, 128), (0, 128))) == 11)
         assert np.all(dataset.read(2, window=((0, 128), (0, 128))) == 22)
         assert np.all(dataset.read(1, window=((0, 128), (128, 256))) == 7)
@@ -112,6 +114,77 @@ def test_product_store_resumes_by_patch_and_publishes_partial_edges(
     assert (second_georef.width, second_georef.height) == (257, 130)
     assert second_band[0, 0] == 22
     assert second_band[129, 256] == 44
+
+
+def test_backend_provenance_survives_resume_and_records_mixed_execution(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "mixed-backends.tif"
+    cpu_store = ResumableTiledProduct(output, _job(), backend="cpu")
+    cpu_store.write_patch(
+        0,
+        0,
+        (
+            np.full((128, 128), 1, dtype=np.uint8),
+            np.full((128, 128), 2, dtype=np.uint8),
+        ),
+    )
+
+    assert cpu_store.compute_backends == ("cpu",)
+    cpu_manifest = json.loads(cpu_store.manifest_path.read_text())
+    cpu_journal = json.loads(cpu_store.journal_path.read_text())
+    assert cpu_manifest["compute_backends"] == ["cpu"]
+    assert cpu_journal["patch_backends"] == {"0,0": "cpu"}
+
+    cuda_store = ResumableTiledProduct(output, _job(), backend="cuda")
+    assert cuda_store.compute_backends == ("cpu",)
+    cuda_store.write_patch(
+        0,
+        128,
+        (
+            np.full((128, 128), 3, dtype=np.uint8),
+            np.full((128, 128), 4, dtype=np.uint8),
+        ),
+    )
+    for tile_y, tile_x in ((0, 256), (128, 0), (128, 128), (128, 256)):
+        cuda_store.write_invalid_patch(tile_y, tile_x)
+
+    assert cuda_store.compute_backends == ("cpu", "cuda")
+    mixed_manifest = json.loads(cuda_store.manifest_path.read_text())
+    mixed_journal = json.loads(cuda_store.journal_path.read_text())
+    assert mixed_manifest["compute_backends"] == ["cpu", "cuda"]
+    assert mixed_journal["patch_backends"] == {
+        "0,0": "cpu",
+        "0,128": "cuda",
+    }
+
+    cuda_store.finalize()
+    with rasterio.open(output) as dataset:
+        assert dataset.tags()[COMPUTE_BACKENDS_TAG] == '["cpu","cuda"]'
+
+
+def test_resume_repairs_backend_manifest_from_durable_journal(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "repair-backend-manifest.tif"
+    store = ResumableTiledProduct(output, _job(), backend="cpu")
+    store.write_patch(
+        0,
+        0,
+        (
+            np.full((128, 128), 1, dtype=np.uint8),
+            np.full((128, 128), 2, dtype=np.uint8),
+        ),
+    )
+    manifest = json.loads(store.manifest_path.read_text())
+    manifest["compute_backends"] = []
+    product_store._atomic_json(store.manifest_path, manifest)
+
+    resumed = ResumableTiledProduct(output, _job(), backend="cuda")
+
+    assert resumed.compute_backends == ("cpu",)
+    repaired = json.loads(resumed.manifest_path.read_text())
+    assert repaired["compute_backends"] == ["cpu"]
 
 
 def test_product_store_does_not_journal_a_partially_written_patch(

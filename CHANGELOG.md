@@ -6,6 +6,19 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Adopted the initial Python-only public product API decisions: downstream
+  products use keyword-only `backend="auto"` with strict `cpu` and `cuda`
+  behavior, long operations default to `verbose=False`, and file-producing
+  operations return `Path`. Added lazy `ls.cuda.is_available()` and
+  `ls.cuda.status()` diagnostics without importing Numba or initializing CUDA
+  during `import lunarscout`. Added the domain exception hierarchy that will
+  replace transitional `Native*` failures in promoted product wrappers.
+- Added durable compute-backend provenance to private staged products. Backend
+  identity advances only with flushed, journaled valid patches; resumed jobs
+  may truthfully accumulate CPU and CUDA execution, repair a stale manifest
+  sidecar from the authoritative journal, and publish the ordered backend set
+  in `LUNARSCOUT_COMPUTE_BACKENDS` GeoTIFF metadata. The accepted bounded PSR
+  writer and 16-patch checkpoint behavior remain unchanged.
 - Added reusable caller-owned horizon decode buffers and selected five pinned
   buffers for the private bounded CUDA PSR pipeline. `.cbin` data decodes
   directly into pinned memory, avoiding both per-patch 94 MiB allocations and

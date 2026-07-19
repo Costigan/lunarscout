@@ -51,7 +51,9 @@ def _vector_hash(vectors: npt.NDArray[np.float64]) -> str:
     return hashlib.sha256(vectors.astype("<f8", copy=False).tobytes()).hexdigest()
 
 
-def _sessions(backend: Backend, count: int, time_batch_size: int) -> list[Any]:
+def _sessions(
+    backend: Backend, count: int, time_batch_size: int
+) -> tuple[list[Any], Literal["cpu", "cuda"]]:
     if backend not in ("auto", "cpu", "cuda"):
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     if time_batch_size < 1:
@@ -59,18 +61,27 @@ def _sessions(backend: Backend, count: int, time_batch_size: int) -> list[Any]:
     if backend == "cpu":
         from .lightmap_cpu import LightmapCpuSession
 
-        return [LightmapCpuSession(time_batch_size=time_batch_size) for _ in range(count)]
+        return (
+            [LightmapCpuSession(time_batch_size=time_batch_size) for _ in range(count)],
+            "cpu",
+        )
     from .cuda_backend import CudaBackendError
     from .lightmap_cuda import LightmapCudaSession
 
     try:
-        return [LightmapCudaSession(time_batch_size=time_batch_size) for _ in range(count)]
+        return (
+            [LightmapCudaSession(time_batch_size=time_batch_size) for _ in range(count)],
+            "cuda",
+        )
     except CudaBackendError:
         if backend == "cuda":
             raise
         from .lightmap_cpu import LightmapCpuSession
 
-        return [LightmapCpuSession(time_batch_size=time_batch_size) for _ in range(count)]
+        return (
+            [LightmapCpuSession(time_batch_size=time_batch_size) for _ in range(count)],
+            "cpu",
+        )
 
 
 def _run_duration_product(
@@ -140,7 +151,12 @@ def _run_duration_product(
     needed_sessions = int(_sun_calculator is None) + int(
         earth_vectors is not None and _earth_calculator is None
     )
-    sessions = _sessions(backend, needed_sessions, time_batch_size)
+    sessions, session_backend = _sessions(
+        backend, needed_sessions, time_batch_size
+    )
+    selected_backend: Literal["cpu", "cuda"] | None = (
+        session_backend if needed_sessions else None
+    )
     session_index = 0
     if _sun_calculator is None:
         sun_session = sessions[session_index]
@@ -204,6 +220,7 @@ def _run_duration_product(
         ),
         overwrite=overwrite,
         start_fresh=start_fresh,
+        backend=selected_backend,
     )
 
     def cancelled() -> bool:

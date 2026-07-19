@@ -70,6 +70,7 @@ def run_lightmap_product(
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     if time_batch_size < 1:
         raise ValueError("time_batch_size must be positive")
+    selected_backend = None
     if patch_calculator is not None:
         calculate_patch = patch_calculator
     elif backend == "cpu":
@@ -78,6 +79,7 @@ def run_lightmap_product(
         calculate_patch = LightmapCpuSession(
             time_batch_size=time_batch_size
         ).iter_patch_tiles
+        selected_backend = "cpu"
     else:
         from .cuda_backend import CudaBackendError
         from .lightmap_cuda import LightmapCudaSession
@@ -86,6 +88,7 @@ def run_lightmap_product(
             calculate_patch = LightmapCudaSession(
                 time_batch_size=time_batch_size
             ).iter_patch_tiles
+            selected_backend = "cuda"
         except CudaBackendError:
             if backend == "cuda":
                 raise
@@ -94,6 +97,7 @@ def run_lightmap_product(
             calculate_patch = LightmapCpuSession(
                 time_batch_size=time_batch_size
             ).iter_patch_tiles
+            selected_backend = "cpu"
     inventory = _inventory_identity(
         horizon_store, patches, observer_elevation_m
     )
@@ -118,6 +122,7 @@ def run_lightmap_product(
         ),
         overwrite=overwrite,
         start_fresh=start_fresh,
+        backend=selected_backend,
     )
 
     def cancelled() -> bool:

@@ -25,6 +25,7 @@ from lunarscout._numba_horizon.lightmap_pipeline import (
 from lunarscout._numba_horizon.lightmap_cuda import LightmapCudaSession
 from lunarscout._numba_horizon.lightmap_cpu import LightmapCpuSession
 from lunarscout._numba_horizon.psr import _pixel_frame
+from lunarscout._numba_horizon.product_store import COMPUTE_BACKENDS_TAG
 from lunarscout.georeference import GeoReference
 
 
@@ -246,6 +247,7 @@ def test_lightmap_pipeline_writes_timestamp_bands_and_invalid_patch(tmp_path: Pa
 
     assert result == output
     with rasterio.open(output) as dataset:
+        assert dataset.tags()[COMPUTE_BACKENDS_TAG] == '["cpu"]'
         assert dataset.count == 2
         assert dataset.profile["interleave"] == "band"
         assert dataset.tags(1)["TIMESTAMP_UTC"] == "2027-01-01T00:00:00.000000Z"
@@ -289,6 +291,7 @@ def test_auto_backend_falls_back_to_compiled_cpu(
     )
 
     with rasterio.open(result) as dataset:
+        assert dataset.tags()[COMPUTE_BACKENDS_TAG] == '["cpu"]'
         assert dataset.read(1).item() == 255
 
 

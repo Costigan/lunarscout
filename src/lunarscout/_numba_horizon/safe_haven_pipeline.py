@@ -89,12 +89,14 @@ def run_safe_haven_product(
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     if time_batch_size < 1:
         raise ValueError("time_batch_size must be positive")
+    selected_backend = None
     if fraction_calculator is not None:
         calculator = fraction_calculator
     elif backend == "cpu":
         calculator = LightmapCpuSession(
             time_batch_size=time_batch_size
         ).iter_patch_fraction_tiles
+        selected_backend = "cpu"
     else:
         from .cuda_backend import CudaBackendError
         from .lightmap_cuda import LightmapCudaSession
@@ -103,12 +105,14 @@ def run_safe_haven_product(
             calculator = LightmapCudaSession(
                 time_batch_size=time_batch_size
             ).iter_patch_fraction_tiles
+            selected_backend = "cuda"
         except CudaBackendError:
             if backend == "cuda":
                 raise
             calculator = LightmapCpuSession(
                 time_batch_size=time_batch_size
             ).iter_patch_fraction_tiles
+            selected_backend = "cpu"
     product = ResumableTiledProduct(
         output_path,
         ProductJob(
@@ -136,6 +140,7 @@ def run_safe_haven_product(
         ),
         overwrite=overwrite,
         start_fresh=start_fresh,
+        backend=selected_backend,
     )
 
     def cancelled() -> bool:

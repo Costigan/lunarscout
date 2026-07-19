@@ -21,6 +21,84 @@ class LunarscoutError(Exception):
         self.details = dict(details or {})
 
 
+class InputError(LunarscoutError):
+    """An ordinary public operation argument is invalid."""
+
+    default_code = "input_error"
+
+
+class GridError(InputError):
+    """Raster grids are invalid or incompatible for an operation."""
+
+    default_code = "grid_error"
+
+
+class VectorError(InputError):
+    """Celestial vectors are invalid or inconsistent with their time axis."""
+
+    default_code = "vector_error"
+
+
+class ProductTimeError(InputError):
+    """A product time axis or interval contract is invalid."""
+
+    default_code = "product_time_error"
+
+
+class HorizonError(LunarscoutError):
+    """Base class for stored-horizon and horizon-generation failures."""
+
+    default_code = "horizon_error"
+
+
+class HorizonFormatError(HorizonError):
+    """A stored horizon does not satisfy the public file contract."""
+
+    default_code = "horizon_format_error"
+
+
+class HorizonGenerationError(HorizonError):
+    """Horizon calculation or publication failed."""
+
+    default_code = "horizon_generation_error"
+
+
+class ComputeBackendError(LunarscoutError):
+    """The requested compute backend cannot complete the operation."""
+
+    default_code = "compute_backend_error"
+
+
+class CudaError(ComputeBackendError):
+    """CUDA capability, initialization, compilation, or execution failed."""
+
+    default_code = "cuda_error"
+
+
+class ProductError(LunarscoutError):
+    """Base class for horizon-derived product failures."""
+
+    default_code = "product_error"
+
+
+class ProductCalculationError(ProductError):
+    """A horizon-derived scientific calculation failed."""
+
+    default_code = "product_calculation_error"
+
+
+class ProductStorageError(ProductError):
+    """Product staging, persistence, or publication failed."""
+
+    default_code = "product_storage_error"
+
+
+class OperationCancelledError(LunarscoutError):
+    """Cooperative cancellation was observed at a bounded work boundary."""
+
+    default_code = "operation_cancelled"
+
+
 class GeoTiffError(LunarscoutError):
     default_code = "geotiff_error"
 

@@ -1,4 +1,4 @@
-from . import native, spice
+from . import cuda, native, spice
 from .alignment import (
     align,
     available_resampling_algorithms,
@@ -7,7 +7,9 @@ from .alignment import (
 )
 from .errors import (
     AlignmentError,
+    ComputeBackendError,
     CoordinateTransformError,
+    CudaError,
     GeoReferenceError,
     GeoTiffBandError,
     GeoTiffDataTypeError,
@@ -16,6 +18,11 @@ from .errors import (
     GeoTiffOpenError,
     GeoTiffWriteError,
     GridMismatchError,
+    GridError,
+    HorizonError,
+    HorizonFormatError,
+    HorizonGenerationError,
+    InputError,
     LunarscoutError,
     NativeBootstrapError,
     NativeAllocationError,
@@ -25,7 +32,12 @@ from .errors import (
     NativeTemporalError,
     NativeUnavailableError,
     OutputExistsError,
+    OperationCancelledError,
+    ProductCalculationError,
     ProductCatalogError,
+    ProductError,
+    ProductStorageError,
+    ProductTimeError,
     RegionOperationError,
     ScenarioError,
     ScenarioPathError,
@@ -42,6 +54,7 @@ from .errors import (
     TemporalSeriesWriteError,
     TerrainOperationError,
     TimeRangeError,
+    VectorError,
 )
 from .georeference import GeoReference
 from .geotiff import read_geotiff, write_geotiff
@@ -96,7 +109,10 @@ from .terrain import aspect, hillshade, slope
 
 __all__ = [
     "AlignmentError",
+    "ComputeBackendError",
     "CoordinateTransformError",
+    "CudaStatus",
+    "CudaError",
     "GeoReference",
     "GeoReferenceError",
     "GeoTiffBandError",
@@ -106,6 +122,11 @@ __all__ = [
     "GeoTiffOpenError",
     "GeoTiffWriteError",
     "GridMismatchError",
+    "GridError",
+    "HorizonError",
+    "HorizonFormatError",
+    "HorizonGenerationError",
+    "InputError",
     "LunarscoutError",
     "LonLat",
     "MapProduct",
@@ -121,7 +142,12 @@ __all__ = [
     "NativeTemporalError",
     "NativeUnavailableError",
     "OutputExistsError",
+    "OperationCancelledError",
+    "ProductCalculationError",
     "ProductCatalogError",
+    "ProductError",
+    "ProductStorageError",
+    "ProductTimeError",
     "RegionOperationError",
     "Scenario",
     "ScenarioError",
@@ -144,6 +170,7 @@ __all__ = [
     "TerrainOperationError",
     "TimeRange",
     "TimeRangeError",
+    "VectorError",
     "align",
     "aspect",
     "available_resampling_algorithms",
@@ -152,6 +179,7 @@ __all__ = [
     "body_azimuth_elevation_over_horizon",
     "body_vectors_ned",
     "body_vectors_ned_dataframe",
+    "cuda",
     "download_map_product",
     "filesystem_safe_scenario_name",
     "filter_regions_by_size",
@@ -183,3 +211,7 @@ __all__ = [
     "write_geotiff",
     "write_temporal_cube",
 ]
+
+# Kept as a root-level diagnostic type while capability functions stay under
+# ``ls.cuda``. Importing the type does not import Numba or initialize CUDA.
+CudaStatus = cuda.CudaStatus

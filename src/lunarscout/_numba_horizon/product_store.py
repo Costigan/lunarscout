@@ -29,6 +29,7 @@ PRODUCT_MANIFEST_SCHEMA = "lunarscout-numba-product-job-v1"
 PRODUCT_ALGORITHM_VERSION = "phase6b-v1"
 TIMESTAMPS_TAG = "LUNARSCOUT_TIMESTAMPS_UTC"
 TIMESTAMP_TAG = "TIMESTAMP_UTC"
+COMPUTE_BACKENDS_TAG = "LUNARSCOUT_COMPUTE_BACKENDS"
 _SUPPORTED_DTYPES = frozenset(
     np.dtype(value)
     for value in (
@@ -215,6 +216,7 @@ class ResumableTiledProduct:
         *,
         overwrite: bool = False,
         start_fresh: bool = False,
+        backend: str | None = None,
     ) -> None:
         self.output_path = Path(output_path).expanduser().resolve()
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +230,9 @@ class ResumableTiledProduct:
         self._fingerprint = hashlib.sha256(_json_bytes(self._manifest)).hexdigest()
         self._dtype = np.dtype(self._manifest["dtype"])
         self._overwrite = bool(overwrite)
+        if backend not in (None, "cpu", "cuda"):
+            raise ValueError("backend must be 'cpu', 'cuda', or None")
+        self._backend = backend
 
         if self.output_path.exists() and not overwrite:
             raise ProductStoreError(f"output already exists: {self.output_path}")
@@ -250,6 +255,12 @@ class ResumableTiledProduct:
     @property
     def completed_patches(self) -> Mapping[str, str]:
         return dict(self._completed)
+
+    @property
+    def compute_backends(self) -> tuple[str, ...]:
+        """Return backends with durable valid patches, in first-use order."""
+
+        return tuple(self._compute_backends)
 
     @staticmethod
     def _patch_key(tile_y: int, tile_x: int) -> str:
@@ -313,9 +324,16 @@ class ResumableTiledProduct:
                     if metadata:
                         dataset.update_tags(band_index, **metadata)
         self._sync_staging()
-        _atomic_json(self.manifest_path, self._manifest)
         self._completed: dict[str, str] = {}
+        self._patch_backends: dict[str, str] = {}
+        self._compute_backends: list[str] = []
+        self._write_manifest()
         self._write_journal()
+
+    def _write_manifest(self) -> None:
+        manifest = dict(self._manifest)
+        manifest["compute_backends"] = list(self._compute_backends)
+        _atomic_json(self.manifest_path, manifest)
 
     def _resume(self) -> None:
         try:
@@ -323,6 +341,7 @@ class ResumableTiledProduct:
             journal = json.loads(self.journal_path.read_text(encoding="ascii"))
         except (OSError, ValueError) as exc:
             raise IncompatibleProductJobError("unable to read staged product metadata") from exc
+        manifest_backends = manifest.pop("compute_backends", [])
         if manifest != self._manifest:
             raise IncompatibleProductJobError(
                 "staged product does not match the requested job"
@@ -336,6 +355,22 @@ class ResumableTiledProduct:
             raise IncompatibleProductJobError("completion journal is invalid")
         if not set(completed).issubset(self._expected_patch_keys()):
             raise IncompatibleProductJobError("completion journal contains unknown patches")
+        patch_backends = journal.get("patch_backends", {})
+        compute_backends = journal.get("compute_backends", [])
+        if (
+            not isinstance(patch_backends, dict)
+            or any(value not in ("cpu", "cuda") for value in patch_backends.values())
+            or not set(patch_backends).issubset(completed)
+            or not isinstance(compute_backends, list)
+            or any(value not in ("cpu", "cuda") for value in compute_backends)
+            or len(set(compute_backends)) != len(compute_backends)
+            or set(patch_backends.values()) != set(compute_backends)
+            or not isinstance(manifest_backends, list)
+            or any(value not in ("cpu", "cuda") for value in manifest_backends)
+        ):
+            raise IncompatibleProductJobError(
+                "staged backend provenance is invalid"
+            )
         try:
             with open_raster(self.staging_path) as dataset:
                 if (
@@ -352,6 +387,10 @@ class ResumableTiledProduct:
         except Exception as exc:
             raise IncompatibleProductJobError("staged GeoTIFF is unreadable") from exc
         self._completed = dict(completed)
+        self._patch_backends = dict(patch_backends)
+        self._compute_backends = list(compute_backends)
+        if manifest_backends != compute_backends:
+            self._write_manifest()
 
     def _sync_staging(self) -> None:
         with self.staging_path.open("rb") as handle:
@@ -361,16 +400,46 @@ class ResumableTiledProduct:
                 os.fsync(handle.fileno())
         _sync_directory(self.staging_path.parent)
 
-    def _write_journal(self, completed: Mapping[str, str] | None = None) -> None:
+    def _write_journal(
+        self,
+        completed: Mapping[str, str] | None = None,
+        patch_backends: Mapping[str, str] | None = None,
+        compute_backends: Sequence[str] | None = None,
+    ) -> None:
         completed_values = self._completed if completed is None else completed
+        patch_backend_values = (
+            self._patch_backends if patch_backends is None else patch_backends
+        )
+        compute_backend_values = (
+            self._compute_backends if compute_backends is None else compute_backends
+        )
         _atomic_json(
             self.journal_path,
             {
                 "schema": PRODUCT_MANIFEST_SCHEMA,
                 "manifest_sha256": self._fingerprint,
                 "completed_patches": completed_values,
+                "patch_backends": patch_backend_values,
+                "compute_backends": list(compute_backend_values),
             },
         )
+
+    def _commit_checkpoint_metadata(
+        self,
+        completed: Mapping[str, str],
+        new_patch_backends: Mapping[str, str],
+    ) -> None:
+        patch_backends = dict(self._patch_backends)
+        patch_backends.update(new_patch_backends)
+        compute_backends = list(self._compute_backends)
+        for value in new_patch_backends.values():
+            if value not in compute_backends:
+                compute_backends.append(value)
+        self._write_journal(completed, patch_backends, compute_backends)
+        self._completed = dict(completed)
+        self._patch_backends = patch_backends
+        self._compute_backends = compute_backends
+        self._write_manifest()
 
     def is_complete(self, tile_y: int, tile_x: int) -> bool:
         return self._patch_key(tile_y, tile_x) in self._completed
@@ -457,10 +526,12 @@ class ResumableTiledProduct:
         tiff_synchronize_seconds = time.perf_counter() - sync_started
         completed = dict(self._completed)
         completed[key] = "valid" if valid else "invalid"
+        new_patch_backends = (
+            {key: self._backend} if valid and self._backend is not None else {}
+        )
         journal_started = time.perf_counter()
-        self._write_journal(completed)
+        self._commit_checkpoint_metadata(completed, new_patch_backends)
         journal_persistence_seconds = time.perf_counter() - journal_started
-        self._completed = completed
         return ProductWriteTimings(
             tiff_write_close_seconds=tiff_write_close_seconds,
             tiff_synchronize_seconds=tiff_synchronize_seconds,
@@ -482,6 +553,15 @@ class ResumableTiledProduct:
             )
         if self.output_path.exists() and not self._overwrite:
             raise ProductStoreError(f"output already exists: {self.output_path}")
+        with Env(GDAL_TIFF_INTERNAL_MASK=True):
+            with open_raster(self.staging_path, "r+") as dataset:
+                dataset.update_tags(
+                    **{
+                        COMPUTE_BACKENDS_TAG: json.dumps(
+                            self._compute_backends, separators=(",", ":")
+                        )
+                    }
+                )
         self._sync_staging()
         if self._mask_sidecar.exists():
             raise ProductStoreError(
@@ -515,6 +595,7 @@ class ProductBatchWriter:
         self._environment: Env | None = None
         self._dataset: Any | None = None
         self._pending: dict[str, str] = {}
+        self._pending_backends: dict[str, str] = {}
         self._entered = False
 
     @property
@@ -596,6 +677,8 @@ class ProductBatchWriter:
         dataset.write_mask(mask, window=window)
         tiff_write_seconds = time.perf_counter() - write_started
         self._pending[key] = "valid" if valid else "invalid"
+        if valid and product._backend is not None:
+            self._pending_backends[key] = product._backend
         checkpoint = None
         if len(self._pending) >= self.checkpoint_patch_count:
             checkpoint = self.checkpoint_with_timings()
@@ -613,11 +696,13 @@ class ProductBatchWriter:
         completed = dict(self._product._completed)
         completed.update(self._pending)
         journal_started = time.perf_counter()
-        self._product._write_journal(completed)
+        self._product._commit_checkpoint_metadata(
+            completed, self._pending_backends
+        )
         journal_persistence_seconds = time.perf_counter() - journal_started
         completed_patch_keys = tuple(self._pending)
-        self._product._completed = completed
         self._pending.clear()
+        self._pending_backends.clear()
         return ProductCheckpointTimings(
             tiff_close_seconds=tiff_close_seconds,
             tiff_synchronize_seconds=tiff_synchronize_seconds,

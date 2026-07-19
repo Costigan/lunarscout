@@ -74,6 +74,7 @@ def _run_body_elevation_product(
     if len(timestamps) != len(vectors):
         raise ValueError("timestamp count must equal body vector count")
 
+    selected_backend = None
     if _margin_calculator is not None:
         calculate_patch = _margin_calculator
     elif backend == "cpu":
@@ -82,6 +83,7 @@ def _run_body_elevation_product(
         calculate_patch = LightmapCpuSession(
             time_batch_size=time_batch_size
         ).iter_patch_margin_tiles
+        selected_backend = "cpu"
     else:
         from .cuda_backend import CudaBackendError
         from .lightmap_cuda import LightmapCudaSession
@@ -90,6 +92,7 @@ def _run_body_elevation_product(
             calculate_patch = LightmapCudaSession(
                 time_batch_size=time_batch_size
             ).iter_patch_margin_tiles
+            selected_backend = "cuda"
         except CudaBackendError:
             if backend == "cuda":
                 raise
@@ -98,6 +101,7 @@ def _run_body_elevation_product(
             calculate_patch = LightmapCpuSession(
                 time_batch_size=time_batch_size
             ).iter_patch_margin_tiles
+            selected_backend = "cpu"
 
     patches = enumerate_patches(dem.width, dem.height)
     inventory = _inventory_identity(horizon_store, patches, observer_elevation_m)
@@ -121,6 +125,7 @@ def _run_body_elevation_product(
         ),
         overwrite=overwrite,
         start_fresh=start_fresh,
+        backend=selected_backend,
     )
 
     def cancelled() -> bool:

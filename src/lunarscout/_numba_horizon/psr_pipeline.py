@@ -207,10 +207,12 @@ def run_psr_product(
     patches = enumerate_patches(dem.width, dem.height)
     patches_by_origin = {(patch.tile_y, patch.tile_x): patch for patch in patches}
     cuda_session = None
+    selected_backend = None
     if patch_calculator is not None:
         calculate_patch = patch_calculator
     elif backend == "cpu":
         calculate_patch = compute_psr_patch_reference
+        selected_backend = "cpu"
     else:
         from .cuda_backend import CudaBackendError
         from .psr_cuda import PsrCudaPatchTimings, PsrCudaSession
@@ -239,10 +241,12 @@ def run_psr_product(
                 timing_callback=cuda_timing if timing_callback is not None else None
             )
             calculate_patch = cuda_session.compute_patch
+            selected_backend = "cuda"
         except CudaBackendError:
             if backend == "cuda":
                 raise
             calculate_patch = compute_psr_patch_reference
+            selected_backend = "cpu"
     reduction_started = time.perf_counter()
     reduced_vectors, reduced_indices = reduce_sun_vectors_for_psr(
         dem, sun_vectors_m
@@ -275,6 +279,7 @@ def run_psr_product(
         ),
         overwrite=overwrite,
         start_fresh=start_fresh,
+        backend=selected_backend,
     )
     timing("product_initialize", time.perf_counter() - product_started)
 
