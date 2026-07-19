@@ -1,6 +1,6 @@
 # Public Product API Proposal
 
-Status: reviewed decisions and proposed signatures for PLAN1 M0
+Status: accepted decisions; public product facades implemented for PLAN1 M1
 
 Last updated: 2026-07-18
 
@@ -204,6 +204,13 @@ Valid existing horizon tiles are resumable completion units. With
 `overwrite=False` they are structurally validated and skipped; with
 `overwrite=True` they are regenerated through sibling staging files and
 atomically replaced one tile at a time.
+
+The accepted facade is implemented as `lunarscout.horizon.generate_horizons`,
+exported at the package root, and used by `Scenario.generate_horizons`. It has
+no backend argument because production horizon generation is CUDA-only. A
+source-tree and installed-wheel gated test executed the real multi-DEM CUDA
+pipeline, published a structurally complete compressed tile, decoded its fixed
+`(128, 128, 1440)` contract, and observed finite values for the valid pixel.
 
 ```python
 def generate_lightmap(

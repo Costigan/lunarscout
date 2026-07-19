@@ -6,6 +6,25 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Recorded the final development checkpoint that retains the superseded C#,
+  Python.NET, and managed-wrapper sources. They remain recoverable from this
+  commit and the `main` branch and will be removed from the Python-only
+  production tree in the following change.
+- Prepared package metadata for the first immutable TestPyPI candidate,
+  `0.1.0rc1`, and added build and Twine tooling to the development extra.
+- Removed `ls.native`, `GenerateHorizons`, and `NativeHorizonProgress` from the
+  curated package root. Transitional wrapper modules remain importable only by
+  their explicit module paths as temporary migration evidence; ordinary
+  `import lunarscout` no longer imports or advertises them.
+- Promoted CUDA-only Python/Numba horizon generation as
+  `ls.generate_horizons()` and `Scenario.generate_horizons()`. The public
+  facade validates DEMs and output paths before execution, builds resident
+  factor-four pyramids, uses the selected one-producer/one-CUDA-consumer/one-
+  writer bounded pipeline, resumes structurally complete tiles, atomically
+  publishes `.bin`/`.cbin` files, reports immutable CUDA progress events, and
+  maps cancellation, CUDA capability, calculation, and storage failures to
+  structured domain exceptions. Horizon generation intentionally has no
+  backend argument or CPU fallback.
 - Promoted Python-only public facades for lightmaps, PSR, Sun- and Earth-center
   terrain-relative elevation, safe havens, and all four landed
   mission-duration products. Root functions and `Scenario` conveniences share

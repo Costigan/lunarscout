@@ -55,7 +55,7 @@ def _fake_bootstrap(tmp_path: Path, *, loaded: bool = False):
     )
 
 
-def test_import_exposes_native_without_loading_pythonnet():
+def test_import_hides_native_and_does_not_load_pythonnet():
     environment = dict(os.environ)
     source_root = str(Path(__file__).resolve().parents[1] / "src")
     environment["PYTHONPATH"] = source_root
@@ -77,7 +77,7 @@ def test_import_exposes_native_without_loading_pythonnet():
     )
 
     assert json.loads(completed.stdout) == {
-        "native": True,
+        "native": False,
         "pythonnet": False,
         "bootstrap": False,
     }

@@ -368,7 +368,7 @@ it must not be part of the installed product or required verification.
 - [ ] Mark the managed-runtime sections of `docs/FRESH_PLAN.md`, old roadmaps,
   and API sketches as superseded where readers could mistake them for current
   installation guidance.
-- [ ] Verify `import lunarscout` and representative product runs never load
+- [x] Verify `import lunarscout` and representative product runs never load
   `clr`, `pythonnet`, or `moonlib` modules.
 
 ## 8. Packaging the test library
@@ -439,7 +439,7 @@ it must not be part of the installed product or required verification.
   than merely observing GPU visibility or selecting a backend name.
 - [ ] Compare public CPU and CUDA results for lightmap, PSR, both elevation
   products, safe haven, and all mission-duration variants.
-- [ ] Run public horizon generation on the supported NVIDIA environment.
+- [x] Run public horizon generation on the supported NVIDIA environment.
 - [ ] Record device, driver, Numba, CUDA-stack, and GPU-memory information.
 
 ### Clean environments
@@ -548,18 +548,18 @@ upload.
 ### M0: Scope and API decisions
 
 - [x] Confirm Python/platform support and candidate version strategy.
-- [ ] Approve public names, signatures, result type, backend semantics,
+- [x] Approve public names, signatures, result type, backend semantics,
   progress, cancellation, and exception taxonomy.
 - [x] Confirm that every product listed in Section 2 is in the first candidate
   or explicitly document a justified deferral.
 
 ### M1: Public Python-only product surface
 
-- [ ] Promote horizon generation.
-- [ ] Promote lightmap and PSR.
-- [ ] Promote Sun- and Earth-center terrain-relative elevation.
-- [ ] Promote safe havens.
-- [ ] Promote all four mission-duration products.
+- [x] Promote horizon generation.
+- [x] Promote lightmap and PSR.
+- [x] Promote Sun- and Earth-center terrain-relative elevation.
+- [x] Promote safe havens.
+- [x] Promote all four mission-duration products.
 - [ ] Remove the managed-runtime path from public execution and dependencies.
 
 ### M2: Scientific, operational, and performance acceptance

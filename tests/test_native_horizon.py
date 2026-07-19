@@ -122,9 +122,10 @@ def _fake_modules():
     return moonlib, horizon
 
 
-def test_generate_horizons_is_available_from_root_and_native_namespace() -> None:
-    assert ls.GenerateHorizons is native.GenerateHorizons
-    assert ls.NativeHorizonProgress is native.NativeHorizonProgress
+def test_transitional_generate_horizons_is_not_in_curated_root() -> None:
+    assert not hasattr(ls, "GenerateHorizons")
+    assert not hasattr(ls, "NativeHorizonProgress")
+    assert callable(native.GenerateHorizons)
 
 
 def test_generate_horizons_calls_direct_quadtree_pipeline(tmp_path: Path) -> None:

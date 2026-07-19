@@ -108,6 +108,7 @@ import lunarscout as ls
 | `scenario.output_path(relative_path)`                                   | Resolve a non-empty scenario-relative output path.                                       |
 | `scenario.dem_path()`                                                   | Return the canonical primary DEM path, `dem.tif`.                                        |
 | `scenario.horizons_path()`                                              | Return the canonical horizons directory, `horizons/`.                                    |
+| `scenario.generate_horizons(...)`                                      | Generate resumable CUDA horizon tiles from the primary and surrounding DEMs.             |
 | `scenario.hillshade_path()`                                             | Return `hillshade.tif` in the scenario root.                                             |
 | `scenario.slope_path()`                                                 | Return `slope.tif` in the scenario root.                                                 |
 | `scenario.aspect_path()`                                                | Return `aspect.tif` in the scenario root.                                                |
@@ -510,11 +511,10 @@ fig, ax = ls.plot_body_elevations(
 
 ### Current API Status
 
-Scenario helpers for locating, reading, and plotting existing horizon tiles
-are public. Python-only public functions now generate lightmaps, PSR,
+Scenario helpers for generating, locating, reading, and plotting horizon tiles
+are public. Python-only public functions also generate lightmaps, PSR,
 Sun/Earth terrain-relative elevation, safe havens, and all four landed
-mission-duration products. Horizon generation is still awaiting its promoted
-Python facade.
+mission-duration products.
 
 Do not import `_numba_horizon` modules in user code. Use the root functions or
 the corresponding `Scenario` conveniences. All downstream functions default
@@ -541,6 +541,40 @@ can instead use `progress_callback` for a monotonic durable fraction and
 Cancellation uses `cancellation_requested`. Compatible staged jobs resume by
 default; `start_fresh=True` discards staged state, while `overwrite=True`
 protects an existing completed output until replacement publication.
+
+### Generating Horizons
+
+Horizon generation is CUDA-only and therefore has no `backend` argument. The
+first DEM supplies the output grid; later DEMs extend the terrain coverage in
+the order supplied. The root function returns the resolved output directory:
+
+```python
+horizons = ls.generate_horizons(
+    "/data/site/horizons",
+    [
+        "/data/site/dem.tif",
+        "/data/regional-dem.tif",
+    ],
+    observer_height_m=0.0,
+    compress=True,
+    verbose=True,
+)
+```
+
+The Scenario convenience automatically places the canonical primary DEM first:
+
+```python
+horizons = scenario.generate_horizons(
+    surrounding_dems=["surrounding/regional.tif"],
+    compress=True,
+)
+```
+
+Valid existing tiles are structurally checked and skipped by default.
+`overwrite=True` regenerates all tiles. Explicit cancellation and both progress
+callback forms use the same contracts as downstream products. If a compatible
+NVIDIA CUDA device cannot be initialized, the call raises `ls.CudaError` and
+does not fall back to a CPU generator.
 
 ### Reading Stored Horizons
 

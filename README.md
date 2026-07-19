@@ -1,27 +1,40 @@
 # Lunarscout
 
-Lunarscout is the notebook-first Python surface for lunar mission analysis in
-Lunar Analyst.
+Lunarscout is a standalone, notebook-first Python library for lunar terrain,
+horizon, lighting, visibility, and landed-mission analysis.
 
 Executable capability examples are indexed in
-[`examples/README.md`](../../examples/README.md).
+[`examples/README.md`](examples/README.md).
 
-The initial package provides single-band GeoTIFF input/output, georeferencing
-and coordinate conversion, GDAL-compatible slope/aspect/hillshade operations,
-connected-region analysis, explicit grid alignment, filesystem-safe scenario
-paths, UTC-aware temporal arrays, and file-backed timestamped GeoTIFF series.
-Raster values are ordinary NumPy arrays.
+The Python/Numba production implementation generates CUDA horizon tiles and
+CPU/CUDA lightmaps, permanent-shadow maps, Sun/Earth terrain-relative
+elevation, safe havens, and four landed mission-duration products. It also
+provides GeoTIFF I/O, georeferencing, terrain operations, connected-region
+analysis, explicit grid alignment, filesystem-safe scenario paths, UTC-aware
+temporal arrays, and file-backed timestamped GeoTIFF series.
 
-## Installation in this repository
+## Installation
 
-Lunarscout uses the GDAL Python bindings supplied by the supported Lunar
-Analyst runtime. GDAL is an external runtime prerequisite rather than a PyPI
-dependency because its Python package must match the installed native GDAL
-library.
+Install the release candidate from the configured package index:
 
 ```bash
-.venv/bin/python -m pip install -e packages/lunarscout
+python -m pip install lunarscout
 ```
+
+For source-tree development in this repository, use the repository virtual
+environment and source path:
+
+```bash
+export PYTHONPATH="$PWD/src"
+/e/projects/lunarscout/.venv/bin/python -m pytest -q
+```
+
+Rasterio supplies Lunarscout's maintained Python GDAL boundary. SpiceyPy is a
+core dependency because generated Sun/Earth vectors are part of the supported
+product surface, but it and the SPICE kernel pool remain lazy. Numba is also a
+core dependency; installing Lunarscout does not require the CUDA toolkit or an
+NVIDIA driver. Only horizon generation and explicitly requested CUDA product
+execution require a compatible NVIDIA device and driver at runtime.
 
 ```python
 import lunarscout as ls
@@ -38,9 +51,9 @@ slope_deg, slope_georef = ls.slope(
 )
 ```
 
-`Scenario` currently provides naming and containment only. Its standard paths
-are `dem.tif` and `horizons`; it does not read `scenario.db`, register
-products, publish layers, or create directories.
+`Scenario` provides filesystem-safe conventional paths and delegates public
+product operations. It does not read `scenario.db`, register products, publish
+layers, or become an application state container.
 
 Grid compatibility is never inferred from array shape alone. Verify it or
 align explicitly before combining rasters:
@@ -56,66 +69,46 @@ aligned, aligned_georef = ls.align(
 )
 ```
 
-## Optional native runtime
+## Horizons and lighting products
 
-Install Python.NET support only when native calculations are needed:
-
-```bash
-.venv/bin/python -m pip install -e 'packages/lunarscout[native]'
-```
-
-Capability checks do not initialize CLR:
+Generate horizons with the ordered primary and surrounding DEMs. This operation
+is deliberately CUDA-only and resumes structurally complete tiles:
 
 ```python
-native_status = ls.native.status()
-if native_status["available"]:
-    loaded_status = ls.native.initialize()
-```
-
-Initialization delegates to Lunar Analyst's existing native bootstrap and
-keeps all production moonlib access behind `MoonlibBridge`.
-
-Native temporal generation requires an explicit storage choice:
-
-```python
-time_range = ls.times("2027-01-01", "2027-01-08", step_hours=2)
-
-illumination = scenario.sun_fraction(
-    times=time_range,
-    storage="memory",
-)
-
-illumination_series = scenario.sun_fraction(
-    times=time_range,
-    storage="geotiff_series",
-    output="analysis/sun_fraction.temporal",
+horizons = ls.generate_horizons(
+    "/data/site/horizons",
+    ["/data/site/dem.tif", "/data/regional-dem.tif"],
 )
 ```
 
-Memory requests are rejected before native initialization when their exact
-output allocation exceeds the configured limit; storage is never changed
-automatically. File-backed generation uses preflighted temporary disk scratch
-because the native stream is patch-major, then atomically publishes the
-timestamped series. Progress and cancellation callbacks are supported.
-`sun_fraction` returns float32 values in `[0, 1]`; Sun/Earth horizon-margin
-methods return float32 degrees.
-
-Native permanent-shadow generation is an explicit file-producing operation:
+Every downstream product accepts `backend="auto"`, `"cpu"`, or `"cuda"` and
+defaults to `"auto"`. CPU never probes CUDA; explicit CUDA never falls back;
+automatic selection falls back to CPU when CUDA cannot initialize. All product
+functions return `Path`, remain quiet unless `verbose=True`, and support simple
+fraction progress, structured progress events, cancellation, durable restart,
+and failed-overwrite protection.
 
 ```python
-psr_path = scenario.psr("analysis/psr.tif", overwrite=False)
+mission_times = ls.times(
+    "2029-01-01T00:00:00Z",
+    "2029-02-01T00:00:00Z",
+    step_hours=6,
+)
+lightmap = scenario.lightmap(
+    "analysis/lightmap.tif",
+    times=mission_times,
+    backend="auto",
+)
+psr = scenario.psr(
+    "analysis/psr.tif",
+    times=mission_times,
+    backend="cpu",
+)
 ```
 
-It atomically publishes a native-grid uint8 GeoTIFF without registering it in
-scenario state. Value `255` means the Sun center never clears the local horizon
-across the native operation's six-hour samples from 1970-01-01 through
-2044-01-01; value `0` means it clears the horizon at least once. Observer
-elevation is currently fixed at zero. A GDAL validity mask distinguishes
-unknown pixels whose 128 x 128 horizon tile was missing or unreadable: mask
-`255` is valid and mask `0` is unknown. Complete output uses GDAL's virtual
-all-valid mask, so no physical mask or nodata sentinel is stored. Progress and
-cancellation callbacks are supported, and failed overwrites preserve the prior
-output.
+Explicit Moon-ME vectors prevent SpiceyPy import and SPICE kernel loading. See
+the [user guide](docs/USER_GUIDE.md) for vector units, file formats, masks,
+restart semantics, and the complete product API.
 
 ## Temporal arrays
 

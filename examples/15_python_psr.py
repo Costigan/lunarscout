@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Generate a Python/Numba PSR GeoTIFF for the Mons Mouton scenario.
+"""Generate a public Lunarscout PSR GeoTIFF for the Mons Mouton scenario.
 
 The defaults read /e/lunar_analyst_scenarios/mons-mouton and write
-examples/mons-mouton-psr.tif. This example uses the private prototype API until
-the validated product pipeline is promoted to Lunarscout's public facade.
+examples/mons-mouton-psr.tif.
 """
 
 from __future__ import annotations
@@ -14,44 +13,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import time
 
+import lunarscout as ls
 import numpy as np
 import rasterio
-
-from lunarscout._numba_horizon.file_format import HorizonTileStore
-from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
-from lunarscout._numba_horizon.product_vectors import generate_moon_me_vectors
-from lunarscout._numba_horizon.psr_pipeline import run_psr_product
-from lunarscout.georeference import GeoReference
-from lunarscout.spice_geometry import iter_times
 
 
 SCENARIO_PATH = Path("/e/lunar_analyst_scenarios/mons-mouton")
 OUTPUT_PATH = Path(__file__).resolve().parent / "mons-mouton-psr.tif"
-
-
-def load_dem(path: Path) -> tuple[DemGrid, GeoReference]:
-    """Load the DEM calculation grid and its public GeoReference metadata."""
-    import lunarscout as ls
-
-    elevation, georef = ls.read_geotiff(path)
-    if georef is None:
-        raise RuntimeError(f"DEM has no georeferencing: {path}")
-    with rasterio.open(path) as dataset:
-        crs = dataset.crs.to_dict()
-    projection = ProjectionParameters(
-        radius_m=float(crs["R"]),
-        latitude_origin_rad=float(np.deg2rad(crs["lat_0"])),
-        longitude_origin_rad=float(np.deg2rad(crs["lon_0"])),
-        scale=float(crs.get("k", crs.get("k_0", 1.0))),
-        false_easting_m=float(crs.get("x_0", 0.0)),
-        false_northing_m=float(crs.get("y_0", 0.0)),
-    )
-    dem = DemGrid(
-        np.ascontiguousarray(elevation, dtype=np.float32),
-        np.asarray(georef.affine_transform, dtype=np.float64),
-        projection,
-    )
-    return dem, georef
 
 
 def make_progress_reporter() -> Callable[[float], None]:
@@ -116,30 +84,20 @@ def main() -> int:
 
     output = args.output.expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    print(f"Loading DEM: {dem_path}", flush=True)
-    dem, georef = load_dem(dem_path)
-
-    times = tuple(
-        iter_times(
-            "1970-01-01T00:00:00Z",
-            "2044-01-01T00:00:00Z",
-            timedelta(hours=6),
-        )
+    times = ls.times(
+        "1970-01-01T00:00:00Z",
+        "2044-01-01T00:00:00Z",
+        step_hours=6,
     )
-    print(f"Generating {len(times):,} exact Moon-ME Sun vectors...", flush=True)
-    started = time.perf_counter()
-    vectors = generate_moon_me_vectors("sun", times)
-    print(f"Sun vectors ready in {time.perf_counter() - started:.2f} s", flush=True)
 
     print(f"Writing PSR product: {output}", flush=True)
     started = time.perf_counter()
     progress = make_progress_reporter()
-    result = run_psr_product(
-        dem=dem,
-        georef=georef,
-        horizon_store=HorizonTileStore(horizon_path),
-        output_path=output,
-        sun_vectors_m=vectors.vectors_m,
+    result = ls.generate_psr(
+        dem_path,
+        horizon_path,
+        output,
+        times=times,
         backend=args.backend,
         overwrite=args.overwrite,
         progress_callback=progress,

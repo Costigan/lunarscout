@@ -11,6 +11,7 @@ import numpy as np
 
 from .errors import (
     GeoTiffMetadataError,
+    InputError,
     NativeInputError,
     NativeProductError,
     ScenarioError,
@@ -369,15 +370,16 @@ class Scenario:
         *,
         dem_paths: Sequence[str | Path] | None = None,
         surrounding_dems: Sequence[str | Path] | None = None,
-        observer_elevation: float = 0.0,
-        skip_existing: bool = True,
-        compress_horizons: bool = True,
-        disable_hierarchy: bool = False,
+        observer_height_m: float = 0.0,
+        compress: bool = True,
+        overwrite: bool = False,
+        verbose: bool = False,
         progress_callback: Any | None = None,
+        progress_event_callback: Any | None = None,
         cancellation_requested: Any | None = None,
         _generator: Any | None = None,
     ) -> Path:
-        """Generate horizon files into the scenario's canonical horizons directory."""
+        """Generate CUDA horizon tiles in the canonical horizons directory."""
 
         if dem_paths is None:
             surrounding = surrounding_dems or ()
@@ -387,29 +389,30 @@ class Scenario:
             ]
         else:
             if surrounding_dems is not None:
-                raise NativeInputError(
+                raise InputError(
                     "Pass either dem_paths or surrounding_dems, not both.",
-                    code="native_horizons_ambiguous_dem_paths",
+                    code="horizon_dem_paths_ambiguous",
                 )
             resolved_dem_paths = [
                 self._resolve_dem_input_path(path) for path in dem_paths
             ]
 
         if _generator is None:
-            from .native_horizon import GenerateHorizons
+            from .horizon import generate_horizons
 
-            generator = GenerateHorizons
+            generator = generate_horizons
         else:
             generator = _generator
 
         return generator(
             self.horizons_path(),
             resolved_dem_paths,
-            observer_elevation=observer_elevation,
-            skip_existing=skip_existing,
-            compress_horizons=compress_horizons,
-            disable_hierarchy=disable_hierarchy,
+            observer_height_m=observer_height_m,
+            compress=compress,
+            overwrite=overwrite,
+            verbose=verbose,
             progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
             cancellation_requested=cancellation_requested,
         )
 

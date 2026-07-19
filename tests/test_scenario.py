@@ -183,11 +183,12 @@ def test_scenario_generate_horizons_uses_primary_dem_by_default(tmp_path: Path) 
             root / "horizons",
             [root / "dem.tif"],
             {
-                "observer_elevation": 0.0,
-                "skip_existing": True,
-                "compress_horizons": True,
-                "disable_hierarchy": False,
+                "observer_height_m": 0.0,
+                "compress": True,
+                "overwrite": False,
+                "verbose": False,
                 "progress_callback": None,
+                "progress_event_callback": None,
                 "cancellation_requested": None,
             },
         )
@@ -208,13 +209,15 @@ def test_scenario_generate_horizons_prepends_primary_to_surrounding_dems(
         return Path(output_dir)
 
     progress_callback = calls.append
+    progress_event_callback = calls.append
     scenario.generate_horizons(
         surrounding_dems=["surrounding/one.tif", outside],
-        observer_elevation=2.5,
-        skip_existing=False,
-        compress_horizons=False,
-        disable_hierarchy=True,
+        observer_height_m=2.5,
+        compress=False,
+        overwrite=True,
+        verbose=True,
         progress_callback=progress_callback,
+        progress_event_callback=progress_event_callback,
         cancellation_requested=lambda: False,
         _generator=fake_generate,
     )
@@ -226,11 +229,12 @@ def test_scenario_generate_horizons_prepends_primary_to_surrounding_dems(
         root / "surrounding" / "one.tif",
         outside.resolve(),
     ]
-    assert kwargs["observer_elevation"] == 2.5
-    assert kwargs["skip_existing"] is False
-    assert kwargs["compress_horizons"] is False
-    assert kwargs["disable_hierarchy"] is True
+    assert kwargs["observer_height_m"] == 2.5
+    assert kwargs["compress"] is False
+    assert kwargs["overwrite"] is True
+    assert kwargs["verbose"] is True
     assert kwargs["progress_callback"] is progress_callback
+    assert kwargs["progress_event_callback"] is progress_event_callback
     assert kwargs["cancellation_requested"]() is False
 
 
@@ -259,14 +263,14 @@ def test_scenario_generate_horizons_rejects_dem_paths_and_surrounding_dems(
     root.mkdir()
     scenario = ls.open_scenario(root)
 
-    with pytest.raises(ls.NativeInputError) as raised:
+    with pytest.raises(ls.InputError) as raised:
         scenario.generate_horizons(
             dem_paths=["primary.tif"],
             surrounding_dems=["outer.tif"],
             _generator=lambda *_args, **_kwargs: None,
         )
 
-    assert raised.value.code == "native_horizons_ambiguous_dem_paths"
+    assert raised.value.code == "horizon_dem_paths_ambiguous"
 
 
 def test_horizon_patch_coordinate_helpers_and_file_lookup(tmp_path: Path) -> None:

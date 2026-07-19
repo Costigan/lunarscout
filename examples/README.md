@@ -45,12 +45,12 @@ already complete.
 | `13_native_psr.py` | Native permanent-shadow byte-mask generation | Yes |
 | `14_timeseries_two_file_prototype.py` | Two-file BigTIFF/HDF5 time-series storage prototype and access benchmark | No |
 | `15_python_psr.py` | Python/Numba Mons Mouton permanent-shadow GeoTIFF generation | NVIDIA GPU |
+| `16_generate_horizons.py` | Public resumable Python/Numba horizon generation | NVIDIA GPU |
 
 ## Python/Numba PSR Example
 
-`15_python_psr.py` currently uses the private product prototype because its
-public facade has not yet been promoted. Run it from the prototype worktree
-with the shared repository virtual environment:
+`15_python_psr.py` uses the public `ls.generate_psr()` facade. Run it from the
+worktree with the shared repository virtual environment:
 
 ```bash
 cd /e/projects/lunarscout-numba-horizon
@@ -68,7 +68,20 @@ percentage point, including elapsed minutes, estimated remaining minutes, and
 the estimated local completion time. A GUI or notebook can pass the same
 fraction directly to its progress-bar widget.
 
-## Native Examples
+## Python/Numba Horizon Example
+
+Edit the DEM paths in `16_generate_horizons.py`, then run it in an environment
+with a compatible NVIDIA GPU. The first DEM defines the output grid and each
+following DEM extends terrain coverage. The example uses only the public
+`ls.generate_horizons()` API, resumes structurally complete tiles, and exits
+with the CUDA diagnostic reason when no compatible device is available.
+
+## Historical Managed-Runtime Examples
+
+The following `*_native_*` scripts are retained only as migration evidence for
+the superseded C#/Python.NET implementation. They are not part of the public
+Python/Numba API, installed package, or `0.1.0rc1` acceptance. New code should
+use the public horizon and product functions demonstrated above.
 
 Native examples require a real scenario containing `dem.tif` and
 `horizons`, plus the configured Python.NET, .NET, moonlib, CSPICE,

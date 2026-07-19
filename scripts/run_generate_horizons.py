@@ -20,41 +20,39 @@ DEM_PATHS = [
     Path("/d/viper/maps/lola/LDEM_80S_20M-2017-06-15-processed.tif"),
 ]
 
-OBSERVER_ELEVATION_METERS = 0.0
-SKIP_EXISTING = True
-COMPRESS_HORIZONS = False
+OBSERVER_HEIGHT_METERS = 0.0
+COMPRESS_HORIZONS = True
 
 
-def progress(event: ls.NativeHorizonProgress) -> None:
-    file_text = f" {event.file_name}" if event.file_name else ""
+def progress(event: ls.ProgressEvent) -> None:
+    tile_text = (
+        ""
+        if event.tile_x is None
+        else f" tile=({event.tile_x},{event.tile_y})"
+    )
     print(
-        f"{event.percent:6.2f}% "
-        f"{event.processed_patches}/{event.total_patches} "
-        f"{event.stage}: {event.message}{file_text}",
+        f"{event.fraction:6.1%} "
+        f"{event.completed}/{event.total} "
+        f"{event.stage}: {event.message}{tile_text}",
         flush=True,
     )
 
 
 def main() -> int:
-    print("Native status:")
-    status = ls.native.status()
-    for name, component in status["components"].items():
-        print(f"  {name}: available={component.get('available')}")
-    if not status["available"]:
-        print()
-        print("Native runtime is not fully available. Build moonlib first, for example:")
-        print("  dotnet build native/moonlib/moonlib.csproj")
+    status = ls.cuda.status()
+    print(f"CUDA available: {status.available}")
+    if not status.available:
+        print(f"CUDA unavailable: {status.reason}")
         return 2
 
     print()
     print("Generating horizons...")
-    result = ls.GenerateHorizons(
+    result = ls.generate_horizons(
         OUTPUT_DIR,
         DEM_PATHS,
-        observer_elevation=OBSERVER_ELEVATION_METERS,
-        skip_existing=SKIP_EXISTING,
-        compress_horizons=COMPRESS_HORIZONS,
-        progress_callback=progress,
+        observer_height_m=OBSERVER_HEIGHT_METERS,
+        compress=COMPRESS_HORIZONS,
+        progress_event_callback=progress,
     )
     print()
     print(f"Horizon files written to: {result}")

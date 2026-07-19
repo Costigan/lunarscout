@@ -1,4 +1,4 @@
-from . import cuda, native, spice
+from . import cuda, spice
 from .alignment import (
     align,
     available_resampling_algorithms,
@@ -58,6 +58,7 @@ from .errors import (
 )
 from .georeference import GeoReference
 from .geotiff import read_geotiff, write_geotiff
+from .horizon import generate_horizons
 from .map_products import (
     MapProduct,
     MapProductCatalog,
@@ -81,7 +82,6 @@ from .products import (
     mission_duration_from_sunlight_and_earth,
 )
 from .progress import ProgressEvent
-from .native_horizon import GenerateHorizons, NativeHorizonProgress
 from .regions import (
     filter_regions_by_size,
     find_borders,
@@ -144,11 +144,9 @@ __all__ = [
     "MapProduct",
     "MapProductCatalog",
     "MapRegion",
-    "GenerateHorizons",
     "NativeBootstrapError",
     "NativeAllocationError",
     "NativeError",
-    "NativeHorizonProgress",
     "NativeInputError",
     "NativeProductError",
     "NativeTemporalError",
@@ -198,6 +196,7 @@ __all__ = [
     "filter_regions_by_size",
     "find_borders",
     "generate_lightmap",
+    "generate_horizons",
     "generate_psr",
     "generate_safe_havens",
     "generate_earth_elevation",
@@ -212,7 +211,6 @@ __all__ = [
     "load_map_product_catalog",
     "map_product_download_directory",
     "map_product_scenario_name",
-    "native",
     "open_scenario",
     "open_temporal_cube",
     "plot_body_elevation",
