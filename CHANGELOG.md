@@ -6,6 +6,18 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Completed ``0.1.0rc1`` release-article preparation from commit ``14e019a``:
+  built clean wheel (164,054 bytes, 52 entries) and sdist (141,103 bytes, 65
+  entries), passed ``twine check``, and installed the wheel in a clean CPU-only
+  environment.  The installed wheel passed 54 public tests with 1 gated skip,
+  ``pip check`` found no lunarscout dependency issues, no forbidden modules
+  (pythonnet, moonlib, clr, _native_runtime) are importable, ``import lunarscout``
+  loads no Numba or SpiceyPy modules, ``backend="auto"`` falls back to CPU,
+  explicit ``backend="cuda"`` raises a structured ``CudaError``, and
+  ``overwrite=False`` rejects existing outputs.  The full PUBLIC_API_REVIEW.md
+  decision checklist is approved for ``0.1.0rc1``.  SHA-256 and record:
+  * wheel   ``ee953977a...80de0e9``
+  * sdist   ``69eca0f7...0801969``
 - Added 30 public tests across six categories: structured exception class, code,
   and output preservation (7 tests); safe-haven boundary and outage behaviour (4
   tests including no-outage, whole-interval outage, adjacent outages, and missing
