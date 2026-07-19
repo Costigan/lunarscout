@@ -1,6 +1,6 @@
 # Public Lighting API Review for `0.1.0rc1`
 
-Status: awaiting user sign-off
+Status: approved for 0.1.0rc1
 
 This document is the review surface for the file-producing horizon and
 lighting API proposed for the first TestPyPI candidate. It records the exact
@@ -667,46 +667,46 @@ dataset mask.
 
 ### Names and organization
 
-- [ ] Approve the ten root function names in the scope table.
-- [ ] Approve their corresponding `Scenario` method names.
-- [ ] Approve four plainly named mission-duration functions instead of a
+- [x] Approve the ten root function names in the scope table.
+- [x] Approve their corresponding `Scenario` method names.
+- [x] Approve four plainly named mission-duration functions instead of a
   public mode parameter.
-- [ ] Approve keeping CUDA diagnostics under `ls.cuda` rather than adding
+- [x] Approve keeping CUDA diagnostics under `ls.cuda` rather than adding
   CPU/GPU suffixes to scientific function names.
 
 ### Shared behavior
 
-- [ ] Approve returning `Path` without backend information in the return value.
-- [ ] Approve `backend="auto"` and `verbose=False` as downstream defaults.
-- [ ] Approve recording selected backend information in progress and file
+- [x] Approve returning `Path` without backend information in the return value.
+- [x] Approve `backend="auto"` and `verbose=False` as downstream defaults.
+- [x] Approve recording selected backend information in progress and file
   metadata, including backend history after restart.
-- [ ] Approve `TimeRange` for ordinary products; evaluation start/stop plus
+- [x] Approve `TimeRange` for ordinary products; evaluation start/stop plus
   `timedelta` step for mission duration; and the explicit Moon-ME `(time, 3)`
   meter-vector contract.
-- [ ] Approve early `overwrite=False` rejection, `start_fresh=False`, and
+- [x] Approve early `overwrite=False` rejection, `start_fresh=False`, and
   automatic compatible resume.
 - [x] Approve float `nodata=NaN` by default with masks remaining authoritative.
 - [x] Approve the output conversion callback, dtype, and restart-identity
   contract.
-- [ ] Approve the two progress callback forms and callable cancellation check.
-- [ ] Approve structured exceptions with stable `code` and `details` fields.
+- [x] Approve the two progress callback forms and callable cancellation check.
+- [x] Approve structured exceptions with stable `code` and `details` fields.
 
 ### Product-specific behavior
 
-- [ ] Approve CUDA-only horizon generation, ordered DEMs, observer height
+- [x] Approve CUDA-only horizon generation, ordered DEMs, observer height
   default `0.0`, and compressed `.cbin` output by default.
-- [ ] Approve lightmap `uint8` truncation, the 16-slice solar model, and one
+- [x] Approve lightmap `uint8` truncation, the 16-slice solar model, and one
   tiled BigTIFF band per time.
-- [ ] Approve PSR values 0 and 255, upper-solar-limb semantics, and a separate
+- [x] Approve PSR values 0 and 255, upper-solar-limb semantics, and a separate
   validity mask.
-- [ ] Approve separate Sun- and Earth-center terrain-relative elevation
+- [x] Approve separate Sun- and Earth-center terrain-relative elevation
   functions with `float32` degree bands.
-- [ ] Approve safe-haven defaults of 2.0 degrees Earth elevation and 0.2
+- [x] Approve safe-haven defaults of 2.0 degrees Earth elevation and 0.2
   sunlight fraction, strict-below comparisons, full low-Sun intervals that
   overlap outage bands, and hour output.
-- [ ] Approve `compress=True` for every tiled GeoTIFF product, with
+- [x] Approve `compress=True` for every tiled GeoTIFF product, with
   `compress=False` producing tiled but uncompressed output.
-- [ ] Approve the four mission-duration threshold meanings, inclusive
+- [x] Approve the four mission-duration threshold meanings, inclusive
   comparisons, half-open intervals, and `output_unit="hours"` default.
 
 ### Recommended signature cleanup
