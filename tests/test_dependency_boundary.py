@@ -44,6 +44,7 @@ def test_python_only_package_metadata_has_no_managed_runtime_dependency() -> Non
     )
 
     assert any(requirement.startswith("numba") for requirement in dependencies)
+    assert extras["cuda"] == ["numba-cuda[cu12]>=0.30.4,<0.31"]
     assert "rasterio>=1.4.4,<1.6" in dependencies
     assert any(requirement.startswith("spiceypy") for requirement in dependencies)
     assert project["version"] == "0.1.0rc1"

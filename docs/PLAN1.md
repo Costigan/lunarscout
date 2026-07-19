@@ -3,7 +3,7 @@
 Status: governing execution plan for the first Python-only Lunarscout package
 candidate
 
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
 This plan converts the successful Python/Numba horizon and downstream-product
 evaluation into a supported Lunarscout API, an installable wheel, and a
@@ -59,36 +59,36 @@ not unspecified future additions.
 - [x] Scenario and DEM discovery helpers.
 - [x] Reading and plotting existing `.bin` and `.cbin` horizon tiles.
 - [x] SPICE-backed Sun and Earth vector and position helpers.
-- [ ] Verify these APIs from an installed wheel with no source checkout on
+- [x] Verify these APIs from an installed wheel with no source checkout on
   `PYTHONPATH`.
 
 ### Product APIs to promote
 
-- [ ] Horizon generation from one or more DEMs, using NVIDIA CUDA.
-- [ ] Time-series solar lightmaps, using CPU, CUDA, or automatic fallback.
-- [ ] Permanent-shadow-region (PSR) classification, using CPU, CUDA, or
+- [x] Horizon generation from one or more DEMs, using NVIDIA CUDA.
+- [x] Time-series solar lightmaps, using CPU, CUDA, or automatic fallback.
+- [x] Permanent-shadow-region (PSR) classification, using CPU, CUDA, or
   automatic fallback.
-- [ ] Sun-center terrain-relative elevation time series.
-- [ ] Earth-center terrain-relative elevation time series.
-- [ ] Safe-haven products derived from Earth-outage intervals and contiguous
+- [x] Sun-center terrain-relative elevation time series.
+- [x] Earth-center terrain-relative elevation time series.
+- [x] Safe-haven products derived from Earth-outage intervals and contiguous
   low-Sun duration.
-- [ ] Landed mission duration using a sunlight-fraction threshold.
-- [ ] Landed mission duration using a Sun-center terrain-relative elevation
+- [x] Landed mission duration using a sunlight-fraction threshold.
+- [x] Landed mission duration using a Sun-center terrain-relative elevation
   threshold.
-- [ ] Landed mission duration using sunlight fraction plus Earth-center
+- [x] Landed mission duration using sunlight fraction plus Earth-center
   terrain-relative elevation thresholds.
-- [ ] Landed mission duration using Sun-center plus Earth-center
+- [x] Landed mission duration using Sun-center plus Earth-center
   terrain-relative elevation thresholds.
 
 ### Explicitly outside the initial product scope
 
-- [ ] Document that battery state-of-charge, power-system simulation, thermal
+- [x] Document that battery state-of-charge, power-system simulation, thermal
   modeling, traverse planning, and arbitrary user-defined raster reducers are
   not `0.1.0` features.
-- [ ] Document that landing-slope masks may be combined with generated
+- [x] Document that landing-slope masks may be combined with generated
   products by callers, but are not silently folded into the scientific
   meaning of PSR, safe-haven, or mission-duration outputs.
-- [ ] Decide whether physical TIFF-block recovery without a completion journal
+- [x] Decide whether physical TIFF-block recovery without a completion journal
   is a later enhancement. Journal-based restart remains required for `0.1.0`.
 
 ## 3. Preserve the accepted scientific and file contracts
@@ -162,7 +162,7 @@ of prototype terminology.
 
 - [x] Approve a concise public naming table for root functions, focused
   modules, and `Scenario` convenience methods.
-- [ ] Provide a simple root-level or `Scenario` path for the operations users
+- [x] Provide a simple root-level or `Scenario` path for the operations users
   normally call in scripts and notebooks.
 - [x] Keep detailed backend status, diagnostics, and tuning in a focused
   namespace rather than crowding the package root.
@@ -173,7 +173,7 @@ of prototype terminology.
 - [x] Decide whether product creation returns `Path` alone or a small immutable
   result object containing the path and summary metadata.
 - [ ] Add complete type hints and docstrings for every promoted symbol.
-- [ ] Curate `src/lunarscout/__init__.py` without violating the lightweight
+- [x] Curate `src/lunarscout/__init__.py` without violating the lightweight
   import boundary.
 
 The naming review should cover at least these conceptual operations:
@@ -197,8 +197,8 @@ complete.
 ### Shared arguments and behavior
 
 - [x] Standardize `backend="auto" | "cpu" | "cuda"` for downstream products.
-- [ ] Make `backend="cpu"` avoid importing or probing CUDA.
-- [ ] Make explicit `backend="cuda"` fail clearly if CUDA cannot be used; it
+- [x] Make `backend="cpu"` avoid importing or probing CUDA.
+- [x] Make explicit `backend="cuda"` fail clearly if CUDA cannot be used; it
   must never silently switch to CPU.
 - [x] Make `backend="auto"` expose which backend was actually selected through
   diagnostics, progress metadata, or the result object.
@@ -226,8 +226,8 @@ complete.
   backends, product calculation, product storage, and cancellation.
 - [x] Give actionable failures stable `code` values and machine-readable
   `details`.
-- [ ] Replace or temporarily alias transitional `Native*` exception names.
-- [ ] Ensure no public error suggests installing .NET, locating a DLL, or
+- [x] Replace or temporarily alias transitional `Native*` exception names.
+- [x] Ensure no public error suggests installing .NET, locating a DLL, or
   initializing a managed runtime.
 - [ ] Test exact exception class, stable code, important details, and output
   preservation for representative failure paths.
@@ -387,6 +387,10 @@ it must not be part of the installed product or required verification.
 - [x] Confirm the base-install placement of Rasterio, PyProj, SciPy, and
   SpiceyPy, then test every advertised installation combination. Add HDF5 only
   if a supported public product requires it.
+- [x] Define `lunarscout[cuda]` as the supported NVIDIA installation profile,
+  using the validated Numba-CUDA CUDA 12 user-space stack while keeping the
+  base installation CPU-only. Both profiles import as `lunarscout`; neither
+  installs an NVIDIA driver.
 - [x] Read the version from installed package metadata so source and wheel
   report the same value.
 - [ ] Add development-only build, test, lint, and package-validation tools to
@@ -435,24 +439,24 @@ it must not be part of the installed product or required verification.
 
 - [x] Keep real GPU tests explicitly gated.
 - [x] Last recorded focused PSR result: 19 passed.
-- [ ] Prove that every CUDA integration test executed a real kernel rather
+- [x] Prove that every CUDA integration test executed a real kernel rather
   than merely observing GPU visibility or selecting a backend name.
-- [ ] Compare public CPU and CUDA results for lightmap, PSR, both elevation
+- [x] Compare public CPU and CUDA results for lightmap, PSR, both elevation
   products, safe haven, and all mission-duration variants.
 - [x] Run public horizon generation on the supported NVIDIA environment.
-- [ ] Record device, driver, Numba, CUDA-stack, and GPU-memory information.
+- [x] Record device, driver, Numba, CUDA-stack, and GPU-memory information.
 
 ### Clean environments
 
 - [x] Create clean Python 3.11 CPU-only environment and install the wheel.
 - [x] Create clean Python 3.12 CPU-only environment and install the wheel.
-- [ ] Create a clean supported NVIDIA environment and install the same wheel.
-- [ ] Run `pip check` in every clean environment.
+- [x] Create a clean supported NVIDIA environment and install the same wheel.
+- [x] Run `pip check` in every clean environment.
 - [x] Run import and core raster/temporal smoke tests outside the checkout.
 - [x] Run one small public product from every downstream family on CPU.
-- [ ] Run one small horizon generation and one product from every CUDA-backed
+- [x] Run one small horizon generation and one product from every CUDA-backed
   downstream family on the NVIDIA host.
-- [ ] Reproduce the package and key scientific outputs in a second environment
+- [x] Reproduce the package and key scientific outputs in a second environment
   rather than relying only on the development checkout.
 - [ ] Record expected behavior for no GPU, hidden GPU, missing driver,
   incompatible driver, CUDA initialization failure, and CUDA JIT failure.
@@ -470,15 +474,15 @@ it must not be part of the installed product or required verification.
 
 ## 10. Documentation and examples
 
-- [ ] Rewrite the README installation section around `pip install
+- [x] Rewrite the README installation section around `pip install
   lunarscout`; remove the promised moonlib installation path.
-- [ ] Explain CPU and optional CUDA execution, lazy core SPICE support, and any
+- [x] Explain CPU and optional CUDA execution, lazy core SPICE support, and any
   dependency groups the candidate actually advertises.
 - [ ] Update `docs/USER_GUIDE.md` from private/provisional product descriptions
   to the accepted public API.
-- [ ] Keep `docs/ARCHITECTURE.md` synchronized with any approved API or
+- [x] Keep `docs/ARCHITECTURE.md` synchronized with any approved API or
   packaging changes.
-- [ ] Add a public horizon-generation example with editable local paths.
+- [x] Add a public horizon-generation example with editable local paths.
 - [ ] Convert the PSR example to public API and preserve explicit CUDA failure
   behavior.
 - [ ] Add public lightmap and Sun/Earth elevation examples.
@@ -598,14 +602,14 @@ All of these boxes must be checked before representing the candidate as ready:
   Sun/Earth elevation, safe haven, and all four mission-duration products.
 - [x] Package installation and use require no .NET, Python.NET, CLR, DLL, or
   `moonlib` artifact.
-- [ ] `import lunarscout` is side-effect-light on CPU-only and NVIDIA systems.
+- [x] `import lunarscout` is side-effect-light on CPU-only and NVIDIA systems.
 - [x] Ordinary CPU tests pass on every supported Python version.
-- [ ] Explicitly gated real-CUDA tests pass on the supported NVIDIA stack and
+- [x] Explicitly gated real-CUDA tests pass on the supported NVIDIA stack and
   prove actual kernel execution.
-- [ ] Every downstream product completes in a deliberately disabled-CUDA
+- [x] Every downstream product completes in a deliberately disabled-CUDA
   environment.
-- [ ] Explicit CUDA requests fail truthfully and never silently fall back.
-- [ ] Scientific values, masks, metadata, and accepted fixture hashes match.
+- [x] Explicit CUDA requests fail truthfully and never silently fall back.
+- [x] Scientific values, masks, metadata, and accepted fixture hashes match.
 - [ ] Restart, cancellation, durable journal ordering, atomic publication, and
   failed-overwrite protection pass the agreed failure matrix.
 - [ ] Resource use is bounded and representative host RSS and GPU memory are
@@ -623,10 +627,116 @@ All of these boxes must be checked before representing the candidate as ready:
 - [ ] No user-generated product or credential is overwritten, deleted, or
   included in the release artifacts.
 
-## 15. Work that may follow the first TestPyPI candidate
+## 15. Post-0.1 roadmap and sequencing
 
-These items are valuable but are not automatic blockers if the release gates
-above pass and the limitation is documented:
+The first release remains the coherent terrain, horizon, lighting, elevation,
+safe-haven, and landed mission-duration surface defined above. Map algebra,
+distance fields, and path planning must not expand the `0.1.0rc1` acceptance
+scope or delay TestPyPI feedback on that surface.
+
+Document the architectural boundaries for later work now, but do not freeze
+exact public function names and signatures until the installed `0.1` candidate
+has been exercised. TestPyPI feedback may reveal conventions that should be
+shared by later raster operations.
+
+The intended release sequence is:
+
+```text
+0.1.0rc1, rc2 if needed  TestPyPI installation and lighting API evaluation
+0.1.0                    stabilized first lighting release
+0.2.0rc1                 map-algebra and distance-field evaluation
+0.2.0                    validated map-algebra release
+0.3.0rc1                 path-planning evaluation
+```
+
+Every uploaded candidate is immutable. Candidate defects use a new RC version.
+Publication of `0.1.0` or any later version to production PyPI remains a
+separate user decision after TestPyPI evidence and is not authorized by this
+plan.
+
+### M6: Stabilize the 0.1 product
+
+- [ ] Complete the M2 through M5 gates before implementing later public
+  product families.
+- [ ] Collect TestPyPI installation and API feedback for both `lunarscout` and
+  `lunarscout[cuda]`.
+- [ ] Fix release-candidate defects under a new immutable RC version.
+- [ ] Decide whether the evidence supports a production-PyPI `0.1.0` release.
+- [ ] Record reusable public conventions that map algebra and path planning
+  must follow.
+
+### M7: Map algebra and distance fields for 0.2
+
+Map algebra is a reusable scientific raster layer, not an application-policy
+layer. Before implementation, specify and review:
+
+- [ ] The boundary between in-memory NumPy operations and file-producing,
+  patch-oriented operations.
+- [ ] Whether each operation accepts arrays, paths, or separate plainly named
+  array and file APIs; avoid ambiguous inputs that change return type.
+- [ ] `GeoReference` compatibility, alignment, pixel orientation, physical
+  units, and explicit rejection of shape-only grid matching.
+- [ ] Validity-mask and nodata propagation, deterministic invalid payloads,
+  dtype promotion, overflow, scalar/raster broadcasting, and floating-point
+  behavior.
+- [ ] Memory bounds for large rasters. An operation must not silently load a
+  regional raster into memory merely because its small-array implementation
+  uses NumPy.
+- [ ] Backend behavior consistent with the `0.1` contract: `backend="auto"`,
+  `"cpu"`, and `"cuda"` where both implementations are useful; CPU must not
+  probe CUDA, explicit CUDA must not fall back, and selected backends must be
+  recorded in progress and file metadata.
+- [ ] Progress, cancellation, staging, restart, overwrite protection, and
+  structured exceptions for file-producing operations.
+- [ ] A focused module or namespace that keeps the curated package root usable
+  as the operation count grows.
+
+Distance fields are part of the `0.2` map-algebra family. Before freezing their
+API, define:
+
+- [ ] Raster seed representation and validity rules.
+- [ ] Connectivity and distance metric.
+- [ ] Pixel-distance versus physical-distance units, including anisotropic or
+  rotated grids.
+- [ ] Treatment of invalid areas, barriers, raster edges, empty seeds, and
+  all-seed rasters.
+- [ ] Output dtype, precision, maximum-distance behavior, and deterministic
+  invalid payload.
+- [ ] A useful CPU implementation where scientifically appropriate, with CUDA
+  acceleration following the shared backend contract. Any genuinely
+  CUDA-only algorithm must say so explicitly, as horizon generation does.
+- [ ] CPU/CUDA correctness comparisons, independent reference cases, bounded
+  memory evidence, and clean `lunarscout[cuda]` installed-wheel tests.
+
+Do not represent the map-algebra API as accepted until a `0.2.0rc1` TestPyPI
+candidate has been installed and evaluated independently of the checkout.
+
+### M8: Path planning for 0.3
+
+Path planning builds on accepted raster and distance-field primitives. Design
+it only after the `0.2` data, grid, mask, unit, and backend contracts are
+settled.
+
+- [ ] Define explicit inputs for traversability, cost, distance, slope,
+  illumination, communication, start, destination, and other constraints.
+- [ ] Keep scientific products separate from mission policy. Do not silently
+  choose or combine slope suitability, illumination risk, battery state,
+  thermal state, traverse objectives, or communication weighting.
+- [ ] Decide how callers provide policies and weights without making one
+  application policy the scientific meaning of a Lunarscout product.
+- [ ] Define coordinate, grid, mask, barrier, route-validity, path-cost, and
+  unreachable-destination semantics.
+- [ ] Define deterministic tie-breaking, reproducibility, progress,
+  cancellation, memory bounds, and structured failures.
+- [ ] Separate reusable path-search algorithms from scenario mutation, job
+  orchestration, UI behavior, and Lunar Analyst application state.
+- [ ] Add independently specified synthetic cases and realistic-terrain
+  validation before preparing a `0.3.0rc1` TestPyPI candidate.
+
+### Other post-candidate engineering
+
+These items remain valuable but are not automatic `0.1` blockers when the
+limitation is documented:
 
 - [ ] Evaluate asynchronous transfers and double-buffered CUDA patch slots.
 - [ ] Compare multiple CUDA streams with multi-patch kernel submissions.
@@ -637,10 +747,6 @@ above pass and the limitation is documented:
 - [ ] Expand supported operating systems, Python versions, and GPU stacks from
   clean-environment evidence.
 - [ ] Refine provisional `0.x` API names using TestPyPI user feedback.
-- [ ] Remove historical C# source and parity infrastructure once all retained
-  scientific fixtures have independent Python specifications.
-- [ ] Prepare a separate production-PyPI release plan after TestPyPI feedback
-  and candidate stabilization.
 
 ## 16. Progress reporting template
 

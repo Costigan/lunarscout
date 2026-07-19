@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import sys
 
@@ -164,6 +165,38 @@ def test_public_explicit_cuda_failure_never_falls_back(
         )
 
     assert raised.value.code == "cuda_lightmap_unavailable"
+    assert not output.exists()
+
+
+def test_public_cuda_jit_failure_is_structured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lunarscout._numba_horizon import lightmap_pipeline
+
+    class FakeCudaJitError(RuntimeError):
+        pass
+
+    FakeCudaJitError.__module__ = "numba.cuda.cudadrv.driver"
+
+    def fail_jit(**_kwargs):
+        raise FakeCudaJitError("PTX compilation failed")
+
+    monkeypatch.setattr(lightmap_pipeline, "run_lightmap_product", fail_jit)
+    dem_path, horizons_path = _inputs(tmp_path)
+    output = tmp_path / "cuda-jit.tif"
+
+    with pytest.raises(ls.CudaError) as raised:
+        ls.generate_lightmap(
+            dem_path,
+            horizons_path,
+            output,
+            times=("2027-01-01T00:00:00Z",),
+            sun_vectors_m=_sun_vector(1.0)[None, :],
+            backend="cuda",
+        )
+
+    assert raised.value.code == "cuda_lightmap_execution_failed"
+    assert raised.value.details["error"] == "PTX compilation failed"
     assert not output.exists()
 
 
@@ -456,3 +489,107 @@ def test_public_cpu_mission_duration_families(
         assert dataset.tags(1)["DURATION_UNIT"] == "days"
         assert dataset.dataset_mask().item() == 255
         assert dataset.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
+
+
+@pytest.mark.skipif(
+    os.environ.get("LUNARSCOUT_REQUIRE_NUMBA_CUDA") != "1",
+    reason="set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 for the public CPU/CUDA matrix",
+)
+def test_all_public_downstream_cpu_and_cuda_products_agree(tmp_path: Path) -> None:
+    dem_path, horizons_path = _inputs(tmp_path)
+    times = (
+        "2027-01-01T00:00:00Z",
+        "2027-01-02T00:00:00Z",
+    )
+    sun_high = np.stack((_sun_vector(1.0), _sun_vector(1.0)))
+    sun_low = np.stack((_sun_vector(-1.0), _sun_vector(-1.0)))
+    earth_high = np.stack((_sun_vector(1.0), _sun_vector(1.0)))
+    mission_common = {
+        "times": times,
+        "evaluation_start": times[0],
+        "evaluation_stop": times[1],
+        "candidate_start_intervals": ((times[0], times[1]),),
+        "sun_vectors_m": sun_high,
+        "output_unit": "hours",
+    }
+    operations = (
+        ("lightmap", ls.generate_lightmap, {"times": times, "sun_vectors_m": sun_high}),
+        ("psr", ls.generate_psr, {"times": times, "sun_vectors_m": sun_high}),
+        (
+            "sun_elevation",
+            ls.generate_sun_elevation,
+            {"times": times, "sun_vectors_m": sun_high},
+        ),
+        (
+            "earth_elevation",
+            ls.generate_earth_elevation,
+            {"times": times, "earth_vectors_m": earth_high},
+        ),
+        (
+            "safe_havens",
+            ls.generate_safe_havens,
+            {
+                "times": times,
+                "sun_vectors_m": sun_low,
+                "earth_vectors_m": earth_high,
+                "earth_elevation_threshold_deg": 2.0,
+                "sunlight_fraction_threshold": 0.2,
+            },
+        ),
+        (
+            "mission_sunlight",
+            ls.mission_duration_from_sunlight,
+            {**mission_common, "sunlight_fraction_threshold": 0.5},
+        ),
+        (
+            "mission_sun_elevation",
+            ls.mission_duration_from_sun_elevation,
+            {**mission_common, "sun_elevation_threshold_deg": 0.0},
+        ),
+        (
+            "mission_sunlight_earth",
+            ls.mission_duration_from_sunlight_and_earth,
+            {
+                **mission_common,
+                "earth_vectors_m": earth_high,
+                "sunlight_fraction_threshold": 0.5,
+                "earth_elevation_threshold_deg": 0.0,
+            },
+        ),
+        (
+            "mission_sun_earth_elevation",
+            ls.mission_duration_from_sun_and_earth_elevation,
+            {
+                **mission_common,
+                "earth_vectors_m": earth_high,
+                "sun_elevation_threshold_deg": 0.0,
+                "earth_elevation_threshold_deg": 0.0,
+            },
+        ),
+    )
+
+    for name, function, kwargs in operations:
+        cpu_path = function(
+            dem_path,
+            horizons_path,
+            tmp_path / f"{name}-cpu.tif",
+            backend="cpu",
+            **kwargs,
+        )
+        cuda_path = function(
+            dem_path,
+            horizons_path,
+            tmp_path / f"{name}-cuda.tif",
+            backend="cuda",
+            **kwargs,
+        )
+        with rasterio.open(cpu_path) as cpu, rasterio.open(cuda_path) as cuda:
+            assert cpu.count == cuda.count
+            assert cpu.dtypes == cuda.dtypes
+            if np.issubdtype(np.dtype(cpu.dtypes[0]), np.integer):
+                np.testing.assert_array_equal(cpu.read(), cuda.read())
+            else:
+                np.testing.assert_allclose(cpu.read(), cuda.read(), atol=1e-4)
+            np.testing.assert_array_equal(cpu.dataset_mask(), cuda.dataset_mask())
+            assert cpu.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
+            assert cuda.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cuda"]'

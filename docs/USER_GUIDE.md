@@ -158,6 +158,17 @@ From this repository, install the package in editable mode:
 .venv/bin/python -m pip install -e .
 ```
 
+The base installation supports CPU execution. On a supported NVIDIA system,
+install the CUDA execution profile:
+
+```bash
+python -m pip install "lunarscout[cuda]"
+```
+
+Both profiles are imported as `import lunarscout as ls`. The `cuda` extra
+installs the validated Numba-CUDA CUDA 12 user-space runtime; it does not
+install an NVIDIA driver.
+
 For development tools:
 
 ```bash
@@ -179,12 +190,18 @@ kernels. Those components are loaded only when a function needs them. This
 keeps ordinary scripts, notebooks, documentation builds, and CPU-only
 environments lightweight.
 
-Production horizon generation requires a supported NVIDIA GPU. Reading stored
-horizons and running horizon-derived calculations do not: lightmaps,
+Production horizon generation requires a supported NVIDIA GPU and the `cuda`
+installation profile. Reading stored horizons and running horizon-derived
+calculations do not: lightmaps,
 permanent-shadow maps, safe-haven maps, and landed mission-duration maps have
 CPU implementations, with CUDA acceleration selected when requested and
-available. Distribution extras for these product APIs will be documented when
-the public wrappers are promoted.
+available. `ls.cuda.is_available()` explicitly probes whether the supported
+runtime and a usable device are available. `ls.cuda.status()` additionally
+reports the Numba, Numba-CUDA, CUDA toolkit, CUDA driver API, device, compute
+capability, and free/total device-memory values available to that process.
+Missing runtimes and devices use stable `CudaError` codes, while driver, PTX,
+JIT, and kernel-execution failures are reported as structured CUDA execution
+errors and never trigger a silent CPU retry.
 
 ## Quick Start
 
@@ -915,11 +932,11 @@ band-per-time organization.
 
 The shared vector and horizon-sampling primitives also calculate Sun- or
 Earth-center elevation relative to the interpolated local terrain horizon at
-the body's azimuth. Separate private Sun and Earth product functions stream
-these values into `float32` BigTIFF bands and the same patch-major writer; the
-calculation also feeds mission-duration products. Their public facade remains
-provisional. Geometric elevation above a smooth local horizontal plane is
-available from the SPICE angle APIs, but is not substituted for
+the body's azimuth. The public `generate_sun_elevation()` and
+`generate_earth_elevation()` functions stream these values into `float32`
+BigTIFF bands through the same patch-major writer; the calculation also feeds
+mission-duration products. Geometric elevation above a smooth local horizontal
+plane is available from the SPICE angle APIs, but is not substituted for
 terrain-relative elevation in lighting products.
 
 ### Permanent Shadow
@@ -948,9 +965,8 @@ band, timestamped with the first occurrence of its minimum Earth elevation.
 ### Landed Mission-Duration Maps
 
 Landed mission-duration products are sunlight calculations. A landing-slope
-mask can be combined with their output separately. The private engine
-implements four separate top-level operations rather than one function with a
-mode argument:
+mask can be combined with their output separately. The public API provides four
+separate operations rather than one function with a mode argument:
 
 - longest continuous sunlight fraction greater than or equal to a threshold;
 - longest continuous Sun-center elevation greater than or equal to a
@@ -981,6 +997,11 @@ a full time cube. The same stateful-reducer design can later support bounded
 outages, battery state-of-charge models, and user-supplied output quantizers,
 but those extensions are not implemented.
 
+The `0.1.0` scientific products do not silently apply slope suitability,
+battery or power simulation, thermal modeling, traverse planning, or other
+application policy. Callers may combine independent masks and models with the
+generated products explicitly.
+
 ### Resume, Overwrite, and Failure Behavior
 
 Long-running products resume by default. The writer keeps a hidden staged
@@ -994,6 +1015,11 @@ Final output publication is atomic. A failed overwrite preserves the prior
 completed product. Cancellation and exceptions leave resumable staging state
 but never publish an incomplete file. Progress events are emitted and flushed
 at patch boundaries with completed, skipped, and total counts.
+
+The completion journal is authoritative for restart. Lunarscout does not infer
+completion from physical TIFF blocks when journal records are missing; such
+blocks are safely recomputed. Physical block recovery is deferred beyond
+`0.1.0`.
 
 ## Examples
 

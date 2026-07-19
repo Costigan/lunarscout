@@ -33,6 +33,20 @@ ProgressEventCallback = Callable[[ProgressEvent], None]
 CancellationCheck = Callable[[], bool]
 
 
+def _is_cuda_runtime_failure(error: BaseException) -> bool:
+    """Recognize CUDA-stack exceptions without importing CUDA to classify them."""
+
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        module = type(current).__module__.lower()
+        if module == "cuda" or module.startswith(("cuda.", "numba.cuda")):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 def _projection_value(values: dict[str, Any], *names: str) -> float | None:
     for name in names:
         if name in values:
@@ -395,6 +409,20 @@ def generate_lightmap(
             code="lightmap_calculation_failed",
             details={"error": str(exc)},
         ) from exc
+    except Exception as exc:
+        if adapter.callback_error is exc:
+            raise
+        if _is_cuda_runtime_failure(exc):
+            raise CudaError(
+                "The CUDA lightmap backend failed during execution.",
+                code="cuda_lightmap_execution_failed",
+                details={"error": str(exc)},
+            ) from exc
+        raise ProductCalculationError(
+            "Lightmap calculation failed.",
+            code="lightmap_calculation_failed",
+            details={"error": str(exc)},
+        ) from exc
 
 
 def generate_psr(
@@ -508,6 +536,20 @@ def generate_psr(
     except ValueError as exc:
         if adapter.callback_error is exc:
             raise
+        raise ProductCalculationError(
+            "PSR calculation failed.",
+            code="psr_calculation_failed",
+            details={"error": str(exc)},
+        ) from exc
+    except Exception as exc:
+        if adapter.callback_error is exc:
+            raise
+        if _is_cuda_runtime_failure(exc):
+            raise CudaError(
+                "The CUDA PSR backend failed during execution.",
+                code="cuda_psr_execution_failed",
+                details={"error": str(exc)},
+            ) from exc
         raise ProductCalculationError(
             "PSR calculation failed.",
             code="psr_calculation_failed",
@@ -635,6 +677,20 @@ def _generate_body_elevation(
     except ValueError as exc:
         if adapter.callback_error is exc:
             raise
+        raise ProductCalculationError(
+            f"{body.title()} elevation calculation failed.",
+            code=f"{body}_elevation_calculation_failed",
+            details={"error": str(exc)},
+        ) from exc
+    except Exception as exc:
+        if adapter.callback_error is exc:
+            raise
+        if _is_cuda_runtime_failure(exc):
+            raise CudaError(
+                f"The CUDA {body} elevation backend failed during execution.",
+                code=f"cuda_{body}_elevation_execution_failed",
+                details={"error": str(exc)},
+            ) from exc
         raise ProductCalculationError(
             f"{body.title()} elevation calculation failed.",
             code=f"{body}_elevation_calculation_failed",
@@ -895,6 +951,20 @@ def generate_safe_havens(
             code="safe_haven_calculation_failed",
             details={"error": str(exc)},
         ) from exc
+    except Exception as exc:
+        if adapter.callback_error is exc:
+            raise
+        if _is_cuda_runtime_failure(exc):
+            raise CudaError(
+                "The CUDA safe-haven backend failed during execution.",
+                code="cuda_safe_haven_execution_failed",
+                details={"error": str(exc)},
+            ) from exc
+        raise ProductCalculationError(
+            "Safe-haven calculation failed.",
+            code="safe_haven_calculation_failed",
+            details={"error": str(exc)},
+        ) from exc
 
 
 def _generate_mission_duration(
@@ -1061,6 +1131,20 @@ def _generate_mission_duration(
             str(exc),
             code="mission_duration_inputs_invalid",
             details={"mode": mode},
+        ) from exc
+    except Exception as exc:
+        if adapter.callback_error is exc:
+            raise
+        if _is_cuda_runtime_failure(exc):
+            raise CudaError(
+                "The CUDA mission-duration backend failed during execution.",
+                code="cuda_mission_duration_execution_failed",
+                details={"error": str(exc), "mode": mode},
+            ) from exc
+        raise ProductCalculationError(
+            "Mission-duration calculation failed.",
+            code="mission_duration_calculation_failed",
+            details={"error": str(exc), "mode": mode},
         ) from exc
 
 

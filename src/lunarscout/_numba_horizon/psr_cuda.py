@@ -199,9 +199,11 @@ class PsrCudaSession:
     ) -> None:
         global _PSR_KERNEL
         try:
-            from numba import cuda
+            from .._cuda_runtime import import_numba_cuda
+
+            _numba, cuda = import_numba_cuda()
         except ImportError as error:
-            raise CudaBackendError("Numba CUDA is not installed") from error
+            raise CudaBackendError(str(error)) from error
         if not cuda.is_available():
             raise CudaBackendError("Numba CUDA cannot see a usable device")
         try:

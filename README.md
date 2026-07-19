@@ -21,6 +21,18 @@ Install the release candidate from the configured package index:
 python -m pip install lunarscout
 ```
 
+On a supported NVIDIA system, install the CUDA execution profile instead:
+
+```bash
+python -m pip install "lunarscout[cuda]"
+```
+
+Both installations use the same import:
+
+```python
+import lunarscout as ls
+```
+
 For source-tree development in this repository, use the repository virtual
 environment and source path:
 
@@ -32,9 +44,10 @@ export PYTHONPATH="$PWD/src"
 Rasterio supplies Lunarscout's maintained Python GDAL boundary. SpiceyPy is a
 core dependency because generated Sun/Earth vectors are part of the supported
 product surface, but it and the SPICE kernel pool remain lazy. Numba is also a
-core dependency; installing Lunarscout does not require the CUDA toolkit or an
-NVIDIA driver. Only horizon generation and explicitly requested CUDA product
-execution require a compatible NVIDIA device and driver at runtime.
+core dependency. The base installation does not require CUDA libraries or an
+NVIDIA driver. The `cuda` extra installs the validated Numba-CUDA CUDA 12
+user-space stack; horizon generation and CUDA product execution additionally
+require a compatible NVIDIA GPU and driver.
 
 ```python
 import lunarscout as ls

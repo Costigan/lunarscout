@@ -6,6 +6,29 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Defined the post-`0.1` roadmap without expanding the first candidate: finish
+  and evaluate the lighting release through TestPyPI first, design map algebra
+  and CPU/CUDA distance fields for `0.2`, and build policy-explicit path
+  planning on those accepted raster contracts for `0.3`. Later APIs must
+  preserve explicit grids, masks, units, bounded memory, backend truthfulness,
+  and separation between scientific products and application policy.
+- Added the `lunarscout[cuda]` installation profile for supported NVIDIA
+  systems. The extra installs the validated Numba-CUDA CUDA 12 user-space
+  stack but not an NVIDIA driver; the base installation remains CPU-only.
+  CUDA capability probes and explicit CUDA operations now reject an unrelated
+  system Numba CUDA target and provide the exact extra-install command. A clean
+  base-wheel environment passed 380 tests with 27 optional or real-GPU skips;
+  a separate clean `cuda` installation passed its 159-test installed-wheel
+  CUDA suite with one skip on an RTX 5090 Laptop GPU using Numba 0.66.0,
+  Numba-CUDA 0.30.4, CUDA toolkit 12.9.2, and compute capability 12.0.
+  `ls.cuda.status()` now exposes those runtime versions plus the CUDA driver
+  API version and current free/total GPU memory as best-effort diagnostics.
+  Numba-CUDA driver, PTX, JIT, and kernel exceptions are classified as
+  structured CUDA execution failures at the public horizon and product
+  boundaries rather than escaping as raw implementation exceptions.
+  Added a gated public API matrix that compares complete CPU and CUDA arrays
+  and masks for lightmap, PSR, both elevation products, safe havens, and all
+  four mission-duration operations while checking truthful backend metadata.
 - Added a clean-snapshot release-artifact workflow that refuses dirty release
   builds and nonempty output directories, builds wheel and sdist in isolation,
   runs Twine, enforces an explicit content policy, and records commit,

@@ -576,9 +576,9 @@ for example:
 - product calculation and product storage errors; and
 - cancellation.
 
-The `Native*` exception names are transitional and are replaced or aliased to
-domain names. No error message instructs the user to install .NET, configure a
-DLL, or initialize a managed runtime.
+The obsolete `Native*` exception names are not part of the Python-only public
+API. No error message instructs the user to install .NET, configure a DLL, or
+initialize a managed runtime.
 
 ## 14. Resource management and performance
 
@@ -647,11 +647,12 @@ on a CPU-only machine does not touch CUDA.
 
 SpiceyPy is a core installation dependency because generated Sun/Earth vectors
 are part of the supported product surface, while its runtime import and kernel
-loading remain lazy. Numba provides CPU execution from the base install; its
-CUDA support uses an existing compatible NVIDIA driver without installing the
-CUDA toolkit as a Lunarscout dependency. HDF5 is not a supported product format
-or declared dependency. `pythonnet` and .NET artifacts are absent from the base
-install and every optional group.
+loading remain lazy. Numba provides CPU execution from the base install. CUDA
+support is selected with the `cuda` extra, which installs the validated
+Numba-CUDA CUDA 12 user-space runtime but not an NVIDIA driver. The base
+installation does not resolve CUDA runtime packages. HDF5 is not a supported
+product format or declared dependency. `pythonnet` and .NET artifacts are
+absent from the base install and every optional group.
 
 ## 17. Testing and evidence
 
@@ -685,7 +686,7 @@ assemblies. Installation and use require no .NET SDK or runtime.
 
 CPU-only installations can read horizons and run all downstream product
 families. Horizon generation and explicit CUDA acceleration additionally
-require a supported NVIDIA GPU and driver and a compatible Numba CUDA stack.
+require the `cuda` installation profile and a supported NVIDIA GPU and driver.
 Errors identify the missing or incompatible layer without implying that the
 machine lacks a GPU merely because one sandbox cannot see it.
 

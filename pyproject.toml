@@ -34,6 +34,9 @@ Issues = "https://github.com/Costigan/lunarscout/issues"
 Source = "https://github.com/Costigan/lunarscout"
 
 [project.optional-dependencies]
+cuda = [
+    "numba-cuda[cu12]>=0.30.4,<0.31",
+]
 dev = [
     "build>=1.2",
     "pytest>=8.0",

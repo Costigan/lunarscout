@@ -24,6 +24,20 @@ ProgressEventCallback = Callable[[ProgressEvent], None]
 CancellationCheck = Callable[[], bool]
 
 
+def _is_cuda_runtime_failure(error: BaseException) -> bool:
+    """Recognize CUDA-stack exceptions without importing CUDA to classify them."""
+
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        module = type(current).__module__.lower()
+        if module == "cuda" or module.startswith(("cuda.", "numba.cuda")):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 class _HorizonProgressAdapter:
     def __init__(
         self,
@@ -332,6 +346,12 @@ def generate_horizons(
             raise CudaError(
                 "A compatible NVIDIA CUDA device is required for horizon generation.",
                 code="cuda_horizon_unavailable",
+                details={"error": str(exc)},
+            ) from exc
+        if _is_cuda_runtime_failure(exc):
+            raise CudaError(
+                "CUDA horizon generation failed during execution.",
+                code="cuda_horizon_execution_failed",
                 details={"error": str(exc)},
             ) from exc
         raise HorizonGenerationError(

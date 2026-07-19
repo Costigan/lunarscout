@@ -110,6 +110,50 @@ def test_public_horizon_cuda_failure_is_structured_and_writes_nothing(
     assert not output.exists()
 
 
+def test_public_horizon_missing_cuda_runtime_has_install_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dem = _write_dem(tmp_path / "dem.tif")
+
+    def unavailable(*_args, **_kwargs):
+        raise CudaBackendError(
+            'The Lunarscout CUDA runtime is not installed. Install the CUDA '
+            'runtime with: pip install "lunarscout[cuda]"'
+        )
+
+    monkeypatch.setattr(horizon_module, "_run_horizon_pipeline", unavailable)
+
+    with pytest.raises(ls.CudaError) as raised:
+        ls.generate_horizons(tmp_path / "horizons", [dem])
+
+    assert raised.value.code == "cuda_horizon_unavailable"
+    assert raised.value.details["error"].endswith(
+        'pip install "lunarscout[cuda]"'
+    )
+
+
+def test_public_horizon_cuda_jit_failure_is_structured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dem = _write_dem(tmp_path / "dem.tif")
+
+    class FakeCudaJitError(RuntimeError):
+        pass
+
+    FakeCudaJitError.__module__ = "numba.cuda.cudadrv.driver"
+
+    def fail_jit(*_args, **_kwargs):
+        raise FakeCudaJitError("PTX compilation failed")
+
+    monkeypatch.setattr(horizon_module, "_run_horizon_pipeline", fail_jit)
+
+    with pytest.raises(ls.CudaError) as raised:
+        ls.generate_horizons(tmp_path / "horizons", [dem])
+
+    assert raised.value.code == "cuda_horizon_execution_failed"
+    assert raised.value.details["error"] == "PTX compilation failed"
+
+
 def test_public_horizon_validates_paths_before_pipeline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
