@@ -2,7 +2,7 @@
 
 Inputs: deterministic synthetic scenario created under --workspace.
 Outputs: a deliberately shifted source and its aligned result.
-Resources: small GDAL warp; native runtime is not required.
+Resources: small GDAL warp; a GPU is not required.
 """
 
 from __future__ import annotations

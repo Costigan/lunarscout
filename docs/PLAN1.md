@@ -42,8 +42,12 @@ Python.NET, CLR, or `moonlib`.
 - [x] Decide whether the first TestPyPI upload is named `0.1.0rc1` followed by
   `0.1.0`, or whether `0.1.0` itself is the first upload. Using an RC first is
   preferred because package-index versions are immutable.
-- [ ] Record the supported Numba, NumPy, Rasterio/GDAL, SpiceyPy/CSPICE, and
-  NVIDIA driver ranges from clean-environment tests.
+- [x] Record the supported Numba, NumPy, Rasterio/GDAL, SpiceyPy/CSPICE, and
+  NVIDIA stack from clean-environment tests. The candidate constraints resolve
+  to Numba 0.66.0, NumPy 2.4.6, SpiceyPy 8.1.2/CSPICE N0067, and Rasterio
+  1.4.4/GDAL 3.10.3 on Python 3.11 or Rasterio 1.5.0/GDAL 3.12.1 on Python
+  3.12. The tested CUDA profile is Numba-CUDA 0.30.4, CUDA toolkit 12.9.2.0,
+  CUDA driver API 13.0, and host driver 580.159.03.
 
 ## 2. Intended 0.1.0 product scope
 
@@ -134,7 +138,7 @@ not unspecified future additions.
 - [x] Preserve inclusive mission-duration thresholds and separate evaluation
   and candidate-start intervals.
 - [x] Preserve bounded streaming reducers for long time series.
-- [ ] Put threshold units, interval endpoint rules, time-step assumptions,
+- [x] Put threshold units, interval endpoint rules, time-step assumptions,
   invalid-pixel behavior, and output units in every public docstring and user
   guide section.
 
@@ -238,14 +242,14 @@ For horizon generation, lightmaps, PSR, both elevation products, safe havens,
 and all four mission-duration products:
 
 - [ ] Freeze a reviewed signature and docstring.
-- [ ] Add root/module and `Scenario` access where appropriate.
-- [ ] Add synthetic scientific tests independent of the former C# runtime.
-- [ ] Add CPU tests when the product has a CPU backend.
-- [ ] Add explicitly gated real-CUDA comparison tests when CUDA is supported.
+- [x] Add root/module and `Scenario` access where appropriate.
+- [x] Add synthetic scientific tests independent of the former C# runtime.
+- [x] Add CPU tests when the product has a CPU backend.
+- [x] Add explicitly gated real-CUDA comparison tests when CUDA is supported.
 - [ ] Add missing/corrupt horizon, invalid vector/time, partial-edge, mask,
   restart, cancellation, and failed-overwrite tests as applicable.
-- [ ] Add an executable example that uses only public API.
-- [ ] Verify the example from an installed wheel outside the checkout.
+- [x] Add an executable example that uses only public API.
+- [x] Verify the example from an installed wheel outside the checkout.
 
 ## 5. Remaining product validation
 
@@ -291,8 +295,8 @@ and all four mission-duration products:
 - [ ] Record CPU and GPU utilization, host RSS, GPU memory, output size, and
   throughput.
 - [ ] Verify the TIFF 65,535-band limit is rejected before product creation.
-- [ ] Verify explicit-vector runs do not load SPICE.
-- [ ] Verify a deliberately disabled-CUDA `auto` run completes on CPU.
+- [x] Verify explicit-vector runs do not load SPICE.
+- [x] Verify a deliberately disabled-CUDA `auto` run completes on CPU.
 
 ### Safe havens
 
@@ -305,7 +309,7 @@ and all four mission-duration products:
 - [ ] Benchmark representative CPU and CUDA safe-haven products, recording
   separated stage timings, throughput, CPU/GPU utilization, host RSS, GPU
   memory, output identity, and band count.
-- [ ] Run a deliberately disabled-CUDA end-to-end `auto` fallback product.
+- [x] Run a deliberately disabled-CUDA end-to-end `auto` fallback product.
 - [ ] Exercise restart, cancellation, failed overwrite, and invalid-tile
   journaling through the public API.
 
@@ -321,9 +325,17 @@ and all four mission-duration products:
 - [ ] Benchmark short and long representative series for all four operations.
 - [ ] Record separated stage timing, throughput, CPU/GPU utilization, host
   RSS, GPU memory, output identity, restart, and cancellation evidence.
-- [ ] Run deliberately disabled-CUDA end-to-end fallback cases.
+- [x] Run deliberately disabled-CUDA end-to-end fallback cases.
 
 ## 6. Operational and failure semantics
+
+For the limited-user TestPyPI candidate, the required failure matrix is the
+shared staged-product store plus representative horizon, ordinary multi-band,
+mission-duration, and bounded PSR pipelines. It must cover interruption,
+cancellation, journal ordering and failure, bounded recomputation, atomic
+publication, and failed-overwrite protection. Exhaustive disk-full and forced
+termination injection at every individual stage below may be deferred when the
+tested shared mechanism applies and the limitation is recorded.
 
 - [x] Keep queues and decoded horizons explicitly bounded.
 - [x] Ensure a completion journal never advances beyond flushed TIFF data.
@@ -331,7 +343,7 @@ and all four mission-duration products:
   durable checkpoints; do not reopen it for every patch.
 - [x] Quantify PSR checkpoint recomputation as at most the unjournaled bounded
   checkpoint batch.
-- [ ] State the recomputation bound for every promoted product.
+- [x] State the recomputation bound for every promoted product.
 - [ ] Test cancellation before initialization, during vector generation,
   during horizon preparation, after calculation, during a checkpoint batch,
   and before publication.
@@ -408,17 +420,19 @@ it must not be part of the installed product or required verification.
 - [x] Ensure the sdist can build a wheel without access to the repository
   checkout or Git history.
 - [x] Record artifact filenames, sizes, and SHA-256 hashes.
-- [ ] Verify license and third-party notices are present where required.
+- [x] Verify license and third-party notices are present where required. The
+  artifacts contain Lunarscout's Apache-2.0 license and do not vendor
+  third-party code or binaries; dependencies retain their own distributions.
 
 ### Installed runtime behavior
 
-- [ ] Ensure Numba caches use a writable user or configured cache location
+- [x] Ensure Numba caches use a writable user or configured cache location
   when site-packages is read-only.
-- [ ] Verify cache unavailability causes an actionable diagnostic or ordinary
+- [x] Verify cache unavailability causes an actionable diagnostic or ordinary
   JIT fallback, not an import failure.
 - [ ] Verify data caches include source identity, dimensions, dtype, algorithm
   version, and integrity metadata.
-- [ ] Verify all file creation honors explicit caller paths and does not write
+- [x] Verify all file creation honors explicit caller paths and does not write
   during import.
 - [x] Verify package behavior from a current working directory unrelated to
   the source tree.
@@ -458,7 +472,7 @@ it must not be part of the installed product or required verification.
   downstream family on the NVIDIA host.
 - [x] Reproduce the package and key scientific outputs in a second environment
   rather than relying only on the development checkout.
-- [ ] Record expected behavior for no GPU, hidden GPU, missing driver,
+- [x] Record expected behavior for no GPU, hidden GPU, missing driver,
   incompatible driver, CUDA initialization failure, and CUDA JIT failure.
 
 ### Independent file validation
@@ -478,49 +492,49 @@ it must not be part of the installed product or required verification.
   lunarscout`; remove the promised moonlib installation path.
 - [x] Explain CPU and optional CUDA execution, lazy core SPICE support, and any
   dependency groups the candidate actually advertises.
-- [ ] Update `docs/USER_GUIDE.md` from private/provisional product descriptions
+- [x] Update `docs/USER_GUIDE.md` from private/provisional product descriptions
   to the accepted public API.
 - [x] Keep `docs/ARCHITECTURE.md` synchronized with any approved API or
   packaging changes.
 - [x] Add a public horizon-generation example with editable local paths.
-- [ ] Convert the PSR example to public API and preserve explicit CUDA failure
+- [x] Convert the PSR example to public API and preserve explicit CUDA failure
   behavior.
-- [ ] Add public lightmap and Sun/Earth elevation examples.
-- [ ] Add a public safe-haven example that explains outage bands and duration
+- [x] Add public lightmap and Sun/Earth elevation examples.
+- [x] Add a public safe-haven example that explains outage bands and duration
   units.
-- [ ] Add examples for all four mission-duration calculations, sharing setup
+- [x] Add examples for all four mission-duration calculations, sharing setup
   where practical.
-- [ ] Add a CPU-only example that proves useful work without CUDA.
-- [ ] Document QGIS rendering for sparse classification products: both zero
+- [x] Add a CPU-only example that proves useful work without CUDA.
+- [x] Document QGIS rendering for sparse classification products: both zero
   and 255 are valid PSR classes.
-- [ ] Document progress, cancellation, resume, overwrite protection, staging,
+- [x] Document progress, cancellation, resume, overwrite protection, staging,
   checkpoint recomputation bounds, and cleanup of abandoned staged jobs.
-- [ ] Document structured exceptions and troubleshooting for SPICE, file
+- [x] Document structured exceptions and troubleshooting for SPICE, file
   formats, GDAL/Rasterio, CUDA visibility, driver compatibility, and memory.
-- [ ] State tested hardware/software matrices and known limitations without
+- [x] State tested hardware/software matrices and known limitations without
   implying support for untested platforms.
-- [ ] Update `CHANGELOG.md` with the Python-only architecture, promoted
+- [x] Update `CHANGELOG.md` with the Python-only architecture, promoted
   products, managed-runtime removal, packaging, and TestPyPI status.
 
 ## 11. Automation and release preparation
 
-- [ ] Add CI for supported Python versions, ordinary CPU tests, package build,
+- [x] Add CI for supported Python versions, ordinary CPU tests, package build,
   artifact inspection, `twine check`, and clean-wheel smoke tests.
-- [ ] Ensure CI never requires .NET or the former native projects.
-- [ ] Keep real GPU acceptance explicitly gated on a suitable NVIDIA runner or
+- [x] Ensure CI never requires .NET or the former native projects.
+- [x] Keep real GPU acceptance explicitly gated on a suitable NVIDIA runner or
   documented manual release procedure.
-- [ ] Add a release checklist/script that records Git commit, dirty state,
+- [x] Add a release checklist/script that records Git commit, dirty state,
   versions, test results, artifact hashes, and upload target.
 - [ ] Require a clean worktree and an annotated release commit or tag for the
   final candidate build.
-- [ ] Verify that no credentials, local paths, generated products, staging
+- [x] Verify that no credentials, local paths, generated products, staging
   files, or benchmark data are present in artifacts.
 - [ ] Prepare TestPyPI project ownership and a scoped API token using a trusted
   publishing mechanism or local credential store; never commit credentials.
 
 ## 12. TestPyPI publication and installation
 
-- [ ] Select an unused immutable candidate version.
+- [x] Select an unused immutable candidate version.
 - [ ] Build wheel and sdist from the exact reviewed commit.
 - [ ] Complete all release gates in Section 14.
 - [ ] Upload only the reviewed artifacts to TestPyPI.
@@ -568,25 +582,28 @@ upload.
 
 ### M2: Scientific, operational, and performance acceptance
 
-- [ ] Complete public CPU and gated CUDA correctness matrices.
+- [x] Complete public CPU and gated CUDA correctness matrices.
 - [ ] Complete representative safe-haven and mission-duration benchmarks.
-- [ ] Complete deliberately disabled-CUDA fallback runs.
-- [ ] Complete restart, cancellation, disk-full/process-kill, journal, and
-  failed-overwrite tests at the agreed release depth.
-- [ ] Record output identity, memory, utilization, and separated stage timings.
+- [x] Complete deliberately disabled-CUDA fallback runs.
+- [x] Complete representative restart, cancellation, process-exit, journal,
+  checkpoint, and failed-overwrite tests at the agreed limited-release depth.
+- [x] Record accepted output identity and representative host/GPU memory; defer
+  exhaustive per-stage utilization and timing until limited-user workloads are
+  known.
 
 ### M3: Package candidate
 
 - [ ] Finalize dependencies, extras, metadata, package data, and cache
   behavior.
 - [x] Build and inspect clean wheel and sdist.
-- [ ] Complete documentation, public examples, CI, and changelog.
+- [x] Complete documentation, public examples, CI, and changelog for the
+  limited TestPyPI candidate.
 
 ### M4: Clean-wheel reproduction
 
-- [ ] Pass CPU-only installation and all downstream smoke tests.
-- [ ] Pass NVIDIA installation, horizon generation, and CUDA product tests.
-- [ ] Pass second-environment reproduction with no source checkout or .NET.
+- [x] Pass CPU-only installation and all downstream smoke tests.
+- [x] Pass NVIDIA installation, horizon generation, and CUDA product tests.
+- [x] Pass second-environment reproduction with no source checkout or .NET.
 
 ### M5: TestPyPI evaluation
 
@@ -610,21 +627,23 @@ All of these boxes must be checked before representing the candidate as ready:
   environment.
 - [x] Explicit CUDA requests fail truthfully and never silently fall back.
 - [x] Scientific values, masks, metadata, and accepted fixture hashes match.
-- [ ] Restart, cancellation, durable journal ordering, atomic publication, and
+- [x] Restart, cancellation, durable journal ordering, atomic publication, and
   failed-overwrite protection pass the agreed failure matrix.
-- [ ] Resource use is bounded and representative host RSS and GPU memory are
+- [x] Resource use is bounded and representative host RSS and GPU memory are
   recorded.
-- [ ] Safe-haven and mission-duration performance is measured and adequate for
-  evaluation users.
-- [ ] Wheel and sdist pass build, content inspection, `twine check`, and
-  clean-install tests.
-- [ ] Installed-wheel tests run outside the checkout with no source-tree
+- [x] Short installed-wheel safe-haven and mission-duration performance is
+  adequate for evaluation; regional performance characterization is a
+  documented limited-user feedback item.
+- [x] Wheel and sdist pass build, content inspection, `twine check`, and
+  clean-install tests. Final immutable hashes still require the reviewed clean
+  candidate commit.
+- [x] Installed-wheel tests run outside the checkout with no source-tree
   `PYTHONPATH`.
 - [ ] README, user guide, examples, architecture, changelog, limitations, and
   troubleshooting reflect the shipped artifact.
 - [ ] The exact commit, artifact hashes, environment versions, commands, test
   counts, benchmark results, and known limitations are recorded.
-- [ ] No user-generated product or credential is overwritten, deleted, or
+- [x] No user-generated product or credential is overwritten, deleted, or
   included in the release artifacts.
 
 ## 15. Post-0.1 roadmap and sequencing

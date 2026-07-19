@@ -2,7 +2,7 @@
 
 Inputs: none; creates a deterministic 64 x 64 synthetic scenario.
 Outputs: analysis/dem_copy.tif under --workspace.
-Resources: negligible; native runtime is not required.
+Resources: negligible; a GPU is not required.
 """
 
 from __future__ import annotations

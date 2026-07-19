@@ -63,6 +63,7 @@ jobs:
         run: |
           /tmp/lunarscout-wheel-venv/bin/python -m pip check
           /tmp/lunarscout-wheel-venv/bin/python -c "import sys, lunarscout; assert '/src/' not in lunarscout.__file__; assert not {'numba', 'spiceypy', 'clr', 'pythonnet', 'moonlib'} & sys.modules.keys()"
+          /tmp/lunarscout-wheel-venv/bin/python "$GITHUB_WORKSPACE/examples/17_downstream_products.py" --help
           /tmp/lunarscout-wheel-venv/bin/python -m pytest "$GITHUB_WORKSPACE/tests/test_dependency_boundary.py" "$GITHUB_WORKSPACE/tests/test_public_horizon.py" "$GITHUB_WORKSPACE/tests/test_public_lightmap.py" -q -p no:cacheprovider
       - uses: actions/upload-artifact@v4
         with:

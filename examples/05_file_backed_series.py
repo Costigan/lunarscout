@@ -2,7 +2,7 @@
 
 Inputs: deterministic six-layer synthetic temporal cube under --workspace.
 Outputs: analysis/synthetic_sun.temporal with manifest, VRT, and layer TIFFs.
-Resources: small fixture; demonstrates bounded caches without native runtime.
+Resources: small fixture; demonstrates bounded caches without a GPU.
 """
 
 from __future__ import annotations

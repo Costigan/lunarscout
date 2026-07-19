@@ -85,3 +85,34 @@ def test_curated_root_does_not_import_or_export_managed_runtime() -> None:
     )
 
     assert completed.returncode == 0, completed.stderr
+
+
+def test_root_import_is_lightweight_and_does_not_write_working_directory(
+    tmp_path: Path,
+) -> None:
+    repository = Path(__file__).resolve().parents[1]
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(repository / "src")
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; import sys, rasterio; "
+                "rasterio.open=lambda *_args, **_kwargs: "
+                "(_ for _ in ()).throw(AssertionError('raster opened during import')); "
+                "before=tuple(Path.cwd().iterdir()); import lunarscout; "
+                "after=tuple(Path.cwd().iterdir()); assert before == after; "
+                "assert not {'numba', 'spiceypy', 'clr', "
+                "'pythonnet', 'moonlib'} & sys.modules.keys()"
+            ),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr

@@ -2,7 +2,7 @@
 
 Inputs: deterministic file-backed temporal series under --workspace.
 Outputs: none; prints paths and GDAL band metadata for QGIS inspection.
-Resources: metadata and one raster-band read; native runtime is not required.
+Resources: metadata and one raster-band read; a GPU is not required.
 """
 
 from __future__ import annotations

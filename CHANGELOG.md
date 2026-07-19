@@ -6,6 +6,36 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added a public downstream-product example that defaults to CPU and can run
+  lightmap, PSR, both terrain-relative elevation products, safe havens, and all
+  four mission-duration operations from one existing scenario. It documents
+  outage bands, duration units, backend behavior, and the absence of implicit
+  slope, battery, thermal, or traverse policy; CI checks its command line from
+  an installed wheel outside the checkout.
+- Documented PSR rendering with valid zero and 255 classes, per-product restart
+  recomputation bounds, safe staged-product cleanup through `start_fresh`, and
+  troubleshooting for CUDA profiles, hidden devices, SPICE, Rasterio/GDAL,
+  grids, and corrupt or missing horizons.
+- Completed unit, interval, invalid-pixel, output-unit, and return-value
+  documentation for the promoted elevation, safe-haven, and mission-duration
+  functions, and removed obsolete managed-era “native runtime” wording from
+  public Scenario and example documentation.
+- Added the limited-testing support matrix, explicit known limitations, and a
+  pre-upload `0.1.0rc1` evidence report. Verified ordinary operation with a
+  configured read-only Numba cache and recorded that the wheel vendors no
+  third-party code or binaries requiring an additional bundled notice.
+  Added an isolated working-directory import test proving that the curated
+  root loads no Numba, CUDA, SPICE, or managed modules, opens no raster, and
+  creates no working-directory files.
+- Completed a current-tree pre-upload diagnostic: the CPU suite passed with
+  395 tests and 17 gated skips; wheel and sdist content inspection and Twine
+  checks passed; the installed wheel passed 59 public tests with 7 gated skips
+  on both Python 3.11 and 3.12; and the installed real-GPU horizon plus complete
+  downstream CPU/CUDA matrix passed 2 tests in 14.26 seconds. The diagnostic
+  artifacts are explicitly marked dirty and are not upload candidates. With
+  CUDA deliberately disabled, the installed CUDA-profile wheel also completed
+  an automatic lightmap on CPU and rejected explicit CUDA without creating an
+  output.
 - Defined the post-`0.1` roadmap without expanding the first candidate: finish
   and evaluate the lighting release through TestPyPI first, design map algebra
   and CPU/CUDA distance fields for `0.2`, and build policy-explicit path

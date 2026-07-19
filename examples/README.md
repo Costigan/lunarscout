@@ -41,6 +41,7 @@ already complete.
 | `14_timeseries_two_file_prototype.py` | Historical BigTIFF/HDF5 storage benchmark | Manual HDF5 packages |
 | `15_python_psr.py` | Python/Numba Mons Mouton permanent-shadow GeoTIFF generation | NVIDIA GPU |
 | `16_generate_horizons.py` | Public resumable Python/Numba horizon generation | NVIDIA GPU |
+| `17_downstream_products.py` | Public lightmap, PSR, Sun/Earth elevation, safe-haven, and four mission-duration products | CPU or NVIDIA GPU |
 
 ## Python/Numba PSR Example
 
@@ -70,6 +71,29 @@ with a compatible NVIDIA GPU. The first DEM defines the output grid and each
 following DEM extends terrain coverage. The example uses only the public
 `ls.generate_horizons()` API, resumes structurally complete tiles, and exits
 with the CUDA diagnostic reason when no compatible device is available.
+
+## Downstream Product Example
+
+`17_downstream_products.py` accepts an existing scenario containing `dem.tif`
+and `horizons/`. It defaults to one CPU lightmap, so it works with the base
+installation and does not probe CUDA:
+
+```bash
+python examples/17_downstream_products.py /data/mons_mouton \
+  --backend cpu --product lightmap
+```
+
+Pass `--product` repeatedly or use `--product all` to generate PSR, separate
+Sun- and Earth-center terrain-relative elevation products, safe havens, and all
+four mission-duration variants. `--backend auto` uses CUDA when the
+`lunarscout[cuda]` profile and a compatible device are available, otherwise it
+falls back to CPU. `--backend cuda` never falls back.
+
+The safe-haven example uses one output band per maximal Earth-outage interval.
+Each `float32` value is the longest contiguous low-Sun duration during that
+outage, in hours. Mission-duration products use one candidate-start interval
+covering the requested time range and also write hours. These examples apply
+no slope suitability, battery, thermal, or traverse policy.
 
 ## QGIS
 

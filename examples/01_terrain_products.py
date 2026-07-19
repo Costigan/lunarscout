@@ -2,7 +2,7 @@
 
 Inputs: deterministic synthetic scenario created under --workspace.
 Outputs: three GeoTIFFs under analysis/terrain.
-Resources: small GDAL/NumPy calculation; native runtime is not required.
+Resources: small GDAL/NumPy calculation; a GPU is not required.
 """
 
 from __future__ import annotations

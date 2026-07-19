@@ -947,6 +947,10 @@ under the defined sampling and apparent-diameter model; value 0 means that it
 does. Invalid pixels have the configurable invalid payload plus an invalid
 dataset mask.
 
+In QGIS, render PSR as a paletted or unique-values layer with both 0 and 255
+enabled. Value 0 is valid non-PSR science data, not nodata. Use the dataset mask
+for transparency; do not configure zero itself as transparent or nodata.
+
 The calculation does not create a Metonic lightmap cube. It chooses the
 highest Sun vector in each horizon azimuth bin as seen from the four DEM
 corners and center, unions those candidates, and reduces them directly into
@@ -1021,6 +1025,57 @@ completion from physical TIFF blocks when journal records are missing; such
 blocks are safely recomputed. Physical block recovery is deferred beyond
 `0.1.0`.
 
+Lightmap, elevation, safe-haven, and mission-duration products durably journal
+each completed horizon patch, so restart recomputes at most the patch that was
+in progress. The accepted CUDA PSR path checkpoints at most 16 patches and may
+recompute only the unjournaled tail of that bounded batch. It does not reopen
+the staged TIFF for every patch.
+
+To discard resumable state safely, rerun the same operation with
+`start_fresh=True`; Lunarscout removes the exact staged TIFF, manifest, journal,
+and mask sidecar before creating a replacement. Do this only when no process is
+still writing the product. The hidden files are named from the requested
+output, for example `.result.tif.lunarscout-partial.tif` and its
+`.manifest.json`, `.journal.json`, and optional `.tif.msk` companions. Prefer
+`start_fresh=True` over manual deletion so partial sidecars cannot be left
+behind. `overwrite=True` is separate: it permits replacement of a completed
+output while preserving that output until the replacement is published.
+
+### Product Troubleshooting
+
+- A base installation intentionally reports CUDA unavailable. Install
+  `lunarscout[cuda]`, then inspect `ls.cuda.status()` for the runtime versions,
+  selected device, compute capability, driver API, reason, and GPU memory.
+- `backend="cpu"` never probes CUDA. `backend="auto"` falls back only when a
+  CUDA session cannot be initialized. `backend="cuda"` and CUDA execution,
+  driver, PTX, JIT, or kernel failures raise structured `ls.CudaError` values
+  and never silently retry on CPU.
+- A GPU hidden by a container or sandbox is reported as unavailable to that
+  process; this is not proof that the host lacks a GPU. Probe from the intended
+  runtime environment.
+
+Expected CUDA failure behavior is consistent across downstream products:
+
+| Condition | `ls.cuda.status()` | `backend="auto"` | `backend="cuda"` |
+| --- | --- | --- | --- |
+| Base install without CUDA runtime | unavailable, with the `lunarscout[cuda]` install hint | CPU | structured product-specific unavailable error |
+| No GPU or GPU hidden from the process | unavailable, with the runtime reason | CPU | structured product-specific unavailable error |
+| Missing/incompatible driver or CUDA initialization failure | unavailable, with the probe or initialization reason | CPU if no CUDA session was created | structured product-specific unavailable error |
+| PTX/JIT/kernel failure after CUDA execution starts | the earlier probe may have succeeded | structured execution error; no retry | structured execution error; no retry |
+
+Horizon generation is CUDA-only, so every unavailable or execution-failure
+row raises a structured horizon CUDA error instead of selecting CPU.
+
+- Generated Sun/Earth vectors require configured SPICE kernels. Supplying
+  explicit Moon-ME vectors avoids SPICE import and kernel loading. Kernel and
+  geometry failures use `ls.SpiceKernelError` or `ls.SpiceGeometryError`.
+- DEMs and output rasters require a Rasterio/GDAL installation compatible with
+  the Python environment. Lunarscout rejects missing georeferencing and grid
+  mismatches rather than combining arrays based on shape alone.
+- Missing, corrupt, truncated, or incompatible horizon files are format or
+  product errors. Invalid or absent patches remain invalid in the dataset mask;
+  they are not silently interpreted as illuminated terrain.
+
 ## Examples
 
 Executable examples live in `examples/`. They are ordinary Python programs and
@@ -1070,6 +1125,40 @@ Less mature or explicitly provisional areas:
 - safe-haven performance validation;
 - CI and release automation;
 - platform-specific installation documentation.
+
+### Tested `0.1.0rc1` Candidate Matrix
+
+The initial candidate is intentionally narrow. CPU installation and ordinary
+tests have been exercised on Linux x86-64 with CPython 3.11 and 3.12. The
+validated NVIDIA profile is Linux x86-64 with CPython 3.12, Numba 0.66.0,
+Numba-CUDA 0.30.4, the CUDA 12.9.2 user-space toolkit installed by
+`lunarscout[cuda]`, and an NVIDIA GeForce RTX 5090 Laptop GPU with compute
+capability 12.0. The observed host driver was 580.159.03 and exposed CUDA
+driver API 13.0.
+
+This evidence does not claim support for Windows, macOS, Linux architectures
+other than x86-64, Python versions outside 3.11 and 3.12, CUDA 13 user-space
+toolkits, other NVIDIA GPU generations, AMD/Intel GPUs, or multi-GPU execution.
+Users may test additional environments, but should report the exact wheel
+version and `ls.cuda.status()` result.
+
+Known candidate limitations:
+
+- Horizon generation is NVIDIA-CUDA-only and requires `lunarscout[cuda]`.
+- CPU implementations of every downstream lighting product are supported, but
+  mission-scale CPU processing can be substantially slower than CUDA.
+- Representative correctness and short installed-wheel smoke timings exist
+  for safe havens and mission duration; comprehensive regional performance
+  characterization is deferred until limited-user feedback shows which
+  workloads matter.
+- The restart journal is authoritative. Physical TIFF blocks are not recovered
+  independently when journal records are missing.
+- Multi-time GeoTIFF products cannot exceed TIFF's 65,535-band limit.
+- HDF5 is not a public product format or installed dependency.
+- Only the documented CUDA 12 installation profile is accepted for the first
+  candidate; CUDA 13 support requires separate driver/toolchain validation.
+- Map algebra, distance fields, path planning, battery/power simulation,
+  thermal modeling, and traverse policy are outside `0.1.0rc1`.
 
 Public API includes:
 

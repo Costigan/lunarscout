@@ -718,7 +718,12 @@ def generate_sun_elevation(
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> Path:
-    """Generate Sun-center elevation relative to the terrain horizon, in degrees."""
+    """Generate Sun-center elevation relative to the terrain horizon.
+
+    Each UTC sample becomes one ``float32`` BigTIFF band in degrees. Invalid
+    pixels carry ``invalid_value`` and are distinguished by the dataset mask.
+    The returned :class:`Path` identifies the completed output.
+    """
 
     return _generate_body_elevation(
         "sun",
@@ -762,7 +767,12 @@ def generate_earth_elevation(
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> Path:
-    """Generate Earth-center elevation relative to the terrain horizon, in degrees."""
+    """Generate Earth-center elevation relative to the terrain horizon.
+
+    Each UTC sample becomes one ``float32`` BigTIFF band in degrees. Invalid
+    pixels carry ``invalid_value`` and are distinguished by the dataset mask.
+    The returned :class:`Path` identifies the completed output.
+    """
 
     return _generate_body_elevation(
         "earth",
@@ -815,7 +825,9 @@ def generate_safe_havens(
     ``earth_elevation_threshold_deg``. Each float32 output band stores the
     longest contiguous sunlight fraction strictly below
     ``sunlight_fraction_threshold`` in hours. Input samples must be uniformly
-    spaced.
+    spaced. Invalid pixels carry ``invalid_value`` and are distinguished by
+    the dataset mask. The returned :class:`Path` identifies the completed
+    output.
     """
 
     if backend not in ("auto", "cpu", "cuda"):
@@ -1172,8 +1184,12 @@ def mission_duration_from_sunlight(
 ) -> Path:
     """Longest inclusive sunlight-fraction duration for each start interval.
 
+    ``sunlight_fraction_threshold`` is a unitless inclusive lower bound.
     Evaluation and candidate-start intervals are half-open. Durations use
-    actual UTC sample spacing and are returned in ``output_unit``.
+    actual UTC sample spacing and are stored as ``float32`` hours or days as
+    selected by ``output_unit``. Invalid pixels carry ``invalid_value`` and are
+    distinguished by the dataset mask. The returned :class:`Path` identifies
+    the completed output.
     """
 
     return _generate_mission_duration(
@@ -1215,7 +1231,15 @@ def mission_duration_from_sun_elevation(
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> Path:
-    """Longest inclusive Sun terrain-relative elevation duration."""
+    """Longest inclusive Sun terrain-relative elevation duration.
+
+    ``sun_elevation_threshold_deg`` is an inclusive lower bound in degrees.
+    Evaluation and candidate-start intervals are half-open. Durations use
+    actual UTC sample spacing and are stored as ``float32`` hours or days as
+    selected by ``output_unit``. Invalid pixels carry ``invalid_value`` and are
+    distinguished by the dataset mask. The returned :class:`Path` identifies
+    the completed output.
+    """
 
     return _generate_mission_duration(
         "sun_elevation", dem_path, horizons_path, output_path,
@@ -1259,7 +1283,16 @@ def mission_duration_from_sunlight_and_earth(
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> Path:
-    """Longest duration meeting inclusive sunlight and Earth thresholds."""
+    """Longest duration meeting inclusive sunlight and Earth thresholds.
+
+    The sunlight fraction is unitless and Earth terrain-relative elevation is
+    in degrees. Both thresholds are inclusive lower bounds. Evaluation and
+    candidate-start intervals are half-open. Durations use actual UTC sample
+    spacing and are stored as ``float32`` hours or days as selected by
+    ``output_unit``. Invalid pixels carry ``invalid_value`` and are
+    distinguished by the dataset mask. The returned :class:`Path` identifies
+    the completed output.
+    """
 
     return _generate_mission_duration(
         "sunlight_earth", dem_path, horizons_path, output_path,
@@ -1303,7 +1336,15 @@ def mission_duration_from_sun_and_earth_elevation(
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> Path:
-    """Longest duration meeting inclusive Sun and Earth elevation thresholds."""
+    """Longest duration meeting inclusive Sun and Earth elevation thresholds.
+
+    Both terrain-relative elevation thresholds are inclusive lower bounds in
+    degrees. Evaluation and candidate-start intervals are half-open. Durations
+    use actual UTC sample spacing and are stored as ``float32`` hours or days
+    as selected by ``output_unit``. Invalid pixels carry ``invalid_value`` and
+    are distinguished by the dataset mask. The returned :class:`Path`
+    identifies the completed output.
+    """
 
     return _generate_mission_duration(
         "sun_earth_elevation", dem_path, horizons_path, output_path,

@@ -2,7 +2,7 @@
 
 Inputs: deterministic synthetic scenario created under --workspace.
 Outputs: temporal mean, minimum, maximum, and standard deviation GeoTIFFs.
-Resources: six small in-memory float32 layers; native runtime is not required.
+Resources: six small in-memory float32 layers; a GPU is not required.
 """
 
 from __future__ import annotations

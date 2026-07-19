@@ -2,7 +2,7 @@
 
 Inputs: deterministic synthetic scenario created under --workspace.
 Outputs: labels, sizes, filtered mask, and borders under analysis/regions.
-Resources: small NumPy/SciPy calculation; native runtime is not required.
+Resources: small NumPy/SciPy calculation; a GPU is not required.
 """
 
 from __future__ import annotations

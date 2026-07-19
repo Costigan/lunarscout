@@ -97,3 +97,27 @@ def test_historical_hdf5_prototype_when_manual_dependencies_are_present(
     report = json.loads((prototype / "report.json").read_text(encoding="utf-8"))
     assert report["prototype"] == "two_file_timeseries_storage"
     assert report["shape"] == {"height": 256, "time": 64, "width": 256}
+
+
+def test_downstream_product_example_is_public_and_has_working_help() -> None:
+    source = (_EXAMPLES / "17_downstream_products.py").read_text(encoding="utf-8")
+    assert "_numba_horizon" not in source
+    assert "lunarscout.native" not in source
+
+    completed = subprocess.run(
+        [sys.executable, str(_EXAMPLES / "17_downstream_products.py"), "--help"],
+        cwd=_REPOSITORY_ROOT,
+        env=_environment(),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "--backend {auto,cpu,cuda}" in completed.stdout
+    for product in (
+        "lightmap",
+        "safe-havens",
+        "mission-sun-earth-elevation",
+    ):
+        assert product in completed.stdout

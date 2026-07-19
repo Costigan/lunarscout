@@ -246,22 +246,22 @@ class Scenario:
         return self.path(_HORIZONS_RELATIVE_PATH)
 
     def hillshade_path(self) -> Path:
-        """Return the canonical native hillshade product path."""
+        """Return the canonical hillshade product path."""
 
         return self.path(_HILLSHADE_RELATIVE_PATH)
 
     def slope_path(self) -> Path:
-        """Return the canonical native slope product path."""
+        """Return the canonical slope product path."""
 
         return self.path(_SLOPE_RELATIVE_PATH)
 
     def aspect_path(self) -> Path:
-        """Return the canonical native aspect product path."""
+        """Return the canonical aspect product path."""
 
         return self.path(_ASPECT_RELATIVE_PATH)
 
     def roughness_path(self) -> Path:
-        """Return the canonical native roughness product path."""
+        """Return the canonical roughness product path."""
 
         return self.path(_ROUGHNESS_RELATIVE_PATH)
 
@@ -325,6 +325,8 @@ class Scenario:
     def mission_duration_from_sunlight(
         self, output: str | Path, **kwargs: Any
     ) -> Path:
+        """Generate sunlight-threshold mission-duration bands."""
+
         from .products import mission_duration_from_sunlight
 
         return mission_duration_from_sunlight(
@@ -334,6 +336,8 @@ class Scenario:
     def mission_duration_from_sun_elevation(
         self, output: str | Path, **kwargs: Any
     ) -> Path:
+        """Generate Sun-elevation-threshold mission-duration bands."""
+
         from .products import mission_duration_from_sun_elevation
 
         return mission_duration_from_sun_elevation(
@@ -343,6 +347,8 @@ class Scenario:
     def mission_duration_from_sunlight_and_earth(
         self, output: str | Path, **kwargs: Any
     ) -> Path:
+        """Generate sunlight-and-Earth-threshold mission-duration bands."""
+
         from .products import mission_duration_from_sunlight_and_earth
 
         return mission_duration_from_sunlight_and_earth(
@@ -352,6 +358,8 @@ class Scenario:
     def mission_duration_from_sun_and_earth_elevation(
         self, output: str | Path, **kwargs: Any
     ) -> Path:
+        """Generate Sun-and-Earth-elevation mission-duration bands."""
+
         from .products import mission_duration_from_sun_and_earth_elevation
 
         return mission_duration_from_sun_and_earth_elevation(
