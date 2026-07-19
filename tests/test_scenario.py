@@ -124,7 +124,9 @@ def test_open_scenario_rejects_attached_state_until_implemented(tmp_path: Path):
     assert raised.value.code == "scenario_state_unavailable"
 
 
-def test_scenario_generate_horizons_uses_primary_dem_by_default(tmp_path: Path) -> None:
+def test_scenario_generate_horizons_uses_primary_dem_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     root = tmp_path / "scenario"
     root.mkdir()
     scenario = ls.open_scenario(root)
@@ -134,7 +136,8 @@ def test_scenario_generate_horizons_uses_primary_dem_by_default(tmp_path: Path) 
         calls.append((output_dir, list(dem_paths), kwargs))
         return Path(output_dir)
 
-    result = scenario.generate_horizons(_generator=fake_generate)
+    monkeypatch.setattr("lunarscout.horizon.generate_horizons", fake_generate)
+    result = scenario.generate_horizons()
 
     assert result == root / "horizons"
     assert calls == [
@@ -156,6 +159,7 @@ def test_scenario_generate_horizons_uses_primary_dem_by_default(tmp_path: Path) 
 
 def test_scenario_generate_horizons_prepends_primary_to_surrounding_dems(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "scenario"
     outside = tmp_path / "outside.tif"
@@ -167,6 +171,7 @@ def test_scenario_generate_horizons_prepends_primary_to_surrounding_dems(
         calls.append((output_dir, list(dem_paths), kwargs))
         return Path(output_dir)
 
+    monkeypatch.setattr("lunarscout.horizon.generate_horizons", fake_generate)
     progress_callback = calls.append
     progress_event_callback = calls.append
     scenario.generate_horizons(
@@ -178,7 +183,6 @@ def test_scenario_generate_horizons_prepends_primary_to_surrounding_dems(
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
         cancellation_requested=lambda: False,
-        _generator=fake_generate,
     )
 
     output_dir, dem_paths, kwargs = calls[0]
@@ -197,7 +201,9 @@ def test_scenario_generate_horizons_prepends_primary_to_surrounding_dems(
     assert kwargs["cancellation_requested"]() is False
 
 
-def test_scenario_generate_horizons_uses_explicit_dem_paths(tmp_path: Path) -> None:
+def test_scenario_generate_horizons_uses_explicit_dem_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     root = tmp_path / "scenario"
     root.mkdir()
     scenario = ls.open_scenario(root)
@@ -207,9 +213,9 @@ def test_scenario_generate_horizons_uses_explicit_dem_paths(tmp_path: Path) -> N
         calls.append(list(dem_paths))
         return Path(_output_dir)
 
+    monkeypatch.setattr("lunarscout.horizon.generate_horizons", fake_generate)
     scenario.generate_horizons(
         dem_paths=["custom_primary.tif", "custom_outer.tif"],
-        _generator=fake_generate,
     )
 
     assert calls == [[root / "custom_primary.tif", root / "custom_outer.tif"]]
@@ -226,7 +232,6 @@ def test_scenario_generate_horizons_rejects_dem_paths_and_surrounding_dems(
         scenario.generate_horizons(
             dem_paths=["primary.tif"],
             surrounding_dems=["outer.tif"],
-            _generator=lambda *_args, **_kwargs: None,
         )
 
     assert raised.value.code == "horizon_dem_paths_ambiguous"

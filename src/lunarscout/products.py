@@ -335,13 +335,70 @@ def generate_lightmap(
 ) -> Path:
     """Generate a timestamped, tiled uint8 visible-solar-fraction BigTIFF.
 
-    Values are ``trunc(255 * visible_fraction)``. Invalid pixels carry
+    Parameters
+    ----------
+    times:
+        The UTC time domain as a :class:`TimeRange`.  Each sample becomes one
+        band.  When ``sun_vectors_m`` is not supplied, Lunarscout generates
+        geometric Moon-ME vectors for the Sun from this time range using
+        SpiceyPy.
+    sun_vectors_m:
+        Optional explicit Moon-ME Sun vectors in meters, shape ``(time, 3)``.
+        When supplied, they take precedence over SPICE generation and the first
+        dimension must match the time count in ``times``.  Supplying vectors
+        avoids SPICE import and kernel loading.
+    backend:
+        ``"auto"`` defaults to CUDA when a session can be initialized and
+        otherwise uses CPU; ``"cpu"`` never probes CUDA; ``"cuda"`` never
+        falls back and fails with a structured error if CUDA is unavailable.
+    observer_height_m:
+        Observer height above the DEM surface, in meters.
+    invalid_value:
+        The deterministic physical payload written into invalid pixels.  This
+        value is stored alongside an authoritative dataset validity mask.  The
+        default is zero, which may also be a valid science value for fully
+        obscured pixels.
+    output_transform:
+        Optional callable applied patch-by-patch to valid calculated pixels
+        before writing.  Must preserve the patch shape.  When supplied,
+        ``output_dtype`` is required and the result must have exactly that
+        dtype.
+    output_dtype:
+        Required when ``output_transform`` is supplied; must be a valid NumPy
+        dtype.
+    output_transform_id:
+        Optional string identity that becomes part of the staged-job
+        compatibility check.  Omitted on both original and restart runs means
+        the jobs match.  Mismatched IDs reject restart.
+    compress:
+        When ``True`` (the default) tiles are compressed.  ``compress=False``
+        produces tiled but uncompressed output.
+    overwrite:
+        When ``False`` (the default) an existing completed product raises
+        :class:`ProductStorageError` before any DEM loading, SPICE, or CUDA
+        work begins.
+    start_fresh:
+        When ``True``, discards any compatible staged work and begins again.
+        Does not substitute for ``overwrite`` permission.
+    verbose:
+        When ``True``, writes concise backend and progress messages to stdout.
+    progress_callback / progress_event_callback / cancellation_requested:
+        See :ref:`shared-public-contracts` in the user guide.
+
+    Returns
+    -------
+    pathlib.Path
+        The resolved completed output path.  Backend information is recorded
+        in progress events, staged metadata, and the final GeoTIFF
+        ``LUNARSCOUT_COMPUTE_BACKENDS`` field, not in the return value.
+
+    Notes
+    -----
+    Values are ``trunc(255 * visible_fraction)`` using a 16-slice solar-disk
+    model with a 0.27-degree solar half-angle.  Invalid pixels carry
     ``invalid_value`` and are distinguished by the dataset validity mask.
-    Compatible staged work resumes by default; ``start_fresh=True`` discards
-    it. ``backend="cpu"`` never probes CUDA, explicit ``"cuda"`` never falls
-    back, and ``"auto"`` falls back only when CUDA cannot be initialized.
-    Tiles are compressed by default; pass ``compress=False`` to disable
-    compression without disabling tiling.
+    Compatible staged work resumes by default.  Cancellation leaves resumable
+    staging state and never publishes an incomplete file.
     """
 
     _validate_output_conversion(
@@ -483,11 +540,52 @@ def generate_psr(
 ) -> Path:
     """Generate a single-band tiled permanent-shadow classification GeoTIFF.
 
+    Parameters
+    ----------
+    times:
+        The UTC time domain as a :class:`TimeRange`.  When ``sun_vectors_m``
+        is not supplied, Lunarscout generates geometric Moon-ME Sun vectors
+        using SpiceyPy.  PSR reduces the candidate vectors rather than
+        materializing a full Metonic lightmap cube.
+    sun_vectors_m:
+        Optional explicit Moon-ME Sun vectors in meters, shape ``(time, 3)``.
+        When supplied, they take precedence and avoid SPICE import.
+    backend:
+        ``"auto"`` defaults to CUDA when available and otherwise uses CPU;
+        ``"cpu"`` never probes CUDA; ``"cuda"`` never falls back.
+    observer_height_m:
+        Observer height above the DEM surface, in meters.
+    invalid_value:
+        The deterministic physical payload written into invalid pixels.  The
+        default is zero.  An authoritative dataset validity mask distinguishes
+        invalid pixels from valid data, so zeros are not treated as nodata.
+    output_transform / output_dtype / output_transform_id:
+        Optional per-patch conversion applied to valid pixels before writing.
+        See :func:`generate_lightmap` for the shared contract.
+    compress:
+        When ``True`` (the default) tiles are compressed.  ``compress=False``
+        produces tiled but uncompressed output.
+    overwrite:
+        When ``False`` (the default) an existing completed product is rejected
+        before any expensive work begins.
+    start_fresh:
+        When ``True``, discards compatible staged work.  Does not grant
+        ``overwrite`` permission.
+
+    Returns
+    -------
+    pathlib.Path
+        The completed output path.  Backend selection is recorded in progress
+        and file metadata, not in the return value.
+
+    Notes
+    -----
     Value 255 means that the upper solar limb never clears the interpolated
     terrain horizon for the supplied samples; value 0 means that it clears at
-    least once. Both are valid science values. Invalid pixels are represented
-    by the dataset mask and carry ``invalid_value`` deterministically. Tiles
-    are compressed unless ``compress=False``.
+    least once.  Both values are valid science data.  The calculation uses a
+    five-viewpoint vector-reduction heuristic and a 0.27-degree solar
+    half-angle.  In QGIS, render both 0 and 255 as valid classes and use the
+    dataset mask for transparency.
     """
 
     _validate_output_conversion(
@@ -767,11 +865,44 @@ def generate_sun_elevation(
 ) -> Path:
     """Generate Sun-center elevation relative to the terrain horizon.
 
-    Each UTC sample becomes one tiled ``float32`` BigTIFF band in degrees. Invalid
-    pixels carry ``nodata`` (NaN by default) and are distinguished by the
-    dataset mask.
-    The returned :class:`Path` identifies the completed output. Tiles are
-    compressed unless ``compress=False``.
+    Parameters
+    ----------
+    times:
+        The UTC time domain as a :class:`TimeRange`.  Each sample becomes one
+        tiled ``float32`` BigTIFF band in degrees.  When ``sun_vectors_m`` is
+        not supplied, Lunarscout generates geometric Moon-ME Sun vectors from
+        this time range.
+    sun_vectors_m:
+        Optional explicit Moon-ME Sun vectors in meters, shape ``(time, 3)``.
+        Supplied vectors take precedence and avoid SPICE import.
+    backend:
+        ``"auto"``, ``"cpu"``, or ``"cuda"``.  See :func:`generate_lightmap`.
+    observer_height_m:
+        Observer height above the DEM surface, in meters.
+    nodata:
+        The value stored in invalid pixels.  Defaults to ``NaN``, stored as
+        float32 NaN in the TIFF.  An authoritative dataset mask is always
+        written and is the preferred validity representation.
+    output_transform / output_dtype / output_transform_id:
+        Optional per-patch conversion.  See :func:`generate_lightmap`.
+    compress:
+        ``True`` (default) compresses tiles; ``False`` disables compression
+        while preserving tiling.
+    overwrite / start_fresh:
+        See :func:`generate_lightmap` for the shared overwrite and restart
+        contract.
+
+    Returns
+    -------
+    pathlib.Path
+        The completed output path.
+
+    Notes
+    -----
+    Values are the Sun center's elevation relative to the interpolated terrain
+    horizon at its azimuth, not elevation above a smooth local horizontal
+    plane.  Compatible staged work resumes by default.  Cancellation leaves
+    resumable staging state.
     """
 
     return _generate_body_elevation(
@@ -820,11 +951,41 @@ def generate_earth_elevation(
 ) -> Path:
     """Generate Earth-center elevation relative to the terrain horizon.
 
-    Each UTC sample becomes one tiled ``float32`` BigTIFF band in degrees. Invalid
-    pixels carry ``nodata`` (NaN by default) and are distinguished by the
-    dataset mask.
-    The returned :class:`Path` identifies the completed output. Tiles are
-    compressed unless ``compress=False``.
+    Parameters
+    ----------
+    times:
+        The UTC time domain as a :class:`TimeRange`.  Each sample becomes one
+        tiled ``float32`` BigTIFF band in degrees.  When ``earth_vectors_m``
+        is not supplied, Lunarscout generates geometric Moon-ME Earth vectors
+        from this time range.
+    earth_vectors_m:
+        Optional explicit Moon-ME Earth vectors in meters, shape ``(time, 3)``.
+        Supplied vectors take precedence and avoid SPICE import.
+    backend:
+        ``"auto"``, ``"cpu"``, or ``"cuda"``.  See :func:`generate_lightmap`.
+    observer_height_m:
+        Observer height above the DEM surface, in meters.
+    nodata:
+        The value stored in invalid pixels.  Defaults to ``NaN``.
+        An authoritative dataset mask is always written.
+    output_transform / output_dtype / output_transform_id:
+        Optional per-patch conversion.  See :func:`generate_lightmap`.
+    compress:
+        ``True`` (default) compresses tiles; ``False`` disables compression
+        while preserving tiling.
+    overwrite / start_fresh:
+        See :func:`generate_lightmap`.
+
+    Returns
+    -------
+    pathlib.Path
+        The completed output path.
+
+    Notes
+    -----
+    Values are the Earth center's elevation relative to the interpolated
+    terrain horizon at its azimuth.  Compatible staged work resumes by
+    default.
     """
 
     return _generate_body_elevation(
@@ -876,15 +1037,52 @@ def generate_safe_havens(
 ) -> Path:
     """Generate longest low-Sun durations for center-view Earth outages.
 
-    Earth outages are maximal half-open intervals strictly below
-    ``earth_elevation_threshold_deg``. Each float32 output band stores the
-    longest complete contiguous sunlight interval strictly below
-    ``sunlight_fraction_threshold`` that overlaps that outage, in hours. The
-    low-Sun interval may begin before the outage or end after it. Input samples
-    must be uniformly spaced. Invalid pixels carry ``nodata`` (NaN by default) and are
-    distinguished by the dataset mask. The returned :class:`Path` identifies
-    the completed tiled output. Tiles are compressed unless
-    ``compress=False``.
+    Parameters
+    ----------
+    times:
+        The UTC time domain as a :class:`TimeRange`.  Must be strictly
+        increasing and uniformly spaced.  When explicit vectors are not
+        supplied, Lunarscout generates geometric Moon-ME Sun and Earth
+        vectors from this time range.
+    sun_vectors_m / earth_vectors_m:
+        Optional explicit Moon-ME vectors in meters, shape ``(time, 3)``.
+        Supplied vectors take precedence and avoid SPICE import.
+    earth_elevation_threshold_deg:
+        Earth-center elevation threshold in degrees.  An Earth outage is a
+        maximal half-open interval during which the Earth-center elevation
+        relative to the terrain horizon is strictly *below* this threshold.
+        Default 2.0 degrees.
+    sunlight_fraction_threshold:
+        Unitless sunlight-fraction threshold.  The reducer finds the longest
+        complete contiguous interval during which the sunlight fraction is
+        strictly *below* this threshold.  Default 0.2.
+    backend:
+        ``"auto"``, ``"cpu"``, or ``"cuda"``.  See :func:`generate_lightmap`.
+    observer_height_m:
+        Observer height above the DEM surface, in meters.
+    nodata:
+        Value stored in invalid pixels.  Defaults to ``NaN``.  A dataset
+        validity mask is always written.
+    output_transform / output_dtype / output_transform_id:
+        Optional per-patch conversion.  See :func:`generate_lightmap`.
+    compress:
+        ``True`` (default) compresses tiles; ``False`` disables compression
+        while preserving tiling.
+    overwrite / start_fresh:
+        See :func:`generate_lightmap`.
+
+    Returns
+    -------
+    pathlib.Path
+        The completed output path.  Each band represents one Earth outage.
+
+    Notes
+    -----
+    Each ``float32`` output band stores the longest complete contiguous
+    low-Sun interval that overlaps an Earth outage, in hours.  The low-Sun
+    interval may begin before the Earth outage or end after it.  The band is
+    timestamped with the first occurrence of the minimum Earth elevation
+    within that outage.
     """
 
     _validate_output_conversion(
@@ -1256,12 +1454,54 @@ def mission_duration_from_sunlight(
 ) -> Path:
     """Longest inclusive sunlight-fraction duration for each start interval.
 
-    ``sunlight_fraction_threshold`` is a unitless inclusive lower bound.
-    Evaluation and candidate-start intervals are half-open. Durations use
-    actual UTC sample spacing and are stored as ``float32`` hours or days as
-    selected by ``output_unit``. Invalid pixels carry ``nodata`` and are
-    distinguished by the dataset mask. The returned :class:`Path` identifies
-    the completed output.
+    Parameters
+    ----------
+    evaluation_start / evaluation_stop:
+        The overall half-open evaluation interval defining the sample domain.
+    step:
+        The sampling step as a ``datetime.timedelta``.  Timestamps are
+        generated from ``evaluation_start`` to ``evaluation_stop`` inclusive
+        with this step.
+    candidate_start_intervals:
+        An iterable of half-open ``(start, stop)`` interval pairs.  Each
+        interval controls where a qualifying run may start and becomes one
+        output band.
+    sunlight_fraction_threshold:
+        Unitless inclusive lower bound.  A candidate run is valid while the
+        sunlight fraction is ``>=`` this threshold.
+    sun_vectors_m:
+        Optional explicit Moon-ME Sun vectors, shape ``(time, 3)``.  When
+        supplied, they take precedence and avoid SPICE import.
+    output_unit:
+        ``"hours"`` (default) or ``"days"``.  Days aggregate actual
+        sample-to-sample durations and divide by 24 after reduction.
+    backend:
+        ``"auto"``, ``"cpu"``, or ``"cuda"``.  See :func:`generate_lightmap`.
+    observer_height_m:
+        Observer height above the DEM surface, in meters.
+    nodata:
+        Value stored in invalid pixels.  Defaults to ``NaN``.
+    output_transform / output_dtype / output_transform_id:
+        Optional per-patch conversion.  See :func:`generate_lightmap`.
+    compress:
+        ``True`` (default) compresses tiles; ``False`` disables compression
+        while preserving tiling.
+    overwrite / start_fresh:
+        See :func:`generate_lightmap`.
+
+    Returns
+    -------
+    pathlib.Path
+        The completed output path with one ``float32`` band per
+        candidate-start interval.
+
+    Notes
+    -----
+    The condition sampled at ``times[i]`` applies over
+    ``[times[i], times[i+1])``, clipped to ``evaluation_stop``.  A run may
+    begin at any qualifying sample inside a candidate-start interval and may
+    continue beyond it but never beyond the overall evaluation stop.  A run
+    still active at the evaluation stop is right-censored.
     """
 
     return _generate_mission_duration(
@@ -1312,12 +1552,13 @@ def mission_duration_from_sun_elevation(
 ) -> Path:
     """Longest inclusive Sun terrain-relative elevation duration.
 
-    ``sun_elevation_threshold_deg`` is an inclusive lower bound in degrees.
-    Evaluation and candidate-start intervals are half-open. Durations use
-    actual UTC sample spacing and are stored as ``float32`` hours or days as
-    selected by ``output_unit``. Invalid pixels carry ``nodata`` and are
-    distinguished by the dataset mask. The returned :class:`Path` identifies
-    the completed output.
+    ``sun_elevation_threshold_deg`` is an inclusive lower bound in degrees
+    for the Sun center's elevation relative to the terrain horizon.
+
+    All other parameters and semantics match
+    :func:`mission_duration_from_sunlight`; see its docstring for the
+    complete evaluation-interval, candidate-start, duration, backend, and
+    output lifecycle contract.
     """
 
     return _generate_mission_duration(
@@ -1372,13 +1613,14 @@ def mission_duration_from_sunlight_and_earth_elevation(
 ) -> Path:
     """Longest duration meeting inclusive sunlight and Earth thresholds.
 
-    The sunlight fraction is unitless and Earth terrain-relative elevation is
-    in degrees. Both thresholds are inclusive lower bounds. Evaluation and
-    candidate-start intervals are half-open. Durations use actual UTC sample
-    spacing and are stored as ``float32`` hours or days as selected by
-    ``output_unit``. Invalid pixels carry ``nodata`` and are
-    distinguished by the dataset mask. The returned :class:`Path` identifies
-    the completed output.
+    ``sunlight_fraction_threshold`` is a unitless inclusive lower bound.
+    ``earth_elevation_threshold_deg`` is an inclusive lower bound in degrees
+    for the Earth center's elevation relative to the terrain horizon.
+
+    All other parameters and semantics match
+    :func:`mission_duration_from_sunlight`; see its docstring for the
+    complete evaluation-interval, candidate-start, duration, backend, and
+    output lifecycle contract.
     """
 
     return _generate_mission_duration(
@@ -1433,11 +1675,12 @@ def mission_duration_from_sun_and_earth_elevation(
     """Longest duration meeting inclusive Sun and Earth elevation thresholds.
 
     Both terrain-relative elevation thresholds are inclusive lower bounds in
-    degrees. Evaluation and candidate-start intervals are half-open. Durations
-    use actual UTC sample spacing and are stored as ``float32`` hours or days
-    as selected by ``output_unit``. Invalid pixels carry ``nodata`` and
-    are distinguished by the dataset mask. The returned :class:`Path`
-    identifies the completed output.
+    degrees.
+
+    All other parameters and semantics match
+    :func:`mission_duration_from_sunlight`; see its docstring for the
+    complete evaluation-interval, candidate-start, duration, backend, and
+    output lifecycle contract.
     """
 
     return _generate_mission_duration(

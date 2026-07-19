@@ -545,31 +545,42 @@ For all four mission-duration operations:
 
 ## Current `Scenario` Signatures
 
-`Scenario` supplies the canonical `dem.tif` and `horizons/` paths and resolves
-the requested output below the scenario root. The downstream methods currently
-delegate all scientific and operational keyword arguments through `**kwargs`:
+`Scenario` supplies the canonical ``dem.tif`` and ``horizons/`` paths and resolves
+the requested output below the scenario root.  The downstream methods now mirror
+every root keyword parameter explicitly:
 
 ```python
-scenario.lightmap(output: str | Path, **kwargs: Any) -> Path
-scenario.psr(
+scenario.lightmap(
     output: str | Path,
     *,
-    horizons: str | Path | None = None,
-    **kwargs: Any,
-) -> Path
-scenario.sun_elevation(output: str | Path, **kwargs: Any) -> Path
-scenario.earth_elevation(output: str | Path, **kwargs: Any) -> Path
-scenario.safe_havens(output: str | Path, **kwargs: Any) -> Path
-scenario.mission_duration_from_sunlight(output: str | Path, **kwargs: Any) -> Path
-scenario.mission_duration_from_sun_elevation(output: str | Path, **kwargs: Any) -> Path
-scenario.mission_duration_from_sunlight_and_earth_elevation(output: str | Path, **kwargs: Any) -> Path
-scenario.mission_duration_from_sun_and_earth_elevation(
-    output: str | Path,
-    **kwargs: Any,
+    times: TimeRange,
+    sun_vectors_m: ArrayLike | None = None,
+    backend: Literal["auto", "cpu", "cuda"] = "auto",
+    observer_height_m: float = 0.0,
+    invalid_value: int = 0,
+    output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+    output_dtype: DTypeLike | None = None,
+    output_transform_id: str | None = None,
+    compress: bool = True,
+    overwrite: bool = False,
+    start_fresh: bool = False,
+    verbose: bool = False,
+    progress_callback: ProgressCallback | None = None,
+    progress_event_callback: ProgressEventCallback | None = None,
+    cancellation_requested: CancellationCheck | None = None,
 ) -> Path
 ```
 
-Horizon generation currently has this Scenario-specific form:
+The other downstream Scenario methods (``sun_elevation``, ``earth_elevation``,
+``safe_havens``, ``psr``, and the four mission-duration methods) have equivalent
+explicit signatures matching their root functions, with the canonical DEM and
+horizon paths supplied by the scenario.
+
+The PSR-only ``horizons=`` override was removed for consistency.  Callers
+needing custom DEM or horizon paths can use the root function directly.
+
+Horizon generation now has the following Scenario-specific form (the private
+``_generator`` injection parameter was removed):
 
 ```python
 scenario.generate_horizons(
@@ -580,40 +591,33 @@ scenario.generate_horizons(
     compress: bool = True,
     overwrite: bool = False,
     verbose: bool = False,
-    progress_callback: Any | None = None,
-    progress_event_callback: Any | None = None,
-    cancellation_requested: Any | None = None,
-    _generator: Any | None = None,
+    progress_callback: ProgressCallback | None = None,
+    progress_event_callback: ProgressEventCallback | None = None,
+    cancellation_requested: CancellationCheck | None = None,
 ) -> Path
 ```
 
-When `dem_paths` is omitted, the canonical scenario DEM is placed first and
-`surrounding_dems` are appended. When `dem_paths` is supplied, it completely
-defines the ordered DEM list and cannot be combined with `surrounding_dems`.
+When ``dem_paths`` is omitted, the canonical scenario DEM is placed first and
+``surrounding_dems`` are appended. When ``dem_paths`` is supplied, it completely
+defines the ordered DEM list and cannot be combined with ``surrounding_dems``.
 
 ## Review Findings and Recommendations
 
 These are the places where the current callable surface should change before
 it is frozen:
 
-1. **Make Scenario signatures explicit.** The root functions are fully typed,
-   but downstream Scenario methods expose `**kwargs: Any`. Explicit keyword
-   signatures would make notebook completion, `help()`, generated docs, and
-   static checking accurately describe the API. Recommendation: mirror every
-   root keyword parameter on its Scenario convenience.
-1. **Remove `_generator` from `Scenario.generate_horizons()`.** It is a private
-   test-injection hook appearing in a public runtime signature. Tests should
-   patch the delegated function instead of exposing this parameter.
-1. **Resolve the PSR-only `horizons=` override.** Only `scenario.psr()` can
-   replace the canonical horizon directory. Recommendation: remove this
-   exception for a small, consistent Scenario facade; callers needing custom
-   DEM or horizon paths can use the root function. The alternative is to add a
-   consistently named override to every downstream Scenario method.
-1. **Expand Scenario docstrings.** They currently identify the operation but
-   do not expose the root function's parameter and scientific contracts.
-   Recommendation: document that parameters are identical to the named root
-   function except for the scenario-supplied paths, while retaining the full
-   root docstrings as the authoritative detailed reference.
+1. **Make Scenario signatures explicit.** (Completed.) The downstream Scenario
+   methods now have explicit typed keyword signatures mirroring every root
+   keyword parameter.
+1. **Remove ``_generator`` from ``Scenario.generate_horizons()``.** (Completed.)
+   The private test-injection hook was removed.  Tests now patch
+   ``lunarscout.horizon.generate_horizons`` via ``monkeypatch``.
+1. **Resolve the PSR-only ``horizons=`` override.** (Completed.) Removed for
+   consistency.  Callers needing custom DEM or horizon paths can use the root
+   function directly.
+1. **Expand Scenario docstrings.** (Completed.) Each Scenario method now
+   documents which canonical paths the scenario supplies and directs users to
+   the root function's authoritative scientific and operational contract.
 The approved float-nodata and patch-level output-conversion contracts above
 are now implemented. Focused tests cover NaN TIFF nodata plus masks, conversion
 to a requested dtype, exact returned-shape and dtype validation, and compatible
@@ -667,12 +671,16 @@ restart when both runs omit `output_transform_id`.
 
 ### Recommended signature cleanup
 
-- [ ] Approve explicit typed Scenario signatures rather than `**kwargs: Any`.
-- [ ] Approve removing the public `_generator` test hook.
-- [ ] Approve removing the PSR-only `horizons=` override, or specify that all
+- [x] Approve explicit typed Scenario signatures rather than `**kwargs: Any`.
+- [x] Approve removing the public `_generator` test hook.
+- [x] Approve removing the PSR-only `horizons=` override, or specify that all
   downstream Scenario methods should receive a consistent override.
-- [ ] Approve annotating mission-duration `output_unit` as
+- [x] Approve annotating mission-duration `output_unit` as
   `Literal["hours", "days"]`.
+- [x] Approve enhanced docstrings for all root product functions and Scenario
+  methods, documenting times/evaluation intervals, vector precedence, backend
+  behavior, compress, nodata/mask, output transforms, overwrite/restart,
+  return value, progress, cancellation, and scientific thresholds.
 
 After these decisions and any requested edits are implemented and verified,
 the corresponding PLAN1 public-signature and docstring gates can be checked.

@@ -6,6 +6,20 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Completed the Scenario signature and docstring review: made all nine
+  downstream Scenario method signatures explicit with full typed keywords
+  mirroring the corresponding root functions. Removed the private
+  ``_generator`` test-injection parameter from
+  ``Scenario.generate_horizons()``; tests now use ``monkeypatch`` on
+  ``lunarscout.horizon.generate_horizons``. Removed the PSR-only
+  ``horizons=`` override from ``scenario.psr()`` for a consistent Scenario
+  facade. Enhanced every public root function and Scenario method docstring
+  to document times/evaluation intervals, vector precedence, backend
+  behavior, compress/nodata/mask, output transforms, overwrite/restart,
+  return value, progress, cancellation, and scientific thresholds. Updated
+  ``docs/PUBLIC_API_REVIEW.md`` to record the completed review findings and
+  check the corresponding decision-checklist items. Verification: 405 passed,
+  17 skipped (CPU suite). (deepseek)
 - Made `compress=True` explicit as the default for every tiled downstream
   GeoTIFF operation. Float products now expose `nodata=np.nan` while retaining
   authoritative dataset masks; byte products retain a zero storage payload

@@ -219,15 +219,55 @@ def generate_horizons(
 ) -> Path:
     """Generate compatible 128-pixel horizon tiles with NVIDIA CUDA.
 
-    ``dem_paths`` is ordered from the primary output-grid DEM to successively
-    broader surrounding DEMs. Valid existing tiles are resumed by default;
-    ``overwrite=True`` regenerates every tile. Each completed ``.cbin`` or
-    ``.bin`` tile is staged beside its destination and atomically published.
+    Parameters
+    ----------
+    output_directory:
+        The directory where horizon tiles will be written.  Created if it
+        does not exist.
+    dem_paths:
+        An ordered sequence of DEM files.  The first DEM defines the output
+        grid.  Later DEMs extend surrounding terrain coverage.  The
+        cumulative horizon from earlier DEMs participates in hierarchy
+        culling for later DEMs.
+    observer_height_m:
+        Observer height above the DEM surface, in meters.  Must be finite
+        and in ``[0, 100)``.
+    compress:
+        When ``True`` (the default) tiles are written as ``.cbin``;
+        ``compress=False`` writes uncompressed ``.bin``.
+    overwrite:
+        When ``False`` (the default), structurally complete existing tiles
+        are skipped.  ``overwrite=True`` regenerates every tile.
+    verbose:
+        When ``True``, writes backend and progress messages to stdout.
+    progress_callback:
+        Optional callable receiving a monotonic durable fraction ``[0, 1]``.
+    progress_event_callback:
+        Optional callable receiving an immutable :class:`ProgressEvent` with
+        stage, tile coordinates, and backend detail.
+    cancellation_requested:
+        Optional callable checked at bounded work boundaries.  When it
+        returns ``True``, generation raises
+        :class:`~lunarscout.OperationCancelledError` and leaves resumable
+        staging state.
 
-    Horizon generation deliberately has no CPU backend. If Numba CUDA cannot
-    initialize a compatible NVIDIA device, :class:`CudaError` is raised before
-    any horizon tile is modified. Existing stored horizons remain usable by
-    CPU downstream products.
+    Returns
+    -------
+    pathlib.Path
+        The resolved completed output directory.
+
+    Notes
+    -----
+    Horizon generation is CUDA-only and has no CPU fallback.  If Numba CUDA
+    cannot initialize a compatible NVIDIA device, :class:`~lunarscout.CudaError`
+    is raised before any horizon tile is modified.  Existing stored horizons
+    remain usable by CPU downstream products.
+
+    Each output tile is a fixed 128 by 128 pixel patch with 1,440 ``float32``
+    azimuth samples per pixel at 0.25-degree spacing.  Sample 0 is north.
+    Tiles are staged beside their destination and atomically published.  A
+    failed calculation or cancelled overwrite preserves the prior complete
+    tile.
     """
     if isinstance(dem_paths, (str, bytes, Path)):
         raise InputError(

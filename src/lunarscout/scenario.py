@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import timedelta
 import os
 from pathlib import Path
 import struct
-from collections.abc import Sequence
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Literal
 
 import numpy as np
+import numpy.typing as npt
 
 from .errors import (
     GeoTiffMetadataError,
@@ -19,6 +21,7 @@ from .errors import (
     ScenarioStateError,
 )
 from .geotiff import read_geotiff
+from .progress import Backend
 from .spice_geometry import (
     BodyName,
     LonLat,
@@ -26,6 +29,11 @@ from .spice_geometry import (
     body_azimuth_elevation_over_horizon,
     plot_body_elevations,
 )
+from .temporal import TimeInput, TimeRange
+
+
+ProgressCallback = Callable[[float], None]
+_CancellationCheck = Callable[[], bool]
 
 
 _PRIMARY_DEM_RELATIVE_PATH = Path("dem.tif")
@@ -273,9 +281,31 @@ class Scenario:
     def lightmap(
         self,
         output: str | Path,
-        **kwargs: Any,
+        *,
+        times: TimeRange,
+        sun_vectors_m: npt.ArrayLike | None = None,
+        backend: Backend = "auto",
+        observer_height_m: float = 0.0,
+        invalid_value: int = 0,
+        output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+        output_dtype: npt.DTypeLike | None = None,
+        output_transform_id: str | None = None,
+        compress: bool = True,
+        overwrite: bool = False,
+        start_fresh: bool = False,
+        verbose: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
     ) -> Path:
-        """Generate a public Python lightmap at a scenario-relative path."""
+        """Generate a public Python lightmap at a scenario-relative path.
+
+        ``dem.tif`` and ``horizons/`` are supplied from the scenario.
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.generate_lightmap`; see its authoritative
+        docstring for the complete scientific, operational, and
+        return-value contract.
+        """
 
         from .products import generate_lightmap
 
@@ -283,11 +313,51 @@ class Scenario:
             self.dem_path(),
             self.horizons_path(),
             self.output_path(output),
-            **kwargs,
+            times=times,
+            sun_vectors_m=sun_vectors_m,
+            backend=backend,
+            observer_height_m=observer_height_m,
+            invalid_value=invalid_value,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            verbose=verbose,
+            progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
+            cancellation_requested=cancellation_requested,
         )
 
-    def sun_elevation(self, output: str | Path, **kwargs: Any) -> Path:
-        """Generate public Sun terrain-relative elevation bands."""
+    def sun_elevation(
+        self,
+        output: str | Path,
+        *,
+        times: TimeRange,
+        sun_vectors_m: npt.ArrayLike | None = None,
+        backend: Backend = "auto",
+        observer_height_m: float = 0.0,
+        nodata: float = np.nan,
+        output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+        output_dtype: npt.DTypeLike | None = None,
+        output_transform_id: str | None = None,
+        compress: bool = True,
+        overwrite: bool = False,
+        start_fresh: bool = False,
+        verbose: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
+    ) -> Path:
+        """Generate public Sun terrain-relative elevation bands.
+
+        ``dem.tif`` and ``horizons/`` are supplied from the scenario.
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.generate_sun_elevation`; see its authoritative
+        docstring for the complete scientific, operational, and
+        return-value contract.
+        """
 
         from .products import generate_sun_elevation
 
@@ -295,11 +365,51 @@ class Scenario:
             self.dem_path(),
             self.horizons_path(),
             self.output_path(output),
-            **kwargs,
+            times=times,
+            sun_vectors_m=sun_vectors_m,
+            backend=backend,
+            observer_height_m=observer_height_m,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            verbose=verbose,
+            progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
+            cancellation_requested=cancellation_requested,
         )
 
-    def earth_elevation(self, output: str | Path, **kwargs: Any) -> Path:
-        """Generate public Earth terrain-relative elevation bands."""
+    def earth_elevation(
+        self,
+        output: str | Path,
+        *,
+        times: TimeRange,
+        earth_vectors_m: npt.ArrayLike | None = None,
+        backend: Backend = "auto",
+        observer_height_m: float = 0.0,
+        nodata: float = np.nan,
+        output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+        output_dtype: npt.DTypeLike | None = None,
+        output_transform_id: str | None = None,
+        compress: bool = True,
+        overwrite: bool = False,
+        start_fresh: bool = False,
+        verbose: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
+    ) -> Path:
+        """Generate public Earth terrain-relative elevation bands.
+
+        ``dem.tif`` and ``horizons/`` are supplied from the scenario.
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.generate_earth_elevation`; see its authoritative
+        docstring for the complete scientific, operational, and
+        return-value contract.
+        """
 
         from .products import generate_earth_elevation
 
@@ -307,11 +417,54 @@ class Scenario:
             self.dem_path(),
             self.horizons_path(),
             self.output_path(output),
-            **kwargs,
+            times=times,
+            earth_vectors_m=earth_vectors_m,
+            backend=backend,
+            observer_height_m=observer_height_m,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            verbose=verbose,
+            progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
+            cancellation_requested=cancellation_requested,
         )
 
-    def safe_havens(self, output: str | Path, **kwargs: Any) -> Path:
-        """Generate public safe-haven duration bands."""
+    def safe_havens(
+        self,
+        output: str | Path,
+        *,
+        times: TimeRange,
+        sun_vectors_m: npt.ArrayLike | None = None,
+        earth_vectors_m: npt.ArrayLike | None = None,
+        earth_elevation_threshold_deg: float = 2.0,
+        sunlight_fraction_threshold: float = 0.2,
+        backend: Backend = "auto",
+        observer_height_m: float = 0.0,
+        nodata: float = np.nan,
+        output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+        output_dtype: npt.DTypeLike | None = None,
+        output_transform_id: str | None = None,
+        compress: bool = True,
+        overwrite: bool = False,
+        start_fresh: bool = False,
+        verbose: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
+    ) -> Path:
+        """Generate public safe-haven duration bands.
+
+        ``dem.tif`` and ``horizons/`` are supplied from the scenario.
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.generate_safe_havens`; see its authoritative
+        docstring for the complete scientific, operational, and
+        return-value contract.
+        """
 
         from .products import generate_safe_havens
 
@@ -319,51 +472,272 @@ class Scenario:
             self.dem_path(),
             self.horizons_path(),
             self.output_path(output),
-            **kwargs,
+            times=times,
+            sun_vectors_m=sun_vectors_m,
+            earth_vectors_m=earth_vectors_m,
+            earth_elevation_threshold_deg=earth_elevation_threshold_deg,
+            sunlight_fraction_threshold=sunlight_fraction_threshold,
+            backend=backend,
+            observer_height_m=observer_height_m,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            verbose=verbose,
+            progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
+            cancellation_requested=cancellation_requested,
         )
 
     def mission_duration_from_sunlight(
-        self, output: str | Path, **kwargs: Any
+        self,
+        output: str | Path,
+        *,
+        evaluation_start: TimeInput,
+        evaluation_stop: TimeInput,
+        step: timedelta,
+        candidate_start_intervals: Sequence[tuple[TimeInput, TimeInput]],
+        sunlight_fraction_threshold: float,
+        sun_vectors_m: npt.ArrayLike | None = None,
+        output_unit: Literal["hours", "days"] = "hours",
+        backend: Backend = "auto",
+        observer_height_m: float = 0.0,
+        nodata: float = np.nan,
+        output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+        output_dtype: npt.DTypeLike | None = None,
+        output_transform_id: str | None = None,
+        compress: bool = True,
+        overwrite: bool = False,
+        start_fresh: bool = False,
+        verbose: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
     ) -> Path:
-        """Generate sunlight-threshold mission-duration bands."""
+        """Generate sunlight-threshold mission-duration bands.
+
+        ``dem.tif`` and ``horizons/`` are supplied from the scenario.
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.mission_duration_from_sunlight`; see its
+        authoritative docstring for the complete scientific, operational,
+        and return-value contract.
+        """
 
         from .products import mission_duration_from_sunlight
 
         return mission_duration_from_sunlight(
-            self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
+            self.dem_path(), self.horizons_path(), self.output_path(output),
+            evaluation_start=evaluation_start,
+            evaluation_stop=evaluation_stop,
+            step=step,
+            candidate_start_intervals=candidate_start_intervals,
+            sunlight_fraction_threshold=sunlight_fraction_threshold,
+            sun_vectors_m=sun_vectors_m,
+            output_unit=output_unit,
+            backend=backend,
+            observer_height_m=observer_height_m,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            verbose=verbose,
+            progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
+            cancellation_requested=cancellation_requested,
         )
 
     def mission_duration_from_sun_elevation(
-        self, output: str | Path, **kwargs: Any
+        self,
+        output: str | Path,
+        *,
+        evaluation_start: TimeInput,
+        evaluation_stop: TimeInput,
+        step: timedelta,
+        candidate_start_intervals: Sequence[tuple[TimeInput, TimeInput]],
+        sun_elevation_threshold_deg: float,
+        sun_vectors_m: npt.ArrayLike | None = None,
+        output_unit: Literal["hours", "days"] = "hours",
+        backend: Backend = "auto",
+        observer_height_m: float = 0.0,
+        nodata: float = np.nan,
+        output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+        output_dtype: npt.DTypeLike | None = None,
+        output_transform_id: str | None = None,
+        compress: bool = True,
+        overwrite: bool = False,
+        start_fresh: bool = False,
+        verbose: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
     ) -> Path:
-        """Generate Sun-elevation-threshold mission-duration bands."""
+        """Generate Sun-elevation-threshold mission-duration bands.
+
+        ``dem.tif`` and ``horizons/`` are supplied from the scenario.
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.mission_duration_from_sun_elevation`; see its
+        authoritative docstring for the complete scientific, operational,
+        and return-value contract.
+        """
 
         from .products import mission_duration_from_sun_elevation
 
         return mission_duration_from_sun_elevation(
-            self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
+            self.dem_path(), self.horizons_path(), self.output_path(output),
+            evaluation_start=evaluation_start,
+            evaluation_stop=evaluation_stop,
+            step=step,
+            candidate_start_intervals=candidate_start_intervals,
+            sun_elevation_threshold_deg=sun_elevation_threshold_deg,
+            sun_vectors_m=sun_vectors_m,
+            output_unit=output_unit,
+            backend=backend,
+            observer_height_m=observer_height_m,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            verbose=verbose,
+            progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
+            cancellation_requested=cancellation_requested,
         )
 
     def mission_duration_from_sunlight_and_earth_elevation(
-        self, output: str | Path, **kwargs: Any
+        self,
+        output: str | Path,
+        *,
+        evaluation_start: TimeInput,
+        evaluation_stop: TimeInput,
+        step: timedelta,
+        candidate_start_intervals: Sequence[tuple[TimeInput, TimeInput]],
+        sunlight_fraction_threshold: float,
+        earth_elevation_threshold_deg: float,
+        sun_vectors_m: npt.ArrayLike | None = None,
+        earth_vectors_m: npt.ArrayLike | None = None,
+        output_unit: Literal["hours", "days"] = "hours",
+        backend: Backend = "auto",
+        observer_height_m: float = 0.0,
+        nodata: float = np.nan,
+        output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+        output_dtype: npt.DTypeLike | None = None,
+        output_transform_id: str | None = None,
+        compress: bool = True,
+        overwrite: bool = False,
+        start_fresh: bool = False,
+        verbose: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
     ) -> Path:
-        """Generate sunlight-and-Earth-threshold mission-duration bands."""
+        """Generate sunlight-and-Earth-threshold mission-duration bands.
+
+        ``dem.tif`` and ``horizons/`` are supplied from the scenario.
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.mission_duration_from_sunlight_and_earth_elevation`;
+        see its authoritative docstring for the complete scientific,
+        operational, and return-value contract.
+        """
 
         from .products import mission_duration_from_sunlight_and_earth_elevation
 
         return mission_duration_from_sunlight_and_earth_elevation(
-            self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
+            self.dem_path(), self.horizons_path(), self.output_path(output),
+            evaluation_start=evaluation_start,
+            evaluation_stop=evaluation_stop,
+            step=step,
+            candidate_start_intervals=candidate_start_intervals,
+            sunlight_fraction_threshold=sunlight_fraction_threshold,
+            earth_elevation_threshold_deg=earth_elevation_threshold_deg,
+            sun_vectors_m=sun_vectors_m,
+            earth_vectors_m=earth_vectors_m,
+            output_unit=output_unit,
+            backend=backend,
+            observer_height_m=observer_height_m,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            verbose=verbose,
+            progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
+            cancellation_requested=cancellation_requested,
         )
 
     def mission_duration_from_sun_and_earth_elevation(
-        self, output: str | Path, **kwargs: Any
+        self,
+        output: str | Path,
+        *,
+        evaluation_start: TimeInput,
+        evaluation_stop: TimeInput,
+        step: timedelta,
+        candidate_start_intervals: Sequence[tuple[TimeInput, TimeInput]],
+        sun_elevation_threshold_deg: float,
+        earth_elevation_threshold_deg: float,
+        sun_vectors_m: npt.ArrayLike | None = None,
+        earth_vectors_m: npt.ArrayLike | None = None,
+        output_unit: Literal["hours", "days"] = "hours",
+        backend: Backend = "auto",
+        observer_height_m: float = 0.0,
+        nodata: float = np.nan,
+        output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+        output_dtype: npt.DTypeLike | None = None,
+        output_transform_id: str | None = None,
+        compress: bool = True,
+        overwrite: bool = False,
+        start_fresh: bool = False,
+        verbose: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
     ) -> Path:
-        """Generate Sun-and-Earth-elevation mission-duration bands."""
+        """Generate Sun-and-Earth-elevation mission-duration bands.
+
+        ``dem.tif`` and ``horizons/`` are supplied from the scenario.
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.mission_duration_from_sun_and_earth_elevation`;
+        see its authoritative docstring for the complete scientific,
+        operational, and return-value contract.
+        """
 
         from .products import mission_duration_from_sun_and_earth_elevation
 
         return mission_duration_from_sun_and_earth_elevation(
-            self.dem_path(), self.horizons_path(), self.output_path(output), **kwargs
+            self.dem_path(), self.horizons_path(), self.output_path(output),
+            evaluation_start=evaluation_start,
+            evaluation_stop=evaluation_stop,
+            step=step,
+            candidate_start_intervals=candidate_start_intervals,
+            sun_elevation_threshold_deg=sun_elevation_threshold_deg,
+            earth_elevation_threshold_deg=earth_elevation_threshold_deg,
+            sun_vectors_m=sun_vectors_m,
+            earth_vectors_m=earth_vectors_m,
+            output_unit=output_unit,
+            backend=backend,
+            observer_height_m=observer_height_m,
+            nodata=nodata,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            verbose=verbose,
+            progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
+            cancellation_requested=cancellation_requested,
         )
 
     def _resolve_dem_input_path(self, path: str | Path) -> Path:
@@ -381,12 +755,23 @@ class Scenario:
         compress: bool = True,
         overwrite: bool = False,
         verbose: bool = False,
-        progress_callback: Any | None = None,
-        progress_event_callback: Any | None = None,
-        cancellation_requested: Any | None = None,
-        _generator: Any | None = None,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
     ) -> Path:
-        """Generate CUDA horizon tiles in the canonical horizons directory."""
+        """Generate CUDA horizon tiles in the canonical horizons directory.
+
+        The canonical ``dem.tif`` is placed first in the ordered DEM list.
+        ``surrounding_dems`` are appended after it, with scenario-relative
+        paths resolved relative to the scenario root.  When ``dem_paths`` is
+        supplied it completely defines the ordered DEM list and cannot be
+        combined with ``surrounding_dems``.
+
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.generate_horizons`; see its authoritative
+        docstring for the complete scientific, operational, and return-value
+        contract.
+        """
 
         if dem_paths is None:
             surrounding = surrounding_dems or ()
@@ -404,14 +789,9 @@ class Scenario:
                 self._resolve_dem_input_path(path) for path in dem_paths
             ]
 
-        if _generator is None:
-            from .horizon import generate_horizons
+        from .horizon import generate_horizons
 
-            generator = generate_horizons
-        else:
-            generator = _generator
-
-        return generator(
+        return generate_horizons(
             self.horizons_path(),
             resolved_dem_paths,
             observer_height_m=observer_height_m,
@@ -1134,19 +1514,52 @@ class Scenario:
         self,
         output: str | Path,
         *,
-        horizons: str | Path | None = None,
-        **kwargs: Any,
+        times: TimeRange,
+        sun_vectors_m: npt.ArrayLike | None = None,
+        backend: Backend = "auto",
+        observer_height_m: float = 0.0,
+        invalid_value: int = 0,
+        output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
+        output_dtype: npt.DTypeLike | None = None,
+        output_transform_id: str | None = None,
+        compress: bool = True,
+        overwrite: bool = False,
+        start_fresh: bool = False,
+        verbose: bool = False,
+        progress_callback: ProgressCallback | None = None,
+        progress_event_callback: Callable[[Any], None] | None = None,
+        cancellation_requested: _CancellationCheck | None = None,
     ) -> Path:
-        """Generate a public Python permanent-shadow classification product."""
+        """Generate a public Python permanent-shadow classification product.
+
+        ``dem.tif`` and ``horizons/`` are supplied from the scenario.
+        All other keyword arguments are passed directly to
+        :func:`lunarscout.generate_psr`; see its authoritative docstring
+        for the complete scientific, operational, and return-value
+        contract.
+        """
 
         from .products import generate_psr
 
-        horizons_path = self.horizons_path() if horizons is None else self.path(horizons)
         return generate_psr(
             self.dem_path(),
-            horizons_path,
+            self.horizons_path(),
             self.output_path(output),
-            **kwargs,
+            times=times,
+            sun_vectors_m=sun_vectors_m,
+            backend=backend,
+            observer_height_m=observer_height_m,
+            invalid_value=invalid_value,
+            output_transform=output_transform,
+            output_dtype=output_dtype,
+            output_transform_id=output_transform_id,
+            compress=compress,
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            verbose=verbose,
+            progress_callback=progress_callback,
+            progress_event_callback=progress_event_callback,
+            cancellation_requested=cancellation_requested,
         )
 
 
