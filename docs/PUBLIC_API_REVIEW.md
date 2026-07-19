@@ -623,6 +623,46 @@ are now implemented. Focused tests cover NaN TIFF nodata plus masks, conversion
 to a requested dtype, exact returned-shape and dtype validation, and compatible
 restart when both runs omit `output_transform_id`.
 
+### GeoTIFF metadata fields
+
+The following dataset-level and per-band metadata fields are public
+compatibility promises for ``0.1.0rc1``.  Their presence and semantics are
+tested and must remain stable:
+
+**Dataset-level tags**
+
+| Tag                           | Content                                                   |
+| ----------------------------- | --------------------------------------------------------- |
+| ``LUNARSCOUT_TIMESTAMPS_UTC`` | JSON array of ordered ISO-8601 UTC timestamps, one per band |
+| ``LUNARSCOUT_COMPUTE_BACKENDS`` | JSON array of backend names (``"cpu"``, ``"cuda"``) accumulated across all durable patches |
+
+**Per-band tags** (on time-series products)
+
+| Tag             | Content                                          |
+| --------------- | ------------------------------------------------ |
+| ``TIMESTAMP_UTC`` | ISO-8601 UTC timestamp for this band             |
+
+**Per-band tags** (on mission-duration products)
+
+| Tag                 | Content                                      |
+| ------------------- | -------------------------------------------- |
+| ``DURATION_UNIT``   | ``"hours"`` or ``"days"``                    |
+| ``CANDIDATE_START_UTC`` | ISO-8601 UTC start of the candidate interval |
+| ``CANDIDATE_STOP_UTC``  | ISO-8601 UTC stop of the candidate interval  |
+
+**Per-band tags** (on safe-haven products)
+
+| Tag             | Content                                          |
+| --------------- | ------------------------------------------------ |
+| ``TIMESTAMP_UTC`` | ISO-8601 UTC of the first minimum-Earth-elevation sample within the outage |
+
+Products written by Lunarscout are 128-by-128 tiled, band-interleaved,
+compressed BigTIFF files with integer predictor 2 for integer dtypes and
+floating-point predictor 3 for float dtypes.  Byte products use an
+authoritative dataset validity mask and do not declare a nodata value.
+Float products declare ``nodata=NaN`` and also write an authoritative
+dataset mask.
+
 ## Decision Checklist
 
 ### Names and organization

@@ -6,6 +6,22 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added 30 public tests across six categories: structured exception class, code,
+  and output preservation (7 tests); safe-haven boundary and outage behaviour (4
+  tests including no-outage, whole-interval outage, adjacent outages, and missing
+  horizons); mission-duration inclusive thresholds, candidate-start windows,
+  evaluation endpoints, no feasible start, unit conversion, and multi-band output
+  (6 tests); public cancellation, restart, failed-overwrite, and invalid-tile
+  journaling (5 tests); 65,535-band limit rejection via ``ProductJob.manifest()``
+  (1 test); and per-product timestamp and backend metadata tags (5 parametrized
+  variants). Verified: 435 passed, 17 skipped (CPU suite). (deepseek)
+- Defined the public GeoTIFF metadata compatibility promise for ``0.1.0rc1``:
+  dataset-level ``LUNARSCOUT_TIMESTAMPS_UTC`` and
+  ``LUNARSCOUT_COMPUTE_BACKENDS``; per-band ``TIMESTAMP_UTC`` on time-series
+  products; per-band ``DURATION_UNIT``, ``CANDIDATE_START_UTC``, and
+  ``CANDIDATE_STOP_UTC`` on mission-duration products; tiled, compressed BigTIFF
+  with integer predictor 2 or float predictor 3. The mask is authoritative for
+  both byte and float products.
 - Completed the Scenario signature and docstring review: made all nine
   downstream Scenario method signatures explicit with full typed keywords
   mirroring the corresponding root functions. Removed the private
