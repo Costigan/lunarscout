@@ -835,9 +835,56 @@ pixel-major layout with azimuth samples contiguous within each pixel:
 horizon[pixel_y, pixel_x, azimuth_index]
 ```
 
-Uncompressed `.bin` files contain little-endian `float32` values. Compressed
-`.cbin` files preserve the established Lunarscout horizon format. Readers
-prefer `.cbin` when both forms exist.
+**Directory layout and file naming.**  Horizon tiles are organised in
+row-major directories below the scenario ``horizons/`` root.  The directory
+hiearchy mirrors the DEM grid: a tile at pixel origin
+``(tile_x, tile_y)`` lives under ``horizons/{tile_y:05d}/``.  Each tile is
+identified by an observer height in decimetres:
+
+```text
+horizons/
+  00000/horizon_00000_00000_000.cbin
+  00000/horizon_00000_00128_000.cbin
+  00128/horizon_00128_00000_000.cbin
+  ...
+```
+
+The file stem is ``horizon_{tile_y:05d}_{tile_x:05d}_{height_dm:03d}`` where
+``height_dm`` is the observer height rounded toward zero to three zero-padded
+decimal digits.  The maximum nameable observer height is 99.9 metres (999 dm).
+
+**File format selection.**  Readers prefer compressed ``.cbin`` tiles.  When
+only a ``.bin`` file exists it is read in preference to an absent ``.cbin``.
+For each tile, lookup checks the ``{tile_y:05d}`` subdirectory first, then
+the horizon root; within a directory, ``.cbin`` is preferred.  Files without
+``.bin`` or ``.cbin`` extensions are ignored.
+
+**Uncompressed ``.bin`` format.**  Each ``.bin`` file contains the logical
+horizon array ``(128, 128, 1440)`` written pixel-major (outermost axis is y)
+in little-endian ``float32`` with no header.  Total size: exactly
+``128 × 128 × 1,440 × 4 = 94,371,840`` bytes.
+
+**Compressed ``.cbin`` format.**  Each pixel's 1,440-sample horizon is encoded
+independently as a variable-length byte block.  The file consists of one
+unsigned 16-bit little-endian length prefix per block, followed by the block's
+encoded bytes.  There is no file header or trailer.
+
+The compression scheme quantises ``float32`` degrees to a signed 16-bit
+integer: ``quantised = round(saturate(horizon, -50.0, 50.0) × 32767 / 50.0)``.
+The first sample is stored as a signed 16-bit big-endian value.  Subsequent
+samples use a variable-length signed delta:
+
+- If the delta fits in 7 signed bits (−64 to 63) it occupies one byte.
+- Otherwise it occupies two bytes in big-endian with the high bit of the
+  first byte set.
+
+The maximum block length is ``2 × 1,440`` bytes.
+
+The complete file is ``2 × 128 × 128`` length-prefix bytes followed by a
+variable number of block payloads.  Readers decode block-by-block and
+validate that exactly 1,440 samples are produced from each block.  A valid
+tile is the only proof of completion; structural validation rejects
+truncated blocks and out-of-range lengths.
 
 The generator combines an ordered list of DEMs cumulatively: the horizon from
 an earlier DEM participates in hierarchy culling for later DEMs.
@@ -876,6 +923,31 @@ peaked at 4,458 MiB of GPU memory. These figures include compression and
 staged file writes, but are hardware- and terrain-specific; see the
 [Phase 6 pipeline evaluation](numba-horizon-phase-6-production-pipeline.md)
 for scope and detailed timings.
+
+### Scientific Algorithm Identifiers
+
+Every downstream product records the algorithm that produced it in
+staged-job manifests and durable restart metadata.  These identifiers are
+public compatibility promises for ``0.1.0rc1``:
+
+| Algorithm identifier                          | Product family       | Description |
+| --------------------------------------------- | -------------------- | ----------- |
+| ``lightmap-builder-sun-fraction``             | lightmap             | 16-slice solar disk, 0.27° half-angle, truncating uint8 encoding |
+| ``psr-upper-solar-limb``                      | PSR                  | Five-viewpoint vector reduction, upper-solar-limb semantics |
+| ``sun-center-local-horizon-elevation``        | Sun elevation        | Sun-center terrain-relative elevation at interpolated horizon azimuth |
+| ``earth-center-local-horizon-elevation``      | Earth elevation      | Earth-center terrain-relative elevation at interpolated horizon azimuth |
+| ``safe-haven-per-pixel-monthly-bands``        | safe havens          | Per-pixel Earth outage detection, monthly calendar bands, streaming reducer |
+| ``landed-mission-sunlight-duration``          | mission duration     | Longest sunlight-fraction run per candidate interval |
+| ``landed-mission-sun-elevation-duration``     | mission duration     | Longest Sun terrain-relative elevation run per candidate interval |
+| ``landed-mission-sunlight-earth-elevation-duration`` | mission duration | Longest combined sunlight + Earth elevation run per candidate interval |
+| ``landed-mission-sun-earth-elevation-duration`` | mission duration   | Longest combined Sun + Earth elevation run per candidate interval |
+
+The shared algorithm version is ``phase6b-v1``.  These identifiers and the
+version appear in ``.manifest.json`` sidecars, the ``algorithm`` and
+``algorithm_version`` fields of restart metadata, and may appear in future
+GeoTIFF metadata tags.  Callers should not parse these fields for control
+flow, but they may use them to verify that a staged or completed product was
+computed with the expected algorithm.
 
 ### Shared Tiled-Product Pipeline
 

@@ -6,6 +6,18 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Published the horizon-tile file-format, directory-layout, naming, and
+  partial-edge contracts in ``docs/USER_GUIDE.md``: ``.bin`` little-endian
+  float32 pixel-major layout, ``.cbin`` per-pixel 7/15-bit variable-length
+  delta encoding with 16-bit length prefixes, file stem
+  ``horizon_{tile_y:05d}_{tile_x:05d}_{height_dm:03d}``, ``{tile_y:05d}``
+  subdirectory lookup with compressed-before-raw precedence, and
+  ``-50``-degree deterministic partial-edge padding.
+- Assigned and documented stable algorithm identifiers and the shared
+  ``phase6b-v1`` version for all nine downstream product families: lightmap,
+  PSR, Sun/Earth elevation, safe havens, and four mission-duration variants.
+  These appear in staged-job manifests, restart metadata, and the
+  ``docs/USER_GUIDE.md`` reference table.
 - Rewrote the safe-haven algorithm with per-pixel Earth outage detection,
   calendar-month band structure, and a streaming state-machine reducer that
   consumes per-pixel Earth terrain-relative elevation tiles alongside
