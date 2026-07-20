@@ -642,7 +642,7 @@ All of these boxes must be checked before representing the candidate as ready:
   candidate commit.
 - [x] Installed-wheel tests run outside the checkout with no source-tree
   `PYTHONPATH`.
-- [ ] README, user guide, examples, architecture, changelog, limitations, and
+- [x] README, user guide, examples, architecture, changelog, limitations, and
   troubleshooting reflect the shipped artifact.
 - [x] The exact commit, artifact hashes, environment versions, commands, test
   counts, benchmark results, and known limitations are recorded.
