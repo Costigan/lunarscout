@@ -6,6 +6,21 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Bumped candidate version to ``0.1.0rc2``.  Reviewed and enhanced
+  ``pyproject.toml`` metadata: expanded description, keywords (PSR,
+  safe-haven, mission-duration, SPICE, Numba, geospatial, raster),
+  classifiers (Astronomy and GIS topics), and ``[dev]`` extras (coverage).
+  Removed ``License`` classifier in favour of the PEP 639 license
+  expression (``License-Expression: Apache-2.0``).
+- Completed a full PLAN1.md audit, checking off 70+ items across all
+  sections for which evidence now exists: horizon-format documentation,
+  algorithm identifiers, metadata-field compatibility promises, signature/
+  docstring freeze, exception and operational tests, independent file
+  validation (horizon and GeoTIFF), pyproject.toml review, dev extras,
+  and M0-M5 milestone gates.  Remaining unchecked items are deferred
+  complexity (disk-full injection, per-stage timing), TestPyPI
+  installation verification (M5), and post-0.1 roadmap items (M7/M8).
+  Verification (depends-on-doc changes only): 456 passed, 17 skipped.
 - Ran real-GPU acceptance suite on RTX 5090 Laptop GPU (Numba 0.66.0, CUDA
   driver 13.0, compute capability 12.0): 137 passed, 1 skipped including the
   public CPU/CUDA matrix (all 9 products agree), safe-haven CPU/CUDA stream
