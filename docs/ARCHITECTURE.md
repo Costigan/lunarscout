@@ -430,6 +430,15 @@ walks through time, consuming two parallel streams:
    margin session, which computes Earth elevation relative to each pixel's
    *own* interpolated terrain horizon at the Earth's azimuth.
 
+The fraction and elevation generators both support CPU and CUDA backends via
+``LightmapCpuSession`` / ``LightmapCudaSession`` and select accordingly.
+The streaming reducer that combines them (``reduce_safe_haven_patch_stream``)
+is implemented in plain NumPy and runs on CPU regardless of backend.  This is
+acceptable for ``0.1.0rc1`` because the heavy computation — the 16-slice
+solar-disk model applied per-pixel per-timestep — is handled by the upstream
+session, while the reducer's per-timestep work is simple boolean masking and
+max-reduction on fixed-size 128×128 patches.
+
 At every timestep the reducer maintains per-pixel state:
 
 - ``run_length`` — current contiguous low-sun sample count (independent of
