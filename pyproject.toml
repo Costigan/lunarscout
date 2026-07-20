@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lunarscout"
-version = "0.1.0rc2"
+version = "0.1.0rc3"
 description = "Lunar terrain, horizon, lighting, visibility, and landed-mission analysis with NumPy and Numba"
 readme = "README.md"
 license = "Apache-2.0"

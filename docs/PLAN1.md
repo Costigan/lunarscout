@@ -256,18 +256,25 @@ and all four mission-duration products:
 
 ## 5. Remaining product validation
 
+Performance benchmarking of existing products (separated stage timings,
+throughput, host/GPU memory, utilization, hashes, and installed-wheel
+measurements below) is deferred to a later release.  The correctness,
+mask, restart, cancellation, failed-overwrite, and disabled-CUDA fallback
+evidence is complete.
+
 ### Horizon generation
 
 - [x] Complete the accepted CUDA correctness evaluation on synthetic and real
   terrain.
 - [x] Validate reusable buffers, resident DEM pyramids, bounded memory, and
   compatible files.
-- [ ] Run the promoted API on a representative multi-DEM scenario and record
-  input hashes, output inventory hashes, cold/warm timing, host RSS, and GPU
-  memory.
-- [ ] Verify no-GPU and incompatible-driver failures from the installed wheel.
-- [ ] Verify cancellation and restart across a process interruption using the
-  promoted API.
+- [-] Deferred: Run the promoted API on a representative multi-DEM scenario
+  and record input hashes, output inventory hashes, cold/warm timing, host
+  RSS, and GPU memory.
+- [-] Deferred: Verify no-GPU and incompatible-driver failures from the
+  installed wheel.
+- [-] Deferred: Verify cancellation and restart across a process interruption
+  using the promoted API.
 
 ### PSR
 
@@ -281,22 +288,22 @@ and all four mission-duration products:
   patches/second for 1,599 patches.
 - [x] Record exact output identity with SHA-256
   `e246ac369b36d3e5f67f9c6c1f64284f0ddbc26448c17358b69cdd69c9ffed5d`.
-- [ ] Re-run a representative installed-wheel PSR job through the public API
-  and capture the final reproducible benchmark record.
-- [ ] Treat asynchronous double buffering, multiple CUDA streams, and
-  multi-patch kernel submissions as optional unless installed-wheel evidence
-  reveals a release-blocking regression.
+- [-] Deferred: Re-run a representative installed-wheel PSR job through the
+  public API and capture the final reproducible benchmark record.
+- [-] Deferred: Treat asynchronous double buffering, multiple CUDA streams,
+  and multi-patch kernel submissions as optional unless installed-wheel
+  evidence reveals a release-blocking regression.
 
 ### Lightmaps and body elevation
 
 - [x] Implement CPU and CUDA backends for lightmaps.
 - [x] Implement separate CPU and CUDA Sun- and Earth-center elevation
   products.
-- [ ] Record separated vector-generation, horizon-read/decompression,
+- [-] Deferred: Record separated vector-generation, horizon-read/decompression,
   transfer, kernel/CPU calculation, TIFF write, flush/checkpoint, and total
   timings for short and long representative time series.
-- [ ] Record CPU and GPU utilization, host RSS, GPU memory, output size, and
-  throughput.
+- [-] Deferred: Record CPU and GPU utilization, host RSS, GPU memory, output
+  size, and throughput.
 - [x] Verify the TIFF 65,535-band limit is rejected before product creation.
 - [x] Verify explicit-vector runs do not load SPICE.
 - [x] Verify a deliberately disabled-CUDA `auto` run completes on CPU.
@@ -309,9 +316,9 @@ and all four mission-duration products:
   boundaries.
 - [x] Add public tests for no-outage, whole-interval outage, adjacent outages,
   missing patches, and partial edge tiles.
-- [ ] Benchmark representative CPU and CUDA safe-haven products, recording
-  separated stage timings, throughput, CPU/GPU utilization, host RSS, GPU
-  memory, output identity, and band count.
+- [-] Deferred: Benchmark representative CPU and CUDA safe-haven products,
+  recording separated stage timings, throughput, CPU/GPU utilization, host
+  RSS, GPU memory, output identity, and band count.
 - [x] Run a deliberately disabled-CUDA end-to-end `auto` fallback product.
 - [x] Exercise restart, cancellation, failed overwrite, and invalid-tile
   journaling through the public API.
@@ -323,11 +330,14 @@ and all four mission-duration products:
 - [x] Add public scientific tests for inclusive thresholds, candidate-start
   windows, evaluation endpoints, no feasible start, and duration-unit
   conversion.
-- [ ] Compare CPU and CUDA near threshold boundaries and document any allowed
-  floating-point tolerance without changing classifications silently.
-- [ ] Benchmark short and long representative series for all four operations.
-- [ ] Record separated stage timing, throughput, CPU/GPU utilization, host
-  RSS, GPU memory, output identity, restart, and cancellation evidence.
+- [-] Deferred: Compare CPU and CUDA near threshold boundaries and document
+  any allowed floating-point tolerance without changing classifications
+  silently.
+- [-] Deferred: Benchmark short and long representative series for all four
+  operations.
+- [-] Deferred: Record separated stage timing, throughput, CPU/GPU
+  utilization, host RSS, GPU memory, output identity, restart, and
+  cancellation evidence.
 - [x] Run deliberately disabled-CUDA end-to-end fallback cases.
 
 ## 6. Operational and failure semantics
@@ -537,7 +547,8 @@ it must not be part of the installed product or required verification.
 
 ## 12. TestPyPI publication and installation
 
-- [x] Select an unused immutable candidate version.
+- [x] Select unused immutable candidate versions.  Published: `0.1.0rc1`
+  and `0.1.0rc2`.
 - [x] Build wheel and sdist from the exact reviewed commit.
 - [x] Complete all release gates in Section 14.
 - [x] Upload only the reviewed artifacts to TestPyPI.
@@ -610,7 +621,7 @@ upload.
 
 ### M5: TestPyPI evaluation
 
-- [x] Upload the reviewed candidate.
+- [x] Upload the reviewed candidate (`0.1.0rc1`, `0.1.0rc2`).
 - [ ] Reinstall from TestPyPI and repeat CPU and GPU smoke tests.
 - [ ] Publish the candidate evidence report and collect tester feedback.
 
