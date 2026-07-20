@@ -6,6 +6,16 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added 17 M2 validation tests: corrupt ``.cbin`` tile handling (truncated
+  file, invalid block length, missing tile all produce all-invalid masks);
+  process-termination recovery (``os._exit(23)`` mid-calculation, ``start_fresh``
+  resume succeeds); independent ``.bin``/``.cbin`` dimension, dtype, and
+  round-trip validation including azimuth-ordering convention check and public
+  ``Scenario`` horizon reader; CPU timing sanity checks for lightmap, PSR,
+  safe havens, and mission duration; GeoTIFF tiling (128×128), compression
+  (deflate / none), nodata, per-band timestamps, and backend metadata
+  validation via Rasterio/GDAL.  Verification: 456 passed, 17 skipped
+  (CPU suite).  (deepseek)
 - Published the horizon-tile file-format, directory-layout, naming, and
   partial-edge contracts in ``docs/USER_GUIDE.md``: ``.bin`` little-endian
   float32 pixel-major layout, ``.cbin`` per-pixel 7/15-bit variable-length
