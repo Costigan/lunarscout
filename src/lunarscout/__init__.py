@@ -95,6 +95,7 @@ from .spice_geometry import (
     iter_times,
     plot_body_elevation,
     plot_body_elevations,
+    sunlight_fraction,
 )
 from .temporal import (
     TemporalCube,
@@ -213,6 +214,7 @@ __all__ = [
     "search_map_products",
     "slope",
     "spice",
+    "sunlight_fraction",
     "temporal_max",
     "temporal_mean",
     "temporal_min",

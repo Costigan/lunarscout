@@ -360,6 +360,69 @@ def body_azimuth_elevation_over_horizon(
     return output
 
 
+def sunlight_fraction(
+    point: LonLat,
+    times: Iterable[datetime] | TimeRange,
+    horizon: NDArray[np.floating],
+    *,
+    ensure_kernels: bool = True,
+) -> NDArray[np.float64]:
+    """Return the visible solar fraction at *point* across *times*.
+
+    The 1440-sample *horizon* provides the terrain horizon at 0.25-degree
+    azimuth spacing (sample 0 north).  The calculation uses the same 16-slice
+    solar-disk model with a 0.27-degree half-angle as the lightmap and
+    safe-haven products, producing fractions in ``[0, 1]``.
+
+    Parameters
+    ----------
+    point:
+        The lunar surface point as a :class:`LonLat`.
+    times:
+        UTC timestamps to sample.  Accepts an iterable of datetimes or a
+        :class:`TimeRange`.
+    horizon:
+        A 1440-sample ``float32`` or ``float64`` horizon array in degrees
+        for the requested point.
+    ensure_kernels:
+        When ``True`` (the default), ensures default SPICE kernels are loaded
+        before computing vectors.
+
+    Returns
+    -------
+    numpy.ndarray
+        A ``float64`` array shaped ``(time,)`` with values in ``[0, 1]``.
+    """
+    angles = body_azimuth_elevation(
+        point,
+        "sun",
+        times,
+        ensure_kernels=ensure_kernels,
+    )
+    from ._numba_horizon.lightmap import _sun_fraction_reference
+
+    horizon_values = np.asarray(horizon, dtype=np.float32)
+    if horizon_values.shape != (1440,):
+        raise SpiceGeometryError(
+            "Horizon must be a one-dimensional array with 1440 samples.",
+            code="spice_invalid_horizon",
+            details={"shape": list(horizon_values.shape)},
+        )
+    if np.any(~np.isfinite(horizon_values)):
+        raise SpiceGeometryError(
+            "Horizon samples must be finite numbers.",
+            code="spice_invalid_horizon",
+        )
+    fractions = np.empty(len(angles), dtype=np.float64)
+    for i in range(len(angles)):
+        fractions[i] = float(
+            _sun_fraction_reference(
+                horizon_values, float(angles[i, 0]), float(angles[i, 1])
+            )
+        )
+    return fractions
+
+
 def body_azimuth_elevation_dataframe(
     point: LonLat,
     body: BodyName,
