@@ -6,6 +6,15 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Ran real-GPU acceptance suite on RTX 5090 Laptop GPU (Numba 0.66.0, CUDA
+  driver 13.0, compute capability 12.0): 137 passed, 1 skipped including the
+  public CPU/CUDA matrix (all 9 products agree), safe-haven CPU/CUDA stream
+  identity, and the complete Phase 4-6b CUDA horizon/PSR/lightmap/elevation/
+  mission-duration gated suites.  Rebuilt clean wheel (165,898 bytes, 52
+  entries, sha256 ``39130245...5cd02c``) and sdist (142,924 bytes, 65
+  entries, sha256 ``2de0c2af...639fe9``) from commit ``9841beb``; twine
+  check passed; installed wheel passed 54 public CPU tests outside the
+  checkout.  (deepseek)
 - Added 17 M2 validation tests: corrupt ``.cbin`` tile handling (truncated
   file, invalid block length, missing tile all produce all-invalid masks);
   process-termination recovery (``os._exit(23)`` mid-calculation, ``start_fresh``
