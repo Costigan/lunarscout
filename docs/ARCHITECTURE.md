@@ -411,17 +411,76 @@ horizon tile to produce one output tile.
 
 ### 9.3 Safe-haven maps
 
-Safe-haven generation first derives maximal half-open intervals `[start,
-stop)` in which center-view Earth elevation is strictly below the configured
-threshold. Every sample in an interval participates. The first occurrence of
-the minimum Earth elevation supplies that interval's output timestamp.
+Safe-haven products identify locations that remain shadowed during intervals
+in which Earth is below the communication threshold.  The algorithm operates
+in two phases: a calendar-month band structure computed once, and a per-pixel
+streaming reducer applied to every horizon tile.
 
-For every pixel and outage interval, the product records the longest complete
-contiguous low-Sun interval that overlaps the outage. The low-Sun interval may
-start before the Earth outage or end after it. The default datatype is
-`float32` hours so fractional steps and durations above 255 hours are preserved. The reducer consumes sunlight
-fractions online and retains only current and maximum run state per pixel and
-outage, rather than a time cube. Each outage is a timestamped output band.
+**Band structure (calendar months).**  The evaluation timestamps are grouped
+into calendar months in UTC.  Each month becomes one ``float32`` output band
+labeled with its ``[start_utc, stop_utc)`` interval.  Month boundaries are
+determined purely from the timestamps; no SPICE geometry is needed.
+
+**Per-pixel streaming reducer.**  For each 128×128 horizon tile the reducer
+walks through time, consuming two parallel streams:
+
+1. **sunlight fraction tiles** from the shared CPU or CUDA lightmap session
+   (the same 16-slice solar-disk model used by lightmaps).
+2. **Earth terrain-relative elevation tiles** from the body-center
+   margin session, which computes Earth elevation relative to each pixel's
+   *own* interpolated terrain horizon at the Earth's azimuth.
+
+At every timestep the reducer maintains per-pixel state:
+
+- ``run_length`` — current contiguous low-sun sample count (independent of
+  Earth).  A pixel is low-sun when its sunlight fraction is strictly below
+  the configured threshold.
+- ``outage_active`` — whether the pixel is currently in an Earth outage
+  (Earth elevation relative to its own terrain horizon is strictly below
+  the Earth threshold).
+- ``best[month]`` — the longest qualifying run seen for each calendar month.
+- ``had_outage[month]`` / ``was_above[month]`` — per-month NODATA sentinels.
+
+A run qualifies when it overlaps a pixel-local Earth outage.  Because a run
+may begin before the outage, end after it, and span multiple months, the
+``best[month]`` accumulator is updated continuously at every timestep while
+the pixel is in an outage AND the current run is active.  When the run ends
+(sun comes back), the final run length is applied to every month the run
+touched via right-censoring.
+
+**NODATA semantics.**  After the stream completes, pixels receive ``NaN``
+(NODATA) in two cases:
+
+- Earth *never* went below the threshold during that month (always
+  communicable — the safe-haven question is ill-posed).
+- Earth *never* went *above* the threshold during the entire month
+  (permanent Earth shadow — no safe haven exists).
+
+Pixels where Earth crossed the threshold but no qualifying low-sun run
+overlapped any outage receive zero hours with a valid mask.
+
+**Design rationale.**  The original C# implementation computed Earth outage
+intervals from the DEM center pixel's terrain horizon, using those
+center-calendar intervals for every pixel.  That version also named bands by
+the timestamp of the minimum Earth elevation within the center pixel's
+outage.  The current Python implementation was reworked for three reasons:
+
+1. **Per-pixel correctness.**  Outages anchored to the center pixel's
+   terrain can miss, clip, or misalign outage edges at pixels whose local
+   horizon differs materially.  The per-pixel approach detects each pixel's
+   own outage transitions from its own horizon, removing the center-pixel
+   dependence.
+
+2. **Regular calendar bands.**  Calendar months are unambiguous, predictable,
+   and decoupled from any single pixel's internal elevation curve.  Each
+   band represents one month in UTC; the interval is stored in per-band
+   metadata.
+
+3. **Streaming memory bounds.**  The original C# approach allocated a full
+   boolean ``[time]`` array per pixel for Earth and Sun state.  The
+   streaming reducer uses fixed per-patch arrays proportional to
+   ``(bands × y × x)`` and consumes one fraction tile and one elevation
+   tile per timestep.  Memory does not grow with the timeline length.
 
 ### 9.4 Landed mission-duration maps
 

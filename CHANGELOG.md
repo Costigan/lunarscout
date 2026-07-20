@@ -6,6 +6,18 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Rewrote the safe-haven algorithm with per-pixel Earth outage detection,
+  calendar-month band structure, and a streaming state-machine reducer that
+  consumes per-pixel Earth terrain-relative elevation tiles alongside
+  sunlight fraction tiles.  Each pixel's outage boundaries are determined
+  from its own terrain horizon, not from the DEM center pixel.  Each output
+  band represents one calendar month with ``[start_utc, stop_utc)``
+  labelling.  Pixels where Earth never crosses the threshold during a month
+  (always above or always below) receive NODATA.  The streaming reducer
+  uses fixed per-patch arrays proportional to ``(bands × y × x)`` rather
+  than allocating full per-pixel boolean timelines.  Updated ARCHITECTURE.md
+  section 9.3 with the complete algorithm description and design rationale.
+  Verification: 439 passed, 17 skipped (CPU suite).
 - Completed ``0.1.0rc1`` release-article preparation from commit ``14e019a``:
   built clean wheel (164,054 bytes, 52 entries) and sdist (141,103 bytes, 65
   entries), passed ``twine check``, and installed the wheel in a clean CPU-only

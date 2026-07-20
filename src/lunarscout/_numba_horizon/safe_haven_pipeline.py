@@ -1,4 +1,4 @@
-"""Private patch-major CPU safe-haven product pipeline."""
+"""Private patch-major per-pixel safe-haven product pipeline."""
 
 from __future__ import annotations
 
@@ -19,12 +19,17 @@ from .geometry import DemGrid
 from .lightmap_cpu import LightmapCpuSession
 from .pipeline import PatchDescriptor, enumerate_patches
 from .product_store import ProductJob, ResumableTiledProduct, resolve_output_dtype
-from .psr import _azimuth_elevation_deg, _pixel_frame, _validate_vectors
+from .psr import _validate_vectors
 from .psr_pipeline import _inventory_identity
-from .safe_haven import find_earth_outages, reduce_safe_haven_patch_stream
+from .safe_haven import (
+    build_month_bands,
+    _month_indices_map,
+    reduce_safe_haven_patch_stream,
+)
 
 
 FractionCalculator = Callable[..., Iterable[npt.ArrayLike]]
+MarginCalculator = Callable[..., Iterable[npt.ArrayLike]]
 
 
 class SafeHavenPipelineCancelled(RuntimeError):
@@ -63,12 +68,18 @@ def run_safe_haven_product(
     start_fresh: bool = False,
     time_batch_size: int = 32,
     fraction_calculator: FractionCalculator | None = None,
+    elevation_calculator: MarginCalculator | None = None,
     backend: Literal["auto", "cpu", "cuda"] = "auto",
     cancellation_requested: Callable[[], bool] | None = None,
     progress_callback: Callable[[SafeHavenProgress], None] | None = None,
     progress_stream: TextIO | None = None,
 ) -> Path:
-    """Write one float32 duration band per center-view Earth outage."""
+    """Write per-pixel safe-haven duration bands, one per calendar month.
+
+    Earth outages are detected per-pixel from each pixel's own terrain horizon.
+    Calendar-month bands are computed from the evaluation timespan; the band
+    name is the UTC ``[start, stop)`` interval.
+    """
     if (georef.width, georef.height) != (dem.width, dem.height):
         raise ValueError("GeoReference and DEM dimensions do not match")
     timestamps = tuple(times_utc)
@@ -76,16 +87,13 @@ def run_safe_haven_product(
     earth_vectors = _validate_vectors(earth_vectors_m)
     if not len(timestamps) == len(sun_vectors) == len(earth_vectors):
         raise ValueError("timestamps, Sun vectors, and Earth vectors must align")
-    center_row, center_column = dem.height // 2, dem.width // 2
-    rotation, translation = _pixel_frame(dem, center_row, center_column)
-    _azimuth, earth_elevation = _azimuth_elevation_deg(
-        earth_vectors, rotation, translation
-    )
-    outages = find_earth_outages(
-        earth_elevation, threshold_deg=earth_threshold_deg
-    )
-    if not outages:
-        raise ValueError("no center-view Earth-below-threshold intervals")
+
+    month_bands = build_month_bands(timestamps)
+    if not month_bands:
+        raise ValueError("times_utc must span at least one calendar month")
+
+    month_index_of = _month_indices_map(timestamps, month_bands)
+
     patches = enumerate_patches(dem.width, dem.height)
     inventory = _inventory_identity(
         horizon_store, patches, observer_elevation_m
@@ -97,11 +105,13 @@ def run_safe_haven_product(
     storage_dtype = resolve_output_dtype(
         np.float32, output_transform, output_dtype, output_transform_id
     )
-    selected_backend = None
+
+    selected_backend: Literal["cpu", "cuda"] | None = None
+
     if fraction_calculator is not None:
-        calculator = fraction_calculator
+        calc_fractions = fraction_calculator
     elif backend == "cpu":
-        calculator = LightmapCpuSession(
+        calc_fractions = LightmapCpuSession(
             time_batch_size=time_batch_size
         ).iter_patch_fraction_tiles
         selected_backend = "cpu"
@@ -110,34 +120,61 @@ def run_safe_haven_product(
         from .lightmap_cuda import LightmapCudaSession
 
         try:
-            calculator = LightmapCudaSession(
+            calc_fractions = LightmapCudaSession(
                 time_batch_size=time_batch_size
             ).iter_patch_fraction_tiles
             selected_backend = "cuda"
         except CudaBackendError:
             if backend == "cuda":
                 raise
-            calculator = LightmapCpuSession(
+            calc_fractions = LightmapCpuSession(
                 time_batch_size=time_batch_size
             ).iter_patch_fraction_tiles
             selected_backend = "cpu"
+
+    if elevation_calculator is not None:
+        calc_elevations = elevation_calculator
+    elif backend == "cpu" or selected_backend == "cpu":
+        calc_elevations = LightmapCpuSession(
+            time_batch_size=time_batch_size
+        ).iter_patch_margin_tiles
+    else:
+        from .cuda_backend import CudaBackendError
+        from .lightmap_cuda import LightmapCudaSession
+
+        try:
+            calc_elevations = LightmapCudaSession(
+                time_batch_size=time_batch_size
+            ).iter_patch_margin_tiles
+        except CudaBackendError:
+            if backend == "cuda":
+                raise
+            calc_elevations = LightmapCpuSession(
+                time_batch_size=time_batch_size
+            ).iter_patch_margin_tiles
+
+    band_timestamps: list[datetime | str] = []
+    for start, stop in month_bands:
+        band_timestamps.append(start.isoformat())
+
     product = ResumableTiledProduct(
         output_path,
         ProductJob(
             georef=georef,
             dtype=storage_dtype,
-            band_count=len(outages),
-            timestamps_utc=tuple(timestamps[item.minimum_index] for item in outages),
+            band_count=len(month_bands),
+            timestamps_utc=tuple(band_timestamps),
             invalid_value=nodata,
             nodata=nodata,
             compression="deflate" if compress else "none",
-            algorithm="safe-haven-complete-low-sun-overlap-duration",
+            algorithm="safe-haven-per-pixel-monthly-bands",
             configuration={
                 "time_step_hours": float(time_step_hours),
                 "earth_threshold_deg": float(earth_threshold_deg),
                 "sunlight_threshold": float(sunlight_threshold),
-                "outages": [
-                    [item.start, item.stop, item.minimum_index] for item in outages
+                "month_bands": [
+                    [start.isoformat(), stop.isoformat()]
+                    for start, stop in month_bands
                 ],
                 "sun_vectors_sha256": hashlib.sha256(
                     sun_vectors.astype("<f8", copy=False).tobytes()
@@ -203,10 +240,20 @@ def run_safe_haven_product(
             state = "invalid"
         else:
             report(patch, "calculate")
-            fractions = calculator(
+
+            fractions = calc_fractions(
                 dem,
                 horizons,
                 sun_vectors,
+                tile_y=patch.tile_y,
+                tile_x=patch.tile_x,
+                valid_height=patch.height,
+                valid_width=patch.width,
+            )
+            elevations = calc_elevations(
+                dem,
+                horizons,
+                earth_vectors,
                 tile_y=patch.tile_y,
                 tile_x=patch.tile_x,
                 valid_height=patch.height,
@@ -221,11 +268,22 @@ def run_safe_haven_product(
                         )
                     yield tile
 
+            def checked_elevations() -> Iterable[npt.ArrayLike]:
+                for tile in elevations:
+                    if cancelled():
+                        raise SafeHavenPipelineCancelled(
+                            "safe-haven generation was cancelled"
+                        )
+                    yield tile
+
             duration_tiles = reduce_safe_haven_patch_stream(
                 checked_fractions(),
+                checked_elevations(),
                 len(timestamps),
-                outages,
+                month_bands,
+                month_index_of=month_index_of,
                 sunlight_threshold=sunlight_threshold,
+                earth_threshold_deg=earth_threshold_deg,
                 time_step_hours=time_step_hours,
             )
             if cancelled():

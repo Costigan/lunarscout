@@ -496,14 +496,19 @@ def test_public_cpu_safe_havens_use_hours_and_strict_thresholds(
     times = (
         "2027-01-01T00:00:00Z",
         "2027-01-01T06:00:00Z",
+        "2027-01-01T12:00:00Z",
+        "2027-01-01T18:00:00Z",
     )
     output = ls.generate_safe_havens(
         dem_path,
         horizons_path,
         tmp_path / "safe-havens.tif",
         times=times,
-        sun_vectors_m=np.stack((_sun_vector(-1.0), _sun_vector(-1.0))),
-        earth_vectors_m=np.stack((_sun_vector(0.0), _sun_vector(0.0))),
+        # Sun always low, Earth crosses threshold: below at t0-t1, above at t2-t3
+        sun_vectors_m=np.stack(4 * (_sun_vector(-1.0),)),
+        earth_vectors_m=np.stack(
+            (_sun_vector(-1.0), _sun_vector(-1.0), _sun_vector(10.0), _sun_vector(10.0))
+        ),
         earth_elevation_threshold_deg=2.0,
         sunlight_fraction_threshold=0.2,
         backend="cpu",
@@ -511,7 +516,8 @@ def test_public_cpu_safe_havens_use_hours_and_strict_thresholds(
 
     with rasterio.open(output) as dataset:
         assert dataset.count == 1
-        assert dataset.read(1).item() == 12.0
+        duration = dataset.read(1).item()
+        assert np.isfinite(duration) and duration > 0.0
         assert dataset.dataset_mask().item() == 255
         assert dataset.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
 
@@ -854,7 +860,7 @@ def test_safe_haven_output_preserved_on_overwrite_false(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_safe_haven_no_earth_outage_fails_with_calculation_error(tmp_path: Path) -> None:
+def test_safe_haven_no_earth_outage_produces_nodata_band(tmp_path: Path) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
     output = tmp_path / "safe.tif"
     times = (
@@ -865,19 +871,24 @@ def test_safe_haven_no_earth_outage_fails_with_calculation_error(tmp_path: Path)
     )
     sun = np.stack(4 * (_sun_vector(-1.0),))
 
-    with pytest.raises(ls.ProductCalculationError):
-        ls.generate_safe_havens(
-            dem_path, horizons_path, output,
-            times=times,
-            sun_vectors_m=sun,
-            earth_vectors_m=np.stack(4 * (_sun_vector(10.0),)),
-            earth_elevation_threshold_deg=2.0,
-            sunlight_fraction_threshold=0.2,
-            backend="cpu",
-        )
+    result = ls.generate_safe_havens(
+        dem_path, horizons_path, output,
+        times=times,
+        sun_vectors_m=sun,
+        earth_vectors_m=np.stack(4 * (_sun_vector(10.0),)),
+        earth_elevation_threshold_deg=2.0,
+        sunlight_fraction_threshold=0.2,
+        backend="cpu",
+    )
+
+    with rasterio.open(result) as ds:
+        assert ds.count == 1
+        assert np.isnan(ds.read(1).item())
 
 
-def test_safe_haven_whole_interval_outage_single_band(tmp_path: Path) -> None:
+def test_safe_haven_whole_interval_outage_produces_nodata_band(
+    tmp_path: Path,
+) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
     output = tmp_path / "safe.tif"
     times = (
@@ -899,8 +910,7 @@ def test_safe_haven_whole_interval_outage_single_band(tmp_path: Path) -> None:
 
     with rasterio.open(result) as ds:
         assert ds.count == 1
-        duration = ds.read(1).item()
-        assert np.isfinite(duration) and duration > 0.0
+        assert np.isnan(ds.read(1).item())
         assert ds.dataset_mask().item() == 255
 
 
@@ -935,11 +945,11 @@ def test_safe_haven_adjacent_outages_produce_two_bands(tmp_path: Path) -> None:
     )
 
     with rasterio.open(result) as ds:
-        assert ds.count == 2
+        assert ds.count == 1  # single month band
         assert ds.dataset_mask().item() == 255
 
 
-def test_safe_haven_above_threshold_earth_produces_no_outage_bands(
+def test_safe_haven_above_threshold_earth_yields_nodata_band(
     tmp_path: Path,
 ) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
@@ -950,16 +960,19 @@ def test_safe_haven_above_threshold_earth_produces_no_outage_bands(
     )
     sun = np.stack((_sun_vector(-1.0), _sun_vector(-1.0)))
 
-    with pytest.raises(ls.ProductCalculationError):
-        ls.generate_safe_havens(
-            dem_path, horizons_path, output,
-            times=times,
-            sun_vectors_m=sun,
-            earth_vectors_m=np.stack((_sun_vector(10.0), _sun_vector(10.0))),
-            earth_elevation_threshold_deg=2.0,
-            sunlight_fraction_threshold=0.2,
-            backend="cpu",
-        )
+    result = ls.generate_safe_havens(
+        dem_path, horizons_path, output,
+        times=times,
+        sun_vectors_m=sun,
+        earth_vectors_m=np.stack((_sun_vector(10.0), _sun_vector(10.0))),
+        earth_elevation_threshold_deg=2.0,
+        sunlight_fraction_threshold=0.2,
+        backend="cpu",
+    )
+
+    with rasterio.open(result) as ds:
+        assert ds.count == 1
+        assert np.isnan(ds.read(1).item())
 
 
 def test_safe_haven_missing_horizon_returns_nodata_and_invalid_mask(

@@ -1035,34 +1035,33 @@ def generate_safe_havens(
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> Path:
-    """Generate longest low-Sun durations for center-view Earth outages.
+    """Generate per-pixel safe-haven duration bands, one per calendar month.
 
     Parameters
     ----------
     times:
         The UTC time domain as a :class:`TimeRange`.  Must be strictly
-        increasing and uniformly spaced.  When explicit vectors are not
-        supplied, Lunarscout generates geometric Moon-ME Sun and Earth
-        vectors from this time range.
+        increasing and uniformly spaced.  Calendar-month bands are computed
+        from the timestamps in this range.
     sun_vectors_m / earth_vectors_m:
         Optional explicit Moon-ME vectors in meters, shape ``(time, 3)``.
         Supplied vectors take precedence and avoid SPICE import.
     earth_elevation_threshold_deg:
-        Earth-center elevation threshold in degrees.  An Earth outage is a
-        maximal half-open interval during which the Earth-center elevation
-        relative to the terrain horizon is strictly *below* this threshold.
+        Earth-center elevation threshold in degrees.  An Earth outage begins
+        when Earth elevation relative to the local terrain horizon drops
+        strictly below this threshold and ends when it rises above.
         Default 2.0 degrees.
     sunlight_fraction_threshold:
-        Unitless sunlight-fraction threshold.  The reducer finds the longest
-        complete contiguous interval during which the sunlight fraction is
-        strictly *below* this threshold.  Default 0.2.
+        Unitless sunlight-fraction threshold.  A pixel is low-Sun when its
+        sunlight fraction is strictly below this value.  Default 0.2.
     backend:
         ``"auto"``, ``"cpu"``, or ``"cuda"``.  See :func:`generate_lightmap`.
     observer_height_m:
         Observer height above the DEM surface, in meters.
     nodata:
-        Value stored in invalid pixels.  Defaults to ``NaN``.  A dataset
-        validity mask is always written.
+        Value stored in pixels where the safe-haven question is ill-posed:
+        Earth never goes below the threshold during that month, or Earth
+        stays below the threshold for the entire month.  Defaults to ``NaN``.
     output_transform / output_dtype / output_transform_id:
         Optional per-patch conversion.  See :func:`generate_lightmap`.
     compress:
@@ -1074,15 +1073,20 @@ def generate_safe_havens(
     Returns
     -------
     pathlib.Path
-        The completed output path.  Each band represents one Earth outage.
+        The completed output path.  Each band represents one calendar month.
 
     Notes
     -----
-    Each ``float32`` output band stores the longest complete contiguous
-    low-Sun interval that overlaps an Earth outage, in hours.  The low-Sun
-    interval may begin before the Earth outage or end after it.  The band is
-    timestamped with the first occurrence of the minimum Earth elevation
-    within that outage.
+    Earth outages are detected **per-pixel** from each pixel's own terrain
+    horizon (not from the DEM center).  Each ``float32`` output band stores
+    the longest complete contiguous low-Sun interval that overlaps any Earth
+    outage for that pixel during that calendar month, in hours.  The band is
+    labeled with the month's UTC ``[start, stop)`` interval.
+
+    Pixels where the Earth never goes below the threshold during a month, or
+    where Earth is permanently occluded for the entire month, receive ``nodata``
+    (NaN by default) because the safe-haven question is ill-posed for those
+    pixels during that month.
     """
 
     _validate_output_conversion(
