@@ -6,6 +6,24 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Corrected the monthly safe-haven streaming reducer so a low-Sun run that
+  overlaps an Earth outage continues accumulating after Earth clears, through
+  the actual end of the low-Sun run. The previous state transition truncated
+  these durations at the last below-threshold Earth sample unless the low-Sun
+  run was still active at the end of the complete evaluation history.
+  Safe-haven restart manifests now record semantics version 2 so staged patches
+  produced by the truncated reducer cannot be resumed into corrected outputs.
+- Reworked the safe-haven point spot check to use the exact production
+  spherical-stereographic pixel frame and geometric Moon-ME vectors, then
+  compare an independently reduced full point history with an existing
+  safe-haven raster. Added a single-pixel reference calculation and regression
+  coverage against the compiled CPU fraction and horizon-margin paths. Direct
+  reproduction showed that the previously reported 65-degree azimuth and
+  37-degree elevation frame discrepancy was not produced by the library frame
+  implementations. Regenerated the 4,992 by 5,248 Mons Mouton CPU product for
+  September 2027 through April 2028 at two-hour resolution, then independently
+  verified all eight bands at 20 spatially distributed locations (160 value
+  comparisons, zero failures); visual inspection in QGIS also passed.
 - Bumped candidate version to ``0.1.0rc2``.  Reviewed and enhanced
   ``pyproject.toml`` metadata: expanded description, keywords (PSR,
   safe-haven, mission-duration, SPICE, Numba, geospatial, raster),

@@ -169,6 +169,7 @@ def run_safe_haven_product(
             compression="deflate" if compress else "none",
             algorithm="safe-haven-per-pixel-monthly-bands",
             configuration={
+                "semantics_version": 2,
                 "time_step_hours": float(time_step_hours),
                 "earth_threshold_deg": float(earth_threshold_deg),
                 "sunlight_threshold": float(sunlight_threshold),

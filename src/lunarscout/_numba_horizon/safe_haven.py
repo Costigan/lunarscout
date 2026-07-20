@@ -181,40 +181,29 @@ def reduce_safe_haven_patch_stream(
         sun_low = fraction_tile < np.float32(sunlight_threshold)
         earth_below = earth_tile < np.float32(earth_threshold_deg)
 
-        # --- update low-sun run length (independent of Earth outage) ---
+        # Update the low-Sun run independently of Earth outage state.  Once a
+        # run touches an outage, every later sample in that same run must be
+        # credited even after Earth rises above the threshold.
         run_length[:] = np.where(sun_low, run_length + 1, 0)
 
-        # --- finalize runs that just ended ---
-        run_ended = (run_length == 0) & (sun_low == False)  # noqa: E712
-        # In numpy terms: where sun_low is False, run_length is 0.
-        # Detect the transition: previous run_length was > 0 and now is 0.
-        # We don't track previous directly, so detect: run_length == 0 AND
-        # sun_low is False.  This fires once at each run end.
-
-        if np.any(run_ended):
-            for band in range(band_count):
-                mask = run_ended & run_touching[band]
-                if np.any(mask):
-                    # run_length was just zeroed, so we need the pre-reset value.
-                    # run_length is 0 everywhere run_ended is True, so we use
-                    # the pre-reset length from the previous iteration's run_touching
-                    # times.  Since finalization only happens for runs that touched
-                    # this band and just ended, we use best[band] which already
-                    # holds the continuously-updated max.
-                    run_touching[band][mask] = False
-
-        # --- track outage state and update per-band best ---
+        # Track whether the monthly safe-haven question is well posed, and
+        # mark a low-Sun run when it overlaps an outage in the current month.
         if month_index >= 0:
             band = month_index
             was_above[band] |= ~earth_below
             had_outage[band] |= earth_below
+            run_touching[band] |= earth_below & sun_low
 
-            active = earth_below & (run_length > 0)
-            run_touching[band] |= active
+        # Extend every marked run, including its portion after the outage and
+        # across calendar-month boundaries.  Clear the marker only when the
+        # low-Sun run ends.
+        for band in range(band_count):
+            active = run_touching[band] & sun_low
             best[band] = np.maximum(
                 best[band],
                 np.where(active, run_length, 0).astype(np.int32),
             )
+            run_touching[band] &= sun_low
 
     # --- right-censor active runs ---
     active_run = run_length > 0

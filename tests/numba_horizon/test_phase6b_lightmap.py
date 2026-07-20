@@ -15,6 +15,8 @@ from lunarscout._numba_horizon.file_format import AZIMUTH_COUNT, HorizonTileStor
 from lunarscout._numba_horizon.cuda_backend import CudaBackendError
 from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
 from lunarscout._numba_horizon.lightmap import (
+    _pixel_horizon_margins_reference,
+    _pixel_sunlight_fractions_reference,
     _sun_fraction_reference,
     compute_lightmap_patch_reference,
 )
@@ -208,6 +210,77 @@ def test_compiled_cpu_batches_match_reference() -> None:
     )
 
     np.testing.assert_array_equal(actual, expected)
+
+
+def test_single_pixel_reference_matches_compiled_cpu_signals() -> None:
+    dem = _dem(width=3, height=2)
+    pixel_y, pixel_x = 1, 2
+    tile_y = tile_x = 0
+    horizons = np.zeros((128, 128, AZIMUTH_COUNT), dtype=np.float32)
+    horizons[pixel_y, pixel_x] = (
+        np.sin(np.deg2rad(np.arange(AZIMUTH_COUNT, dtype=np.float32) / 4.0))
+        * np.float32(0.15)
+        + np.float32(0.2)
+    )
+    vectors = np.stack(
+        tuple(
+            _position_for_local_angle(dem, azimuth, elevation)
+            for azimuth, elevation in (
+                (0.02, 0.18),
+                (45.125, 0.4),
+                (181.249, -0.1),
+                (359.98, 0.8),
+            )
+        )
+    )
+
+    expected_fractions = _pixel_sunlight_fractions_reference(
+        dem,
+        horizons[pixel_y, pixel_x],
+        vectors,
+        pixel_y=pixel_y,
+        pixel_x=pixel_x,
+    )
+    expected_margins = _pixel_horizon_margins_reference(
+        dem,
+        horizons[pixel_y, pixel_x],
+        vectors,
+        pixel_y=pixel_y,
+        pixel_x=pixel_x,
+    )
+
+    session = LightmapCpuSession(time_batch_size=2)
+    actual_fractions = np.asarray(
+        [
+            tile[pixel_y, pixel_x]
+            for tile in session.iter_patch_fraction_tiles(
+                dem,
+                horizons,
+                vectors,
+                tile_y=tile_y,
+                tile_x=tile_x,
+                valid_height=dem.height,
+                valid_width=dem.width,
+            )
+        ]
+    )
+    actual_margins = np.asarray(
+        [
+            tile[pixel_y, pixel_x]
+            for tile in session.iter_patch_margin_tiles(
+                dem,
+                horizons,
+                vectors,
+                tile_y=tile_y,
+                tile_x=tile_x,
+                valid_height=dem.height,
+                valid_width=dem.width,
+            )
+        ]
+    )
+
+    np.testing.assert_allclose(actual_fractions, expected_fractions, atol=1e-4)
+    np.testing.assert_allclose(actual_margins, expected_margins, atol=1e-4)
 
 
 def test_lightmap_pipeline_writes_timestamp_bands_and_invalid_patch(tmp_path: Path) -> None:

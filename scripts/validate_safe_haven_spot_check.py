@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Spot-check safe-haven raster values against point-based time series.
+"""Independently spot-check safe-haven raster values at one DEM pixel.
 
-Pick a pixel within a scenario, extract its horizon, compute sunlight
-fractions and Earth elevation over time, manually derive safe-haven
-durations, and compare against the raster product.
+The signal calculation uses the production product frame with explicit
+geometric Moon-ME vectors.  The duration calculation materializes the full
+point history and does not reuse the production streaming reducer.
 """
 
 from __future__ import annotations
@@ -11,163 +11,214 @@ from __future__ import annotations
 import argparse
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import numpy as np
 import rasterio
 
 import lunarscout as ls
+from lunarscout._numba_horizon.lightmap import (
+    _pixel_horizon_margins_reference,
+    _pixel_sunlight_fractions_reference,
+)
+from lunarscout.products import _load_dem
 
 
-def _safe_haven_duration_for_point(
+def _parse_utc(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
+        timezone.utc
+    )
+
+
+def _safe_haven_duration_for_month(
     fractions: np.ndarray,
     earth_elevations: np.ndarray,
+    times: tuple[datetime, ...],
     *,
+    month_start: datetime,
     time_step_hours: float,
     sunlight_threshold: float,
     earth_threshold_deg: float,
 ) -> float | None:
-    """Compute the longest low-sun run overlapping any Earth outage.
+    """Return the longest complete low-Sun run touching a monthly outage."""
+    if month_start.month == 12:
+        month_stop = month_start.replace(
+            year=month_start.year + 1, month=1, day=1
+        )
+    else:
+        month_stop = month_start.replace(month=month_start.month + 1, day=1)
 
-    Returns NaN if Earth never crosses the threshold (no outage defined).
-    """
+    in_month = np.fromiter(
+        (month_start <= value < month_stop for value in times),
+        dtype=np.bool_,
+        count=len(times),
+    )
     earth_below = earth_elevations < earth_threshold_deg
-    sun_low = fractions < sunlight_threshold
-
-    # Detect Earth outages
-    changes = np.diff(np.pad(earth_below.astype(np.int8), (1, 1)))
-    starts = (changes == 1).nonzero()[0]
-    stops = (changes == -1).nonzero()[0]
-
-    if len(starts) == 0:
-        return None  # never below → NODATA
-
-    # If always below, NODATA
-    if len(starts) == 1 and starts[0] == 0 and stops[0] == len(earth_below):
+    monthly_earth_below = earth_below[in_month]
+    if monthly_earth_below.size == 0:
+        raise ValueError(f"no evaluation samples fall in {month_start:%Y-%m}")
+    if not np.any(monthly_earth_below) or np.all(monthly_earth_below):
         return None
 
-    best_run = 0
-    for start, stop in zip(starts, stops):
-        # Find longest low-sun run overlapping this outage
-        max_run = 0
-        current = 0
-        for t in range(len(sun_low)):
-            if sun_low[t]:
-                current += 1
-            else:
-                current = 0
-            # Check overlap: run touches [start, stop)
-            # A run ending at t starts at t - current + 1
-            run_start = t - current + 1
-            run_stop = t + 1
-            if current > 0 and run_stop > start and run_start < stop:
-                max_run = max(max_run, current)
-        best_run = max(best_run, max_run)
+    sun_low = fractions < sunlight_threshold
+    changes = np.diff(np.pad(sun_low.astype(np.int8), (1, 1)))
+    run_starts = np.flatnonzero(changes == 1)
+    run_stops = np.flatnonzero(changes == -1)
+    best_samples = 0
+    for run_start, run_stop in zip(run_starts, run_stops, strict=True):
+        overlaps_monthly_outage = np.any(
+            earth_below[run_start:run_stop] & in_month[run_start:run_stop]
+        )
+        if overlaps_monthly_outage:
+            best_samples = max(best_samples, int(run_stop - run_start))
+    return float(best_samples) * time_step_hours
 
-    return float(best_run) * time_step_hours
+
+def _resolve_raster(scenario: ls.Scenario, value: str) -> Path:
+    candidate = Path(value).expanduser()
+    return candidate.resolve() if candidate.is_absolute() else scenario.path(value)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenario", help="Path to scenario root")
-    parser.add_argument("--pixel", type=int, nargs=2, default=None,
-                        help="DEM pixel coordinates (x y), default uses center")
-    parser.add_argument("--start", default="2027-01-01T00:00:00Z",
-                        help="Evaluation start (UTC ISO-8601)")
-    parser.add_argument("--stop", default="2027-04-01T00:00:00Z",
-                        help="Evaluation stop (UTC ISO-8601)")
-    parser.add_argument("--step-hours", type=float, default=1.0,
-                        help="Time step in hours")
-    parser.add_argument("--earth-threshold", type=float, default=2.0,
-                        help="Earth elevation threshold in degrees")
-    parser.add_argument("--sun-threshold", type=float, default=0.2,
-                        help="Sunlight fraction threshold")
+    parser.add_argument(
+        "--raster",
+        default="analysis/safe-havens-test.tif",
+        help="Existing safe-haven raster, absolute or scenario-relative",
+    )
+    parser.add_argument(
+        "--pixel",
+        type=int,
+        nargs=2,
+        default=(2000, 2000),
+        metavar=("X", "Y"),
+        help="DEM pixel coordinates (default: 2000 2000)",
+    )
+    parser.add_argument("--start", default="2027-09-01T00:00:00Z")
+    parser.add_argument("--stop", default="2028-04-01T00:00:00Z")
+    parser.add_argument("--step-hours", type=float, default=2.0)
+    parser.add_argument("--earth-threshold", type=float, default=2.0)
+    parser.add_argument("--sun-threshold", type=float, default=0.2)
+    parser.add_argument("--tolerance-hours", type=float, default=0.1)
     args = parser.parse_args()
 
     scenario = ls.open_scenario(args.scenario)
-    dem, georef = ls.read_geotiff(scenario.dem_path())
-    if georef is None:
-        print("DEM is not georeferenced", file=sys.stderr)
-        return 1
-
-    if args.pixel:
-        pixel_x, pixel_y = int(args.pixel[0]), int(args.pixel[1])
-    else:
-        pixel_x, pixel_y = dem.shape[1] // 2, dem.shape[0] // 2
+    dem, georef = _load_dem(scenario.dem_path())
+    pixel_x, pixel_y = args.pixel
+    if not 0 <= pixel_x < dem.width or not 0 <= pixel_y < dem.height:
+        print(
+            f"Pixel ({pixel_x}, {pixel_y}) is outside the "
+            f"{dem.width}x{dem.height} DEM",
+            file=sys.stderr,
+        )
+        return 2
 
     horizon = scenario.horizon_for_pixel(pixel_x, pixel_y, 0)
     if horizon is None:
         print(f"No horizon at pixel ({pixel_x}, {pixel_y})", file=sys.stderr)
-        return 1
+        return 2
 
-    times = ls.times(args.start, args.stop, step_hours=args.step_hours)
-    time_list = list(ls.iter_times(args.start, args.stop,
-                                    timedelta(hours=args.step_hours)))
-    if len(time_list) < 2:
-        print("Need at least 2 time samples", file=sys.stderr)
-        return 1
-
-    point = ls.LonLat(*georef.pixel_to_lonlat(pixel_x, pixel_y))
-
-    print(f"Pixel ({pixel_x}, {pixel_y}) → lon/lat ({point.longitude:.4f}, {point.latitude:.4f})")
-    print(f"Time range: {time_list[0]} to {time_list[-1]}, {len(time_list)} samples, "
-          f"{args.step_hours}h step")
-
-    fractions = ls.sunlight_fraction(point, times, horizon)
-    earth_angles = ls.body_azimuth_elevation_over_horizon(point, "earth", times, horizon)
-    earth_elevations = earth_angles[:, 1]
-
-    print(f"Sunlight fraction: [{fractions.min():.4f}, {fractions.max():.4f}]")
-    print(f"Earth over horizon: [{earth_elevations.min():.2f}, {earth_elevations.max():.2f}] deg")
-
-    # Build calendar months
-    months: dict[tuple[int, int], list[tuple[int, float, float]]] = {}
-    for i, t in enumerate(time_list):
-        key = (t.year, t.month)
-        months.setdefault(key, []).append((i, fractions[i], earth_elevations[i]))
-
-    print(f"\nCalendar months: {len(months)}")
-    for (year, month), samples in sorted(months.items()):
-        idxs = [s[0] for s in samples]
-        fracs = np.array([s[1] for s in samples])
-        earths = np.array([s[2] for s in samples])
-
-        duration = _safe_haven_duration_for_point(
-            fracs, earths,
-            time_step_hours=args.step_hours,
-            sunlight_threshold=args.sun_threshold,
-            earth_threshold_deg=args.earth_threshold,
+    time_range = ls.times(args.start, args.stop, step_hours=args.step_hours)
+    times = tuple(
+        ls.iter_times(
+            args.start,
+            args.stop,
+            timedelta(hours=args.step_hours),
         )
+    )
+    if len(times) < 2:
+        print("Need at least two time samples", file=sys.stderr)
+        return 2
 
-        below = np.sum(earths < args.earth_threshold)
-        low = np.sum(fracs < args.sun_threshold)
-
-        status = "NODATA" if duration is None else f"{duration:.1f} h"
-        print(f"  {year}-{month:02d}: {status}  "
-              f"(below {args.earth_threshold}°: {below}/{len(earths)}, "
-              f"low-sun: {low}/{len(fracs)})")
-
-    # Generate safe-haven raster for same time range and compare
-    print("\n--- Generating safe-haven raster for comparison ---")
-    safe_path = scenario.safe_havens(
-        "analysis/spot-check-safe-havens.tif",
-        times=times,
-        earth_elevation_threshold_deg=args.earth_threshold,
-        sunlight_fraction_threshold=args.sun_threshold,
-        backend="cpu",
-        verbose=True,
+    print("Generating geometric Moon-ME vectors with SPICE...")
+    sun_vectors = ls.body_vectors_moon_me("sun", time_range)
+    earth_vectors = ls.body_vectors_moon_me("earth", time_range)
+    fractions = _pixel_sunlight_fractions_reference(
+        dem,
+        horizon,
+        sun_vectors,
+        pixel_y=pixel_y,
+        pixel_x=pixel_x,
+    )
+    earth_elevations = _pixel_horizon_margins_reference(
+        dem,
+        horizon,
+        earth_vectors,
+        pixel_y=pixel_y,
+        pixel_x=pixel_x,
     )
 
-    with rasterio.open(safe_path) as ds:
-        print(f"\nRaster bands: {ds.count}")
-        for band_idx in range(1, ds.count + 1):
-            value = ds.read(band_idx)[pixel_y, pixel_x]
-            tags = ds.tags(band_idx)
-            ts = tags.get("TIMESTAMP_UTC", "?")
-            if np.isnan(value):
-                print(f"  Band {band_idx} ({ts}): NODATA")
-            else:
-                print(f"  Band {band_idx} ({ts}): {value:.1f} h")
+    longitude, latitude = georef.pixel_to_lonlat(pixel_x, pixel_y)
+    print(
+        f"Pixel ({pixel_x}, {pixel_y}); lon/lat "
+        f"({longitude:.6f}, {latitude:.6f})"
+    )
+    print(
+        f"Evaluation: {times[0].isoformat()} through {times[-1].isoformat()}, "
+        f"{len(times)} samples at {args.step_hours:g} h"
+    )
+    print(f"Sunlight fraction range: {fractions.min():.6f} to {fractions.max():.6f}")
+    print(
+        "Earth terrain-relative elevation range: "
+        f"{earth_elevations.min():.6f} to {earth_elevations.max():.6f} deg"
+    )
 
+    raster_path = _resolve_raster(scenario, args.raster)
+    failures = 0
+    with rasterio.open(raster_path) as dataset:
+        if (dataset.width, dataset.height) != (dem.width, dem.height):
+            print("Raster and DEM dimensions differ", file=sys.stderr)
+            return 2
+        values = dataset.read(window=((pixel_y, pixel_y + 1), (pixel_x, pixel_x + 1)))[
+            :, 0, 0
+        ]
+        valid = bool(
+            dataset.dataset_mask(
+                window=((pixel_y, pixel_y + 1), (pixel_x, pixel_x + 1))
+            )[0, 0]
+        )
+        if not valid:
+            print("The selected raster pixel is invalid", file=sys.stderr)
+            return 2
+
+        print(f"Comparing {raster_path}:")
+        for band_index, actual in enumerate(values, start=1):
+            timestamp = dataset.tags(band_index).get("TIMESTAMP_UTC")
+            if timestamp is None:
+                print(f"  Band {band_index}: missing TIMESTAMP_UTC", file=sys.stderr)
+                failures += 1
+                continue
+            month_start = _parse_utc(timestamp)
+            expected = _safe_haven_duration_for_month(
+                fractions,
+                earth_elevations,
+                times,
+                month_start=month_start,
+                time_step_hours=args.step_hours,
+                sunlight_threshold=args.sun_threshold,
+                earth_threshold_deg=args.earth_threshold,
+            )
+            agrees = (
+                (expected is None and np.isnan(actual))
+                or (
+                    expected is not None
+                    and np.isfinite(actual)
+                    and abs(float(actual) - expected) <= args.tolerance_hours
+                )
+            )
+            expected_text = "NODATA" if expected is None else f"{expected:.3f} h"
+            actual_text = "NODATA" if np.isnan(actual) else f"{actual:.3f} h"
+            print(
+                f"  {month_start:%Y-%m}: expected {expected_text}, "
+                f"raster {actual_text} -- {'PASS' if agrees else 'FAIL'}"
+            )
+            failures += int(not agrees)
+
+    if failures:
+        print(f"Spot check failed for {failures} band(s).", file=sys.stderr)
+        return 1
+    print("Spot check passed for every raster band.")
     return 0
 
 

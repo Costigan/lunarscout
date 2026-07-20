@@ -124,6 +124,38 @@ def test_safe_haven_stream_finds_longest_overlapping_run() -> None:
     assert duration == pytest.approx(24.0)
 
 
+def test_safe_haven_stream_credits_run_until_it_ends_after_outage() -> None:
+    times = [_JAN_2027.replace(hour=h) for h in (0, 6, 12, 18)]
+    month_bands = build_month_bands(times)
+    fractions = (
+        np.asarray([[0.1]], dtype=np.float32),
+        np.asarray([[0.1]], dtype=np.float32),
+        np.asarray([[0.1]], dtype=np.float32),
+        np.asarray([[0.8]], dtype=np.float32),
+    )
+    earth = (
+        np.asarray([[1.0]], dtype=np.float32),
+        np.asarray([[3.0]], dtype=np.float32),
+        np.asarray([[3.0]], dtype=np.float32),
+        np.asarray([[3.0]], dtype=np.float32),
+    )
+
+    result = reduce_safe_haven_patch_stream(
+        iter(fractions),
+        iter(earth),
+        4,
+        month_bands,
+        month_index_of=_month_indices_map(times, month_bands),
+        sunlight_threshold=0.2,
+        earth_threshold_deg=2.0,
+        time_step_hours=6.0,
+    )
+
+    # The outage ends after t0, but the overlapping low-Sun run continues
+    # through t2 and must receive its complete 18-hour duration.
+    assert result[0][0, 0] == pytest.approx(18.0)
+
+
 def test_safe_haven_stream_nodata_when_no_outage() -> None:
     """Earth never below threshold -> NODATA."""
     times = [_JAN_2027.replace(hour=h) for h in (0, 6)]

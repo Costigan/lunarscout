@@ -73,6 +73,92 @@ def _sun_fraction_reference(
     return np.float32(photons / _MAX_PHOTONS)
 
 
+def _pixel_horizon_signals_reference(
+    dem: DemGrid,
+    horizon_deg: npt.ArrayLike,
+    body_vectors_m: npt.ArrayLike,
+    *,
+    pixel_y: int,
+    pixel_x: int,
+    sunlight: bool,
+) -> npt.NDArray[np.float32]:
+    """Calculate one pixel with the production Moon-ME frame.
+
+    This is a correctness and diagnostic helper, not a public API.  It keeps
+    point spot checks on the same spherical stereographic frame, pixel anchor,
+    observer elevation, and geometric Moon-ME vector convention as the tiled
+    product sessions.
+    """
+    if (
+        isinstance(pixel_x, bool)
+        or isinstance(pixel_y, bool)
+        or not isinstance(pixel_x, (int, np.integer))
+        or not isinstance(pixel_y, (int, np.integer))
+        or not 0 <= int(pixel_x) < dem.width
+        or not 0 <= int(pixel_y) < dem.height
+    ):
+        raise ValueError("pixel coordinates must identify a DEM pixel")
+    horizon = np.ascontiguousarray(horizon_deg, dtype=np.float32)
+    if horizon.shape != (AZIMUTH_COUNT,) or not np.all(np.isfinite(horizon)):
+        raise ValueError("horizon must contain 1440 finite elevations")
+    vectors = _validate_vectors(body_vectors_m)
+    rotation, translation = _pixel_frame(dem, int(pixel_y), int(pixel_x))
+    azimuth, elevation = _azimuth_elevation_deg(vectors, rotation, translation)
+
+    if sunlight:
+        result = np.empty(len(vectors), dtype=np.float32)
+        for index in range(len(vectors)):
+            result[index] = _sun_fraction_reference(
+                horizon, float(azimuth[index]), float(elevation[index])
+            )
+        return result
+
+    positions = azimuth * (AZIMUTH_COUNT / 360.0)
+    lower = np.floor(positions).astype(np.int64) % AZIMUTH_COUNT
+    upper = (lower + 1) % AZIMUTH_COUNT
+    fractions = positions - np.floor(positions)
+    interpolated = horizon[lower] + fractions * (horizon[upper] - horizon[lower])
+    return np.ascontiguousarray(elevation - interpolated, dtype=np.float32)
+
+
+def _pixel_sunlight_fractions_reference(
+    dem: DemGrid,
+    horizon_deg: npt.ArrayLike,
+    sun_vectors_m: npt.ArrayLike,
+    *,
+    pixel_y: int,
+    pixel_x: int,
+) -> npt.NDArray[np.float32]:
+    """Return one pixel's unquantized production-frame solar fractions."""
+    return _pixel_horizon_signals_reference(
+        dem,
+        horizon_deg,
+        sun_vectors_m,
+        pixel_y=pixel_y,
+        pixel_x=pixel_x,
+        sunlight=True,
+    )
+
+
+def _pixel_horizon_margins_reference(
+    dem: DemGrid,
+    horizon_deg: npt.ArrayLike,
+    body_vectors_m: npt.ArrayLike,
+    *,
+    pixel_y: int,
+    pixel_x: int,
+) -> npt.NDArray[np.float32]:
+    """Return one pixel's body-center elevation over its terrain horizon."""
+    return _pixel_horizon_signals_reference(
+        dem,
+        horizon_deg,
+        body_vectors_m,
+        pixel_y=pixel_y,
+        pixel_x=pixel_x,
+        sunlight=False,
+    )
+
+
 def iter_lightmap_patch_reference(
     dem: DemGrid,
     horizons_deg: npt.ArrayLike,
