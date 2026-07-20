@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lunarscout"
-version = "0.1.0rc1"
+version = "0.1.0rc2"
 description = "Notebook-first lunar mission analysis with NumPy and GeoTIFF data"
 readme = "README.md"
 license = "Apache-2.0"
