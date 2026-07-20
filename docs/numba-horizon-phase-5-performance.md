@@ -54,13 +54,17 @@ index reconstruction is pixel-fast: consecutive linear lanes map to adjacent
 pixels at one azimuth, and linear index 768 advances to the next azimuth. Thus
 each warp evaluates 32 spatially adjacent pixels for a common azimuth.
 
-Numba uses the same pixel-fast linear mapping with 256-thread blocks. The exact
-block size is not the compatibility requirement; preserving the warp mapping
-is. A 768-thread Numba block was slower because the Numba kernel uses more
-registers. The retained 256-thread launch preserves the same within-warp
-spatial locality while allowing better occupancy. Scalar interpolation removed
-local memory, and explicit float32 arithmetic reduced unintended PTX float64
-operations from 92 to 37.
+Numba uses the same pixel-fast linear mapping. The exact block size is not the
+compatibility requirement; preserving the warp mapping is. Phase 5 initially
+retained a 256-thread launch because a 768-thread Numba block was slower under
+the kernel's higher register pressure. Subsequent bounded tuning capped the
+production kernel at 80 registers per thread and selected 128-thread blocks.
+On the same four-DEM, 1,440-azimuth patch, the checked-in configuration averaged
+`4.655 s` for all four passes versus `5.231 s` for the prior 96-register,
+256-thread configuration, an 11.0 percent reduction. It compiled with zero
+local memory per thread and zero PTX float64 lines. The 256-thread launch under
+the same 80-register cap averaged `4.693 s`. Scalar interpolation remains the
+mechanism that avoids local-memory arrays.
 
 Pixel-fast does not make every access coalesced. The output contract is
 pixel-major with azimuth as the contiguous dimension, so same-azimuth stores

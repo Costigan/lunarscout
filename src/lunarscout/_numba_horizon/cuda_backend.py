@@ -21,19 +21,24 @@ class CudaBackendError(RuntimeError):
 
 
 _KERNELS = None
+_PRODUCTION_MAX_REGISTERS = 80
+_PRODUCTION_THREADS = 128
 
 
 def _build_kernels(cuda):
     from numba import float32, int32
     from numba.cuda import libdevice
 
-    def cuda_jit_cached(function):
-        try:
-            return cuda.jit(cache=True)(function)
-        except RuntimeError as error:
-            if "no locator available" not in str(error):
-                raise
-            return cuda.jit(function)
+    def cuda_jit_cached(**options):
+        def decorate(function):
+            try:
+                return cuda.jit(cache=True, **options)(function)
+            except RuntimeError as error:
+                if "no locator available" not in str(error):
+                    raise
+                return cuda.jit(**options)(function)
+
+        return decorate
 
     @cuda.jit(device=True)
     def valid_elevation(value):
@@ -103,6 +108,8 @@ def _build_kernels(cuda):
     def bilinear(elevation, column, row):
         width = elevation.shape[1]
         height = elevation.shape[0]
+        column = float32(column)
+        row = float32(row)
         column = float32(min(max(column, float32(0.0)), float32(width) - float32(1.0001)))
         row = float32(min(max(row, float32(0.0)), float32(height) - float32(1.0001)))
         x0 = int(math.floor(column))
@@ -118,8 +125,8 @@ def _build_kernels(cuda):
             and valid_elevation(q01) and valid_elevation(q11)
         ):
             return float32(-32000.0)
-        tx = float32(column - x0)
-        ty = float32(row - y0)
+        tx = float32(column - float32(x0))
+        ty = float32(row - float32(y0))
         top = float32(q00 + tx * float32(q10 - q00))
         bottom = float32(q01 + tx * float32(q11 - q01))
         return float32(top + ty * (bottom - top))
@@ -977,7 +984,7 @@ def _build_kernels(cuda):
         for field in range(18):
             output[index, field] = segment[field]
 
-    @cuda_jit_cached
+    @cuda_jit_cached(max_registers=_PRODUCTION_MAX_REGISTERS)
     def subpatch_hierarchy_kernel(
         segments, primary_level0, primary_map, active_level0, active_mips,
         active_levels, active_map, active_projection, tile_column, tile_row,
@@ -1021,8 +1028,8 @@ def _build_kernels(cuda):
         )
         left = int(gx)
         top = int(gy)
-        tx = float32(gx - left)
-        ty = float32(gy - top)
+        tx = float32(gx - float32(left))
+        ty = float32(gy - float32(top))
         if left < 0:
             left = 0
             tx = float32(0.0)
@@ -1369,9 +1376,9 @@ class CudaSession:
                 raise ValueError(f"slopes must have shape {output_shape}")
         device_output = self._cuda.to_device(host_output)
         # Preserve ILGPU's warp organization (32 adjacent pixels for one
-        # azimuth) without copying its larger block size.  This kernel's
-        # register use supports better occupancy with 256-thread blocks.
-        threads = 256
+        # azimuth). The register-capped kernel benchmarks best with four warps
+        # per block while retaining the same within-warp spatial locality.
+        threads = _PRODUCTION_THREADS
         total_threads = pixel_count * segments.shape[0]
         blocks = (total_threads + threads - 1) // threads
         self._subpatch_hierarchy_kernel[blocks, threads](
@@ -1433,7 +1440,7 @@ class CudaSession:
             else:
                 slot.device_output.copy_to_device(slot.output_reset, stream=stream)
             output_reset_seconds = time.perf_counter() - reset_started
-            threads = 256
+            threads = _PRODUCTION_THREADS
             total_threads = pixel_count * segments.shape[0]
             blocks = (total_threads + threads - 1) // threads
             events = [

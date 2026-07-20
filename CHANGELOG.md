@@ -6,6 +6,16 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Tuned the production Numba horizon kernel by capping it at 80 registers per
+  thread, selecting 128-thread blocks, and keeping coordinate interpolation
+  entirely in float32. The compiled kernel now uses zero local memory and
+  contains zero PTX float64 operations. On the RTX 5090 Laptop validation
+  system, isolated four-DEM kernel time improved by 11.0 percent and sustained
+  16-patch throughput improved by 8.6 percent, from 0.17931 to 0.19465
+  patches/s, with unchanged peak GPU memory. All 16 compressed horizon output
+  hashes matched the previously accepted run exactly. Verification: 458
+  ordinary tests passed with 17 skips; 139 explicitly CUDA-gated horizon tests
+  passed with 1 skip.
 - Corrected the monthly safe-haven streaming reducer so a low-Sun run that
   overlaps an Earth outage continues accumulating after Earth clears, through
   the actual end of the low-Sun run. The previous state transition truncated

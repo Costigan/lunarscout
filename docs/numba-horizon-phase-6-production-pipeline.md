@@ -159,6 +159,27 @@ not outperform one stream. Reports are stored in:
 - `docs/numba-horizon-phase-6-sustained-python-streams2.json`
 - `docs/numba-horizon-phase-6-sustained-python-streams4.json`
 
+### Subsequent kernel resource tuning
+
+The production Numba kernel was subsequently capped at 80 registers per thread,
+its remaining mixed integer/float coordinate operations were made explicitly
+float32, and its launch was reduced from 256 to 128 threads per block. Compiled
+on the RTX 5090 Laptop target, it uses 80 registers per thread, zero local
+memory, and contains zero PTX float64 lines.
+
+Repeating the sustained 16-patch writer-pipeline benchmark produced:
+
+| Measurement | Prior kernel | Tuned kernel | Change |
+| --- | ---: | ---: | ---: |
+| Throughput | `0.17931 patch/s` | `0.19465 patch/s` | `+8.6%` |
+| Wall time | `5.5769 s/patch` | `5.1373 s/patch` | `-7.9%` |
+| Total kernel wall time | `86.378 s` | `79.324 s` | `-8.2%` |
+| Peak GPU memory | `4,458 MiB` | `4,458 MiB` | unchanged |
+
+All 16 compressed output hashes and the total output size match the prior
+accepted sustained run exactly. The tuned report is stored in
+`docs/numba-horizon-kernel-tuning-sustained.json`.
+
 ## Fresh-Process Startup and Compiled Cache
 
 Startup was split into data/cache loading, CUDA device/session initialization,
