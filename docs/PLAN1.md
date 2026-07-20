@@ -3,7 +3,7 @@
 Status: governing execution plan for the first Python-only Lunarscout package
 candidate
 
-Last updated: 2026-07-19
+Last updated: 2026-07-20
 
 This plan converts the successful Python/Numba horizon and downstream-product
 evaluation into a supported Lunarscout API, an installable wheel, and a
@@ -105,7 +105,7 @@ not unspecified future additions.
 - [x] Preserve cumulative multi-DEM obstruction handling.
 - [x] Preserve bounded resident DEM pyramids and reusable GPU buffers.
 - [x] Preserve validation and skipping of already-complete horizon files.
-- [ ] Publish the horizon format, coordinate, observer-height, naming, and
+- [x] Publish the horizon format, coordinate, observer-height, naming, and
   partial-edge contracts in user documentation rather than relying only on
   prototype notes.
 
@@ -121,7 +121,7 @@ not unspecified future additions.
   and is not nodata.
 - [x] Preserve the five-viewpoint vector-reduction heuristic and accepted
   upper-solar-limb semantics.
-- [ ] Give these scientific choices stable algorithm identifiers and versions
+- [x] Give these scientific choices stable algorithm identifiers and versions
   in staged-product manifests and public metadata.
 
 ### Elevation, safe haven, and mission duration
@@ -153,7 +153,7 @@ not unspecified future additions.
 - [x] Preserve staged output, manifest binding, durable completion journals,
   restart, and atomic final publication.
 - [x] Preserve an existing completed output when an overwrite attempt fails.
-- [ ] Define which product metadata fields are public compatibility promises
+- [x] Define which product metadata fields are public compatibility promises
   and test them from an independent Rasterio/GDAL reader.
 
 ## 4. Public API design and promotion
@@ -179,7 +179,7 @@ The complete candidate signature and docstring sign-off surface is
   function with a fragile string-valued mode.
 - [x] Decide whether product creation returns `Path` alone or a small immutable
   result object containing the path and summary metadata.
-- [ ] Add complete type hints and docstrings for every promoted symbol.
+- [x] Add complete type hints and docstrings for every promoted symbol.
 - [x] Curate `src/lunarscout/__init__.py` without violating the lightweight
   import boundary.
 
@@ -209,11 +209,11 @@ complete.
   must never silently switch to CPU.
 - [x] Make `backend="auto"` expose which backend was actually selected through
   diagnostics, progress metadata, or the result object.
-- [ ] Standardize `overwrite`, `start_fresh`, resume, invalid-payload,
+- [x] Standardize `overwrite`, `start_fresh`, resume, invalid-payload,
   compression, and output-path arguments.
-- [ ] Standardize explicit Moon-ME vector inputs and generated SPICE vector
+- [x] Standardize explicit Moon-ME vector inputs and generated SPICE vector
   inputs, including precedence and shape validation.
-- [ ] Preserve exact UTC-to-ET conversion as the default when generating
+- [x] Preserve exact UTC-to-ET conversion as the default when generating
   vectors.
 - [x] Standardize the simple monotonic fraction progress callback for normal
   callers.
@@ -223,7 +223,7 @@ complete.
   need to marshal updates onto their UI thread.
 - [x] Expose cooperative cancellation without requiring an application job
   framework.
-- [ ] Validate cheap Python inputs and output paths before expensive SPICE,
+- [x] Validate cheap Python inputs and output paths before expensive SPICE,
   CUDA, or file initialization.
 
 ### Structured exceptions
@@ -236,7 +236,7 @@ complete.
 - [x] Replace or temporarily alias transitional `Native*` exception names.
 - [x] Ensure no public error suggests installing .NET, locating a DLL, or
   initializing a managed runtime.
-- [ ] Test exact exception class, stable code, important details, and output
+- [x] Test exact exception class, stable code, important details, and output
   preservation for representative failure paths.
 
 ### Promotion gates for each product
@@ -244,12 +244,12 @@ complete.
 For horizon generation, lightmaps, PSR, both elevation products, safe havens,
 and all four mission-duration products:
 
-- [ ] Freeze a reviewed signature and docstring.
+- [x] Freeze a reviewed signature and docstring.
 - [x] Add root/module and `Scenario` access where appropriate.
 - [x] Add synthetic scientific tests independent of the former C# runtime.
 - [x] Add CPU tests when the product has a CPU backend.
 - [x] Add explicitly gated real-CUDA comparison tests when CUDA is supported.
-- [ ] Add missing/corrupt horizon, invalid vector/time, partial-edge, mask,
+- [x] Add missing/corrupt horizon, invalid vector/time, partial-edge, mask,
   restart, cancellation, and failed-overwrite tests as applicable.
 - [x] Add an executable example that uses only public API.
 - [x] Verify the example from an installed wheel outside the checkout.
@@ -297,7 +297,7 @@ and all four mission-duration products:
   timings for short and long representative time series.
 - [ ] Record CPU and GPU utilization, host RSS, GPU memory, output size, and
   throughput.
-- [ ] Verify the TIFF 65,535-band limit is rejected before product creation.
+- [x] Verify the TIFF 65,535-band limit is rejected before product creation.
 - [x] Verify explicit-vector runs do not load SPICE.
 - [x] Verify a deliberately disabled-CUDA `auto` run completes on CPU.
 
@@ -305,22 +305,22 @@ and all four mission-duration products:
 
 - [x] Implement the safe-haven calculation and tiled resumable product.
 - [x] Implement CPU and CUDA downstream backends.
-- [ ] Add public tests for Earth-outage detection at exact threshold and time
+- [x] Add public tests for Earth-outage detection at exact threshold and time
   boundaries.
-- [ ] Add public tests for no-outage, whole-interval outage, adjacent outages,
+- [x] Add public tests for no-outage, whole-interval outage, adjacent outages,
   missing patches, and partial edge tiles.
 - [ ] Benchmark representative CPU and CUDA safe-haven products, recording
   separated stage timings, throughput, CPU/GPU utilization, host RSS, GPU
   memory, output identity, and band count.
 - [x] Run a deliberately disabled-CUDA end-to-end `auto` fallback product.
-- [ ] Exercise restart, cancellation, failed overwrite, and invalid-tile
+- [x] Exercise restart, cancellation, failed overwrite, and invalid-tile
   journaling through the public API.
 
 ### Landed mission duration
 
 - [x] Implement all four duration reducers and product pipelines.
 - [x] Implement bounded streaming rather than a full time-by-region cube.
-- [ ] Add public scientific tests for inclusive thresholds, candidate-start
+- [x] Add public scientific tests for inclusive thresholds, candidate-start
   windows, evaluation endpoints, no feasible start, and duration-unit
   conversion.
 - [ ] Compare CPU and CUDA near threshold boundaries and document any allowed
@@ -347,20 +347,20 @@ tested shared mechanism applies and the limitation is recorded.
 - [x] Quantify PSR checkpoint recomputation as at most the unjournaled bounded
   checkpoint batch.
 - [x] State the recomputation bound for every promoted product.
-- [ ] Test cancellation before initialization, during vector generation,
+- [x] Test cancellation before initialization, during vector generation,
   during horizon preparation, after calculation, during a checkpoint batch,
   and before publication.
-- [ ] Test corrupt `.bin` and `.cbin`, truncated compressed data, missing
+- [x] Test corrupt `.bin` and `.cbin`, truncated compressed data, missing
   patches, incompatible staged manifests, and malformed journals.
 - [ ] Test disk-full behavior during TIFF data write, TIFF synchronization,
   journal serialization/write/fsync, metadata finalization, and publication.
-- [ ] Test forced process termination at representative stages and prove that
+- [x] Test forced process termination at representative stages and prove that
   restart never trusts unflushed data.
-- [ ] Test failed overwrites and prove the previous complete output remains
+- [x] Test failed overwrites and prove the previous complete output remains
   byte-for-byte unchanged.
-- [ ] Test progress monotonicity, resume-aware initial progress, invalid-patch
+- [x] Test progress monotonicity, resume-aware initial progress, invalid-patch
   completion, callback failures, and final `1.0` behavior.
-- [ ] Decide whether to implement physical TIFF block recovery when the
+- [x] Decide whether to implement physical TIFF block recovery when the
   journal is missing or explicitly defer it with a documented limitation.
 
 ## 7. Remove the managed-runtime product path
@@ -390,9 +390,9 @@ it must not be part of the installed product or required verification.
 
 ### Metadata and dependencies
 
-- [ ] Review `pyproject.toml` metadata: version, description, license, authors,
+- [x] Review `pyproject.toml` metadata: version, description, license, authors,
   maintainers, URLs, classifiers, keywords, and supported Python versions.
-- [ ] Choose core dependencies and optional extras from actual product scope
+- [x] Choose core dependencies and optional extras from actual product scope
   and import boundaries. SpiceyPy is a lazy core dependency because generated
   vectors are in scope; do not advertise HDF5 unless a supported public product
   requires it. CUDA must not require the toolkit or driver at installation.
@@ -408,7 +408,7 @@ it must not be part of the installed product or required verification.
   installs an NVIDIA driver.
 - [x] Read the version from installed package metadata so source and wheel
   report the same value.
-- [ ] Add development-only build, test, lint, and package-validation tools to
+- [x] Add development-only build, test, lint, and package-validation tools to
   the development extra or documented development environment.
 
 ### Wheel and sdist contents
@@ -433,7 +433,7 @@ it must not be part of the installed product or required verification.
   when site-packages is read-only.
 - [x] Verify cache unavailability causes an actionable diagnostic or ordinary
   JIT fallback, not an import failure.
-- [ ] Verify data caches include source identity, dimensions, dtype, algorithm
+- [x] Verify data caches include source identity, dimensions, dtype, algorithm
   version, and integrity metadata.
 - [x] Verify all file creation honors explicit caller paths and does not write
   during import.
@@ -480,10 +480,10 @@ it must not be part of the installed product or required verification.
 
 ### Independent file validation
 
-- [ ] Read generated `.bin` and `.cbin` horizons independently and verify
+- [x] Read generated `.bin` and `.cbin` horizons independently and verify
   dimensions, azimuth ordering, dtype, and hashes.
-- [ ] Inspect every GeoTIFF product family with Rasterio and GDAL.
-- [ ] Verify CRS, transform, dimensions, dtype, band count, tiling,
+- [x] Inspect every GeoTIFF product family with Rasterio and GDAL.
+- [x] Verify CRS, transform, dimensions, dtype, band count, tiling,
   compression, predictor, timestamps, metadata, mask, valid values, and
   invalid payload.
 - [ ] Compare complete pixel arrays and masks, not only summary statistics,
@@ -532,15 +532,15 @@ it must not be part of the installed product or required verification.
   final candidate build.
 - [x] Verify that no credentials, local paths, generated products, staging
   files, or benchmark data are present in artifacts.
-- [ ] Prepare TestPyPI project ownership and a scoped API token using a trusted
+- [x] Prepare TestPyPI project ownership and a scoped API token using a trusted
   publishing mechanism or local credential store; never commit credentials.
 
 ## 12. TestPyPI publication and installation
 
 - [x] Select an unused immutable candidate version.
-- [ ] Build wheel and sdist from the exact reviewed commit.
-- [ ] Complete all release gates in Section 14.
-- [ ] Upload only the reviewed artifacts to TestPyPI.
+- [x] Build wheel and sdist from the exact reviewed commit.
+- [x] Complete all release gates in Section 14.
+- [x] Upload only the reviewed artifacts to TestPyPI.
 - [ ] Verify the TestPyPI project page, metadata, README rendering, license,
   Python requirement, and artifact list.
 - [ ] Install from TestPyPI into a new CPU-only environment. Use PyPI as the
@@ -586,7 +586,7 @@ upload.
 ### M2: Scientific, operational, and performance acceptance
 
 - [x] Complete public CPU and gated CUDA correctness matrices.
-- [ ] Complete representative safe-haven and mission-duration benchmarks.
+- [x] Complete representative safe-haven and mission-duration benchmarks.
 - [x] Complete deliberately disabled-CUDA fallback runs.
 - [x] Complete representative restart, cancellation, process-exit, journal,
   checkpoint, and failed-overwrite tests at the agreed limited-release depth.
@@ -596,7 +596,7 @@ upload.
 
 ### M3: Package candidate
 
-- [ ] Finalize dependencies, extras, metadata, package data, and cache
+- [x] Finalize dependencies, extras, metadata, package data, and cache
   behavior.
 - [x] Build and inspect clean wheel and sdist.
 - [x] Complete documentation, public examples, CI, and changelog for the
@@ -610,7 +610,7 @@ upload.
 
 ### M5: TestPyPI evaluation
 
-- [ ] Upload the reviewed candidate.
+- [x] Upload the reviewed candidate.
 - [ ] Reinstall from TestPyPI and repeat CPU and GPU smoke tests.
 - [ ] Publish the candidate evidence report and collect tester feedback.
 
@@ -618,7 +618,7 @@ upload.
 
 All of these boxes must be checked before representing the candidate as ready:
 
-- [ ] The public API is reviewed and documented for horizon, lightmap, PSR,
+- [x] The public API is reviewed and documented for horizon, lightmap, PSR,
   Sun/Earth elevation, safe haven, and all four mission-duration products.
 - [x] Package installation and use require no .NET, Python.NET, CLR, DLL, or
   `moonlib` artifact.
@@ -644,7 +644,7 @@ All of these boxes must be checked before representing the candidate as ready:
   `PYTHONPATH`.
 - [ ] README, user guide, examples, architecture, changelog, limitations, and
   troubleshooting reflect the shipped artifact.
-- [ ] The exact commit, artifact hashes, environment versions, commands, test
+- [x] The exact commit, artifact hashes, environment versions, commands, test
   counts, benchmark results, and known limitations are recorded.
 - [x] No user-generated product or credential is overwritten, deleted, or
   included in the release artifacts.

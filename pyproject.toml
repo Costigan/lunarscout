@@ -5,9 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lunarscout"
 version = "0.1.0rc2"
-description = "Notebook-first lunar mission analysis with NumPy and GeoTIFF data"
+description = "Lunar terrain, horizon, lighting, visibility, and landed-mission analysis with NumPy and Numba"
 readme = "README.md"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     { name = "Mark H. Shirley", email = "mark.h.shirley@gmail.com" },
 ]
@@ -15,15 +16,33 @@ maintainers = [
     { name = "Mark H. Shirley", email = "mark.h.shirley@gmail.com" },
 ]
 requires-python = ">=3.11"
-keywords = ["lunar", "terrain", "horizon", "illumination", "CUDA"]
+keywords = [
+    "lunar",
+    "terrain",
+    "horizon",
+    "lighting",
+    "visibility",
+    "illumination",
+    "PSR",
+    "safe-haven",
+    "mission-duration",
+    "SPICE",
+    "Numba",
+    "CUDA",
+    "geospatial",
+    "raster",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: GIS",
 ]
 dependencies = [
     "numba>=0.66,<0.67",
@@ -45,6 +64,7 @@ cuda = [
 ]
 dev = [
     "build>=1.2",
+    "coverage>=7.0",
     "pytest>=8.0",
     "twine>=6.0",
 ]
