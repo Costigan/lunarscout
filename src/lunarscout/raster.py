@@ -17,6 +17,11 @@ def _is_expression(obj: object) -> bool:
     clsname = type(obj).__qualname__
     return clsname == "RasterExpression"
 
+
+def _is_temporal_expression(obj: object) -> bool:
+    clsname = type(obj).__qualname__
+    return clsname == "TemporalRasterExpression"
+
 _VALID_DTYPES = {
     np.dtype(np.bool_),
     np.dtype(np.uint8),
@@ -185,6 +190,8 @@ class Raster:
             result_valid = self.valid.copy()
             result_values = np.where(result_valid, self.values == other, False)
             return Raster(values=result_values, georef=self.georef, valid=result_valid, name=self.name)
+        if _is_temporal_expression(other):
+            return other.__eq__(self)  # type: ignore[return-value]
         return NotImplemented
 
     def __ne__(self, other: object) -> Raster:  # type: ignore[override]
@@ -202,6 +209,8 @@ class Raster:
             result_valid = self.valid.copy()
             result_values = np.where(result_valid, self.values != other, False)
             return Raster(values=result_values, georef=self.georef, valid=result_valid, name=self.name)
+        if _is_temporal_expression(other):
+            return other.__ne__(self)  # type: ignore[return-value]
         return NotImplemented
 
     # ------------------------------------------------------------------
@@ -212,11 +221,15 @@ class Raster:
         if _is_expression(other):
             from .map_algebra._sources import constant
             return constant(self).__add__(other)  # type: ignore[return-value]
+        if _is_temporal_expression(other):
+            return other.__radd__(self)  # type: ignore[return-value]
         from .map_algebra.local import add as _add
         return _add(self, other)  # type: ignore[return-value]
 
     def __radd__(self, other: object) -> Raster:
         if _is_expression(other):
+            return other.__add__(self)  # type: ignore[return-value]
+        if _is_temporal_expression(other):
             return other.__add__(self)  # type: ignore[return-value]
         from .map_algebra.local import add as _add
         return _add(other, self)  # type: ignore[return-value]
@@ -225,11 +238,15 @@ class Raster:
         if _is_expression(other):
             from .map_algebra._sources import constant
             return constant(self).__sub__(other)  # type: ignore[return-value]
+        if _is_temporal_expression(other):
+            return other.__rsub__(self)  # type: ignore[return-value]
         from .map_algebra.local import subtract as _sub
         return _sub(self, other)  # type: ignore[return-value]
 
     def __rsub__(self, other: object) -> Raster:
         if _is_expression(other):
+            return other.__sub__(self)  # type: ignore[return-value]
+        if _is_temporal_expression(other):
             return other.__sub__(self)  # type: ignore[return-value]
         from .map_algebra.local import subtract as _sub
         return _sub(other, self)  # type: ignore[return-value]
@@ -238,11 +255,15 @@ class Raster:
         if _is_expression(other):
             from .map_algebra._sources import constant
             return constant(self).__mul__(other)  # type: ignore[return-value]
+        if _is_temporal_expression(other):
+            return other.__rmul__(self)  # type: ignore[return-value]
         from .map_algebra.local import multiply as _mul
         return _mul(self, other)  # type: ignore[return-value]
 
     def __rmul__(self, other: object) -> Raster:
         if _is_expression(other):
+            return other.__mul__(self)  # type: ignore[return-value]
+        if _is_temporal_expression(other):
             return other.__mul__(self)  # type: ignore[return-value]
         from .map_algebra.local import multiply as _mul
         return _mul(other, self)  # type: ignore[return-value]
@@ -251,11 +272,15 @@ class Raster:
         if _is_expression(other):
             from .map_algebra._sources import constant
             return constant(self).__truediv__(other)  # type: ignore[return-value]
+        if _is_temporal_expression(other):
+            return other.__rtruediv__(self)  # type: ignore[return-value]
         from .map_algebra.local import divide as _div
         return _div(self, other)  # type: ignore[return-value]
 
     def __rtruediv__(self, other: object) -> Raster:
         if _is_expression(other):
+            return other.__truediv__(self)  # type: ignore[return-value]
+        if _is_temporal_expression(other):
             return other.__truediv__(self)  # type: ignore[return-value]
         from .map_algebra.local import divide as _div
         return _div(other, self)  # type: ignore[return-value]
@@ -354,6 +379,8 @@ class Raster:
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             from .map_algebra._kernels import _less
             return _dispatch_binary_raster_scalar(self, other, _less, operation="less")
+        elif _is_temporal_expression(other):
+            return other.__gt__(self)  # type: ignore[return-value]
         return NotImplemented
 
     def __le__(self, other: object) -> Raster:  # type: ignore[override]
@@ -367,6 +394,8 @@ class Raster:
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             from .map_algebra._kernels import _less_equal
             return _dispatch_binary_raster_scalar(self, other, _less_equal, operation="less_equal")
+        elif _is_temporal_expression(other):
+            return other.__ge__(self)  # type: ignore[return-value]
         return NotImplemented
 
     def __gt__(self, other: object) -> Raster:  # type: ignore[override]
@@ -380,6 +409,8 @@ class Raster:
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             from .map_algebra._kernels import _greater
             return _dispatch_binary_raster_scalar(self, other, _greater, operation="greater")
+        elif _is_temporal_expression(other):
+            return other.__lt__(self)  # type: ignore[return-value]
         return NotImplemented
 
     def __ge__(self, other: object) -> Raster:  # type: ignore[override]
@@ -393,6 +424,8 @@ class Raster:
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             from .map_algebra._kernels import _greater_equal
             return _dispatch_binary_raster_scalar(self, other, _greater_equal, operation="greater_equal")
+        elif _is_temporal_expression(other):
+            return other.__le__(self)  # type: ignore[return-value]
         return NotImplemented
 
     # ------------------------------------------------------------------

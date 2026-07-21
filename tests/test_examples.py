@@ -13,13 +13,14 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _EXAMPLES = _REPOSITORY_ROOT / "examples"
 _SOURCE_ROOT = _REPOSITORY_ROOT / "src"
 _DETERMINISTIC_SCRIPTS = [
-    "00_geotiff_and_coordinates.py",
-    "01_terrain_products.py",
-    "02_region_filtering.py",
-    "03_alignment.py",
-    "04_temporal_cube.py",
-    "05_file_backed_series.py",
-    "06_streaming_reductions.py",
+    "01_geotiff_and_coordinates.py",
+    "02_terrain_products.py",
+    "03_region_filtering.py",
+    "04_alignment.py",
+    "05_temporal_cube.py",
+    "06_file_backed_series.py",
+    "07_incremental_writer.py",
+    "08_streaming_reductions.py",
     "09_qgis_vrt.py",
     "10_landing_site_screening.py",
 ]
@@ -68,7 +69,7 @@ def test_historical_hdf5_prototype_when_manual_dependencies_are_present(
     completed = subprocess.run(
         [
             sys.executable,
-            str(_EXAMPLES / "14_timeseries_two_file_prototype.py"),
+            str(_REPOSITORY_ROOT / "benchmarks" / "timeseries_two_file_prototype.py"),
             "--workspace",
             str(tmp_path),
             "--width",

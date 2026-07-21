@@ -1062,7 +1062,7 @@ Files changed:
 - `packages/lunarscout/src/lunarscout/errors.py`
 - `packages/lunarscout/src/lunarscout/__init__.py`
 - `packages/lunarscout/tests/test_terrain.py`
-- `examples/01_terrain_products.py`
+- `examples/02_terrain_products.py`
 - Lunarscout API, package, and tracking documentation
 
 Locked and completed:
@@ -1098,7 +1098,7 @@ Files changed:
 - `packages/lunarscout/src/lunarscout/errors.py`
 - `packages/lunarscout/src/lunarscout/__init__.py`
 - `packages/lunarscout/tests/test_regions.py`
-- `examples/02_region_filtering.py`
+- `examples/03_region_filtering.py`
 - Lunarscout API, package, dependency, and tracking documentation
 
 Locked and completed:
@@ -1185,8 +1185,8 @@ Files changed:
 - `packages/lunarscout/src/lunarscout/errors.py`
 - `packages/lunarscout/src/lunarscout/__init__.py`
 - `packages/lunarscout/tests/test_scenario.py`
-- `examples/01_terrain_products.py`
-- `examples/02_region_filtering.py`
+- `examples/02_terrain_products.py`
+- `examples/03_region_filtering.py`
 - Lunarscout API, package, and tracking documentation
 
 Locked and completed:
@@ -1263,7 +1263,7 @@ Files changed:
 - `packages/lunarscout/src/lunarscout/errors.py`
 - `packages/lunarscout/src/lunarscout/__init__.py`
 - `packages/lunarscout/tests/test_temporal.py`
-- `examples/04_temporal_cube.py`
+- `examples/05_temporal_cube.py`
 - Lunarscout API and tracking documentation
 
 Locked and completed:

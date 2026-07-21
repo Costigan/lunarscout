@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import shutil
 import time
 from dataclasses import dataclass
@@ -24,7 +25,20 @@ from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 from rasterio.windows import Window
 
-from _example_support import example_parser
+
+def _benchmark_parser(description: str) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=Path(
+            os.environ.get(
+                "LUNARSCOUT_EXAMPLE_WORKSPACE", "/tmp/lunarscout_examples",
+            )
+        ),
+        help="Directory for deterministic fixtures and generated outputs.",
+    )
+    return parser
 
 
 @dataclass(frozen=True)
@@ -298,7 +312,7 @@ def _file_report(path: Path) -> dict[str, Any]:
 
 
 def main() -> None:
-    parser = example_parser(__doc__)
+    parser = _benchmark_parser(__doc__)
     parser.add_argument("--width", type=int, default=4992)
     parser.add_argument("--height", type=int, default=5248)
     parser.add_argument("--time-count", type=int, default=5000)

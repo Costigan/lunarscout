@@ -426,7 +426,7 @@ Combined Sun/Earth max-contiguous migration evidence (2026-06-22):
 ## 5. Time-Series Storage Redesign
 
 Status: initial synthetic prototype added in
-`examples/14_timeseries_two_file_prototype.py`. The existing file-backed
+`benchmarks/timeseries_two_file_prototype.py`. The existing file-backed
 timestamped GeoTIFF series is no longer the preferred large time-series target.
 The target deployment includes the National Research Platform's CephFS
 filesystem, which does not handle directories containing many files well. The

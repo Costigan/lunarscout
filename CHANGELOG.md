@@ -6,6 +6,21 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Implemented Phase H of the broad map-algebra plan: eager
+  ``TemporalRaster`` values with canonical three-dimensional validity and
+  strict UTC-coordinate validation; explicit ``TemporalCube`` adapters;
+  sealed ``TemporalRasterExpression`` graphs; scalar, temporal, and static
+  spatial layer-wise algebra with exact grid and ordered-time validation; and
+  descriptor-based ``TemporalGeoTiffSeries`` sources that do not retain live
+  dataset handles. Added explicit temporal materialization plus composable
+  spatial mean, minimum, maximum, standard-deviation, sum, and count
+  reductions. File-backed reductions evaluate one temporal layer at a time,
+  preserve masks, grids, signal metadata, units, and documented output dtypes,
+  and keep all-invalid count cells as valid zero. Added 132 temporal
+  map-algebra tests, including scalar-left operators, closed-series execution,
+  reduction composition, grid rejection, reducer semantics, and a 3,000-layer
+  bounded-time execution check. Also updated stale renumbered example paths and
+  the relocated historical HDF5 benchmark smoke test.
 - Implemented Phase A of the broad map-algebra API plan
   (``docs/map-algebra-implementation-plan.md``): the public ``Raster`` frozen
   dataclass with explicit spatial and validity metadata, custom cell-by-cell

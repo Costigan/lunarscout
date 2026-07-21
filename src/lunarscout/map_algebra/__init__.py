@@ -80,6 +80,19 @@ from .expression import (
 )
 from ._sources import source
 from ._writer import write
+from ._temporal_model import TemporalRaster, TemporalRasterExpression
+from .temporal import (
+    compute_temporal,
+    explain_temporal,
+    temporal_count,
+    temporal_max,
+    temporal_mean,
+    temporal_min,
+    temporal_source,
+    temporal_std,
+    temporal_sum,
+    from_temporal_cube,
+)
 from .focal import (
     closing,
     convolve,
@@ -119,11 +132,18 @@ from .distance import (
 # ---------------------------------------------------------------------------
 
 def _has_expr(*args: Any) -> bool:
-    return any(isinstance(a, RasterExpression) for a in args)
+    return any(isinstance(a, (RasterExpression, TemporalRasterExpression)) for a in args)
+
+
+def _is_temporal_expr(a: Any) -> bool:
+    return isinstance(a, TemporalRasterExpression)
 
 
 def _wrap_unary(fn: Any, op_id: str) -> Any:
     def _wrapper(a: Any) -> Any:
+        if isinstance(a, TemporalRasterExpression):
+            from ._temporal_model import _temporal_local_op
+            return _temporal_local_op(op_id, a)
         if isinstance(a, RasterExpression):
             from ._model import _new_expr_unary
             return _new_expr_unary(a, op_id)
@@ -152,6 +172,30 @@ trunc = _wrap_unary(trunc, "local.trunc")
 round = _wrap_unary(round, "local.round")
 degrees = _wrap_unary(degrees, "local.degrees")
 radians = _wrap_unary(radians, "local.radians")
+
+
+def _wrap_binary(fn: Any, op_id: str) -> Any:
+    def _wrapper(a: Any, b: Any, **kwargs: Any) -> Any:
+        if isinstance(a, (TemporalRasterExpression, TemporalRaster)) or isinstance(b, (TemporalRasterExpression, TemporalRaster)):
+            from ._temporal_model import _temporal_local_op
+            return _temporal_local_op(op_id, a, b)
+        if isinstance(a, RasterExpression) or isinstance(b, RasterExpression):
+            from ._model import _new_expr_op
+            return _new_expr_op(a, b, op_id)
+        return fn(a, b, **kwargs)
+    _wrapper.__name__ = fn.__name__
+    return _wrapper
+
+
+add = _wrap_binary(add, "local.add")
+subtract = _wrap_binary(subtract, "local.subtract")
+multiply = _wrap_binary(multiply, "local.multiply")
+divide = _wrap_binary(divide, "local.divide")
+minimum = _wrap_binary(minimum, "local.minimum")
+maximum = _wrap_binary(maximum, "local.maximum")
+power = _wrap_binary(power, "local.power")
+floor_divide = _wrap_binary(floor_divide, "local.floor_divide")
+remainder = _wrap_binary(remainder, "local.remainder")
 
 
 # ---------------------------------------------------------------------------

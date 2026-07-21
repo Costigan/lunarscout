@@ -53,6 +53,11 @@ _SPECIAL_OPS = {
     "local.is_valid", "local.is_invalid",
 }
 
+_TEMPORAL_REDUCTION_OP_IDS = {
+    "temporal.mean", "temporal.min", "temporal.max",
+    "temporal.std", "temporal.sum", "temporal.count",
+}
+
 
 def compute(expression: RasterExpression) -> Raster:
     nodes = expression._all_nodes()
@@ -81,6 +86,8 @@ def compute(expression: RasterExpression) -> Raster:
             result = _eval_unary(node, operands)
         elif op_id in _SPECIAL_OPS:
             result = _eval_special(node, operands)
+        elif op_id in _TEMPORAL_REDUCTION_OP_IDS:
+            result = _eval_temporal_reduction(node, operands)
         else:
             raise MapAlgebraExpressionError(
                 f"Unknown operation in compute: {op_id}",
@@ -214,6 +221,41 @@ def _eval_special(node: RasterExpression, operands: list[Any]) -> Raster:
         return _ma.is_invalid(operands[0])
     raise MapAlgebraExpressionError(
         f"Unsupported special op: {op_id}",
+        code="map_algebra_expression_eval_failed",
+    )
+
+
+def _eval_temporal_reduction(node: RasterExpression, operands: list[Any]) -> Raster:
+    op_id = node._operation_id
+    temporal_expr = node._operands[0]
+
+    from ._temporal_model import TemporalRasterExpression
+    from . import temporal as _temporal_ma
+
+    if not isinstance(temporal_expr, TemporalRasterExpression):
+        raise MapAlgebraExpressionError(
+            "Temporal reduction operand must be a TemporalRasterExpression.",
+            code="map_algebra_expression_eval_failed",
+            details={"type": type(temporal_expr).__name__},
+        )
+
+    if op_id == "temporal.mean":
+        return _temporal_ma._reduce_temporal_expression(temporal_expr, "mean")
+    elif op_id == "temporal.min":
+        return _temporal_ma._reduce_temporal_expression(temporal_expr, "min")
+    elif op_id == "temporal.max":
+        return _temporal_ma._reduce_temporal_expression(temporal_expr, "max")
+    elif op_id == "temporal.std":
+        ddof = node._params_dict.get("ddof", 0)
+        return _temporal_ma._reduce_temporal_expression(
+            temporal_expr, "std", ddof=ddof,
+        )
+    elif op_id == "temporal.sum":
+        return _temporal_ma._reduce_temporal_expression(temporal_expr, "sum")
+    elif op_id == "temporal.count":
+        return _temporal_ma._reduce_temporal_expression(temporal_expr, "count")
+    raise MapAlgebraExpressionError(
+        f"Unsupported temporal reduction: {op_id}",
         code="map_algebra_expression_eval_failed",
     )
 

@@ -1200,7 +1200,7 @@ are indexed in `examples/README.md`.
 Start with:
 
 ```bash
-.venv/bin/python examples/00_geotiff_and_coordinates.py
+.venv/bin/python examples/01_geotiff_and_coordinates.py
 ```
 
 Then continue through terrain, regions, alignment, temporal cubes,
