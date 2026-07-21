@@ -23,6 +23,30 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   Added ``tests/map_algebra/`` with 104 tests and fixtures for north-up,
   anisotropic, rotated, shifted, differing-CRS, masked-raster, and
   partial-coverage grids.  Verification: 559 passed, 17 skipped (CPU suite).
+- Implemented Phase B of the map-algebra plan: eager local algebra with
+  arithmetic (``add``, ``subtract``, ``multiply``, ``divide``, ``negative``,
+  ``absolute``), pairwise (``minimum``, ``maximum``), comparisons (``less``,
+  ``less_equal``, ``greater``, ``greater_equal``, ``equal``, ``not_equal``),
+  strict Boolean operations (``logical_and``, ``logical_or``, ``logical_xor``,
+  ``logical_not`` requiring boolean dtypes), conditional/validity helpers
+  (``where`` with ``ma.invalid`` sentinel, ``coalesce``, ``is_valid``,
+  ``is_invalid``, ``set_invalid``, ``fill_invalid``), value operations (``clip``,
+  ``cast``), and math functions (``sqrt``, ``square``, ``exp``, ``log``,
+  ``log10``, ``sin``, ``cos``, ``tan``, ``arcsin``, ``arccos``, ``arctan``,
+  ``arctan2``, ``hypot``, ``degrees``, ``radians``, ``floor``, ``ceil``,
+  ``trunc``, ``round``).  Added operator overloads to ``Raster`` for ``+``,
+  ``-``, ``*``, ``/``, ``//``, ``%``, ``**``, ``-`` (neg), ``+`` (pos),
+  ``abs()``, ``<``, ``<=``, ``>``, ``>=``, ``&``, ``|``, ``^``, ``~``,
+  ``round()``, ``math.floor``, ``math.ceil``, ``math.trunc`` with unit-aware
+  dispatch, grid validation, and validity-intersection semantics.  Internal
+  modules: ``_dtypes.py`` (promotion, overflow, casting), ``_units.py``
+  (conservative unit equality), ``_validity.py`` (mask combination, numeric
+  domain), ``_validation.py`` (operand/grid normalization), ``_kernels.py``
+  (eager NumPy kernels), ``_eager.py`` (raster/raster, raster/scalar dispatch).
+  Added 99 tests covering arithmetic, comparisons, booleans, ``where``/
+  ``coalesce``, validity helpers, clip/cast, math, operator overloads, and
+  compound expression examples.  Verification: 658 passed, 17 skipped (CPU
+  suite).
 - Added ``docs/map-algebra-implementation-plan.md``, the reviewed ``0.2.0rc1``
   execution plan for a broad lunar map-algebra API. The plan defines eager
   ``Raster`` values, bounded and resumable ``RasterExpression`` execution,

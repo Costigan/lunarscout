@@ -200,6 +200,241 @@ class Raster:
             name=self.name,
         )
 
+    # ------------------------------------------------------------------
+    # Arithmetic operators
+    # ------------------------------------------------------------------
+
+    def __add__(self, other: object) -> Raster:
+        from .map_algebra.local import add as _add
+        return _add(self, other)  # type: ignore[return-value]
+
+    def __radd__(self, other: object) -> Raster:
+        from .map_algebra.local import add as _add
+        return _add(other, self)  # type: ignore[return-value]
+
+    def __sub__(self, other: object) -> Raster:
+        from .map_algebra.local import subtract as _sub
+        return _sub(self, other)  # type: ignore[return-value]
+
+    def __rsub__(self, other: object) -> Raster:
+        from .map_algebra.local import subtract as _sub
+        return _sub(other, self)  # type: ignore[return-value]
+
+    def __mul__(self, other: object) -> Raster:
+        from .map_algebra.local import multiply as _mul
+        return _mul(self, other)  # type: ignore[return-value]
+
+    def __rmul__(self, other: object) -> Raster:
+        from .map_algebra.local import multiply as _mul
+        return _mul(other, self)  # type: ignore[return-value]
+
+    def __truediv__(self, other: object) -> Raster:
+        from .map_algebra.local import divide as _div
+        return _div(self, other)  # type: ignore[return-value]
+
+    def __rtruediv__(self, other: object) -> Raster:
+        from .map_algebra.local import divide as _div
+        return _div(other, self)  # type: ignore[return-value]
+
+    def __floordiv__(self, other: object) -> Raster:
+        from .map_algebra.local import _floor_divide as _kernel
+        if isinstance(other, Raster):
+            from .map_algebra._eager import _dispatch_binary_raster_raster
+            from .map_algebra._validation import _require_common_grid
+            _require_common_grid([self, other])
+            return _dispatch_binary_raster_raster(self, other, _kernel, operation="floordiv")
+        elif isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            return _dispatch_binary_raster_scalar(self, other, _kernel, operation="floordiv")
+        return NotImplemented
+
+    def __rfloordiv__(self, other: object) -> Raster:
+        from .map_algebra.local import _floor_divide as _kernel
+        if isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            return _dispatch_binary_raster_scalar(
+                self, other,
+                lambda arr, s: _kernel(np.full_like(arr, s), arr),
+                operation="floordiv",
+            )
+        return NotImplemented
+
+    def __mod__(self, other: object) -> Raster:
+        from .map_algebra.local import _remainder as _kernel
+        if isinstance(other, Raster):
+            from .map_algebra._eager import _dispatch_binary_raster_raster
+            from .map_algebra._validation import _require_common_grid
+            _require_common_grid([self, other])
+            return _dispatch_binary_raster_raster(self, other, _kernel, operation="mod")
+        elif isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            return _dispatch_binary_raster_scalar(self, other, _kernel, operation="mod")
+        return NotImplemented
+
+    def __rmod__(self, other: object) -> Raster:
+        from .map_algebra.local import _remainder as _kernel
+        if isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            return _dispatch_binary_raster_scalar(
+                self, other,
+                lambda arr, s: _kernel(np.full_like(arr, s), arr),
+                operation="mod",
+            )
+        return NotImplemented
+
+    def __pow__(self, other: object) -> Raster:
+        from .map_algebra.local import _power as _kernel
+        if isinstance(other, Raster):
+            from .map_algebra._eager import _dispatch_binary_raster_raster
+            from .map_algebra._validation import _require_common_grid
+            _require_common_grid([self, other])
+            return _dispatch_binary_raster_raster(self, other, _kernel, operation="power")
+        elif isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            return _dispatch_binary_raster_scalar(self, other, _kernel, operation="power")
+        return NotImplemented
+
+    def __rpow__(self, other: object) -> Raster:
+        if isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            return _dispatch_binary_raster_scalar(
+                self, other,
+                lambda arr, s: np.power(np.full_like(arr, np.float64(s)), arr),
+                operation="power",
+            )
+        return NotImplemented
+
+    def __neg__(self) -> Raster:
+        from .map_algebra.local import negative as _neg
+        return _neg(self)
+
+    def __pos__(self) -> Raster:
+        return self
+
+    def __abs__(self) -> Raster:
+        from .map_algebra.local import absolute as _abs
+        return _abs(self)
+
+    # ------------------------------------------------------------------
+    # Comparison operators
+    # ------------------------------------------------------------------
+
+    def __lt__(self, other: object) -> Raster:  # type: ignore[override]
+        if isinstance(other, Raster):
+            from .map_algebra._eager import _dispatch_binary_raster_raster
+            from .map_algebra._kernels import _less
+            from .map_algebra._validation import _require_common_grid
+            _require_common_grid([self, other])
+            return _dispatch_binary_raster_raster(self, other, _less, operation="less")
+        elif isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            from .map_algebra._kernels import _less
+            return _dispatch_binary_raster_scalar(self, other, _less, operation="less")
+        return NotImplemented
+
+    def __le__(self, other: object) -> Raster:  # type: ignore[override]
+        if isinstance(other, Raster):
+            from .map_algebra._eager import _dispatch_binary_raster_raster
+            from .map_algebra._kernels import _less_equal
+            from .map_algebra._validation import _require_common_grid
+            _require_common_grid([self, other])
+            return _dispatch_binary_raster_raster(self, other, _less_equal, operation="less_equal")
+        elif isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            from .map_algebra._kernels import _less_equal
+            return _dispatch_binary_raster_scalar(self, other, _less_equal, operation="less_equal")
+        return NotImplemented
+
+    def __gt__(self, other: object) -> Raster:  # type: ignore[override]
+        if isinstance(other, Raster):
+            from .map_algebra._eager import _dispatch_binary_raster_raster
+            from .map_algebra._kernels import _greater
+            from .map_algebra._validation import _require_common_grid
+            _require_common_grid([self, other])
+            return _dispatch_binary_raster_raster(self, other, _greater, operation="greater")
+        elif isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            from .map_algebra._kernels import _greater
+            return _dispatch_binary_raster_scalar(self, other, _greater, operation="greater")
+        return NotImplemented
+
+    def __ge__(self, other: object) -> Raster:  # type: ignore[override]
+        if isinstance(other, Raster):
+            from .map_algebra._eager import _dispatch_binary_raster_raster
+            from .map_algebra._kernels import _greater_equal
+            from .map_algebra._validation import _require_common_grid
+            _require_common_grid([self, other])
+            return _dispatch_binary_raster_raster(self, other, _greater_equal, operation="greater_equal")
+        elif isinstance(other, (int, float)):
+            from .map_algebra._eager import _dispatch_binary_raster_scalar
+            from .map_algebra._kernels import _greater_equal
+            return _dispatch_binary_raster_scalar(self, other, _greater_equal, operation="greater_equal")
+        return NotImplemented
+
+    # ------------------------------------------------------------------
+    # Boolean / bitwise operators
+    # ------------------------------------------------------------------
+
+    def __and__(self, other: object) -> Raster:
+        if isinstance(other, Raster):
+            from .map_algebra.local import logical_and as _la
+            return _la(self, other)
+        return NotImplemented
+
+    def __rand__(self, other: object) -> Raster:
+        if isinstance(other, Raster):
+            from .map_algebra.local import logical_and as _la
+            return _la(other, self)
+        return NotImplemented
+
+    def __or__(self, other: object) -> Raster:
+        if isinstance(other, Raster):
+            from .map_algebra.local import logical_or as _lo
+            return _lo(self, other)
+        return NotImplemented
+
+    def __ror__(self, other: object) -> Raster:
+        if isinstance(other, Raster):
+            from .map_algebra.local import logical_or as _lo
+            return _lo(other, self)
+        return NotImplemented
+
+    def __xor__(self, other: object) -> Raster:
+        if isinstance(other, Raster):
+            from .map_algebra.local import logical_xor as _lx
+            return _lx(self, other)
+        return NotImplemented
+
+    def __rxor__(self, other: object) -> Raster:
+        if isinstance(other, Raster):
+            from .map_algebra.local import logical_xor as _lx
+            return _lx(other, self)
+        return NotImplemented
+
+    def __invert__(self) -> Raster:
+        from .map_algebra.local import logical_not as _ln
+        return _ln(self)
+
+    # ------------------------------------------------------------------
+    # Rounding
+    # ------------------------------------------------------------------
+
+    def __round__(self, ndigits: int | None = None) -> Raster:
+        from .map_algebra.local import round_half_even as _r
+        return _r(self)
+
+    def __floor__(self) -> Raster:
+        from .map_algebra.local import floor as _f
+        return _f(self)
+
+    def __ceil__(self) -> Raster:
+        from .map_algebra.local import ceil as _c
+        return _c(self)
+
+    def __trunc__(self) -> Raster:
+        from .map_algebra.local import trunc as _t
+        return _t(self)
+
     __hash__ = None  # type: ignore[assignment]
 
     # ------------------------------------------------------------------
