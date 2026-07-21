@@ -66,19 +66,25 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   ``fill_invalid()`` validate fill value representability, and fixed
   ``round(raster, ndigits)`` to pass through the ndigits argument.
   Verification: 658 passed, 17 skipped (CPU suite).
-- Implemented Phase C of the map-algebra plan: a ``RasterExpression`` immutable
-  DAG for deferred computation with operator overloads (``+``, ``-``, ``*``,
-  ``/``, ``<``, ``<=``, ``>``, ``>=``, ``==``, ``!=``, ``&``, ``|``, ``^``,
-  ``-``, ``~``, ``abs``), GeoTIFF ``ma.source()`` for lazy metadata-only file
-  references, ``ma.compute()`` for bottom-up eager materialization,
-  ``ma.explain()`` for human-readable node tree descriptions, ``ma.plan()``
-  for dry-run validation (grid, dtype, units, source inventory), scientific
-  identity hashing, and canonical JSON serialization.  ``Raster`` operators
-  automatically promote to ``RasterExpression`` when mixed with expression
-  operands.  Internal modules: ``_model.py`` (node types, walk, JSON),
-  ``_sources.py`` (file/in-memory sources), ``expression.py`` (compute,
-  explain, plan dispatchers).  Added 18 tests.  Verification: 676 passed,
-  17 skipped (CPU suite).
+- Implemented Phase C of the map-algebra plan (revised after review): a
+  ``RasterExpression`` immutable DAG with sealed constructor (``_sealed``
+  sentinel), Kahn-algorithm topological sort for shared-dependency DAGs,
+  operator overloads for all Phase B arithmetic, comparison, Boolean, and
+  unary operations, metadata-only ``ma.source()`` (reads GeoTIFF profile
+  without loading band data, ``identity="stat"|"sha256"`` option, structured
+  ``GeoTiffOpenError``), ``ma.compute()`` delegating to Phase B eager
+  functions so all unit/dtype/overflow/boolean policies are preserved,
+  ``ma.explain()`` for human-readable node tree, ``ma.plan()`` for dry-run
+  validation, deterministic sequential node IDs with ``sha256:``-prefixed
+  scientific identity hashes that distinguish distinct values, and canonical
+  JSON serialization with full CRS, affine, and nodata metadata.  Wrapped 19
+  unary functions (``sqrt``, ``sin``, etc.) with expression dispatch so
+  ``ma.sqrt(expr)`` returns a ``RasterExpression`` node.  ``Raster``
+  operators promote to ``RasterExpression`` when mixed with expression
+  operands.  Internal modules: ``_model.py`` (topological sort, sealed
+  construction, identity), ``_sources.py`` (metadata-only reads, identity
+  modes), ``expression.py`` (compute via Phase B delegation, explain, plan).
+  Added 26 tests.  Verification: 684 passed, 17 skipped (CPU suite).
 - Added ``docs/map-algebra-implementation-plan.md``, the reviewed ``0.2.0rc1``
   execution plan for a broad lunar map-algebra API. The plan defines eager
   ``Raster`` values, bounded and resumable ``RasterExpression`` execution,

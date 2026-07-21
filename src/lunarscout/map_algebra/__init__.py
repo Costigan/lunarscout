@@ -81,6 +81,46 @@ from .expression import (
 from ._sources import source
 
 
+# ---------------------------------------------------------------------------
+# Expression-dispatch wrappers for unary & binary functions
+# ---------------------------------------------------------------------------
+
+def _has_expr(*args: Any) -> bool:
+    return any(isinstance(a, RasterExpression) for a in args)
+
+
+def _wrap_unary(fn: Any, op_id: str) -> Any:
+    def _wrapper(a: Any) -> Any:
+        if isinstance(a, RasterExpression):
+            from ._model import _new_expr_unary
+            return _new_expr_unary(a, op_id)
+        return fn(a)
+    _wrapper.__name__ = fn.__name__
+    return _wrapper
+
+
+sqrt = _wrap_unary(sqrt, "local.sqrt")
+square = _wrap_unary(square, "local.square")
+exp = _wrap_unary(exp, "local.exp")
+log = _wrap_unary(log, "local.log")
+log10 = _wrap_unary(log10, "local.log10")
+sin = _wrap_unary(sin, "local.sin")
+cos = _wrap_unary(cos, "local.cos")
+tan = _wrap_unary(tan, "local.tan")
+arcsin = _wrap_unary(arcsin, "local.arcsin")
+arccos = _wrap_unary(arccos, "local.arccos")
+arctan = _wrap_unary(arctan, "local.arctan")
+negative = _wrap_unary(negative, "local.negative")
+absolute = _wrap_unary(absolute, "local.absolute")
+logical_not = _wrap_unary(logical_not, "local.logical_not")
+floor = _wrap_unary(floor, "local.floor")
+ceil = _wrap_unary(ceil, "local.ceil")
+trunc = _wrap_unary(trunc, "local.trunc")
+round = _wrap_unary(round, "local.round")
+degrees = _wrap_unary(degrees, "local.degrees")
+radians = _wrap_unary(radians, "local.radians")
+
+
 def raster(
     values: NDArray[Any],
     georef: GeoReference,

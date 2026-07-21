@@ -1,18 +1,97 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 
-from ..geotiff import read_geotiff as _read_geotiff
+from ..errors import MapAlgebraExpressionError, GeoTiffOpenError
+from ..georeference import GeoReference
 from ..raster import Raster
-from ._model import RasterExpression, _new_node_id
+from ._model import RasterExpression, _make_expr_node, _next_id
 
 
-def _source_descriptor(path: Path, band: int, georef, dtype, nodata) -> dict:
+def _read_source_metadata(path: Path, band: int) -> tuple[GeoReference, np.dtype[Any], int | float | None]:
+    import rasterio as _rasterio
+
+    if not path.exists() or not path.is_file():
+        raise GeoTiffOpenError(
+            f"Source file does not exist: {path}",
+            code="geotiff_file_not_found",
+            details={"path": str(path)},
+        )
+    try:
+        dataset = _rasterio.open(path)
+    except Exception as exc:
+        raise GeoTiffOpenError(
+            f"File is not a readable GeoTIFF: {path}",
+            code="geotiff_unreadable_or_unsupported",
+            details={"path": str(path), "error": str(exc)},
+        ) from exc
+
+    with dataset:
+        if dataset.driver != "GTiff":
+            raise GeoTiffOpenError(
+                f"File is not a GeoTIFF: {path}",
+                code="geotiff_unreadable_or_unsupported",
+                details={"path": str(path), "driver": dataset.driver},
+            )
+        if band > int(dataset.count):
+            raise GeoTiffOpenError(
+                f"Band {band} is out of range.",
+                code="geotiff_band_out_of_range",
+                details={"band": band, "band_count": int(dataset.count)},
+            )
+
+        crs_wkt = dataset.crs.to_wkt() if dataset.crs is not None else ""
+        if not crs_wkt:
+            raise MapAlgebraExpressionError(
+                f"GeoTIFF is not georeferenced: {path}",
+                code="map_algebra_unreferenced_source",
+                details={"path": str(path)},
+            )
+
+        transform = dataset.transform
+        if transform.is_identity:
+            raise MapAlgebraExpressionError(
+                f"GeoTIFF has no valid geotransform: {path}",
+                code="map_algebra_unreferenced_source",
+                details={"path": str(path)},
+            )
+
+        from pyproj import CRS
+        proj4 = str(CRS.from_wkt(crs_wkt).to_proj4() or "").strip()
+
+        affine_tuple = tuple(float(v) for v in transform.to_gdal())
+        dtype = np.dtype(dataset.dtypes[band - 1])
+        nodata = dataset.nodatavals[band - 1]
+
+        georef = GeoReference(
+            projection_wkt=crs_wkt,
+            projection_proj4=proj4,
+            affine_transform=affine_tuple,  # type: ignore[arg-type]
+            width=int(dataset.width),
+            height=int(dataset.height),
+            pixel_size_x=float(affine_tuple[1]),
+            pixel_size_y=float(affine_tuple[5]),
+            nodata=nodata,
+        )
+        return georef, dtype, nodata
+
+
+def source(
+    path: str | Path,
+    *,
+    band: int = 1,
+    units: str | None = None,
+    identity: Literal["stat", "sha256"] = "stat",
+) -> RasterExpression:
+    path = Path(path).expanduser().resolve()
+    georef, dtype, nodata = _read_source_metadata(path, band)
+
     stat = path.stat()
-    return {
-        "path": str(path.resolve()),
+    params: dict[str, Any] = {
+        "path": str(path),
         "band": band,
         "width": georef.width,
         "height": georef.height,
@@ -20,39 +99,31 @@ def _source_descriptor(path: Path, band: int, georef, dtype, nodata) -> dict:
         "nodata": repr(nodata),
         "file_size": stat.st_size,
         "mtime_ns": stat.st_mtime_ns,
+        "identity_mode": identity,
     }
 
+    import hashlib
+    if identity == "sha256":
+        sha = hashlib.sha256()
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(1 << 20)
+                if not chunk:
+                    break
+                sha.update(chunk)
+        params["sha256"] = sha.hexdigest()
 
-def source(path: str | Path, *, band: int = 1, units: str | None = None) -> RasterExpression:
-    path = Path(path).expanduser().resolve()
-    if not path.exists():
-        raise FileNotFoundError(f"Source file not found: {path}")
-
-    values, georef = _read_geotiff(path, band=band)
-    if georef is None:
-        raise ValueError(f"GeoTIFF is not georeferenced: {path}")
-
-    params = _source_descriptor(path, band, georef, values.dtype, georef.nodata)
-    return RasterExpression(
-        _node_id=_new_node_id(),
-        _operation_id="source",
-        _operands=(),
-        _params=params,
-        _inferred_grid=georef,
-        _inferred_dtype=np.dtype(values.dtype),
-        _inferred_units=units,
-        _halo=0,
+    return _make_expr_node(
+        "source", (),
+        grid=georef, dtype=dtype, units=units,
+        params=params,
     )
 
 
 def constant(raster: Raster) -> RasterExpression:
-    return RasterExpression(
-        _node_id=_new_node_id(),
-        _operation_id="constant",
-        _operands=(raster,),
-        _params={"name": raster.name or ""},
-        _inferred_grid=raster.georef,
-        _inferred_dtype=raster.dtype,
-        _inferred_units=raster.units,
-        _halo=0,
+    return _make_expr_node(
+        "constant", (raster,),
+        grid=raster.georef, dtype=raster.dtype,
+        units=raster.units,
+        params={"name": raster.name or ""},
     )
