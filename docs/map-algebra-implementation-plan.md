@@ -1073,23 +1073,23 @@ Acceptance evidence:
 ### Phase D: Durable expression output
 
 - [x] Implement output preflight, staged GeoTIFF creation, deterministic
-  invalid payload, GDAL mask writing, journal, manifest, resume, and atomic
-  publication. *(preflight, staging, manifest, resume, and atomic publish
-  via existing write_geotiff infrastructure; GDAL mask writing deferred)*
-- [x] Implement ``overwrite``, ``resume``, and ``start_fresh`` behavior consistent
-  with horizon-derived products.
-- [x] Bind restarts to expression/source identity and reject mismatches.
+  invalid payload, atomic publication, and GDAL mask writing (via
+  ``write_mask()`` at dataset creation time).
+- [ ] Implement journal-based resume. *(manifest identity check exists
+  but no per-window journal; full recalculation on mismatch)*
+- [x] Bind restarts to expression scientific identity, output dtype,
+  invalid fill, and grid dimensions.
 - [ ] Add injected-failure tests before write, during calculation, after block
   write, before journal update, during close, and before publish.
 - [ ] Add cancellation/resume tests and concurrent-output conflict tests.
 - [x] Confirm failed overwrite preserves the previous complete output.
-  *(overwrite=False raises OutputExistsError before any I/O)*
+  *(two-phase atomic staging: new TIFF+manifest written to temp dir,
+  old files replaced only after both succeed; overwrite=True required)*
 
 Acceptance evidence:
 
-- [x] A killed multi-window operation resumes without trusting unjournaled
-  blocks and publishes only a complete valid product. *(manifest-based
-  restart identity check with start_fresh support)*
+- [ ] A killed multi-window operation resumes without trusting unjournaled
+  blocks. *(no multi-window execution exists yet)*
 
 ### Phase E: Focal and morphology operations
 

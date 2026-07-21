@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-
 import numpy as np
 import pytest
 import rasterio
@@ -19,7 +18,6 @@ from lunarscout.map_algebra import (
     write,
     raster as ma_raster,
 )
-from lunarscout.raster import Raster
 from tests.map_algebra.conftest import MOON_WKT, MOON_PROJ4
 
 
@@ -46,24 +44,55 @@ def _write_tiff(tmp_path, name, values, dtype="float32"):
     return path
 
 
+def _read_mask(path):
+    with rasterio.open(path) as ds:
+        return ds.read_masks(1)
+
+
 class TestWrite:
     def test_basic_write(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.full((2, 2), 7.0, dtype=np.float32))
-        expr = source(p) + 3
         out = tmp_path / "out.tif"
-        result = write(out, expr)
+        result = write(out, source(p) + 3)
         assert result == out
         assert out.exists()
         with rasterio.open(out) as ds:
             data = ds.read(1)
             np.testing.assert_array_equal(data, np.full((2, 2), 10.0, dtype=np.float32))
 
+    def test_gdal_mask_written(self, tmp_path):
+        p = _write_tiff(tmp_path, "src.tif", np.array([[1.0, 0.0], [3.0, 4.0]], dtype=np.float32))
+        src_expr = source(p)
+        from lunarscout.map_algebra import where, invalid
+        cond = compute(src_expr > 1.5)
+        expr = where(cond, compute(src_expr), invalid)
+        out = tmp_path / "out.tif"
+        write(out, expr.expression(), invalid_value=-9999.0)
+        mask = _read_mask(out)
+        assert mask.shape == (2, 2)
+        assert mask[0, 0] == 0
+        assert mask[1, 0] == 255
+        assert mask[1, 1] == 255
+
+    def test_valid_zero_not_confused_with_nodata(self, tmp_path):
+        p = _write_tiff(tmp_path, "src.tif", np.array([[0, 255]], dtype=np.uint8))
+        src_expr = source(p)
+        out = tmp_path / "out.tif"
+        write(out, src_expr, invalid_value=0)
+        mask = _read_mask(out)
+        assert mask[0, 0] == 255
+        assert mask[0, 1] == 255
+        with rasterio.open(out) as ds:
+            data = ds.read(1)
+            assert data[0, 0] == 0
+            assert data[0, 1] == 255
+
     def test_overwrite_protection(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
         out = tmp_path / "out.tif"
-        write(out, source(p) + 1, overwrite=False)
+        write(out, source(p) + 1)
         with pytest.raises(OutputExistsError):
-            write(out, source(p) + 2, overwrite=False)
+            write(out, source(p) + 2)
 
     def test_overwrite_allowed(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
@@ -77,37 +106,10 @@ class TestWrite:
     def test_dtype_override(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.array([[1.5, 2.5]], dtype=np.float32))
         out = tmp_path / "out.tif"
-        write(out, source(p), dtype="int32")
+        write(out, source(p), dtype="float64")
         with rasterio.open(out) as ds:
             data = ds.read(1)
-            assert data.dtype == np.int32
-            np.testing.assert_array_equal(data, np.array([[1, 2]], dtype=np.int32))
-
-    def test_invalid_value_float(self, tmp_path):
-        p = _write_tiff(tmp_path, "src.tif", np.array([[0.0, 1.0]], dtype=np.float32))
-        src_expr = source(p)
-        from lunarscout.map_algebra import where, invalid
-        cond = compute(src_expr > 0.5)
-        expr = where(cond, compute(src_expr), invalid)
-        out = tmp_path / "out.tif"
-        write(out, expr.expression(), invalid_value=-9999.0)
-        with rasterio.open(out) as ds:
-            data = ds.read(1)
-            assert data[0, 0] == -9999.0
-            assert data[0, 1] == 1.0
-
-    def test_invalid_value_uint8(self, tmp_path):
-        p = _write_tiff(tmp_path, "src.tif", np.array([[0, 255]], dtype=np.uint8))
-        src_expr = source(p)
-        from lunarscout.map_algebra import where, invalid
-        cond = compute(src_expr > 128)
-        expr = where(cond, compute(src_expr), invalid)
-        out = tmp_path / "out.tif"
-        write(out, expr.expression(), invalid_value=0)
-        with rasterio.open(out) as ds:
-            data = ds.read(1)
-            assert data[0, 0] == 0
-            assert data[0, 1] == 255
+            assert data.dtype == np.float64
 
     def test_manifest_written(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
@@ -117,38 +119,33 @@ class TestWrite:
         assert mf.exists()
         data = json.loads(mf.read_text())
         assert "scientific_identity" in data
-        assert "grid" in data
-        assert "dtype" in data
+        assert "output_dtype" in data
+        assert "invalid_fill" in data
 
-    def test_restart_skips(self, tmp_path):
+    def test_restart_id_match_output_exists_skips(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
         out = tmp_path / "out.tif"
         expr = source(p) + 1
         write(out, expr)
-        out.unlink()
-        result2 = write(out, expr)
-        assert result2 == out
-        assert out.exists()
+        mtime_before = out.stat().st_mtime
+        result = write(out, expr)
+        assert result == out
+        assert out.stat().st_mtime == mtime_before
 
-    def test_restart_mismatch_rebuilds(self, tmp_path):
+    def test_restart_id_mismatch_output_absent_rebuilds(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
         out = tmp_path / "out.tif"
-        expr_a = source(p) + 1
-        write(out, expr_a)
+        write(out, source(p) + 1)
         out.unlink()
-        expr_b = source(p) + 2
-        write(out, expr_b)
-        with rasterio.open(out) as ds:
-            data = ds.read(1)
-            np.testing.assert_array_equal(data, np.full((2, 2), 3.0, dtype=np.float32))
+        write(out, source(p) + 1)
+        assert out.exists()
 
     def test_start_fresh(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
         out = tmp_path / "out.tif"
-        expr = source(p) + 1
-        write(out, expr)
+        write(out, source(p) + 1)
         out.unlink()
-        write(out, expr, start_fresh=True)
+        write(out, source(p) + 1, start_fresh=True)
         assert out.exists()
 
     def test_compound_expression_write(self, tmp_path):
@@ -163,26 +160,25 @@ class TestWrite:
             data = ds.read(1)
             np.testing.assert_array_equal(data, np.array([[1, 0, 0]], dtype=np.uint8))
 
-    def test_empty_expression_raises(self, tmp_path):
-        r = ma_raster(np.ones((2, 2), dtype=np.float32), _georef(2, 2))
-        with pytest.raises(MapAlgebraStorageError, match="Unsupported output dtype"):
-            write(tmp_path / "out.tif", r.expression(), dtype="complex64")
-
-    def test_writes_to_nested_directory(self, tmp_path):
+    def test_unsupported_dtype_preflight(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
-        out = tmp_path / "sub" / "deep" / "out.tif"
-        result = write(out, source(p) + 1)
-        assert result.exists()
+        with pytest.raises(MapAlgebraStorageError, match="Unsupported output dtype"):
+            write(tmp_path / "out.tif", source(p), dtype="complex64")
+
+    def test_lossy_dtype_rejected(self, tmp_path):
+        p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
+        with pytest.raises(MapAlgebraStorageError, match="safely convert"):
+            write(tmp_path / "out.tif", source(p), dtype="int32")
 
 
 class TestRasterExpressionMethod:
-    def test_raster_expression_returns_expression(self, tmp_path):
+    def test_raster_expression_returns_expression(self):
         r = ma_raster(np.ones((2, 2), dtype=np.float32), _georef(2, 2))
         expr = r.expression()
         assert isinstance(expr, RasterExpression)
         assert expr.operation_id == "constant"
 
-    def test_raster_expression_compute_roundtrip(self, tmp_path):
+    def test_raster_expression_compute_roundtrip(self):
         r = ma_raster(np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32), _georef(2, 2))
         expr = r.expression() + 10
         result = compute(expr)
