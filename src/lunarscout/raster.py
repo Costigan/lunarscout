@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, NoReturn
+from typing import Any, NoReturn, TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .errors import RasterValidationError
 from .georeference import GeoReference
+
+if TYPE_CHECKING:
+    from .map_algebra._model import RasterExpression
+
+
+def _is_expression(obj: object) -> bool:
+    clsname = type(obj).__qualname__
+    return clsname == "RasterExpression"
 
 _VALID_DTYPES = {
     np.dtype(np.bool_),
@@ -201,34 +209,54 @@ class Raster:
     # ------------------------------------------------------------------
 
     def __add__(self, other: object) -> Raster:
+        if _is_expression(other):
+            from .map_algebra._sources import constant
+            return constant(self).__add__(other)  # type: ignore[return-value]
         from .map_algebra.local import add as _add
         return _add(self, other)  # type: ignore[return-value]
 
     def __radd__(self, other: object) -> Raster:
+        if _is_expression(other):
+            return other.__add__(self)  # type: ignore[return-value]
         from .map_algebra.local import add as _add
         return _add(other, self)  # type: ignore[return-value]
 
     def __sub__(self, other: object) -> Raster:
+        if _is_expression(other):
+            from .map_algebra._sources import constant
+            return constant(self).__sub__(other)  # type: ignore[return-value]
         from .map_algebra.local import subtract as _sub
         return _sub(self, other)  # type: ignore[return-value]
 
     def __rsub__(self, other: object) -> Raster:
+        if _is_expression(other):
+            return other.__sub__(self)  # type: ignore[return-value]
         from .map_algebra.local import subtract as _sub
         return _sub(other, self)  # type: ignore[return-value]
 
     def __mul__(self, other: object) -> Raster:
+        if _is_expression(other):
+            from .map_algebra._sources import constant
+            return constant(self).__mul__(other)  # type: ignore[return-value]
         from .map_algebra.local import multiply as _mul
         return _mul(self, other)  # type: ignore[return-value]
 
     def __rmul__(self, other: object) -> Raster:
+        if _is_expression(other):
+            return other.__mul__(self)  # type: ignore[return-value]
         from .map_algebra.local import multiply as _mul
         return _mul(other, self)  # type: ignore[return-value]
 
     def __truediv__(self, other: object) -> Raster:
+        if _is_expression(other):
+            from .map_algebra._sources import constant
+            return constant(self).__truediv__(other)  # type: ignore[return-value]
         from .map_algebra.local import divide as _div
         return _div(self, other)  # type: ignore[return-value]
 
     def __rtruediv__(self, other: object) -> Raster:
+        if _is_expression(other):
+            return other.__truediv__(self)  # type: ignore[return-value]
         from .map_algebra.local import divide as _div
         return _div(other, self)  # type: ignore[return-value]
 

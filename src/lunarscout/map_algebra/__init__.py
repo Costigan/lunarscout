@@ -72,6 +72,14 @@ from .local import (
     where,
 )
 
+from ._model import RasterExpression
+from .expression import (
+    compute,
+    explain,
+    plan,
+)
+from ._sources import source
+
 
 def raster(
     values: NDArray[Any],
