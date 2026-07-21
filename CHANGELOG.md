@@ -6,6 +6,16 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Bumped candidate version to ``0.1.0rc3``.  Updated the version assertion
+  in ``tests/test_dependency_boundary.py`` to match.
+- Deferred product performance benchmarking to a later release.  Marked the
+  remaining Section 5 benchmarks in ``docs/PLAN1.md`` as deferred; correctness,
+  restart, cancellation, and disabled-CUDA fallback evidence is complete.
+  Noted the existing ``0.1.0rc1`` and ``0.1.0rc2`` TestPyPI publications in
+  the plan's Sections 12 and M5.
+- Added ``CONTRIBUTING.md`` covering dev setup, test commands, project layout,
+  code conventions, version bumping, the release process, CUDA configuration,
+  and the dependency boundary.
 - Tuned the production Numba horizon kernel by capping it at 80 registers per
   thread, selecting 128-thread blocks, and keeping coordinate interpolation
   entirely in float32. The compiled kernel now uses zero local memory and
