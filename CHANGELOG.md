@@ -6,6 +6,23 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Implemented Phase A of the broad map-algebra API plan
+  (``docs/map-algebra-implementation-plan.md``): the public ``Raster`` frozen
+  dataclass with explicit spatial and validity metadata, custom cell-by-cell
+  ``==``/``!=`` operators, and whole-raster comparison helpers
+  (``array_equal``, ``allclose``, ``same_grid``, ``same_metadata``); a
+  ``map_algebra`` namespace (``ls.map_algebra``) with eager constructors
+  (``raster()``, ``from_masked_array()``, ``from_existing()``,
+  ``to_existing()``) and a provenance-aware GeoTIFF ``read()``; nine
+  structured error classes under ``MapAlgebraError``; mandatory
+  representability validation for integer and floating nodata; preservation
+  of masked-array masks through the ``raster()`` constructor; an explicit
+  ``validity_provenance`` field distinguishing explicit-caller, nodata,
+  all-valid, masked-array, and geotiff:... sources; and ``__bool__`` raising
+  ``TypeError`` so implicit truth testing is unavailable by design.
+  Added ``tests/map_algebra/`` with 104 tests and fixtures for north-up,
+  anisotropic, rotated, shifted, differing-CRS, masked-raster, and
+  partial-coverage grids.  Verification: 559 passed, 17 skipped (CPU suite).
 - Added ``docs/map-algebra-implementation-plan.md``, the reviewed ``0.2.0rc1``
   execution plan for a broad lunar map-algebra API. The plan defines eager
   ``Raster`` values, bounded and resumable ``RasterExpression`` execution,

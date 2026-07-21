@@ -209,3 +209,57 @@ class TemporalSeriesWriteError(TemporalSeriesError):
 
 class TemporalLookupError(TemporalSeriesError):
     default_code = "temporal_lookup_error"
+
+
+class MapAlgebraError(LunarscoutError):
+    """Base class for map-algebra failures."""
+
+    default_code = "map_algebra_error"
+
+
+class RasterValidationError(MapAlgebraError):
+    """A Raster value does not satisfy the public data contract."""
+
+    default_code = "raster_validation_error"
+
+
+class MapAlgebraGridError(MapAlgebraError):
+    """Grids are incompatible for the requested map-algebra operation."""
+
+    default_code = "map_algebra_grid_error"
+
+
+class MapAlgebraDTypeError(MapAlgebraError):
+    """The requested dtype is unsupported for the map-algebra operation."""
+
+    default_code = "map_algebra_dtype_error"
+
+
+class MapAlgebraUnitError(MapAlgebraError):
+    """Units are incompatible or missing for the requested operation."""
+
+    default_code = "map_algebra_unit_error"
+
+
+class MapAlgebraExpressionError(MapAlgebraError):
+    """A RasterExpression is invalid or cannot be planned."""
+
+    default_code = "map_algebra_expression_error"
+
+
+class MapAlgebraOperationError(MapAlgebraError):
+    """A map-algebra operation failed during execution."""
+
+    default_code = "map_algebra_operation_error"
+
+
+class MapAlgebraStorageError(MapAlgebraError):
+    """Map-algebra product staging, persistence, or publication failed."""
+
+    default_code = "map_algebra_storage_error"
+
+
+class DistanceFieldError(MapAlgebraError):
+    """A distance-field operation failed."""
+
+    default_code = "distance_field_error"

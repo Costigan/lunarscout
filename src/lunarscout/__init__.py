@@ -1,6 +1,6 @@
 from importlib.metadata import PackageNotFoundError, version as _distribution_version
 
-from . import cuda, spice
+from . import cuda, map_algebra, spice
 from .alignment import (
     align,
     available_resampling_algorithms,
@@ -12,6 +12,7 @@ from .errors import (
     ComputeBackendError,
     CoordinateTransformError,
     CudaError,
+    DistanceFieldError,
     GeoReferenceError,
     GeoTiffBandError,
     GeoTiffDataTypeError,
@@ -26,6 +27,13 @@ from .errors import (
     HorizonGenerationError,
     InputError,
     LunarscoutError,
+    MapAlgebraDTypeError,
+    MapAlgebraError,
+    MapAlgebraExpressionError,
+    MapAlgebraGridError,
+    MapAlgebraOperationError,
+    MapAlgebraStorageError,
+    MapAlgebraUnitError,
     OutputExistsError,
     OperationCancelledError,
     ProductCalculationError,
@@ -33,6 +41,7 @@ from .errors import (
     ProductError,
     ProductStorageError,
     ProductTimeError,
+    RasterValidationError,
     RegionOperationError,
     ScenarioError,
     ScenarioPathError,
@@ -77,6 +86,7 @@ from .products import (
     mission_duration_from_sunlight_and_earth_elevation,
 )
 from .progress import ProgressEvent
+from .raster import Raster
 from .regions import (
     filter_regions_by_size,
     find_borders,
@@ -123,6 +133,7 @@ __all__ = [
     "CoordinateTransformError",
     "CudaStatus",
     "CudaError",
+    "DistanceFieldError",
     "GeoReference",
     "GeoReferenceError",
     "GeoTiffBandError",
@@ -139,6 +150,13 @@ __all__ = [
     "InputError",
     "LunarscoutError",
     "LonLat",
+    "MapAlgebraDTypeError",
+    "MapAlgebraError",
+    "MapAlgebraExpressionError",
+    "MapAlgebraGridError",
+    "MapAlgebraOperationError",
+    "MapAlgebraStorageError",
+    "MapAlgebraUnitError",
     "MapProduct",
     "MapProductCatalog",
     "MapRegion",
@@ -150,6 +168,8 @@ __all__ = [
     "ProductStorageError",
     "ProductTimeError",
     "ProgressEvent",
+    "Raster",
+    "RasterValidationError",
     "RegionOperationError",
     "Scenario",
     "ScenarioError",
@@ -201,6 +221,7 @@ __all__ = [
     "iter_times",
     "label_regions",
     "load_map_product_catalog",
+    "map_algebra",
     "map_product_download_directory",
     "map_product_scenario_name",
     "open_scenario",
