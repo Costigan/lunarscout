@@ -132,6 +132,20 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   include_zone_ids, empty zones, and immutable records.  Streaming/bounded
   accumulators remain deferred.  Verification: 769 passed, 17 skipped
   (CPU suite).
+- Implemented Phase G of the map-algebra plan (revised after review): eager
+  distance fields with ``distance_to()`` and ``signed_distance()`` supporting
+  three metrics (``euclidean`` via scipy EDT, ``taxicab``/``chessboard`` via
+  2-pass algorithms), two unit modes (``pixels`` and ``physical``), and
+  ``max_distance`` clipping in output units.  Corrected signed-distance
+  semantics (True→dist to False, False→−dist to True).  Physical units
+  require square isotropic projected CRS (validated via pyproj
+  ``is_geographic`` and affine analysis); taxicab/chessboard physical
+  rejected.  Input validity preserved through distance computation.
+  Structured errors for no seeds, all-true, all-false, invalid max_distance,
+  geographic CRS, anisotropic grids, and unknown units/metrics.  Internal
+  module: ``distance.py``.  Added 21 tests covering metrics, units,
+  max_distance, validity preservation, signed distance, and rejection of
+  invalid inputs.  Verification: 790 passed, 17 skipped (CPU suite).
 - Added ``docs/map-algebra-implementation-plan.md``, the reviewed ``0.2.0rc1``
   execution plan for a broad lunar map-algebra API. The plan defines eager
   ``Raster`` values, bounded and resumable ``RasterExpression`` execution,

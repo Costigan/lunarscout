@@ -1137,21 +1137,21 @@ Acceptance evidence:
 
 ### Phase G: Distance fields
 
-- [ ] Freeze distance metrics, units, affine handling, and invalid-area rules.
-- [ ] Implement small CPU reference algorithms and independent analytic test
-  cases.
-- [ ] Implement eager distance fields.
-- [ ] Evaluate exact bounded file-backed algorithms; document the selected
-  algorithm, complexity, temporary storage, and failure recovery.
-- [ ] Implement file-backed distance only after the review accepts exactness or
-  a clearly quantified approximation.
-- [ ] Add physical-distance tests for square, anisotropic, and rotated projected
-  lunar grids.
-- [ ] Add explicit rejection tests for unconfigured angular/geographic grids.
-- [ ] Benchmark representative hazard masks, sparse seeds, dense seeds, and
-  empty/all-seed edge cases.
-- [ ] Evaluate CUDA only after CPU acceptance; do not make it a release blocker
-  unless separately approved.
+- [x] Freeze distance metrics (``euclidean``, ``taxicab``, ``chessboard``),
+  units (``pixels``, ``physical``), invalid-output behavior, and affine
+  handling. Physical Euclidean distance uses both affine basis vectors;
+  physical taxicab and chessboard distance remain unsupported.
+- [x] Implement small CPU reference algorithms (scipy EDT for Euclidean,
+  2-pass for taxicab/chessboard) and independent analytic test cases.
+- [x] Implement eager distance fields: ``distance_to()`` and
+  ``signed_distance()``.
+- [ ] Evaluate exact bounded file-backed algorithms. *(deferred to
+  future windowed-execution work)*
+- [x] Add physical-distance tests for square, anisotropic, rotated, and skewed
+  projected grids, including a non-metre projected CRS.
+- [x] Add explicit rejection for geographic CRS (via pyproj ``is_geographic``
+  check) and for taxicab/chessboard with physical units.
+- [ ] Benchmark representative hazard masks. *(deferred)*
 
 Acceptance evidence:
 

@@ -108,6 +108,10 @@ from .zonal import (
     zonal_raster,
     zonal_stats,
 )
+from .distance import (
+    distance_to,
+    signed_distance,
+)
 
 
 # ---------------------------------------------------------------------------
