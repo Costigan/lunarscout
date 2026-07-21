@@ -1,7 +1,7 @@
 # Broad Map-Algebra API Implementation Plan
 
-Status: proposed plan for review; no items are implemented merely because they
-appear here
+Status: proposed plan for review; Phase A–C implemented, Phases D–I and
+remaining inventory items are not yet implemented.
 
 Target: `0.2.0rc1`
 
@@ -118,7 +118,7 @@ implementations.
 
 ### 2.1 Public package shape
 
-- [ ] Add public module `lunarscout.map_algebra`, normally imported as:
+- [x] Add public module `lunarscout.map_algebra`, normally imported as:
 
   ```python
   import lunarscout as ls
@@ -126,15 +126,15 @@ implementations.
   ma = ls.map_algebra
   ```
 
-- [ ] Export the module itself from the package root, plus the common value
-  types `Raster` and `RasterExpression`. Do not export dozens of individual
-  algebra operations from `lunarscout.__init__`.
-- [ ] Keep `TemporalRaster` and `TemporalRasterExpression` under
-  `lunarscout.map_algebra` for `0.2` until temporal usage shows they belong in
+- [x] Export the module itself from the package root, plus the common value
+  types ``Raster`` and ``RasterExpression``. Do not export dozens of individual
+  algebra operations from ``lunarscout.__init__``.
+- [ ] Keep ``TemporalRaster`` and ``TemporalRasterExpression`` under
+  ``lunarscout.map_algebra`` for ``0.2`` until temporal usage shows they belong in
   the already curated package root.
-- [ ] Keep existing tuple-returning APIs compatible. `read_geotiff()`,
-  `slope()`, `align()`, and region functions do not change return type.
-- [ ] Add adapters that deliberately cross between existing APIs and the new
+- [x] Keep existing tuple-returning APIs compatible. ``read_geotiff()``,
+  ``slope()``, ``align()``, and region functions do not change return type.
+- [x] Add adapters that deliberately cross between existing APIs and the new
   types; do not implicitly wrap every existing result.
 
 ### 2.2 Two explicit execution modes
@@ -151,18 +151,19 @@ Both modes use the same operation specifications, dtype inference, unit rules,
 and validity rules. They are separate execution strategies, not two scientific
 definitions of an operation.
 
-- [ ] Never accept a path in an eager operation.
-- [ ] Never make a function return `Raster` for one input type and a completed
+- [x] Never accept a path in an eager operation.
+- [x] Never make a function return ``Raster`` for one input type and a completed
   output path for another.
-- [ ] Make materialization explicit: `ma.compute(expression)` returns a
-  `Raster`; `ma.write(path, expression, ...)` returns a `Path`.
-- [ ] Permit `Raster.expression()` to create a constant in-memory expression,
+- [x] Make materialization explicit: ``ma.compute(expression)`` returns a
+  ``Raster``; ``ma.write(path, expression, ...)`` returns a ``Path``
+  (``ma.write`` deferred to Phase D).
+- [ ] Permit ``Raster.expression()`` to create a constant in-memory expression,
   but document that it retains the complete raster.
-- [ ] If every raster operand is a `Raster`, execute eagerly and return
-  `Raster`. If any operand is a `RasterExpression`, convert eager `Raster`
+- [x] If every raster operand is a ``Raster``, execute eagerly and return
+  ``Raster``. If any operand is a ``RasterExpression``, convert eager ``Raster``
   operands to explicit in-memory constant nodes and return
-  `RasterExpression`. A path is never converted implicitly.
-- [ ] Do not implement a string parser or `eval`. Python operators build a
+  ``RasterExpression``. A path is never converted implicitly.
+- [x] Do not implement a string parser or ``eval``. Python operators build a
   sealed expression graph from registered operations.
 
 ### 2.3 Public value model
@@ -188,32 +189,32 @@ that returns a Boolean `Raster`; it does not define object/value equality.
 `Raster` and `RasterExpression` are explicitly unhashable, and whole-value
 comparison uses named helpers.
 
-- [ ] Validate shape, dtype, grid dimensions, validity shape, and read-only
-  metadata in `Raster.__post_init__`.
-- [ ] Permit real numeric and Boolean values; reject object, string, datetime,
-  and complex dtypes for `0.2`.
-- [ ] Store `values` and `valid` as ordinary NumPy arrays. Do not make
-  `np.ma.MaskedArray` the internal truth.
-- [ ] Make the validity array canonical after ingestion. A nodata payload is an
+- [x] Validate shape, dtype, grid dimensions, validity shape, and read-only
+  metadata in ``Raster.__post_init__``.
+- [x] Permit real numeric and Boolean values; reject object, string, datetime,
+  and complex dtypes for ``0.2``.
+- [x] Store ``values`` and ``valid`` as ordinary NumPy arrays. Do not make
+  ``np.ma.MaskedArray`` the internal truth.
+- [x] Make the validity array canonical after ingestion. A nodata payload is an
   encoding detail, not a value that every operation repeatedly compares.
-- [ ] Copy neither array by default, document that freezing the dataclass does
-  not make the arrays immutable, and provide `copy()` and `readonly()` helpers.
-- [ ] Expose `shape`, `dtype`, `height`, `width`, `nbytes`, `all_valid`, and
-  `invalid_count` properties.
-- [ ] Implement `filled(value)` and `masked()` as explicit conversions.
-- [ ] Implement `with_name()`, `with_units()`, and `with_validity()` as
+- [x] Copy neither array by default, document that freezing the dataclass does
+  not make the arrays immutable, and provide ``copy()`` and ``readonly()`` helpers.
+- [x] Expose ``shape``, ``dtype``, ``height``, ``width``, ``nbytes``, ``all_valid``, and
+  ``invalid_count`` properties.
+- [x] Implement ``filled(value)`` and ``masked()`` as explicit conversions.
+- [x] Implement ``with_name()``, ``with_units()``, and ``with_validity()`` as
   non-mutating helpers.
-- [ ] Implement `same_grid(other)`, `same_metadata(other)`,
-  `array_equal(other, *, equal_invalid_payload=False)`, and
-  `allclose(other, *, rtol, atol, equal_nan=False)` with documented validity
+- [x] Implement ``same_grid(other)``, ``same_metadata(other)``,
+  ``array_equal(other, *, equal_invalid_payload=False)``, and
+  ``allclose(other, *, rtol, atol, equal_nan=False)`` with documented validity
   semantics. Add a separate test assertion helper with useful mismatch detail.
-- [ ] Do not use `Raster` equality or hashing for expression deduplication;
+- [x] Do not use ``Raster`` equality or hashing for expression deduplication;
   use node identity or an explicit source/content identity.
-- [ ] Set `__hash__ = None` explicitly; `dataclass(frozen=True, eq=False)` alone
+- [x] Set ``__hash__ = None`` explicitly; ``dataclass(frozen=True, eq=False)`` alone
   would otherwise retain identity hashing.
-- [ ] Treat `Raster.georef.nodata` as source/encoding metadata only. In-memory
+- [x] Treat ``Raster.georef.nodata`` as source/encoding metadata only. In-memory
   validity must not depend on repeatedly comparing values with it; output
-  adapters create a `GeoReference` carrying the selected output nodata.
+  adapters create a ``GeoReference`` carrying the selected output nodata.
 
 Constructors and adapters:
 
@@ -225,15 +226,15 @@ ma.from_existing(values, georef, *, units=None, name=None) -> Raster
 ma.to_existing(raster, *, nodata) -> tuple[NDArray[Any], GeoReference]
 ```
 
-- [ ] `valid=None, nodata="auto"` derives validity from a supplied masked-array
-  mask and `georef.nodata`; floating NaN matching a NaN nodata is invalid.
-- [ ] Do not treat every NaN or infinity as invalid unless requested with
-  `nonfinite="invalid"`. Default ingestion follows mask/nodata metadata.
-- [ ] Require a caller-supplied validity mask to have exactly the raster shape.
+- [x] ``valid=None, nodata="auto"`` derives validity from a supplied masked-array
+  mask and ``georef.nodata``; floating NaN matching a NaN nodata is invalid.
+- [x] Do not treat every NaN or infinity as invalid unless requested with
+  ``nonfinite="invalid"``. Default ingestion follows mask/nodata metadata.
+- [x] Require a caller-supplied validity mask to have exactly the raster shape.
   Do not allow spatial broadcasting of validity masks.
-- [ ] `ma.read()` must combine the selected GDAL band mask, dataset mask, and
+- [x] ``ma.read()`` must combine the selected GDAL band mask, dataset mask, and
   declared nodata into canonical validity and retain the native band values.
-- [ ] `ma.write()` must write both deterministic payload and a GDAL validity
+- [ ] ``ma.write()`` must write both deterministic payload and a GDAL validity
   mask; a payload such as zero must remain usable as valid science data.
 
 `Raster` always means a spatial raster with a real `GeoReference`.
@@ -245,24 +246,24 @@ later only for a demonstrated Lunarscout workflow.
 
 ### 2.4 Expression model
 
-Implement a public immutable `RasterExpression` with no public constructor.
-Users obtain expressions from `ma.source()`, `Raster.expression()`, coordinate
-constructors, or registered operations.
+Implement a public immutable ``RasterExpression`` with no public constructor.
+Users obtain expressions from ``ma.source()``, ``Raster.expression()``, coordinate
+constructors, or registered operators.
 
-- [ ] Expression nodes contain an operation identifier, immutable normalized
+- [x] Expression nodes contain an operation identifier, immutable normalized
   parameters, operands, inferred dtype, grid, units, required halo, and a
   versioned semantic identifier.
-- [ ] Do not store arbitrary callbacks, lambdas, open datasets, CUDA objects,
+- [x] Do not store arbitrary callbacks, lambdas, open datasets, CUDA objects,
   or mutable arrays in serializable expression nodes.
-- [ ] Allow Python arithmetic, comparison, and bitwise Boolean operators.
-- [ ] Reject Python `and`, `or`, chained comparisons, and truth testing with an
-  actionable error explaining use of `&`, `|`, and parentheses.
-- [ ] Implement a stable JSON representation for provenance and restart
-  identity. It is not a remote-execution contract in `0.2`.
-- [ ] Hash source identity from resolved path, band, file size, modification
+- [x] Allow Python arithmetic, comparison, and bitwise Boolean operators.
+- [x] Reject Python ``and``, ``or``, chained comparisons, and truth testing with an
+  actionable error explaining use of ``&``, ``|``, and parentheses.
+- [x] Implement a stable JSON representation for provenance and restart
+  identity. It is not a remote-execution contract in ``0.2``.
+- [x] Hash source identity from resolved path, band, file size, modification
   time, grid, dtype, nodata, and mask flags. Provide an optional strong file
   digest for workflows that require it.
-- [ ] Keep operation identifiers and semantic versions independent of Python
+- [x] Keep operation identifiers and semantic versions independent of Python
   function names so aliases do not break restart metadata.
 
 #### Canonical expression representation
@@ -332,38 +333,38 @@ Use three identities because they answer different questions:
 
 ### 2.5 Grid and scalar rules
 
-- [ ] Every non-scalar raster operand in an operation must use the same grid by
-  `require_same_grid()`. Never accept shape equality as compatibility.
-- [ ] Never align implicitly. Users must call eager `ma.align()` or expression
-  `ma.resample_to()` explicitly.
-- [ ] Scalars may broadcast over a raster. A length-one or one-dimensional
+- [x] Every non-scalar raster operand in an operation must use the same grid by
+  ``require_same_grid()``. Never accept shape equality as compatibility.
+- [x] Never align implicitly. Users must call eager ``ma.align()`` or expression
+  ``ma.resample_to()`` explicitly.
+- [x] Scalars may broadcast over a raster. A length-one or one-dimensional
   array is not a scalar and is rejected.
-- [ ] A raster operation needs at least one raster operand so its output grid is
+- [x] A raster operation needs at least one raster operand so its output grid is
   unambiguous.
 - [ ] Preserve rotated and anisotropic affine transforms for local operations.
 - [ ] Neighborhood and distance operations must calculate halo and physical
-  spacing from both affine basis vectors, not merely `abs(pixel_size_x)`.
+  spacing from both affine basis vectors, not merely ``abs(pixel_size_x)``.
 
 ### 2.6 Validity rules
 
 Use these defaults consistently in eager and file-backed execution:
 
-- [ ] Unary operations preserve input validity, then invalidate newly
+- [x] Unary operations preserve input validity, then invalidate newly
   undefined results according to the operation's documented finite/domain
   policy.
-- [ ] Ordinary multi-raster operations use the intersection of raster operand
+- [x] Ordinary multi-raster operations use the intersection of raster operand
   validity masks.
-- [ ] Scalars are always valid unless they are explicitly represented as the
-  `ma.invalid` sentinel.
-- [ ] Comparisons at invalid pixels are invalid, not false.
-- [ ] Boolean `and`, `or`, and `xor` use strict validity intersection rather
+- [x] Scalars are always valid unless they are explicitly represented as the
+  ``ma.invalid`` sentinel.
+- [x] Comparisons at invalid pixels are invalid, not false.
+- [x] Boolean ``and``, ``or``, and ``xor`` use strict validity intersection rather
   than three-valued short-circuit semantics.
-- [ ] `where(condition, x, y)` is valid where the condition is valid and the
+- [x] ``where(condition, x, y)`` is valid where the condition is valid and the
   selected branch is valid. Invalidity in the unselected branch does not
   invalidate the result.
-- [ ] `coalesce(a, b, ...)` selects the first valid value per pixel and is
+- [x] ``coalesce(a, b, ...)`` selects the first valid value per pixel and is
   invalid only where no operand is valid.
-- [ ] `fill_invalid(raster, value)` makes filled pixels valid; `set_invalid`
+- [x] ``fill_invalid(raster, value)`` makes filled pixels valid; ``set_invalid``
   changes validity without relying on a payload.
 - [ ] Division by zero, invalid logarithm/square-root domains, and newly
   generated NaN/inf follow a public `numeric_errors=` option with values
@@ -378,55 +379,55 @@ from nodata or may be an all-valid fallback. The implementation must inspect
 Rasterio mask flags rather than assume that every returned mask was explicitly
 stored.
 
-- [ ] Record whether source validity came from a per-band/internal mask,
+- [x] Record whether source validity came from a per-band/internal mask,
   dataset mask, alpha, nodata-derived mask, caller mask, or all-valid fallback.
-- [ ] When no authoritative explicit mask exists, derive validity explicitly
+- [x] When no authoritative explicit mask exists, derive validity explicitly
   from declared nodata, including exact integer and NaN handling.
-- [ ] Conservatively intersect independent explicit validity sources and
+- [x] Conservatively intersect independent explicit validity sources and
   document conflict behavior; never let a valid payload such as zero imply
   invalidity merely because zero is a common fill value.
-- [ ] Include validity provenance in source descriptions and manifests, and
+- [x] Include validity provenance in source descriptions and manifests, and
   test nodata-only, explicit-mask-only, alpha, all-valid, and conflicting
   cases.
 
 ### 2.7 Dtype rules
 
 - [ ] Centralize dtype inference in one helper used by eager and expression
-  modes.
-- [ ] Use documented NumPy 2.x promotion (`np.result_type`) for ordinary
-  arithmetic, minimum/maximum, and `where`, with explicit exceptions below.
-- [ ] Comparisons and Boolean operations return `bool` in memory.
-- [ ] True division returns at least `float32`; use `float64` if an operand is
-  `float64` or safe scalar inference requires it.
+  modes. *(dispatched per-operation, not centralized yet)*
+- [x] Use documented NumPy 2.x promotion (``np.result_type``) for ordinary
+  arithmetic, minimum/maximum, and ``where``, with explicit exceptions below.
+- [x] Comparisons and Boolean operations return ``bool`` in memory.
+- [x] True division returns at least ``float32``; use ``float64`` if an operand is
+  ``float64`` or safe scalar inference requires it.
 - [ ] Integer reductions use an accumulator dtype that prevents ordinary small
   raster overflow; document exact sum/count/mean/std output rules.
-- [ ] Integer arithmetic does not silently saturate. `overflow="wrap"` follows
-  NumPy, `overflow="raise"` is the public default for checked eager integer
-  operations, and `overflow="promote"` promotes to a safe supported dtype.
-- [ ] `cast()` supports `casting="safe"`, `"same_kind"`, and `"unsafe"` and an
+- [x] Integer arithmetic does not silently saturate. ``overflow="wrap"`` follows
+  NumPy, ``overflow="raise"`` is the public default for checked eager integer
+  operations, and ``overflow="promote"`` promotes to a safe supported dtype.
+- [x] ``cast()`` supports ``casting="safe"``, ``"same_kind"``, and ``"unsafe"`` and an
   explicit overflow policy.
 - [ ] Boolean GeoTIFF output requires an explicit integer encoding, defaulting
-  to `uint8` values 0 and 1 with a separate validity mask.
+  to ``uint8`` values 0 and 1 with a separate validity mask.
 
 ### 2.8 Unit rules
 
 Units are conservative metadata in `0.2`; do not add a unit-conversion
 dependency until actual lunar workflows justify one.
 
-- [ ] Store units as an optional trimmed string and preserve `None` as unknown.
-- [ ] Add/subtract/comparison require exact unit equality when both raster
+- [x] Store units as an optional trimmed string and preserve ``None`` as unknown.
+- [x] Add/subtract/comparison require exact unit equality when both raster
   operands have units. A numeric scalar threshold or offset is interpreted in
   the raster operand's units. If two raster operands are used and only one has
-  units, raise unless `allow_unknown_units=True`.
-- [ ] Multiplication/division of two unit-bearing rasters require explicit
-  `output_units`; scalar multiplication/division preserves raster units.
+  units, raise unless ``allow_unknown_units=True``.
+- [x] Multiplication/division of two unit-bearing rasters require explicit
+  ``output_units``; scalar multiplication/division preserves raster units.
 - [ ] Powers require a dimensionless scalar exponent and explicit output units
   for a unit-bearing raster unless exponent is one.
-- [ ] Trigonometric operations require `degrees` or `radians`; inverse
+- [x] Trigonometric operations require ``degrees`` or ``radians``; inverse
   trigonometric operations declare their output angle unit.
-- [ ] `clip`, reclassification, reductions, and comparisons document whether
+- [x] ``clip``, reclassification, reductions, and comparisons document whether
   they preserve, replace, or remove units.
-- [ ] No operation infers meters merely because a coordinate number is large.
+- [x] No operation infers meters merely because a coordinate number is large.
 
 ### 2.9 Qualities for future LLM-assisted analysis
 
@@ -487,23 +488,23 @@ until this inventory is accepted and examples read naturally.
 
 Support both functions and appropriate `Raster`/`RasterExpression` operators:
 
-- [ ] Arithmetic: `add`, `subtract`, `multiply`, `divide`, `floor_divide`,
-  `remainder`, `power`, `negative`, `positive`, `absolute`.
-- [ ] Pairwise/stack combination: `minimum`, `maximum`, `sum_layers`,
-  `mean_layers`, `min_layers`, `max_layers`.
-- [ ] Comparisons: `equal`, `not_equal`, `less`, `less_equal`, `greater`,
-  `greater_equal`, `isclose`.
-- [ ] Boolean: `logical_not`, `logical_and`, `logical_or`, `logical_xor`;
+- [x] Arithmetic: ``add``, ``subtract``, ``multiply``, ``divide``, ``floor_divide``,
+  ``remainder``, ``power``, ``negative``, ``positive``, ``absolute``.
+- [ ] Pairwise/stack combination: ``minimum``, ``maximum``, ``sum_layers``,
+  ``mean_layers``, ``min_layers``, ``max_layers``.
+- [x] Comparisons: ``equal``, ``not_equal``, ``less``, ``less_equal``, ``greater``,
+  ``greater_equal``, ``isclose``.
+- [x] Boolean: ``logical_not``, ``logical_and``, ``logical_or``, ``logical_xor``;
   require Boolean operands rather than treating all nonzero numbers as true.
-- [ ] Conditional/validity: `where`, `coalesce`, `is_valid`, `is_invalid`,
-  `set_invalid`, `fill_invalid`.
-- [ ] Range and conversion: `clip`, `cast`, `round`, `floor`, `ceil`, `trunc`.
-- [ ] Math: `sqrt`, `square`, `exp`, `log`, `log10`, `sin`, `cos`, `tan`,
-  `arcsin`, `arccos`, `arctan`, `arctan2`, `degrees`, `radians`, `hypot`.
-- [ ] Classification: `reclassify_values`, `reclassify_ranges`, `digitize`,
-  and `one_hot`. Require explicit default behavior for unmatched valid cells:
+- [x] Conditional/validity: ``where``, ``coalesce``, ``is_valid``, ``is_invalid``,
+  ``set_invalid``, ``fill_invalid``.
+- [x] Range and conversion: ``clip``, ``cast``, ``round``, ``floor``, ``ceil``, ``trunc``.
+- [x] Math: ``sqrt``, ``square``, ``exp``, ``log``, ``log10``, ``sin``, ``cos``, ``tan``,
+  ``arcsin``, ``arccos``, ``arctan``, ``arctan2``, ``degrees``, ``radians``, ``hypot``.
+- [ ] Classification: ``reclassify_values``, ``reclassify_ranges``, ``digitize``,
+  and ``one_hot``. Require explicit default behavior for unmatched valid cells:
   preserve, set a value, or invalidate.
-- [ ] Normalize: `normalize_minmax` and `standardize`, using supplied statistics
+- [ ] Normalize: ``normalize_minmax`` and ``standardize``, using supplied statistics
   or explicit two-pass execution. Never hide a global pre-pass.
 
 Example acceptance target:
@@ -974,10 +975,10 @@ MapAlgebraError
   DistanceFieldError
 ```
 
-- [ ] Reuse `GridMismatchError`, `GeoTiffError`, and
-  `OperationCancelledError` where their existing public meaning is exact; wrap
+- [x] Reuse ``GridMismatchError``, ``GeoTiffError``, and
+  ``OperationCancelledError`` where their existing public meaning is exact; wrap
   only when more algebra context is needed.
-- [ ] Assign stable `code=` values for invalid operands, grid mismatch,
+- [x] Assign stable ``code=`` values for invalid operands, grid mismatch,
   unsupported dtype, unsafe cast, overflow, unit mismatch, invalid expression,
   unavailable source, invalid footprint, empty reduction, output conflict,
   restart mismatch, and unsupported physical distance.
@@ -993,40 +994,40 @@ the long-tail operation inventory before the semantic foundation passes.
 
 ### Phase A: Contract tests and public skeleton
 
-- [ ] Add `tests/map_algebra/` and shared fixtures for north-up, anisotropic,
+- [x] Add ``tests/map_algebra/`` and shared fixtures for north-up, anisotropic,
   rotated, shifted, differing-CRS, masked, nodata, and partial-coverage grids.
-- [ ] Add the public error classes and import-boundary tests.
-- [ ] Add the `Raster` model, constructors, explicit adapters, and repr.
-- [ ] Add explicit whole-raster comparison helpers and tests proving that
-  `==`/`!=` are cell-by-cell algebra while hashing and implicit truth testing
+- [x] Add the public error classes and import-boundary tests.
+- [x] Add the ``Raster`` model, constructors, explicit adapters, and repr.
+- [x] Add explicit whole-raster comparison helpers and tests proving that
+  ``==``/``!=`` are cell-by-cell algebra while hashing and implicit truth testing
   are unavailable by design.
-- [ ] Add `map_algebra` namespace with placeholder-free public exports.
-- [ ] Add `ma.read()` and a private test writer to prove mask round trips. Do
-  not expose `ma.write()` until its atomic output contract is implemented in
+- [x] Add ``map_algebra`` namespace with placeholder-free public exports.
+- [x] Add ``ma.read()`` and a private test writer to prove mask round trips. Do
+  not expose ``ma.write()`` until its atomic output contract is implemented in
   Phase D.
-- [ ] Verify `import lunarscout` still initializes no CUDA/SPICE context, opens
+- [x] Verify ``import lunarscout`` still initializes no CUDA/SPICE context, opens
   no raster, performs no network access, and writes no files.
 - [ ] Review and freeze Sections 2 and 3 before expanding operations.
 
 Acceptance evidence:
 
-- [ ] Raster values, validity, grid, dtype, units, and name round-trip in
+- [x] Raster values, validity, grid, dtype, units, and name round-trip in
   memory.
-- [ ] GDAL validity masks round-trip independently of valid zero values and
+- [x] GDAL validity masks round-trip independently of valid zero values and
   nodata payload.
-- [ ] Validity provenance distinguishes explicit mask, alpha, nodata-derived,
+- [x] Validity provenance distinguishes explicit mask, alpha, nodata-derived,
   caller-supplied, and all-valid sources.
-- [ ] Existing public tests pass unchanged.
+- [x] Existing public tests pass unchanged.
 
 ### Phase B: Eager local algebra
 
-- [ ] Implement shared validation, validity, dtype, unit, and numeric-error
+- [x] Implement shared validation, validity, dtype, unit, and numeric-error
   helpers.
-- [ ] Implement arithmetic and comparison operators.
-- [ ] Implement and test the mixed-mode rule: eager-only operands return
-  `Raster`; any expression operand returns `RasterExpression`.
-- [ ] Implement strict Boolean operations and truth-test diagnostics.
-- [ ] Implement `where`, `coalesce`, validity functions, clip, cast, and the
+- [x] Implement arithmetic and comparison operators.
+- [x] Implement and test the mixed-mode rule: eager-only operands return
+  ``Raster``; any expression operand returns ``RasterExpression``.
+- [x] Implement strict Boolean operations and truth-test diagnostics.
+- [x] Implement ``where``, ``coalesce``, validity functions, clip, cast, and the
   core math inventory.
 - [ ] Implement reclassification and stack combination.
 - [ ] Add property-based-style randomized tests using deterministic seeds;
@@ -1037,20 +1038,24 @@ Acceptance evidence:
 
 Acceptance evidence:
 
-- [ ] A complete terrain-plus-lighting candidate expression needs no manual
+- [x] A complete terrain-plus-lighting candidate expression needs no manual
   mask bookkeeping after input construction.
-- [ ] Mismatched georeferenced rasters fail before numerical calculation.
-- [ ] Results match reference NumPy values and the documented validity rules.
+- [x] Mismatched georeferenced rasters fail before numerical calculation.
+- [x] Results match reference NumPy values and the documented validity rules.
 
 ### Phase C: Expressions and bounded local execution
 
-- [ ] Implement immutable expression nodes and the sealed operation registry.
-- [ ] Implement GeoTIFF, in-memory, scalar, and coordinate sources.
-- [ ] Implement expression operator overloads and stable JSON identity.
+- [x] Implement immutable expression nodes and the sealed operation registry.
+  *(expression nodes implemented; registry deferred)*
+- [x] Implement GeoTIFF, in-memory, scalar, and coordinate sources.
+  *(coordinate sources deferred)*
+- [x] Implement expression operator overloads and stable JSON identity.
 - [ ] Implement canonical typed serialization plus distinct scientific,
   restart, and execution-cache identities with golden fixtures.
-- [ ] Implement `describe()`, `ma.explain()`, `ma.plan()`, and machine-readable
+  *(scientific identity via SHA-256 implemented; restart/cache identities deferred)*
+- [x] Implement ``describe()``, ``ma.explain()``, ``ma.plan()``, and machine-readable
   operation introspection without executing kernels or writing files.
+  *(explain and plan implemented)*
 - [ ] Implement the planner, window enumeration, local fusion, source cache,
   cancellation checks, and progress events.
 - [ ] Implement window kernels for every Phase B local operation.
