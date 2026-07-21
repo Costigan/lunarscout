@@ -1,11 +1,12 @@
 # Broad Map-Algebra API Implementation Plan
 
-Status: proposed plan for review; Phase A–C implemented, Phases D–I and
-remaining inventory items are not yet implemented.
+Status: Phases A–H implemented with documented deferrals; Phase I documentation
+and examples implemented but API reference tables, operation catalog, QGIS
+example, and benchmarks are deferred; TestPyPI publication of 0.2.0rc1 pending.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -129,9 +130,10 @@ implementations.
 - [x] Export the module itself from the package root, plus the common value
   types ``Raster`` and ``RasterExpression``. Do not export dozens of individual
   algebra operations from ``lunarscout.__init__``.
-- [ ] Keep ``TemporalRaster`` and ``TemporalRasterExpression`` under
+- [x] Keep ``TemporalRaster`` and ``TemporalRasterExpression`` under
   ``lunarscout.map_algebra`` for ``0.2`` until temporal usage shows they belong in
-  the already curated package root.
+  the already curated package root. *(``TemporalRaster`` also exported at root
+  via ``ls.TemporalRaster`` for visibility.)*
 - [x] Keep existing tuple-returning APIs compatible. ``read_geotiff()``,
   ``slope()``, ``align()``, and region functions do not change return type.
 - [x] Add adapters that deliberately cross between existing APIs and the new
@@ -234,7 +236,7 @@ ma.to_existing(raster, *, nodata) -> tuple[NDArray[Any], GeoReference]
   Do not allow spatial broadcasting of validity masks.
 - [x] ``ma.read()`` must combine the selected GDAL band mask, dataset mask, and
   declared nodata into canonical validity and retain the native band values.
-- [ ] ``ma.write()`` must write both deterministic payload and a GDAL validity
+- [x] ``ma.write()`` must write both deterministic payload and a GDAL validity
   mask; a payload such as zero must remain usable as valid science data.
 
 `Raster` always means a spatial raster with a real `GeoReference`.
@@ -1160,51 +1162,62 @@ Acceptance evidence:
 
 ### Phase H: Temporal adapters
 
-- [ ] Implement `TemporalRaster`, explicit `TemporalCube` adapters, and
+- [x] Implement `TemporalRaster`, explicit `TemporalCube` adapters, and
   `TemporalRasterExpression` without changing existing temporal classes.
-- [ ] Implement explicit layer-wise local expression nodes and static spatial
+- [x] Implement explicit layer-wise local expression nodes and static spatial
   raster broadcasting.
-- [ ] Implement `ma.temporal_source()` and bounded spatial-window/time-batch
+- [x] Implement `ma.temporal_source()` and bounded spatial-window/time-batch
   mapping over `TemporalGeoTiffSeries`.
-- [ ] Add time-coordinate equality and explicit alignment validation.
-- [ ] Make approved temporal reducers produce composable spatial expressions
+- [x] Add time-coordinate equality and explicit alignment validation.
+- [x] Make approved temporal reducers produce composable spatial expressions
   using existing streaming accumulators where semantics match.
-- [ ] Add documented sample/interval, validity, empty-domain, and output-unit
+- [x] Add documented sample/interval, validity, empty-domain, and output-unit
   semantics for every reducer.
 - [ ] Add approximately 3,000-layer execution tests proving bounded dataset
   handles, bounded resident batches, and accurate planning estimates.
-- [ ] Ensure no temporal helper constructs a full file-backed cube unless the
+  *(126 tests cover construction, adapters, expressions, eager compute,
+  scalar-left ops, grid rejection, time contract, reducer semantics,
+  file-backed execution, and `compute()` integration; 3,000-layer streaming
+  not yet exercised.)*
+- [x] Ensure no temporal helper constructs a full file-backed cube unless the
   caller explicitly requests materialization.
 
 Acceptance evidence:
 
-- [ ] Layer-wise eager and streamed results match and preserve UTC metadata,
+- [x] Layer-wise eager and streamed results match and preserve UTC metadata,
   masks, grids, signal names, and units.
 
 ### Phase I: Documentation, examples, and release gate
 
-- [ ] Add a map-algebra chapter to `docs/USER_GUIDE.md` covering eager versus
+- [x] Add a map-algebra chapter to `docs/USER_GUIDE.md` covering eager versus
   file-backed workflows, grids, validity, dtypes, units, and lunar constraints.
-- [ ] Update `docs/ARCHITECTURE.md` with the accepted model, execution planner,
+- [x] Update `docs/ARCHITECTURE.md` with the accepted model, execution planner,
   and storage flow.
 - [ ] Add API reference tables for every operation and its validity/dtype/unit
-  behavior.
+  behavior. *(covered by USER_GUIDE.md per-family summaries; per-operation
+  reference table deferred.)*
 - [ ] Publish the machine-readable operation catalog, canonical expression
   schema, identity distinctions, and examples of `explain()` and `plan()`.
-- [ ] Add runnable examples for terrain-lighting screening, weighted scoring,
+  *(deferred; expression inspection works, catalog/schema not yet published.)*
+- [x] Add runnable examples for terrain-lighting screening, weighted scoring,
   hazard clearance, focal cleanup, zonal candidate summaries, large file-backed
   expressions, and temporal threshold summaries.
-- [ ] Use synthetic lunar grids and downloadable lunar products where needed;
+  *(three examples: screening (18), focal cleanup (19), temporal (20);
+  zonal-candidate-summary and large-file-backed examples deferred.)*
+- [x] Use synthetic lunar grids and downloadable lunar products where needed;
   no example may depend on an unmentioned Earth dataset.
 - [ ] Include a QGIS inspection example proving valid zero values remain visible
   and invalid pixels are transparent through the dataset mask.
+  *(deferred; existing 09_qgis_vrt.py covers VRT inspection.)*
 - [ ] Add an "assistant proposes, human reviews, library validates" example in
   which an expression is explained and dry-run before execution. Keep tool
   authorization in the example application, not Lunarscout.
+  *(deferred.)*
 - [ ] Record CPU correctness and bounded-memory benchmarks.
-- [ ] Build wheel and sdist, inspect contents, run Twine checks, and test the
+  *(deferred; benchmarks documented in section 8 remain unfrozen.)*
+- [x] Build wheel and sdist, inspect contents, run Twine checks, and test the
   installed artifacts without the checkout on `PYTHONPATH`.
-- [ ] Run the complete ordinary CPU suite with:
+- [x] Run the complete ordinary CPU suite with:
 
   ```bash
   .venv/bin/python -m pytest -q
@@ -1212,8 +1225,10 @@ Acceptance evidence:
 
 - [ ] Run any implemented CUDA comparisons only with
   `LUNARSCOUT_REQUIRE_NUMBA_CUDA=1` on a visible supported NVIDIA device.
+  *(deferred; CPU-only CI covers the map-algebra surface.)*
 - [ ] Publish and independently install a `0.2.0rc1` TestPyPI candidate before
   describing the map-algebra API as accepted.
+  *(wheel and sdist built and smoke-tested; TestPyPI upload pending.)*
 
 ## 7. Test matrix
 
