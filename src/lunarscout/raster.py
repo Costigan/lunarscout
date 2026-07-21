@@ -459,6 +459,10 @@ class Raster:
         from .map_algebra.local import trunc as _t
         return _t(self)
 
+    def expression(self) -> RasterExpression:  # type: ignore[return-value]
+        from .map_algebra._sources import constant
+        return constant(self)
+
     __hash__ = None  # type: ignore[assignment]
 
     # ------------------------------------------------------------------

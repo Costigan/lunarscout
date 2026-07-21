@@ -85,6 +85,17 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   construction, identity), ``_sources.py`` (metadata-only reads, identity
   modes), ``expression.py`` (compute via Phase B delegation, explain, plan).
   Added 26 tests.  Verification: 684 passed, 17 skipped (CPU suite).
+- Implemented Phase D of the map-algebra plan: ``ma.write(path, expression)``
+  for durable expression output with preflight validation, atomic staging
+  (reusing the existing ``write_geotiff`` infrastructure), boolean-to-uint8
+  auto-conversion, explicit ``overwrite``/``start_fresh``/``resume``
+  semantics, identity-bound ``.manifest.json`` sidecars for restart safety
+  (mismatched identity rebuilds, matching identity with existing output skips),
+  and ``Raster.expression()`` for creating constant expression nodes from
+  eager rasters.  Internal module: ``_writer.py``.  Added 16 tests covering
+  basic write, overwrite protection, dtype override, invalid value fill,
+  manifest/restart, compound expression output, and
+  ``Raster.expression()``.  Verification: 700 passed, 17 skipped (CPU suite).
 - Added ``docs/map-algebra-implementation-plan.md``, the reviewed ``0.2.0rc1``
   execution plan for a broad lunar map-algebra API. The plan defines eager
   ``Raster`` values, bounded and resumable ``RasterExpression`` execution,

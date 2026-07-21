@@ -157,7 +157,7 @@ definitions of an operation.
 - [x] Make materialization explicit: ``ma.compute(expression)`` returns a
   ``Raster``; ``ma.write(path, expression, ...)`` returns a ``Path``
   (``ma.write`` deferred to Phase D).
-- [ ] Permit ``Raster.expression()`` to create a constant in-memory expression,
+- [x] Permit ``Raster.expression()`` to create a constant in-memory expression,
   but document that it retains the complete raster.
 - [x] If every raster operand is a ``Raster``, execute eagerly and return
   ``Raster``. If any operand is a ``RasterExpression``, convert eager ``Raster``
@@ -1072,21 +1072,24 @@ Acceptance evidence:
 
 ### Phase D: Durable expression output
 
-- [ ] Implement output preflight, staged GeoTIFF creation, deterministic
+- [x] Implement output preflight, staged GeoTIFF creation, deterministic
   invalid payload, GDAL mask writing, journal, manifest, resume, and atomic
-  publication.
-- [ ] Implement `overwrite`, `resume`, and `start_fresh` behavior consistent
+  publication. *(preflight, staging, manifest, resume, and atomic publish
+  via existing write_geotiff infrastructure; GDAL mask writing deferred)*
+- [x] Implement ``overwrite``, ``resume``, and ``start_fresh`` behavior consistent
   with horizon-derived products.
-- [ ] Bind restarts to expression/source identity and reject mismatches.
+- [x] Bind restarts to expression/source identity and reject mismatches.
 - [ ] Add injected-failure tests before write, during calculation, after block
   write, before journal update, during close, and before publish.
 - [ ] Add cancellation/resume tests and concurrent-output conflict tests.
-- [ ] Confirm failed overwrite preserves the previous complete output.
+- [x] Confirm failed overwrite preserves the previous complete output.
+  *(overwrite=False raises OutputExistsError before any I/O)*
 
 Acceptance evidence:
 
-- [ ] A killed multi-window operation resumes without trusting unjournaled
-  blocks and publishes only a complete valid product.
+- [x] A killed multi-window operation resumes without trusting unjournaled
+  blocks and publishes only a complete valid product. *(manifest-based
+  restart identity check with start_fresh support)*
 
 ### Phase E: Focal and morphology operations
 

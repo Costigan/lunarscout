@@ -79,6 +79,7 @@ from .expression import (
     plan,
 )
 from ._sources import source
+from ._writer import write
 
 
 # ---------------------------------------------------------------------------
