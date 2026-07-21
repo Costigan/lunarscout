@@ -1291,6 +1291,340 @@ Not public API:
 - prototype implementations until promoted through documented public
   facades.
 
+## Map Algebra (0.2.0rc1)
+
+The `map_algebra` module provides an array-oriented analysis surface for
+registered raster data. It is imported as a subpackage:
+
+```python
+import lunarscout as ls
+
+ma = ls.map_algebra
+```
+
+Map algebra treats rasters as spatially registered fields and combines them
+with a small number of operation families: local (cell-by-cell), focal
+(neighborhood), zonal (grouped by zone), global (whole-raster), and distance
+fields. It preserves explicit grids, validity masks, dtypes, and units
+through every operation rather than treating map algebra as unqualified
+NumPy arithmetic.
+
+### Value Types
+
+Two value types carry the spatial and scientific metadata needed to combine
+rasters safely:
+
+- **`Raster`** is an eager, already-materialized value. It stores a 2-D
+  NumPy array together with a `GeoReference`, a boolean validity mask,
+  optional units, and an optional name.
+- **`RasterExpression`** is an immutable description of a calculation that has
+  not yet run. It carries an inferred grid, dtype, units, and halo, but no
+  computed arrays or open datasets.
+
+`eq=False` on `Raster` is deliberate: `==` returns a cell-by-cell Boolean
+`Raster`, not a whole-raster truth value. Implicit truth testing is
+unavailable by design. Use comparing helpers `Raster.array_equal()`,
+`Raster.allclose()`, `Raster.same_grid()`, and `Raster.same_metadata()`.
+
+```python
+raster = ma.raster(values, georef, units="metres", name="elevation")
+raster.valid      # boolean mask, True means scientifically valid
+raster.units      # optional trimmed string
+raster.all_valid  # True if every pixel is valid
+raster.shape      # (height, width)
+raster.dtype      # NumPy dtype
+```
+
+### Eager and File-Backed Workflows
+
+The API has two modes with visibly different entry points:
+
+1. **Eager mode** accepts `Raster`, explicit NumPy arrays through adapters,
+   or scalars, and returns `Raster`. All values are in memory.
+2. **File-backed mode** starts with `ma.source(path)` or
+   `ma.temporal_source(series)`, constructs a lazy expression, and executes
+   only through `ma.compute()` or `ma.write()`. GeoTIFF sources are read
+   window-by-window; the complete raster is never silently materialized.
+
+Never pass a file path to an eager operation. Use `ma.read()` to read a
+GeoTIFF as an in-memory `Raster`, or `ma.source()` to defer reading.
+
+```python
+slope = ma.read("slope.tif", units="degrees")
+sun = ma.source("mean_sun.tif", units="fraction")
+
+candidate = (slope <= 8.0) & (sun >= 0.60)
+```
+
+Both modes use the same operation specifications, dtype inference, unit
+rules, and validity rules. A `Raster` used inside a lazy expression is
+automatically wrapped as an in-memory constant node.
+
+### Constructors and Adapters
+
+| Function | Description |
+|---|---|
+| `ma.raster(values, georef, *, valid, nodata, units, name)` | Construct a `Raster` from explicit arrays. |
+| `ma.from_masked_array(masked, georef, *, units, name)` | Construct from a NumPy masked array. |
+| `ma.from_existing(values, georef, *, units, name)` | Wrap bare `(values, georef)` results. |
+| `ma.to_existing(raster, *, nodata)` | Convert back to `(values, georef)`, filling invalid cells. |
+| `ma.read(path, *, band, units, name)` | Read a single-band GeoTIFF as a `Raster`. |
+| `ma.source(path, *, band, units, identity)` | Read metadata only; returns `RasterExpression`. |
+| `ma.compute(expression)` | Materialize a `RasterExpression` as a `Raster`. |
+| `ma.write(path, expression, *, overwrite, dtype, invalid_value)` | Evaluate in bounded windows, write staged GeoTIFF with GDAL mask. |
+
+### Grids and Grid Validation
+
+Every non-scalar operand in an operation must share the same grid. Shape
+equality alone is never accepted as grid compatibility. Use
+`ls.require_same_grid()` or `Raster.same_grid()` before combining
+georeferenced rasters.
+
+Scalars broadcast over any raster. A length-one or one-dimensional array is
+not a scalar and is rejected. Align explicitly with `ma.align()` or
+`ma.resample_to()`; implicit alignment is never performed.
+
+### Validity and Mask Rules
+
+Raster validity is a boolean mask stored alongside the values. A nodata
+payload is an encoding detail of the source GeoTIFF, not a value that every
+operation repeatedly compares. In-memory validity is always derived once at
+ingestion from the GDAL band mask, dataset mask, alpha, and declared nodata.
+
+Default validity rules:
+- **Unary operations** preserve input validity, then invalidate newly
+  undefined results (e.g. sqrt of a negative number).
+- **Multi-raster operations** use the intersection of operand validity masks.
+- **Comparisons** at invalid pixels are invalid, not false.
+- **Boolean AND/OR/XOR** use strict validity intersection.
+- **`where(condition, x, y)`** is valid where the condition is valid and the
+  selected branch is valid. Invalidity in the unselected branch does not
+  invalidate the result.
+- **`coalesce(a, b, ...)`** selects the first valid value per pixel.
+- **`fill_invalid(raster, value)`** fills invalid cells and marks them valid.
+- **`set_invalid(raster, mask)`** invalidates via a Boolean condition.
+
+Validity provenance is recorded in `Raster.validity_provenance`, which
+distinguishes GDAL-band-mask, dataset-mask, alpha, nodata-derived, caller-
+supplied, and all-valid sources.
+
+### Dtype Rules
+
+Supported dtypes are `bool`, signed and unsigned integers at standard
+widths, `float32`, and `float64`. Object, string, datetime, and complex
+dtypes are rejected.
+
+- Ordinary arithmetic uses NumPy 2.x promotion (`np.result_type`).
+- Comparisons and Boolean operations return `bool` in memory.
+- True division returns at least `float32`; `float64` if an operand is
+  `float64` or safe scalar inference requires it.
+- Integer overflow uses `overflow="raise"` by default; `"promote"` widens to
+  a safe dtype, and `"wrap"` follows NumPy.
+- `ma.cast()` supports `casting="safe"`, `"same_kind"`, and `"unsafe"`.
+
+### Unit Rules
+
+Units are conservative metadata. Add, subtract, and comparison operations
+require exact unit equality when both raster operands have units. A numeric
+scalar threshold is interpreted in the raster operand's units. If two raster
+operands are used and only one has units, an error is raised unless
+`allow_unknown_units=True`. Multiplication and division of two unit-bearing
+rasters require explicit `output_units`. Trigonometric operations require
+`"degrees"` or `"radians"`. No operation infers metres merely because a
+coordinate number is large.
+
+### Local Operations
+
+Local operations calculate each output pixel from the corresponding input
+pixel or pixels. Both function calls and Python operators are supported.
+
+**Arithmetic:** `ma.add`, `ma.subtract`, `ma.multiply`, `ma.divide`,
+`ma.floor_divide`, `ma.remainder`, `ma.power`, `ma.negative`, `ma.positive`,
+`ma.absolute`, `ma.square`.
+
+**Comparisons:** `ma.equal`, `ma.not_equal`, `ma.less`, `ma.less_equal`,
+`ma.greater`, `ma.greater_equal`, `ma.isclose`.
+
+**Boolean:** `ma.logical_not`, `ma.logical_and`, `ma.logical_or`,
+`ma.logical_xor`. Require Boolean operands; nonzero-integer truthiness is
+not supported. Python `and`/`or`/chained comparisons raise actionable errors
+explaining use of `&`/`|` and parentheses.
+
+**Conditional and validity:** `ma.where`, `ma.coalesce`, `ma.is_valid`,
+`ma.is_invalid`, `ma.set_invalid`, `ma.fill_invalid`. The sentinel
+`ma.invalid` may appear in `where` branches to mark that side as invalid.
+
+**Range and conversion:** `ma.clip`, `ma.cast`, `ma.round`, `ma.floor`,
+`ma.ceil`, `ma.trunc`.
+
+**Math:** `ma.sqrt`, `ma.exp`, `ma.log`, `ma.log10`, `ma.sin`, `ma.cos`,
+`ma.tan`, `ma.arcsin`, `ma.arccos`, `ma.arctan`, `ma.arctan2`, `ma.degrees`,
+`ma.radians`, `ma.hypot`.
+
+```python
+candidate = (slope <= 8.0) & (sun >= 0.60)
+score = ma.where(candidate, 0.4 * sun + 0.6 * (1.0 - slope / 8.0), ma.invalid)
+```
+
+### Focal Operations
+
+Focal operations use a neighborhood around each output pixel. Size is odd
+and positive. Edge modes: `"invalid"` (default), `"constant"`, `"nearest"`,
+`"reflect"`, `"wrap"`. Valid-neighbor policies: `"require_all"`,
+`"ignore_invalid"` (with `min_valid_count`), `"propagate_center"`.
+
+**Statistics:** `ma.focal_sum`, `ma.focal_mean`, `ma.focal_min`,
+`ma.focal_max`, `ma.focal_range`, `ma.focal_std` (with `ddof`),
+`ma.focal_count`, `ma.focal_median`.
+
+**Convolution:** `ma.convolve(kernel, *, normalize=False)` with finite 2-D
+numeric kernels.
+
+**Morphology (Boolean input only):** `ma.dilate`, `ma.erode`, `ma.opening`,
+`ma.closing`, `ma.majority`.
+
+```python
+smoothed = ma.focal_mean(raster, size=5, edge="nearest")
+opened = ma.opening(mask, size=3)
+```
+
+Focal operations are eager-only in `0.2`.
+
+### Zonal Operations
+
+Zonal operations group pixels by an explicitly supplied integer zone raster:
+
+```python
+stats = ma.zonal_stats(values, zones, statistics=["mean", "sum", "count"])
+stats.to_dict()     # {zone_id: {"mean": ..., "count": ...}, ...}
+stats.to_json()     # JSON string
+stats.write_csv("zonal_summary.csv")
+```
+
+Supported statistics: `count`, `valid_count`, `invalid_count`, `sum`,
+`mean`, `min`, `max`, `range`, `std`, `variance`, `median`, `p25`, `p75`,
+`p90`. Zone IDs must be integer or Boolean. Invalid value cells are excluded
+from statistics; invalid zone cells are not assigned to any zone.
+
+`ma.zonal_raster(values, zones, statistic="mean")` broadcasts one statistic
+back to valid zone cells.
+
+### Global Reductions
+
+Global reductions collapse a complete raster to statistics or summaries:
+
+```python
+stats = ma.statistics(raster)
+hist = ma.histogram(raster, bins=20)
+pct = ma.percentile(raster, [5, 50, 95], method="exact")
+counts = ma.unique_counts(raster, max_unique=1_000)
+```
+
+`ma.statistics()` returns count, invalid count, sum, mean, min, max, range,
+variance, and standard deviation. `ma.unique_counts()` fails predictably when
+a safety bound is exceeded. `ma.percentile()` supports `"exact"` (linear)
+and `"approximate"` (nearest) methods.
+
+### Distance Fields
+
+Distance fields measure proximity to Boolean seed pixels:
+
+```python
+dist = ma.distance_to(seeds, metric="euclidean", units="physical", max_distance=500.0)
+signed = ma.signed_distance(mask, metric="euclidean", units="pixels")
+```
+
+Supported metrics: `"euclidean"`, `"taxicab"`, `"chessboard"`. Units: `"pixels"`
+or `"physical"`. Physical Euclidean distance honours anisotropic and rotated
+affine basis vectors. Physical taxicab and chessboard distances are
+unsupported. Geographic (angular) CRS grids raise a structured error for
+physical distance. Distance fields are eager-only in `0.2`.
+
+### Temporal Map Algebra
+
+Temporal adapters extend map algebra to time-series rasters. Time is a named
+axis with UTC coordinates, not an extra spatial band.
+
+**TemporalRaster** is the eager, in-memory temporal value. It stores a 3-D
+array shaped `(time, y, x)`, a 1-D `datetime64` time array, a `GeoReference`,
+a boolean validity mask of the same shape, optional units, signal name, and
+name. Times must be non-empty, strictly increasing, and free of NaT.
+
+An adapter creates one from a `TemporalCube`:
+
+```python
+tr = ma.from_temporal_cube(cube, units="fraction")
+```
+
+Or equivalently at root level:
+
+```python
+tr = ls.from_temporal_cube_to_raster(cube, units="fraction")
+```
+
+**TemporalRasterExpression** is the lazy counterpart. Use
+`ma.temporal_source()` to create one from an in-memory `TemporalRaster`, a
+`TemporalCube`, or a file-backed `TemporalGeoTiffSeries`:
+
+```python
+temporal_expr = ma.temporal_source(series)
+```
+
+Layer-wise local operations combine temporal expressions with static spatial
+rasters or scalars. A spatial `Raster` or `RasterExpression` broadcasts
+across every time layer. All operands must share the same spatial grid; two
+temporal operands must have matching UTC time coordinates.
+
+```python
+sun_expr = ma.temporal_source(sun_series)
+candidate = (sun_expr >= 0.60)  # TemporalRasterExpression
+```
+
+**Temporal reductions** collapse the time axis into a composable spatial
+`RasterExpression`:
+
+```python
+mean_sun = ma.temporal_mean(sun_expr)    # RasterExpression (spatial)
+valid = (mean_sun >= 0.40) & (slope <= 8.0)
+ma.write("candidate.tif", valid, dtype="uint8", invalid_value=0)
+```
+
+Reductions are evaluated eagerly when applied directly to a `TemporalRaster`
+(returning `Raster`), or deferred when applied to a `TemporalRasterExpression`
+(returning `RasterExpression`). Supported reductions: `ma.temporal_mean`,
+`ma.temporal_min`, `ma.temporal_max`, `ma.temporal_std` (with `ddof`),
+`ma.temporal_sum`, `ma.temporal_count`. Reducer output dtypes use `float64`
+accumulators for mean, std, and floating sum; `int64` for integer sum and
+count; and the source dtype for min and max. `temporal_count` has no units.
+
+Use `ma.compute_temporal()` to materialize a `TemporalRasterExpression` as
+an in-memory `TemporalRaster`. Eager computation is suitable for small-to-
+medium datasets; file-backed temporal expressions that would produce full
+cubes are only materialized when the caller explicitly requests it.
+
+### Lunar Constraints
+
+The map-algebra implementation is planetary-neutral. It does not:
+
+- assume WGS84, mean sea level, north-up grids, or square pixels;
+- download or consult Earth basemaps, SRTM, or weather datasets;
+- infer metres from large coordinate numbers;
+- substitute Earth geodesics for lunar distance measurements; or
+- fold mission policy (thresholds, weights, suitability rules) into
+  operations; these must be caller inputs.
+
+Operations that require a specific lunar datum, radius, or body model live in
+the terrain or lunar-science API with explicit parameters, not in the generic
+algebra.
+
+### Error Handling
+
+Map-algebra errors use structured subclasses of `MapAlgebraError` with stable
+`code=` values and repair-oriented `details=` dictionaries. Principal error
+classes include `RasterValidationError`, `MapAlgebraGridError`,
+`MapAlgebraDTypeError`, `MapAlgebraUnitError`, `MapAlgebraExpressionError`,
+`MapAlgebraOperationError`, `MapAlgebraStorageError`, and `DistanceFieldError`.
+
 ## Architecture Overview
 
 The public Python package lives under `src/lunarscout`. The normative design is

@@ -87,6 +87,7 @@ from .products import (
 )
 from .progress import ProgressEvent
 from .raster import Raster
+from .map_algebra._temporal_model import TemporalRaster, from_temporal_cube as from_temporal_cube_to_raster
 from .regions import (
     filter_regions_by_size,
     find_borders,
@@ -185,6 +186,7 @@ __all__ = [
     "TemporalGeoTiffSeries",
     "TemporalGeoTiffSeriesWriter",
     "TemporalLookupError",
+    "TemporalRaster",
     "TemporalSeriesError",
     "TemporalSeriesOpenError",
     "TemporalSeriesWriteError",

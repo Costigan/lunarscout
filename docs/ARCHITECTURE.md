@@ -787,3 +787,150 @@ are true:
 Until all criteria are implemented, this document still defines the chosen
 architecture: gaps are migration work toward the Python-only system, not a
 reason to preserve a second production runtime.
+
+## 20. Map-algebra system
+
+### 20.1 Value model
+
+The map-algebra subsystem introduces two core value types defined in
+`raster.py` and `map_algebra/_model.py`:
+
+**`Raster`** is the eager, already-materialized value. It keeps ordinary
+2-D NumPy `values` together with a `GeoReference`, a boolean `valid` mask,
+optional `units`, `name`, and `validity_provenance`. Construction validates
+shape, grid dimensions, validity shape, and read-only metadata (supported
+dtypes are `bool`, signed/unsigned integers, `float32`, `float64`; object,
+string, datetime, and complex are rejected). `from_masked_array` and
+`from_temporal_cube` provide lossless adapters from existing types.
+
+**`RasterExpression`** is an immutable description of a calculation that has
+not yet run. It contains an operation identifier, immutable normalized
+parameters, operands, inferred grid/dtype/units/halo, and a versioned
+semantic identifier. Users obtain expressions from `ma.source()`,
+`Raster.expression()`, coordinate constructors, or registered operators.
+Python arithmetic, comparison, and bitwise Boolean operators build the
+expression graph.
+
+**`TemporalRaster`** extends the model to time series: a 3-D `(time, y, x)`
+array with a 1-D `datetime64` time axis, spatial `GeoReference`, and
+per-pixel validity mask. An adapter (`from_temporal_cube`) creates one from
+an existing `TemporalCube`. **`TemporalRasterExpression`** is the lazy
+temporal counterpart, supporting layer-wise local operations with static
+raster broadcasting and temporal reductions (mean, min, max, std, sum,
+count) that produce composable spatial `RasterExpression` nodes.
+
+### 20.2 Operation registry
+
+All map-algebra operations are defined in a sealed internal registry. Each
+operation spec carries an identifier, arity, category, dtype inference rule,
+unit inference rule, halo, validity rule, eager kernel, and window kernel.
+Registration occurs at import time from static library code only; users
+cannot register arbitrary kernels.
+
+The registry drives both execution (by selecting the right kernel for each
+node) and introspection (by powering `ma.describe_operation()` and
+`ma.list_operations()`). The same metadata feeds the explain/plan tools and
+the docstrings, preventing silent divergence.
+
+### 20.3 Execution architecture
+
+Execution has two strategies on one operation specification:
+
+1. **Eager** (`Raster` in, `Raster` out) delegates to the per-operation
+   eager kernel (typically NumPy or SciPy). Validity masks are combined
+   according to the operation's declared validity rule, and numeric domains
+   are applied to invalidate undefined results.
+
+2. **File-backed** (`RasterExpression` in, evaluated by `ma.compute()` or
+   bound in windows by `ma.write()`) topologically sorts the expression DAG,
+   loads source metadata without opening datasets, infers one output grid
+   and dtype, enumerates output windows (default 128 by 128), reads source
+   windows with required halos, applies each operation per window, and writes
+   results. Consecutive local operations are fused into one window task
+   to avoid unnecessary intermediate writes. Source datasets are opened
+   lazily during execution and closed deterministically.
+
+`ma.compute()` materializes an expression as a `Raster` (suitable for small
+rasters). `ma.write()` evaluates in bounded windows and produces a staged,
+atomically-published GeoTIFF with a GDAL validity mask and a restart
+manifest.
+
+### 20.4 Temporal execution
+
+Temporal computation follows the same pattern with an additional time axis:
+
+- **Eager temporal compute** (`TemporalRasterExpression` via
+  `compute_temporal()`) topologically evaluates nodes: constant nodes
+  provide their in-memory values; source nodes read from
+  `TemporalGeoTiffSeries` layer by layer with nodata-derived validity;
+  broadcast nodes tile a spatial raster across time; local nodes apply
+  per-layer kernels; and reducing nodes aggregate the time axis.
+
+- **File-backed temporal** source nodes retain an open
+  `TemporalGeoTiffSeries` handle so that eager compute can stream layers
+  without constructing a full cube. Reductions that compose with spatial
+  algebra are evaluated by first computing the temporal source, then
+  applying the reduction eagerly. This ensures no temporal helper
+  constructs a full file-backed cube unless the caller explicitly requests
+  materialization.
+
+### 20.5 Storage flow
+
+Expression output through `ma.write()` uses the same durable storage
+patterns as the horizon-derived product engine:
+
+1. Validate the expression graph and preflight output paths.
+2. Create a hidden staged GeoTIFF and manifest.
+3. Process output windows with bounded source reads, computational work,
+   and GDAL block writes.
+4. Write the GDAL mask band at dataset creation time.
+5. Publish atomically: write a manifest JSON with scientific and restart
+   identity, then swap to the destination path. A failed overwrite
+   preserves the prior complete output.
+
+The restart manifest binds output to the expression scientific identity,
+output dtype, invalid fill value, and grid dimensions. Restart skips
+recomputation when the stored manifest matches. There is no per-window
+journal in `0.2`; full recomputation occurs on manifest mismatch.
+
+### 20.6 Dispatch rules
+
+Mixed-mode operand dispatch follows a single rule: if any operand is a
+`RasterExpression`, the operation returns `RasterExpression`; if any
+operand is a `TemporalRasterExpression`, the result is
+`TemporalRasterExpression`; otherwise (all `Raster` or scalar), the
+result is `Raster`. A path is never implicitly converted to an expression;
+use `ma.source()` explicitly.
+
+Python operators on `Raster` detect `RasterExpression` and
+`TemporalRasterExpression` operands and delegate to the expression's
+reverse operator, creating the appropriate lazy node. The `map_algebra`
+subpackage re-exports wrapped functions that perform the equivalent
+dispatch, so `ma.sqrt(expr)` and `ma.add(expr_a, expr_b)` build
+expression nodes from any combination of eager and lazy operands.
+
+### 20.7 Modules
+
+```text
+src/lunarscout/
+  raster.py                      # public eager Raster value
+  map_algebra/
+    __init__.py                  # curated public namespace and dispatch
+    local.py                     # public local functions
+    focal.py                     # public neighborhood functions
+    zonal.py                     # public zonal functions and results
+    reductions.py                # public global reductions
+    distance.py                  # public distance functions
+    expression.py                # compute, explain, plan for RasterExpression
+    temporal.py                  # temporal_source, temporal reductions
+    _model.py                    # RasterExpression node model
+    _temporal_model.py           # TemporalRaster, TemporalRasterExpression
+    _sources.py                  # GeoTIFF and in-memory sources
+    _writer.py                   # staged GeoTIFF expression output
+    _eager.py                    # eager dispatch
+    _kernels.py                  # spatial NumPy kernels
+    _dtypes.py                   # promotion, casting, overflow
+    _units.py                    # conservative unit rules
+    _validity.py                 # mask combination and numeric domains
+    _validation.py               # operand and grid validation
+```

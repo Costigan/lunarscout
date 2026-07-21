@@ -6,6 +6,23 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Implemented Phase I of the broad map-algebra plan: added a comprehensive
+  Map Algebra chapter to ``docs/USER_GUIDE.md`` covering value types, eager
+  vs file-backed workflows, constructors/adapters, grid/validity/dtype/unit
+  rules, and all five operation families (local, focal, zonal, global,
+  distance) plus temporal map algebra.  Added map-algebra architecture
+  documentation to ``docs/ARCHITECTURE.md`` (section 20) describing the
+  value model, operation registry, execution architecture, temporal
+  execution flow, storage flow, dispatch rules, and module inventory.
+  Added three runnable examples: ``18_map_algebra_screening.py`` (terrain-
+  lighting screening with weighted scoring), ``19_map_algebra_focal.py``
+  (focal smoothing, morphology opening, distance fields), and
+  ``20_map_algebra_temporal.py`` (temporal source, temporal reduction
+  composed with spatial algebra).  Updated ``examples/README.md`` with the
+  new scripts.  Exported ``TemporalRaster`` from the package root with
+  the alias ``from_temporal_cube_to_raster``.  Built clean wheel and sdist,
+  verified ``pip check``, and confirmed smoke import from installed wheel.
+  Verification: 931 passed, 17 skipped (CPU suite).
 - Implemented Phase H of the broad map-algebra plan: eager
   ``TemporalRaster`` values with canonical three-dimensional validity and
   strict UTC-coordinate validation; explicit ``TemporalCube`` adapters;

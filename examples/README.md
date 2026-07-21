@@ -57,6 +57,9 @@ common support module at `_example_support.py`.
 | `15_python_psr.py` | PSR generation on a real scenario | Optional (Cuda default) | Real scenario + SPICE |
 | `16_generate_horizons.py` | Resumable CUDA horizon generation from one or more DEMs | **Required** | User-provided DEMs |
 | `17_downstream_products.py` | Lightmap, PSR, Sun/Earth elevation, safe havens, and four mission-duration products | Optional | Real scenario + SPICE |
+| `18_map_algebra_screening.py` | Map-algebra terrain-lighting screening with validity, scoring, and GeoTIFF output | No | Synthetic |
+| `19_map_algebra_focal.py` | Map-algebra focal smoothing, morphology opening, and distance fields | No | Synthetic |
+| `20_map_algebra_temporal.py` | Temporal map algebra: time-series reduction composed with spatial constraints | No | Synthetic |
 
 ## Synthetic horizon data
 

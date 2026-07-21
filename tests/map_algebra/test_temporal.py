@@ -948,8 +948,8 @@ class TestImportBoundary:
 
     def test_import_lunarscout_still_works(self):
         import lunarscout as ls
-        assert not hasattr(ls, "TemporalRaster")
-        assert isinstance(ls.map_algebra.TemporalRaster, type)
+        assert hasattr(ls, "TemporalRaster")
+        assert isinstance(ls.TemporalRaster, type)
 
 
 # ---------------------------------------------------------------------------
