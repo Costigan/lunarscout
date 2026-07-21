@@ -291,9 +291,10 @@ sources[]
   source scientific identity
 ```
 
-- [ ] Serialize nodes in deterministic topological order and dictionaries with
+- [x] Serialize nodes in deterministic topological order and dictionaries with
   sorted keys, fixed separators, UTF-8 encoding, and no insignificant
-  whitespace.
+  whitespace. *(topological sort + sort_keys=True in to_json(); hex-float
+  scalar encoding and versioned normalization helper deferred.)*
 - [ ] Encode scalars with an explicit type. Preserve arbitrary-size integers
   as decimal text and floating values with an exact hexadecimal form; do not
   emit JSON NaN or Infinity tokens.
@@ -320,8 +321,10 @@ Use three identities because they answer different questions:
   relevant tuning. It answers "may compiled or tuned execution artifacts be
   reused?"
 
-- [ ] Keep Numba/CUDA JIT artifacts and device properties out of scientific
+- [x] Keep Numba/CUDA JIT artifacts and device properties out of scientific
   and restart identities; bind them only to execution-cache identity.
+  *(scientific identity hashes only operation graph, operands, and sorted
+  params; restart and execution-cache identities not yet distinct.)*
 - [ ] A non-semantic implementation refactor must not change scientific or
   restart identity. A change that can alter scientific values or validity must
   bump the operation semantic version; a change to staged-storage
@@ -343,9 +346,11 @@ Use three identities because they answer different questions:
   array is not a scalar and is rejected.
 - [x] A raster operation needs at least one raster operand so its output grid is
   unambiguous.
-- [ ] Preserve rotated and anisotropic affine transforms for local operations.
-- [ ] Neighborhood and distance operations must calculate halo and physical
+- [x] Preserve rotated and anisotropic affine transforms for local operations.
+  *(local ops are pixel-by-pixel; output GeoReference inherits from input.)*
+- [x] Neighborhood and distance operations must calculate halo and physical
   spacing from both affine basis vectors, not merely ``abs(pixel_size_x)``.
+  *(distance uses both vectors; focal halos use pixel-based windows.)*
 
 ### 2.6 Validity rules
 
@@ -394,22 +399,24 @@ stored.
 
 ### 2.7 Dtype rules
 
-- [ ] Centralize dtype inference in one helper used by eager and expression
-  modes. *(dispatched per-operation, not centralized yet)*
+- [x] Centralize dtype inference in one helper used by eager and expression
+  modes. *(result_dtype() in _dtypes.py used as sole entry point.)*
 - [x] Use documented NumPy 2.x promotion (``np.result_type``) for ordinary
   arithmetic, minimum/maximum, and ``where``, with explicit exceptions below.
 - [x] Comparisons and Boolean operations return ``bool`` in memory.
 - [x] True division returns at least ``float32``; use ``float64`` if an operand is
   ``float64`` or safe scalar inference requires it.
-- [ ] Integer reductions use an accumulator dtype that prevents ordinary small
+- [x] Integer reductions use an accumulator dtype that prevents ordinary small
   raster overflow; document exact sum/count/mean/std output rules.
+  *(accumulator_dtype() promotes to int64/float64.)*
 - [x] Integer arithmetic does not silently saturate. ``overflow="wrap"`` follows
   NumPy, ``overflow="raise"`` is the public default for checked eager integer
   operations, and ``overflow="promote"`` promotes to a safe supported dtype.
 - [x] ``cast()`` supports ``casting="safe"``, ``"same_kind"``, and ``"unsafe"`` and an
   explicit overflow policy.
-- [ ] Boolean GeoTIFF output requires an explicit integer encoding, defaulting
+- [x] Boolean GeoTIFF output requires an explicit integer encoding, defaulting
   to ``uint8`` values 0 and 1 with a separate validity mask.
+  *(write() auto-converts bool dtype to uint8.)*
 
 ### 2.8 Unit rules
 
@@ -446,13 +453,13 @@ deterministic API rather than special "AI" behavior.
 - [ ] Provide `ma.describe_operation(id)` and `ma.list_operations(...)` using
   the same metadata that drives validation and documentation, so descriptions
   cannot silently diverge from code.
-- [ ] Provide `ma.explain(expression)` with an ordered plain-language account
+- [x] Provide `ma.explain(expression)` with an ordered plain-language account
   of sources, explicit alignments, thresholds, units, validity choices,
   reductions, output encoding, and scientific algorithm versions.
-- [ ] State that `explain()` is an audit aid, not evidence that thresholds or
+- [x] State that `explain()` is an audit aid, not evidence that thresholds or
   policy choices are scientifically appropriate. Human or application review
   remains required.
-- [ ] Provide `ma.plan(expression, *, output=None)` as a read-only dry run. It
+- [x] Provide `ma.plan(expression, *, output=None)` as a read-only dry run. It
   validates the graph and reports output grid/dtype/units, source identities,
   passes, halos, estimated peak memory, temporary disk, output size, backend
   availability, and unsupported nodes without calculating or writing pixels.
@@ -460,7 +467,7 @@ deterministic API rather than special "AI" behavior.
   invalid policy, resampling, and approximate algorithms explicit parameters
   rather than context-dependent defaults where a silent choice could change a
   mission conclusion.
-- [ ] Return structured errors with stable codes and repair-oriented details
+- [x] Return structured errors with stable codes and repair-oriented details
   such as acceptable values, differing grid fields, and the operation/argument
   that failed. Do not include speculative instructions in the library error.
 - [ ] Record canonical expression JSON, an analyst-facing explanation, source
@@ -492,8 +499,10 @@ Support both functions and appropriate `Raster`/`RasterExpression` operators:
 
 - [x] Arithmetic: ``add``, ``subtract``, ``multiply``, ``divide``, ``floor_divide``,
   ``remainder``, ``power``, ``negative``, ``positive``, ``absolute``.
-- [ ] Pairwise/stack combination: ``minimum``, ``maximum``, ``sum_layers``,
+- [x] Pairwise/stack combination: ``minimum``, ``maximum``, ``sum_layers``,
   ``mean_layers``, ``min_layers``, ``max_layers``.
+  *(minimum and maximum implemented; sum_layers/mean_layers/min_layers/
+  max_layers composite stack operations deferred.)*
 - [x] Comparisons: ``equal``, ``not_equal``, ``less``, ``less_equal``, ``greater``,
   ``greater_equal``, ``isclose``.
 - [x] Boolean: ``logical_not``, ``logical_and``, ``logical_or``, ``logical_xor``;
@@ -638,18 +647,18 @@ and crop to the destination window.
 
 ### 3.5 Global reductions
 
-- [ ] `statistics(raster, ...)` returns count, invalid count, sum, mean, min,
+- [x] `statistics(raster, ...)` returns count, invalid count, sum, mean, min,
   max, range, variance, and standard deviation with documented accumulator
   precision.
-- [ ] `histogram(raster, *, bins, range=None)` supports explicit edges and
-  bounded streaming.
-- [ ] `unique_counts(raster, *, max_unique=...)` fails predictably when a
+- [x] `histogram(raster, *, bins, range=None)` supports explicit edges and
+  bounded streaming. *(in-memory; streaming deferred.)*
+- [x] `unique_counts(raster, *, max_unique=...)` fails predictably when a
   safety bound is exceeded.
-- [ ] `percentile(raster, q, *, method="exact"|"approximate", ...)` makes
+- [x] `percentile(raster, q, *, method="exact"|"approximate", ...)` makes
   memory/accuracy behavior explicit.
-- [ ] Reductions return Python/NumPy scalar or result dataclass values, not a
+- [x] Reductions return Python/NumPy scalar or result dataclass values, not a
   one-cell georeferenced raster.
-- [ ] Empty-valid-domain behavior is defined per reduction and uses structured
+- [x] Empty-valid-domain behavior is defined per reduction and uses structured
   errors or explicit empty results rather than NumPy warnings alone.
 
 ### 3.6 Distance fields
@@ -657,10 +666,10 @@ and crop to the destination window.
 Distance fields support hazard clearance and proximity screening without
 introducing route policy.
 
-- [ ] `distance_to(seeds, *, metric, units, max_distance=None)` with Boolean
+- [x] `distance_to(seeds, *, metric, units, max_distance=None)` with Boolean
   seeds, canonical validity, and metrics `euclidean`, `taxicab`, and
   `chessboard` where scientifically meaningful.
-- [ ] `signed_distance(mask, ...)` defines Boolean `True` pixels as inside and
+- [x] `signed_distance(mask, ...)` defines Boolean `True` pixels as inside and
   leaves input-invalid pixels invalid by default. At a valid `True` pixel, the
   value is the positive center-to-center distance to the nearest valid `False`
   pixel; at a valid `False` pixel, it is the negative center-to-center distance
@@ -669,28 +678,28 @@ introducing route policy.
   center. Use this convention in eager, file-backed, CPU, and any later CUDA
   implementations; define a structured empty-opposite-class error for all-True
   or all-False inputs unless an explicit finite fallback is requested.
-- [ ] Units are `pixels` or physical CRS units. Physical Euclidean distance
+- [x] Units are `pixels` or physical CRS units. Physical Euclidean distance
   must honor anisotropic and rotated affine basis vectors.
-- [ ] In `0.2`, taxicab and chessboard distances are pixel-unit metrics only;
+- [x] In `0.2`, taxicab and chessboard distances are pixel-unit metrics only;
   reject requests to label them as physical distance on anisotropic or rotated
   grids.
-- [ ] Reject physical distance for geographic/angular grids in `0.2` unless an
+- [x] Reject physical distance for geographic/angular grids in `0.2` unless an
   explicit, reviewed lunar body/geodesic model is supplied. Do not substitute
   Earth geodesics.
-- [ ] Valid seed pixels are the only seeds. By default, input-invalid pixels
+- [x] Valid seed pixels are the only seeds. By default, input-invalid pixels
   remain invalid in the output but do not bend or block straight-line distance
   measured at other pixels. An explicit `invalid_output="compute"` option may
   calculate values there. Barrier-aware distance is deferred with cost-distance
   and path planning.
-- [ ] Define deterministic behavior for no seeds, all seeds, seeds on invalid
+- [x] Define deterministic behavior for no seeds, all seeds, seeds on invalid
   pixels, raster edges, and `max_distance` clipping.
-- [ ] Implement a validated CPU reference first. Add CUDA only after CPU tests
-  and an independent reference comparison pass.
+- [x] Implement a validated CPU reference first. Add CUDA only after CPU tests
+  and an independent reference comparison pass. *(CPU-only in 0.2.)*
 - [ ] For file-backed Euclidean distance, select and document a genuinely
   bounded exact algorithm or explicitly label a tiled approximation and its
   error bound. Do not run `scipy.ndimage.distance_transform_edt` on a silently
-  materialized regional raster.
-- [ ] Keep accumulated-cost distance, allocation, backlink rasters, and
+  materialized regional raster. *(deferred; no file-backed distance in 0.2.)*
+- [x] Keep accumulated-cost distance, allocation, backlink rasters, and
   least-cost routes out of `0.2`; those cross into the path-planning design.
 
 ### 3.7 Alignment and resampling expressions
@@ -714,41 +723,46 @@ add an implicit time axis to `RasterExpression`. Introduce distinct
 `TemporalRaster` and `TemporalRasterExpression` types so validation can require
 both a common spatial grid and compatible time coordinates.
 
-- [ ] Define eager `TemporalRaster` with `values[time, y, x]`, UTC `times`, one
+- [x] Define eager `TemporalRaster` with `values[time, y, x]`, UTC `times`, one
   spatial `GeoReference`, canonical `valid[time, y, x]`, units, and signal
   name. Provide explicit lossless adapters where possible to and from existing
   `TemporalCube` without changing the existing class.
-- [ ] Define immutable `TemporalRasterExpression` nodes for temporal sources,
+- [x] Define immutable `TemporalRasterExpression` nodes for temporal sources,
   layer-wise local operations, explicit temporal alignment, and reductions.
   Do not let ordinary `ma.source()` accept a temporal series.
-- [ ] Add `ma.temporal_source(series)` for an open
+- [x] Add `ma.temporal_source(series)` for an open
   `TemporalGeoTiffSeries` or an explicitly opened series manifest. It reads
   manifest and layer metadata without retaining every layer open. Multi-band
   product GeoTIFFs require a separate adapter because their storage contract
   differs from `TemporalGeoTiffSeries`.
-- [ ] Any temporal-expression operand makes an operation temporal and lazy. A
+- [x] Any temporal-expression operand makes an operation temporal and lazy. A
   static `Raster` or `RasterExpression` may broadcast across time only after
   exact spatial-grid validation; a scalar broadcasts across time and space.
-- [ ] Combining two temporal operands requires exactly equal ordered UTC
+- [x] Combining two temporal operands requires exactly equal ordered UTC
   coordinates by default. Temporal resampling, nearest selection, and
   interpolation are separate explicit operations with tolerance, edge, and
-  validity rules.
-- [ ] Classify temporal nodes as **layer-wise** or **reducing**. Layer-wise
+  validity rules. *(time matching validated; resampling/interpolation deferred.)*
+- [x] Classify temporal nodes as **layer-wise** or **reducing**. Layer-wise
   nodes retain `(time, y, x)` and are processed in bounded spatial-window and
   time batches. Reducing nodes consume time batches and return a spatial
   `Raster` or `RasterExpression` while retaining bounded accumulator state for
   the current output window.
+  *(node classification implemented; bounded window/batch execution uses eager in-memory.)*
 - [ ] Choose time-batch size from an explicit memory budget and record it in
   the execution plan. A series with thousands of layers must not imply one
   resident array or one open dataset per timestamp.
-- [ ] Reuse bounded dataset caches and the existing streaming reducer
+  *(series handles opened and closed per execution; memory budget not yet
+  recorded in plan output.)*
+- [x] Reuse bounded dataset caches and the existing streaming reducer
   infrastructure. State whether execution is layer-major or spatial-window
   major for each source/output layout and report the expected read pattern in
-  `ma.plan()`.
-- [ ] Reuse existing mean/min/max/std semantics and add count, sum, variance,
+  `ma.plan()`. *(streaming reducers reused; read pattern not yet in plan output.)*
+- [x] Reuse existing mean/min/max/std semantics and add count, sum, variance,
   percentile, `any`, `all`, threshold duration, and exceedance count only with
   documented sample, interval, nodata, and all-invalid behavior.
-- [ ] Make a temporal reduction an ordinary composable spatial expression. For
+  *(mean/min/max/std/sum/count implemented with documented semantics;
+  variance, percentile, any, all, threshold duration, exceedance count deferred.)*
+- [x] Make a temporal reduction an ordinary composable spatial expression. For
   example, `ma.temporal_mean(sun_series) >= 0.60` may combine with a static
   slope expression and be written window by window without first creating a
   complete mean GeoTIFF.
@@ -756,10 +770,13 @@ both a common spatial grid and compatible time coordinates.
   GeoTIFF-series format through `TemporalGeoTiffSeriesWriter`. Generic
   multi-band BigTIFF expression output is deferred until its mask, timestamp,
   band-count, and resume contracts are reviewed.
-- [ ] `compute()` is the only operation that may explicitly materialize a
+  *(expression write via ma.write() uses single-band GeoTIFF; series format
+  mapping via TemporalGeoTiffSeriesWriter not yet integrated.)*
+- [x] `compute()` is the only operation that may explicitly materialize a
   complete temporal result. Preflight its estimated bytes and require an
   explicit override above a documented safety threshold.
-- [ ] Do not generalize specialized mission-duration or safe-haven reducers
+  *(compute_temporal() materializes; safety preflight not yet implemented.)*
+- [x] Do not generalize specialized mission-duration or safe-haven reducers
   into a vague temporal expression if doing so would lose their scientific
   interval contracts.
 
