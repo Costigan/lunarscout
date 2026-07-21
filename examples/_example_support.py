@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
+import shutil
+import tarfile
+import tempfile
 from pathlib import Path
+from urllib.request import urlopen, urlretrieve
 
 import lunarscout as ls
 import numpy as np
@@ -117,3 +123,156 @@ def ensure_synthetic_series(workspace: Path) -> ls.TemporalGeoTiffSeries:
         units="fraction",
         provenance={"source": "deterministic Lunarscout example"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Synthetic horizon scenario (GPU-prebuilt data from GitHub Releases)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_EXAMPLE_DATA_DIR = Path.home() / ".local/share/lunarscout/examples"
+
+_GH_RELEASE_BASE = (
+    "https://github.com/Costigan/lunarscout"
+    "/releases/download"
+)
+
+
+def _example_data_dir() -> Path:
+    env = os.environ.get("LUNARSCOUT_EXAMPLE_DATA_DIR")
+    if env:
+        return Path(env)
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg:
+        return Path(xdg) / "lunarscout" / "examples"
+    return _DEFAULT_EXAMPLE_DATA_DIR
+
+
+def _manifest_path() -> Path:
+    return Path(__file__).resolve().parent / "data" / "synthetic_horizon_manifest.json"
+
+
+def _load_manifest() -> dict:
+    with open(_manifest_path(), "r") as fh:
+        return json.load(fh)
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _download_url(manifest: dict) -> str:
+    override = os.environ.get("LUNARSCOUT_SYNTHETIC_HORIZON_URL")
+    if override:
+        return override
+    explicit = manifest.get("download_url")
+    if explicit:
+        return explicit
+    tag = manifest["release_tag"]
+    name = manifest["asset_name"]
+    return f"{_GH_RELEASE_BASE}/{tag}/{name}"
+
+
+def ensure_synthetic_horizon_scenario(workspace: Path) -> ls.Scenario | None:
+    """Obtain the synthetic 256×256 DEM and four pregenerated horizon tiles.
+
+    Downloads from GitHub Releases on first use and caches under
+    ``$LUNARSCOUT_EXAMPLE_DATA_DIR`` (default:
+    ``$XDG_DATA_HOME/lunarscout/examples/``, fallback:
+    ``~/.local/share/lunarscout/examples/``).  Copies into *workspace* as
+    ``horizon_scenario/``.  Returns the open :class:`Scenario` on success,
+    or ``None`` if the download failed (caller prints a message and exits
+    cleanly).
+    """
+    cache_dir = _example_data_dir()
+    manifest = _load_manifest()
+    cache_root = cache_dir / "synthetic_horizon_scenario"
+    dem_path = cache_root / "dem.tif"
+
+    # -- Already cached? ---------------------------------------------------
+    if dem_path.is_file():
+        expected = manifest["files"]
+        all_present = True
+        for rel, expected_hash in expected.items():
+            fp = cache_root / rel
+            if not fp.is_file():
+                all_present = False
+                break
+            if _sha256_file(fp) != expected_hash:
+                all_present = False
+                break
+        if all_present:
+            return _copy_to_workspace(cache_root, workspace)
+
+    # -- Download -----------------------------------------------------------
+    url = _download_url(manifest)
+    expected_archive_hash = manifest["asset_sha256"]
+    print(f"Downloading synthetic horizon data ({manifest['asset_name']}) ...")
+    print(f"  from: {url}")
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = cache_dir / manifest["asset_name"]
+
+    try:
+        _download_with_progress(url, archive_path)
+    except Exception as exc:
+        print(f"Download failed: {exc}")
+        print("To skip this example, run with a real scenario instead.")
+        return None
+
+    archive_hash = _sha256_file(archive_path)
+    if archive_hash != expected_archive_hash:
+        print(
+            f"Checksum mismatch for {manifest['asset_name']}.\n"
+            f"  expected: {expected_archive_hash}\n"
+            f"  got:      {archive_hash}\n"
+            "The remote asset may have been updated.  Delete the cache and retry."
+        )
+        return None
+    print("  checksum: ok")
+
+    # -- Extract ------------------------------------------------------------
+    if cache_root.exists():
+        shutil.rmtree(cache_root)
+    cache_root.mkdir(parents=True)
+    with tarfile.open(archive_path, "r:gz") as tar:
+        tar.extractall(cache_root)
+
+    # -- Verify extracted files ---------------------------------------------
+    for rel, expected_hash in manifest["files"].items():
+        fp = cache_root / rel
+        actual = _sha256_file(fp)
+        if actual != expected_hash:
+            print(f"Checksum mismatch for extracted file: {rel}")
+            return None
+
+    print(f"  extracted to {cache_root}")
+    return _copy_to_workspace(cache_root, workspace)
+
+
+def _copy_to_workspace(cache_root: Path, workspace: Path) -> ls.Scenario:
+    dest = workspace.expanduser().resolve() / "horizon_scenario"
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(cache_root, dest, symlinks=False)
+    return ls.open_scenario(str(dest))
+
+
+def _download_with_progress(url: str, dest: Path) -> None:
+    """Download *url* to *dest*, printing progress dots."""
+    tmp_path = Path(str(dest) + ".downloading")
+
+    def _report(block_count: int, block_size: int, total_size: int) -> None:
+        if block_count == 0:
+            return
+        downloaded = block_count * block_size
+        pct = int(round(downloaded / max(1, total_size) * 100))
+        if block_count % 50 == 0:
+            print(f"  {pct}% ({downloaded:,} / {total_size:,} bytes)")
+
+    urlretrieve(url, str(tmp_path), reporthook=_report)
+    print("  100%")
+    tmp_path.rename(dest)

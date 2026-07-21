@@ -6,6 +6,24 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Revamped the example suite: renumbered scripts 00–10 to 01–10 for
+  contiguous ordering; moved the historical HDF5 storage benchmark to
+  ``benchmarks/``; deleted stale ``.pyc`` files; and added four new
+  examples covering incremental temporal writing (``07``), SPICE body
+  vectors and azimuth/elevation (``11``), body elevation and horizon
+  plotting on synthetic data (``12``), and a CPU synthetic lightmap
+  with explicit vectors (``13``).  Added a synthetic 256×256 DEM
+  generator script, a GitHub-Releases-backed download-and-cache helper,
+  a SHA-256 manifest, and a rewritten ``examples/README.md`` with a
+  data-requirements table and per-script guidance.  Rewrote the
+  horizon-generation example (``16``) with ``--primary-dem`` and
+  ``--surrounding-dem`` arguments.
+- Updated ``docs/USER_GUIDE.md`` with an Examples section linking to
+  ``examples/README.md`` and an ``examples/`` domain summary table.
+- Published ``synthetic-horizon-data-v1.tar.gz`` as a GitHub Release
+  asset with tag ``synthetic-horizon-data-v1`` (37 MB, 256×256
+  south-polar DEM with bowl, ridge, cone, and bump terrain plus four
+  128×128 compressed ``.cbin`` horizon tiles).
 - Bumped candidate version to ``0.1.0rc3``.  Updated the version assertion
   in ``tests/test_dependency_boundary.py`` to match.
 - Deferred product performance benchmarking to a later release.  Marked the

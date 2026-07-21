@@ -41,6 +41,26 @@ lunar_analyst -> lunarscout
 
 Lunarscout must not import Lunar Analyst application modules.
 
+## Examples
+
+Runnable example scripts are provided in the repository under `examples/`.
+They demonstrate every public API capability in increasing order of scope:
+
+| Domain | Scripts |
+|--------|---------|
+| GeoTIFF I/O, coordinates, terrain, regions, alignment | `01`–`04` |
+| Temporal cubes, file-backed series, streaming reducers | `05`–`08` |
+| QGIS VRT inspection, landing-site screening | `09`–`10` |
+| SPICE vectors, azimuth/elevation | `11` |
+| Body/horizon plots, synthetic lightmap | `12`–`13` |
+| PSR, horizon generation, downstream products | `15`–`17` |
+
+Most examples work on synthetic data without a GPU or real scenario.
+A synthetic 256×256 DEM with pregenerated horizon tiles is downloaded
+automatically on first use for examples that need horizons.  See
+[`examples/README.md`](../examples/README.md) for complete setup instructions,
+a data-requirements table, and detailed guidance for each script.
+
 ## Function Overview
 
 The package root is the normal user-facing API:
