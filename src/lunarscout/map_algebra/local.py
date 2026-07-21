@@ -4,9 +4,9 @@ from typing import Any, NoReturn
 
 import numpy as np
 
-from ..errors import MapAlgebraDTypeError, MapAlgebraError, RasterValidationError
-from ..raster import Raster
-from ._dtypes import cast_values, result_dtype
+from ..errors import MapAlgebraDTypeError, MapAlgebraError
+from ..raster import Raster, _validate_nodata_representable
+from ._dtypes import cast_values
 from ._eager import (
     _dispatch_binary_raster_raster,
     _dispatch_binary_raster_scalar,
@@ -23,7 +23,6 @@ from ._kernels import (
     _clip,
     _cos,
     _divide,
-    _divide_from,
     _equal,
     _exp,
     _floor,
@@ -45,7 +44,6 @@ from ._kernels import (
     _negate,
     _not_equal,
     _power,
-    _power_from,
     _radians,
     _remainder,
     _round_half_even,
@@ -53,16 +51,17 @@ from ._kernels import (
     _sqrt,
     _square,
     _subtract,
-    _subtract_from,
     _tan,
     _trunc,
     _degrees,
 )
-from ._units import require_matching_units
+from ._units import (
+    multiply_units,
+    require_angle_units,
+    require_matching_units,
+)
 from ._validation import _is_scalar, _normalize_scalar, _require_common_grid
 from ._validity import (
-    coalesce_validity,
-    intersect_validity,
     where_validity,
 )
 
@@ -84,6 +83,11 @@ class _InvalidSentinel:
 
 invalid = _InvalidSentinel()
 
+
+def _infer_output_georef_single(raster: Raster) -> Any:
+    from ._validation import _infer_output_georef as _iog
+    return _iog([raster])
+
 # ---------------------------------------------------------------------------
 # Arithmetic
 # ---------------------------------------------------------------------------
@@ -93,91 +97,113 @@ def add(a: Raster | int | float, b: Raster | int | float) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         require_matching_units(units_a=a.units, units_b=b.units)
-        return _dispatch_binary_raster_raster(
-            a, b, _add, operation="add", output_units=a.units
-        )
+        return _dispatch_binary_raster_raster(a, b, _add, operation="add", output_units=a.units)
     if isinstance(a, Raster) and _is_scalar(b):
-        scalar = _normalize_scalar(b, argument="b")
-        return _dispatch_binary_raster_scalar(a, scalar, _add, operation="add")
+        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _add, operation="add")
     if _is_scalar(a) and isinstance(b, Raster):
-        scalar = _normalize_scalar(a, argument="a")
-        return _dispatch_binary_raster_scalar(b, scalar, _add, operation="add")
-    raise MapAlgebraError(
-        "add() requires at least one Raster operand.",
-        code="map_algebra_no_raster_operand",
-    )
+        return _dispatch_binary_raster_scalar(b, _normalize_scalar(a, argument="a"), _add, operation="add")
+    raise MapAlgebraError("add() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
 def subtract(a: Raster | int | float, b: Raster | int | float) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         require_matching_units(units_a=a.units, units_b=b.units)
-        return _dispatch_binary_raster_raster(
-            a, b, _subtract, operation="subtract", output_units=a.units
-        )
+        return _dispatch_binary_raster_raster(a, b, _subtract, operation="subtract", output_units=a.units)
     if isinstance(a, Raster) and _is_scalar(b):
-        scalar = _normalize_scalar(b, argument="b")
-        return _dispatch_binary_raster_scalar(a, scalar, _subtract, operation="subtract")
+        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _subtract, operation="subtract")
     if _is_scalar(a) and isinstance(b, Raster):
-        scalar = _normalize_scalar(a, argument="a")
         return _dispatch_binary_raster_scalar(
-            b, scalar,
-            lambda arr, s: _subtract_from(s, arr),
+            b, _normalize_scalar(a, argument="a"),
+            lambda arr, s: _subtract(np.full(arr.shape, s, dtype=arr.dtype), arr),
             operation="subtract",
         )
-    raise MapAlgebraError(
-        "subtract() requires at least one Raster operand.",
-        code="map_algebra_no_raster_operand",
-    )
+    raise MapAlgebraError("subtract() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
-def multiply(a: Raster | int | float, b: Raster | int | float) -> Raster:
+def multiply(a: Raster | int | float, b: Raster | int | float, *, output_units: str | None = None) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
-        return _dispatch_binary_raster_raster(
-            a, b, _multiply, operation="multiply", output_units=a.units
-        )
+        units = multiply_units(units_a=a.units, units_b=b.units, output_units=output_units)
+        return _dispatch_binary_raster_raster(a, b, _multiply, operation="multiply", output_units=units)
     if isinstance(a, Raster) and _is_scalar(b):
-        scalar = _normalize_scalar(b, argument="b")
-        return _dispatch_binary_raster_scalar(a, scalar, _multiply, operation="multiply")
+        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _multiply, operation="multiply")
     if _is_scalar(a) and isinstance(b, Raster):
-        scalar = _normalize_scalar(a, argument="a")
-        return _dispatch_binary_raster_scalar(b, scalar, _multiply, operation="multiply")
-    raise MapAlgebraError(
-        "multiply() requires at least one Raster operand.",
-        code="map_algebra_no_raster_operand",
-    )
+        return _dispatch_binary_raster_scalar(b, _normalize_scalar(a, argument="a"), _multiply, operation="multiply")
+    raise MapAlgebraError("multiply() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
-def divide(a: Raster | int | float, b: Raster | int | float) -> Raster:
+def divide(a: Raster | int | float, b: Raster | int | float, *, output_units: str | None = None) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
-        return _dispatch_binary_raster_raster(
-            a, b, _divide, operation="divide"
-        )
+        units = multiply_units(units_a=a.units, units_b=b.units, output_units=output_units)
+        return _dispatch_binary_raster_raster(a, b, _divide, operation="divide", output_units=units)
     if isinstance(a, Raster) and _is_scalar(b):
-        scalar = _normalize_scalar(b, argument="b")
-        return _dispatch_binary_raster_scalar(a, scalar, _divide, operation="divide")
+        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _divide, operation="divide")
     if _is_scalar(a) and isinstance(b, Raster):
-        scalar = _normalize_scalar(a, argument="a")
         return _dispatch_binary_raster_scalar(
-            b, scalar,
-            lambda arr, s: _divide_from(s, arr),
+            b, _normalize_scalar(a, argument="a"),
+            lambda arr, s: np.divide(np.full(arr.shape, s, dtype=arr.dtype), arr),
             operation="divide",
         )
-    raise MapAlgebraError(
-        "divide() requires at least one Raster operand.",
-        code="map_algebra_no_raster_operand",
-    )
+    raise MapAlgebraError("divide() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
+
+
+def floor_divide(a: Raster | int | float, b: Raster | int | float) -> Raster:
+    if isinstance(a, Raster) and isinstance(b, Raster):
+        _require_common_grid([a, b])
+        return _dispatch_binary_raster_raster(a, b, _floor_divide, operation="floor_divide")
+    if isinstance(a, Raster) and _is_scalar(b):
+        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _floor_divide, operation="floor_divide")
+    if _is_scalar(a) and isinstance(b, Raster):
+        return _dispatch_binary_raster_scalar(
+            b, _normalize_scalar(a, argument="a"),
+            lambda arr, s: _floor_divide(np.full(arr.shape, s, dtype=arr.dtype), arr),
+            operation="floor_divide",
+        )
+    raise MapAlgebraError("floor_divide() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
+
+
+def remainder(a: Raster | int | float, b: Raster | int | float) -> Raster:
+    if isinstance(a, Raster) and isinstance(b, Raster):
+        _require_common_grid([a, b])
+        return _dispatch_binary_raster_raster(a, b, _remainder, operation="remainder")
+    if isinstance(a, Raster) and _is_scalar(b):
+        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _remainder, operation="remainder")
+    if _is_scalar(a) and isinstance(b, Raster):
+        return _dispatch_binary_raster_scalar(
+            b, _normalize_scalar(a, argument="a"),
+            lambda arr, s: _remainder(np.full(arr.shape, s, dtype=arr.dtype), arr),
+            operation="remainder",
+        )
+    raise MapAlgebraError("remainder() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
+
+
+def power(base: Raster | int | float, exponent: Raster | int | float) -> Raster:
+    if isinstance(base, Raster) and isinstance(exponent, Raster):
+        _require_common_grid([base, exponent])
+        return _dispatch_binary_raster_raster(base, exponent, _power, operation="power")
+    if isinstance(base, Raster) and _is_scalar(exponent):
+        return _dispatch_binary_raster_scalar(base, _normalize_scalar(exponent, argument="exponent"), _power, operation="power")
+    if _is_scalar(base) and isinstance(exponent, Raster):
+        return _dispatch_binary_raster_scalar(
+            exponent, _normalize_scalar(base, argument="base"),
+            lambda arr, s: _power(np.full(arr.shape, s, dtype=arr.dtype), arr),
+            operation="power",
+        )
+    raise MapAlgebraError("power() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
 def negative(a: Raster) -> Raster:
     return _dispatch_unary(a, _negate, operation="negative")
 
 
+def positive(a: Raster) -> Raster:
+    return a
+
+
 def absolute(a: Raster) -> Raster:
     return _dispatch_unary(a, _absolute, operation="absolute")
-
 
 # ---------------------------------------------------------------------------
 # Pairwise
@@ -188,92 +214,114 @@ def minimum(a: Raster | int | float, b: Raster | int | float) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         require_matching_units(units_a=a.units, units_b=b.units)
-        return _dispatch_binary_raster_raster(
-            a, b, _minimum, operation="minimum", output_units=a.units
-        )
+        return _dispatch_binary_raster_raster(a, b, _minimum, operation="minimum", output_units=a.units)
     if isinstance(a, Raster) and _is_scalar(b):
-        scalar = _normalize_scalar(b, argument="b")
-        return _dispatch_binary_raster_scalar(a, scalar, _minimum, operation="minimum")
+        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _minimum, operation="minimum")
     if _is_scalar(a) and isinstance(b, Raster):
-        scalar = _normalize_scalar(a, argument="a")
-        return _dispatch_binary_raster_scalar(b, scalar, _minimum, operation="minimum")
-    raise MapAlgebraError(
-        "minimum() requires at least one Raster operand.",
-        code="map_algebra_no_raster_operand",
-    )
+        return _dispatch_binary_raster_scalar(b, _normalize_scalar(a, argument="a"), _minimum, operation="minimum")
+    raise MapAlgebraError("minimum() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
 def maximum(a: Raster | int | float, b: Raster | int | float) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         require_matching_units(units_a=a.units, units_b=b.units)
-        return _dispatch_binary_raster_raster(
-            a, b, _maximum, operation="maximum", output_units=a.units
-        )
+        return _dispatch_binary_raster_raster(a, b, _maximum, operation="maximum", output_units=a.units)
     if isinstance(a, Raster) and _is_scalar(b):
-        scalar = _normalize_scalar(b, argument="b")
-        return _dispatch_binary_raster_scalar(a, scalar, _maximum, operation="maximum")
+        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _maximum, operation="maximum")
     if _is_scalar(a) and isinstance(b, Raster):
-        scalar = _normalize_scalar(a, argument="a")
-        return _dispatch_binary_raster_scalar(b, scalar, _maximum, operation="maximum")
-    raise MapAlgebraError(
-        "maximum() requires at least one Raster operand.",
-        code="map_algebra_no_raster_operand",
-    )
-
+        return _dispatch_binary_raster_scalar(b, _normalize_scalar(a, argument="a"), _maximum, operation="maximum")
+    raise MapAlgebraError("maximum() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 # ---------------------------------------------------------------------------
 # Comparisons
 # ---------------------------------------------------------------------------
 
 
+_SCALAR_LEFT_SWAP = {
+    "less": _greater,
+    "less_equal": _greater_equal,
+    "greater": _less,
+    "greater_equal": _less_equal,
+}
+
+
 def _comparison_helper(
     a: Raster | int | float,
     b: Raster | int | float,
     kernel,
+    swapped_kernel,
     operation: str,
 ) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         require_matching_units(units_a=a.units, units_b=b.units)
-        return _dispatch_binary_raster_raster(
-            a, b, kernel, operation=operation, output_units=None
-        )
+        return _dispatch_binary_raster_raster(a, b, kernel, operation=operation, output_units=None)
     if isinstance(a, Raster) and _is_scalar(b):
-        scalar = _normalize_scalar(b, argument="b")
-        return _dispatch_binary_raster_scalar(a, scalar, kernel, operation=operation)
+        return _dispatch_binary_raster_scalar(
+            a, _normalize_scalar(b, argument="b"), kernel, operation=operation,
+        )
     if _is_scalar(a) and isinstance(b, Raster):
-        scalar = _normalize_scalar(a, argument="a")
-        return _dispatch_binary_raster_scalar(b, scalar, kernel, operation=operation)
-    raise MapAlgebraError(
-        f"{operation}() requires at least one Raster operand.",
-        code="map_algebra_no_raster_operand",
-    )
+        return _dispatch_binary_raster_scalar(
+            b, _normalize_scalar(a, argument="a"), swapped_kernel, operation=operation,
+        )
+    raise MapAlgebraError(f"{operation}() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
 def less(a: Raster | int | float, b: Raster | int | float) -> Raster:
-    return _comparison_helper(a, b, _less, "less")
+    return _comparison_helper(a, b, _less, _greater, "less")
 
 
 def less_equal(a: Raster | int | float, b: Raster | int | float) -> Raster:
-    return _comparison_helper(a, b, _less_equal, "less_equal")
+    return _comparison_helper(a, b, _less_equal, _greater_equal, "less_equal")
 
 
 def greater(a: Raster | int | float, b: Raster | int | float) -> Raster:
-    return _comparison_helper(a, b, _greater, "greater")
+    return _comparison_helper(a, b, _greater, _less, "greater")
 
 
 def greater_equal(a: Raster | int | float, b: Raster | int | float) -> Raster:
-    return _comparison_helper(a, b, _greater_equal, "greater_equal")
+    return _comparison_helper(a, b, _greater_equal, _less_equal, "greater_equal")
 
 
 def equal(a: Raster | int | float, b: Raster | int | float) -> Raster:
-    return _comparison_helper(a, b, _equal, "equal")
+    return _comparison_helper(a, b, _equal, _equal, "equal")
 
 
 def not_equal(a: Raster | int | float, b: Raster | int | float) -> Raster:
-    return _comparison_helper(a, b, _not_equal, "not_equal")
+    return _comparison_helper(a, b, _not_equal, _not_equal, "not_equal")
 
+
+def isclose(
+    a: Raster | int | float,
+    b: Raster | int | float,
+    *,
+    rtol: float = 1e-5,
+    atol: float = 1e-8,
+    equal_nan: bool = False,
+) -> Raster:
+    if isinstance(a, Raster) and isinstance(b, Raster):
+        _require_common_grid([a, b])
+        return _dispatch_binary_raster_raster(
+            a, b,
+            lambda x, y: np.isclose(x, y, rtol=rtol, atol=atol, equal_nan=equal_nan),
+            operation="isclose", output_units=None,
+        )
+    if isinstance(a, Raster) and _is_scalar(b):
+        s = _normalize_scalar(b, argument="b")
+        return _dispatch_binary_raster_scalar(
+            a, s,
+            lambda arr, v: np.isclose(arr, v, rtol=rtol, atol=atol, equal_nan=equal_nan),
+            operation="isclose",
+        )
+    if _is_scalar(a) and isinstance(b, Raster):
+        s = _normalize_scalar(a, argument="a")
+        return _dispatch_binary_raster_scalar(
+            b, s,
+            lambda arr, v: np.isclose(v, arr, rtol=rtol, atol=atol, equal_nan=equal_nan),
+            operation="isclose",
+        )
+    raise MapAlgebraError("isclose() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 # ---------------------------------------------------------------------------
 # Boolean
@@ -298,28 +346,21 @@ def logical_and(a: Raster, b: Raster) -> Raster:
     _require_boolean(a, argument="a")
     _require_boolean(b, argument="b")
     _require_common_grid([a, b])
-    return _dispatch_binary_raster_raster(
-        a, b, _logical_and, operation="logical_and",
-    )
+    return _dispatch_binary_raster_raster(a, b, _logical_and, operation="logical_and")
 
 
 def logical_or(a: Raster, b: Raster) -> Raster:
     _require_boolean(a, argument="a")
     _require_boolean(b, argument="b")
     _require_common_grid([a, b])
-    return _dispatch_binary_raster_raster(
-        a, b, _logical_or, operation="logical_or",
-    )
+    return _dispatch_binary_raster_raster(a, b, _logical_or, operation="logical_or")
 
 
 def logical_xor(a: Raster, b: Raster) -> Raster:
     _require_boolean(a, argument="a")
     _require_boolean(b, argument="b")
     _require_common_grid([a, b])
-    return _dispatch_binary_raster_raster(
-        a, b, _logical_xor, operation="logical_xor",
-    )
-
+    return _dispatch_binary_raster_raster(a, b, _logical_xor, operation="logical_xor")
 
 # ---------------------------------------------------------------------------
 # Conditional / validity
@@ -334,136 +375,117 @@ def where(
     _require_boolean(condition, argument="condition")
     x_is_invalid = isinstance(x, _InvalidSentinel)
     y_is_invalid = isinstance(y, _InvalidSentinel)
+    cond_values = condition.values
+    cond_valid = condition.valid
+
     raster_operands: list[Raster] = [condition]
     x_raster: Raster | None = None
     y_raster: Raster | None = None
+    x_scalar: int | float | None = None
+    y_scalar: int | float | None = None
 
     if not x_is_invalid:
         if isinstance(x, Raster):
             raster_operands.append(x)
             x_raster = x
         else:
-            x = _normalize_scalar(x, argument="x")
+            x_scalar = _normalize_scalar(x, argument="x")
     if not y_is_invalid:
         if isinstance(y, Raster):
             raster_operands.append(y)
             y_raster = y
         else:
-            y = _normalize_scalar(y, argument="y")
+            y_scalar = _normalize_scalar(y, argument="y")
 
-    if len(raster_operands) == 0:
-        raise MapAlgebraError(
-            "where() requires at least one Raster operand.",
-            code="map_algebra_no_raster_operand",
-        )
     _require_common_grid(raster_operands)
-
-    cond_values = condition.values
-    cond_valid = condition.valid
+    georef = _infer_output_georef_single(condition)
 
     if x_raster is not None and y_raster is not None:
-        result_values = np.where(condition.values, x_raster.values, y_raster.values)
-        result_valid = where_validity(
-            cond_values, cond_valid, x_raster.valid, y_raster.valid,
-        )
-        return Raster(
-            values=result_values,
-            georef=_infer_output_georef_single(condition),
-            valid=result_valid,
-        )
+        result_values = np.where(cond_values, x_raster.values, y_raster.values)
+        result_valid = where_validity(cond_values, cond_valid, x_raster.valid, y_raster.valid)
+        return Raster(values=result_values, georef=georef, valid=result_valid)
 
     if x_raster is not None and y_is_invalid:
-        result_values = np.where(condition.values, x_raster.values, 0)
-        result_valid = cond_valid & condition.values & x_raster.valid
-        return Raster(
-            values=result_values,
-            georef=_infer_output_georef_single(condition),
-            valid=result_valid,
-        )
+        result_values = np.where(cond_values, x_raster.values, 0)
+        result_valid = cond_valid & cond_values & x_raster.valid
+        return Raster(values=result_values, georef=georef, valid=result_valid, units=x_raster.units)
 
     if x_is_invalid and y_raster is not None:
-        result_values = np.where(condition.values, 0, y_raster.values)
-        result_valid = cond_valid & ~condition.values & y_raster.valid
-        return Raster(
-            values=result_values,
-            georef=_infer_output_georef_single(condition),
-            valid=result_valid,
-        )
+        result_values = np.where(cond_values, 0, y_raster.values)
+        result_valid = cond_valid & ~cond_values & y_raster.valid
+        return Raster(values=result_values, georef=georef, valid=result_valid, units=y_raster.units)
 
-    if x_raster is not None and isinstance(y, (int, float)):
-        result_values = np.where(condition.values, x_raster.values, y)
+    if x_raster is not None and y_scalar is not None:
+        result_values = np.where(cond_values, x_raster.values, y_scalar)
         result_valid = where_validity(
             cond_values, cond_valid, x_raster.valid,
             np.ones(condition.shape, dtype=np.bool_),
         )
-        return Raster(
-            values=result_values,
-            georef=_infer_output_georef_single(condition),
-            valid=result_valid,
-        )
+        return Raster(values=result_values, georef=georef, valid=result_valid, units=x_raster.units)
 
-    if isinstance(x, (int, float)) and y_raster is not None:
-        result_values = np.where(condition.values, x, y_raster.values)
+    if x_scalar is not None and y_raster is not None:
+        result_values = np.where(cond_values, x_scalar, y_raster.values)
         result_valid = where_validity(
             cond_values, cond_valid,
             np.ones(condition.shape, dtype=np.bool_),
             y_raster.valid,
         )
-        return Raster(
-            values=result_values,
-            georef=_infer_output_georef_single(condition),
-            valid=result_valid,
-        )
+        return Raster(values=result_values, georef=georef, valid=result_valid, units=y_raster.units)
+
+    if x_scalar is not None and y_scalar is not None:
+        result_values = np.where(cond_values, x_scalar, y_scalar)
+        return Raster(values=result_values, georef=georef, valid=cond_valid.copy())
+
+    if x_scalar is not None and y_is_invalid:
+        result_values = np.where(cond_values, x_scalar, 0)
+        result_valid = cond_valid & cond_values
+        return Raster(values=result_values, georef=georef, valid=result_valid)
+
+    if x_is_invalid and y_scalar is not None:
+        result_values = np.where(cond_values, 0, y_scalar)
+        result_valid = cond_valid & ~cond_values
+        return Raster(values=result_values, georef=georef, valid=result_valid)
+
+    if x_is_invalid and y_is_invalid:
+        result_values = np.zeros(condition.shape, dtype=condition.values.dtype)
+        return Raster(values=result_values, georef=georef, valid=np.zeros(condition.shape, dtype=np.bool_))
 
     raise MapAlgebraError(
-        "where() requires at least one non-invalid Raster in the x or y branches.",
+        "where() requires at least one non-invalid Raster or scalar in the x or y branches.",
         code="map_algebra_invalid_where",
     )
 
 
-def _infer_output_georef_single(raster: Raster) -> Any:
-    from ._validation import _infer_output_georef as _iog
+def coalesce(*operands: Raster | int | float) -> Raster:
+    rasters: list[Raster] = []
+    for op in operands:
+        if isinstance(op, Raster):
+            rasters.append(op)
+    if not rasters:
+        raise MapAlgebraError("coalesce() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
+    _require_common_grid(rasters)
 
-    return _iog([raster])
+    result_values = rasters[0].values.astype(np.float64, copy=True)
+    result_valid = rasters[0].valid.copy()
 
-
-def coalesce(*rasters: Raster | int | float) -> Raster:
-    raster_list: list[Raster] = []
-    scalars: list[int | float] = []
-    for i, r in enumerate(rasters):
-        if isinstance(r, Raster):
-            raster_list.append(r)
-        elif _is_scalar(r):
-            scalars.append(_normalize_scalar(r, argument=f"arg{i}"))
+    for op in operands:
+        if op is operands[0]:
+            continue
+        still_invalid = ~result_valid
+        if not np.any(still_invalid):
+            break
+        if isinstance(op, Raster):
+            result_values[still_invalid] = op.values[still_invalid].astype(np.float64)
+            result_valid = result_valid | op.valid
         else:
-            raise MapAlgebraError(
-                f"coalesce() operands must be Raster or scalar.",
-                code="map_algebra_invalid_operand",
-            )
+            scalar = float(op)
+            result_values[still_invalid] = scalar
+            result_valid[still_invalid] = True
 
-    if not raster_list:
-        raise MapAlgebraError(
-            "coalesce() requires at least one Raster operand.",
-            code="map_algebra_no_raster_operand",
-        )
-    _require_common_grid(raster_list)
-
-    result_values = raster_list[0].values.copy()
-    result_valid = raster_list[0].valid.copy()
-
-    for i, raster in enumerate(raster_list[1:], start=1):
-        still_invalid = ~result_valid
-        result_values[still_invalid] = raster.values[still_invalid]
-        result_valid = result_valid | raster.valid
-
-    for i, scalar in enumerate(scalars):
-        still_invalid = ~result_valid
-        result_values[still_invalid] = scalar
-        result_valid[still_invalid] = True
-
+    target_dtype = np.result_type(*[r.values.dtype for r in rasters])
     return Raster(
-        values=result_values,
-        georef=_infer_output_georef_single(raster_list[0]),
+        values=result_values.astype(target_dtype, copy=False),
+        georef=_infer_output_georef_single(rasters[0]),
         valid=result_valid,
     )
 
@@ -489,28 +511,28 @@ def is_invalid(a: Raster) -> Raster:
 def set_invalid(raster: Raster, mask: Raster) -> Raster:
     _require_boolean(mask, argument="mask")
     _require_common_grid([raster, mask])
-    new_valid = raster.valid & ~mask.values
+    effective_mask = mask.valid & mask.values
+    new_valid = raster.valid & ~effective_mask
     return Raster(
-        values=raster.values,
-        georef=raster.georef,
-        valid=new_valid,
-        units=raster.units,
-        name=raster.name,
+        values=raster.values, georef=raster.georef,
+        valid=new_valid, units=raster.units, name=raster.name,
     )
 
 
 def fill_invalid(raster: Raster, value: int | float) -> Raster:
-    scalar = _normalize_scalar(value, argument="value")
+    validated = _validate_nodata_representable(value, raster.values.dtype)
+    if validated is None:
+        raise MapAlgebraError(
+            "fill_invalid() value must not be None.",
+            code="map_algebra_invalid_fill",
+        )
     filled_values = raster.values.copy()
-    filled_values[~raster.valid] = scalar
+    filled_values[~raster.valid] = validated
     return Raster(
-        values=filled_values,
-        georef=raster.georef,
+        values=filled_values, georef=raster.georef,
         valid=np.ones(raster.shape, dtype=np.bool_),
-        units=raster.units,
-        name=raster.name,
+        units=raster.units, name=raster.name,
     )
-
 
 # ---------------------------------------------------------------------------
 # Clip and cast
@@ -528,11 +550,8 @@ def clip(
     result_values = _clip(raster.values, lower, upper)
     result_valid = raster.valid.copy()
     return Raster(
-        values=result_values,
-        georef=raster.georef,
-        valid=result_valid,
-        units=raster.units,
-        name=raster.name,
+        values=result_values, georef=raster.georef,
+        valid=result_valid, units=raster.units, name=raster.name,
     )
 
 
@@ -545,13 +564,9 @@ def cast(
     target_dtype = np.dtype(dtype)
     result_values = cast_values(raster.values, target_dtype, casting=casting)  # type: ignore[arg-type]
     return Raster(
-        values=result_values,
-        georef=raster.georef,
-        valid=raster.valid,
-        units=raster.units,
-        name=raster.name,
+        values=result_values, georef=raster.georef,
+        valid=raster.valid, units=raster.units, name=raster.name,
     )
-
 
 # ---------------------------------------------------------------------------
 # Math
@@ -579,40 +594,58 @@ def log10(a: Raster) -> Raster:
 
 
 def sin(a: Raster) -> Raster:
-    return _dispatch_unary(a, _sin, operation="sin")
+    angle_unit = require_angle_units(a.units, argument="a")
+    if angle_unit == "degrees":
+        a_rad = _dispatch_unary(a, _radians, operation="to_radians", keep_units=False)
+        result = _dispatch_unary(a_rad, _sin, operation="sin", keep_units=False)
+    else:
+        result = _dispatch_unary(a, _sin, operation="sin", keep_units=False)
+    return result
 
 
 def cos(a: Raster) -> Raster:
-    return _dispatch_unary(a, _cos, operation="cos")
+    angle_unit = require_angle_units(a.units, argument="a")
+    if angle_unit == "degrees":
+        a_rad = _dispatch_unary(a, _radians, operation="to_radians", keep_units=False)
+        result = _dispatch_unary(a_rad, _cos, operation="cos", keep_units=False)
+    else:
+        result = _dispatch_unary(a, _cos, operation="cos", keep_units=False)
+    return result
 
 
 def tan(a: Raster) -> Raster:
-    return _dispatch_unary(a, _tan, operation="tan")
+    angle_unit = require_angle_units(a.units, argument="a")
+    if angle_unit == "degrees":
+        a_rad = _dispatch_unary(a, _radians, operation="to_radians", keep_units=False)
+        result = _dispatch_unary(a_rad, _tan, operation="tan", keep_units=False)
+    else:
+        result = _dispatch_unary(a, _tan, operation="tan", keep_units=False)
+    return result
 
 
 def arcsin(a: Raster) -> Raster:
-    return _dispatch_unary(a, _arcsin, operation="arcsin")
+    return _dispatch_unary(a, _arcsin, operation="arcsin", output_units="radians", keep_units=False)
 
 
 def arccos(a: Raster) -> Raster:
-    return _dispatch_unary(a, _arccos, operation="arccos")
+    return _dispatch_unary(a, _arccos, operation="arccos", output_units="radians", keep_units=False)
 
 
 def arctan(a: Raster) -> Raster:
-    return _dispatch_unary(a, _arctan, operation="arctan")
+    return _dispatch_unary(a, _arctan, operation="arctan", output_units="radians", keep_units=False)
 
 
 def arctan2(a: Raster, b: Raster) -> Raster:
     _require_common_grid([a, b])
-    return _dispatch_binary_raster_raster(a, b, _arctan2, operation="arctan2")
+    return _dispatch_binary_raster_raster(a, b, _arctan2, operation="arctan2", output_units="radians")
 
 
 def degrees(a: Raster) -> Raster:
-    return _dispatch_unary(a, _degrees, operation="degrees")
+    return _dispatch_unary(a, _degrees, operation="degrees", output_units="degrees", keep_units=False)
 
 
 def radians(a: Raster) -> Raster:
-    return _dispatch_unary(a, _radians, operation="radians")
+    return _dispatch_unary(a, _radians, operation="radians", output_units="radians", keep_units=False)
 
 
 def hypot(a: Raster, b: Raster) -> Raster:
@@ -620,8 +653,13 @@ def hypot(a: Raster, b: Raster) -> Raster:
     return _dispatch_binary_raster_raster(a, b, _hypot, operation="hypot")
 
 
-def round_half_even(a: Raster) -> Raster:
-    return _dispatch_unary(a, _round_half_even, operation="round")
+def round_half_even(a: Raster, ndigits: int = 0) -> Raster:
+    if ndigits == 0:
+        return _dispatch_unary(a, _round_half_even, operation="round")
+    factor = 10.0**ndigits
+    scaled = _dispatch_binary_raster_scalar(a, factor, lambda arr, s: arr * s, operation="round_scale")
+    rounded = _dispatch_unary(scaled, _round_half_even, operation="round")
+    return _dispatch_binary_raster_scalar(rounded, 1.0 / factor, lambda arr, s: arr * s, operation="round_unscale")
 
 
 def floor(a: Raster) -> Raster:

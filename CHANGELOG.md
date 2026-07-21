@@ -47,6 +47,25 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   ``coalesce``, validity helpers, clip/cast, math, operator overloads, and
   compound expression examples.  Verification: 658 passed, 17 skipped (CPU
   suite).
+- Corrected six Phase B P1 defects found during review: (1) wired integer
+  overflow detection into eager dispatch so ``uint8(255) + 1`` raises
+  ``MapAlgebraDTypeError`` instead of returning valid zero; (2) added angle-unit
+  validation to ``sin``/``cos``/``tan`` (require "degrees" or "radians"), set
+  proper output units on inverse trig (``radians``), and required explicit
+  ``output_units`` for multiplication/division of two unit-bearing rasters; (3)
+  fixed ``coalesce()`` to preserve original argument order instead of evaluating
+  all rasters before all scalars; (4) corrected scalar-left ``less``/
+  ``less_equal``/``greater``/``greater_equal`` to use the semantically correct
+  swapped kernel; (5) made ``set_invalid()`` intersect ``mask.valid`` with
+  ``mask.values`` so invalid mask cells cannot alter validity; (6) fixed
+  ``where()`` to accept scalar-only branches (``where(cond, 1, 2)``,
+  ``where(cond, 1, ma.invalid)``).  Also added missing public functions
+  (``floor_divide``, ``remainder``, ``power``, ``positive``, ``isclose``), made
+  ``Raster.__eq__``/``__ne__`` handle scalar operands, fixed reverse floor-div/
+  mod/power operators to avoid dtype-truncating ``np.full_like``, made
+  ``fill_invalid()`` validate fill value representability, and fixed
+  ``round(raster, ndigits)`` to pass through the ndigits argument.
+  Verification: 658 passed, 17 skipped (CPU suite).
 - Added ``docs/map-algebra-implementation-plan.md``, the reviewed ``0.2.0rc1``
   execution plan for a broad lunar map-algebra API. The plan defines eager
   ``Raster`` values, bounded and resumable ``RasterExpression`` execution,

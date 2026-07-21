@@ -163,42 +163,38 @@ class Raster:
     # ------------------------------------------------------------------
 
     def __eq__(self, other: object) -> Raster:  # type: ignore[override]
-        if not isinstance(other, Raster):
-            return NotImplemented
-        from .alignment import require_same_grid
-
-        require_same_grid(self.georef, other.georef)
-        result_valid = self.valid & other.valid
-        result_values = np.where(
-            result_valid,
-            self.values == other.values,
-            False,
-        )
-        return Raster(
-            values=result_values,
-            georef=self.georef,
-            valid=result_valid,
-            name=self.name,
-        )
+        if isinstance(other, Raster):
+            from .alignment import require_same_grid
+            require_same_grid(self.georef, other.georef)
+            result_valid = self.valid & other.valid
+            result_values = np.where(
+                result_valid,
+                self.values == other.values,
+                False,
+            )
+            return Raster(values=result_values, georef=self.georef, valid=result_valid, name=self.name)
+        if isinstance(other, (int, float)):
+            result_valid = self.valid.copy()
+            result_values = np.where(result_valid, self.values == other, False)
+            return Raster(values=result_values, georef=self.georef, valid=result_valid, name=self.name)
+        return NotImplemented
 
     def __ne__(self, other: object) -> Raster:  # type: ignore[override]
-        if not isinstance(other, Raster):
-            return NotImplemented
-        from .alignment import require_same_grid
-
-        require_same_grid(self.georef, other.georef)
-        result_valid = self.valid & other.valid
-        result_values = np.where(
-            result_valid,
-            self.values != other.values,
-            False,
-        )
-        return Raster(
-            values=result_values,
-            georef=self.georef,
-            valid=result_valid,
-            name=self.name,
-        )
+        if isinstance(other, Raster):
+            from .alignment import require_same_grid
+            require_same_grid(self.georef, other.georef)
+            result_valid = self.valid & other.valid
+            result_values = np.where(
+                result_valid,
+                self.values != other.values,
+                False,
+            )
+            return Raster(values=result_values, georef=self.georef, valid=result_valid, name=self.name)
+        if isinstance(other, (int, float)):
+            result_valid = self.valid.copy()
+            result_values = np.where(result_valid, self.values != other, False)
+            return Raster(values=result_values, georef=self.georef, valid=result_valid, name=self.name)
+        return NotImplemented
 
     # ------------------------------------------------------------------
     # Arithmetic operators
@@ -237,7 +233,7 @@ class Raster:
         return _div(other, self)  # type: ignore[return-value]
 
     def __floordiv__(self, other: object) -> Raster:
-        from .map_algebra.local import _floor_divide as _kernel
+        from .map_algebra._kernels import _floor_divide as _kernel
         if isinstance(other, Raster):
             from .map_algebra._eager import _dispatch_binary_raster_raster
             from .map_algebra._validation import _require_common_grid
@@ -249,18 +245,18 @@ class Raster:
         return NotImplemented
 
     def __rfloordiv__(self, other: object) -> Raster:
-        from .map_algebra.local import _floor_divide as _kernel
+        from .map_algebra._kernels import _floor_divide as _kernel
         if isinstance(other, (int, float)):
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             return _dispatch_binary_raster_scalar(
                 self, other,
-                lambda arr, s: _kernel(np.full_like(arr, s), arr),
+                lambda arr, s: _kernel(np.full(arr.shape, s, dtype=np.float64), arr),
                 operation="floordiv",
             )
         return NotImplemented
 
     def __mod__(self, other: object) -> Raster:
-        from .map_algebra.local import _remainder as _kernel
+        from .map_algebra._kernels import _remainder as _kernel
         if isinstance(other, Raster):
             from .map_algebra._eager import _dispatch_binary_raster_raster
             from .map_algebra._validation import _require_common_grid
@@ -272,18 +268,18 @@ class Raster:
         return NotImplemented
 
     def __rmod__(self, other: object) -> Raster:
-        from .map_algebra.local import _remainder as _kernel
+        from .map_algebra._kernels import _remainder as _kernel
         if isinstance(other, (int, float)):
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             return _dispatch_binary_raster_scalar(
                 self, other,
-                lambda arr, s: _kernel(np.full_like(arr, s), arr),
+                lambda arr, s: _kernel(np.full(arr.shape, s, dtype=np.float64), arr),
                 operation="mod",
             )
         return NotImplemented
 
     def __pow__(self, other: object) -> Raster:
-        from .map_algebra.local import _power as _kernel
+        from .map_algebra._kernels import _power as _kernel
         if isinstance(other, Raster):
             from .map_algebra._eager import _dispatch_binary_raster_raster
             from .map_algebra._validation import _require_common_grid
@@ -299,7 +295,7 @@ class Raster:
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             return _dispatch_binary_raster_scalar(
                 self, other,
-                lambda arr, s: np.power(np.full_like(arr, np.float64(s)), arr),
+                lambda arr, s: np.power(np.full(arr.shape, np.float64(s)), arr),
                 operation="power",
             )
         return NotImplemented
@@ -421,7 +417,7 @@ class Raster:
 
     def __round__(self, ndigits: int | None = None) -> Raster:
         from .map_algebra.local import round_half_even as _r
-        return _r(self)
+        return _r(self, ndigits=ndigits or 0)
 
     def __floor__(self) -> Raster:
         from .map_algebra.local import floor as _f

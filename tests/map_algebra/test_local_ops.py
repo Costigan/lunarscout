@@ -564,7 +564,7 @@ class TestMath:
         np.testing.assert_allclose(r.values, np.array([[0.0, 1.0], [2.0, 3.0]], dtype=np.float32), atol=1e-6)
 
     def test_sin_cos(self):
-        a = _make_raster(np.array([[0.0, np.pi / 2], [np.pi, 0.0]], dtype=np.float32))
+        a = _make_raster(np.array([[0.0, np.pi / 2], [np.pi, 0.0]], dtype=np.float32), units="radians")
         s = sin(a)
         c = cos(a)
         np.testing.assert_allclose(s.values, np.array([[0.0, 1.0], [0.0, 0.0]], dtype=np.float32), atol=1e-6)
