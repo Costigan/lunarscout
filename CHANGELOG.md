@@ -6,6 +6,24 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Completed the remaining small and medium Phase I map-algebra inventory:
+  exact-value and half-open-range reclassification, digitization, one-hot
+  class rasters, min/max normalization, standardization, and lazy row,
+  column, projected-coordinate, longitude, and latitude expression sources.
+  Coordinate units now come from the grid CRS rather than assuming metres,
+  longitude/latitude use the grid's own geodetic CRS, and classification
+  preserves exact ``uint64`` payloads. Added explicit eager/expression operand
+  adapters and expression evaluation for the new operations. Added a sealed
+  static operation registry with public ``describe_operation()`` and
+  ``list_operations()`` discovery, concise expression descriptions, and a
+  versioned canonical JSON schema with typed arbitrary-size integers,
+  hexadecimal floats, normalized CRS/affine/dtype/structured parameters,
+  semantic operation versions, stable node ordering, and rejection of
+  unsupported parameter types. Updated map-algebra documentation and the
+  proposed example portfolio, and added regression coverage for eager and
+  expression behavior, exact integer boundaries, validity and units,
+  non-metre grids, registry sealing, and spatial/temporal serialization.
+  Verification: 991 passed, 17 skipped (CPU suite).
 - Implemented Phase I of the broad map-algebra plan: added a comprehensive
   Map Algebra chapter to ``docs/USER_GUIDE.md`` covering value types, eager
   vs file-backed workflows, constructors/adapters, grid/validity/dtype/unit

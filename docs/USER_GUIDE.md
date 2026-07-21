@@ -1461,10 +1461,64 @@ explaining use of `&`/`|` and parentheses.
 `ma.tan`, `ma.arcsin`, `ma.arccos`, `ma.arctan`, `ma.arctan2`, `ma.degrees`,
 `ma.radians`, `ma.hypot`.
 
+**Classification:** `ma.reclassify_values` maps exact values,
+`ma.reclassify_ranges` maps half-open `[lower, upper)` ranges, `ma.digitize`
+assigns ordered bin numbers, and `ma.one_hot` returns one Boolean raster per
+caller-supplied class. Reclassification's `default` may be a value,
+`"preserve"`, or `"invalidate"` (the default). Input validity is always
+preserved; unmatched valid cells follow the selected default behavior.
+
+**Normalization:** `ma.normalize_minmax` and `ma.standardize` use only valid
+cells when statistics are omitted. Supplying the minimum/maximum or mean/
+standard deviation makes the statistics explicit. Results are `float64` and
+dimensionless. A zero normalization range or zero standard deviation produces
+an all-invalid result rather than assigning an arbitrary scientific value.
+
 ```python
 candidate = (slope <= 8.0) & (sun >= 0.60)
 score = ma.where(candidate, 0.4 * sun + 0.6 * (1.0 - slope / 8.0), ma.invalid)
 ```
+
+Every classification and normalization function accepts either an eager
+`Raster` or a `RasterExpression`. `one_hot` returns a tuple in the same order
+as its `classes` argument; each tuple member has the same eager or expression
+mode as its input.
+
+### Coordinate Expressions
+
+Coordinate constructors return lazy `RasterExpression` source nodes. Use
+`ma.compute()` when an in-memory coordinate raster is required:
+
+```python
+rows = ma.compute(ma.row_indices(georef))
+x = ma.compute(ma.projected_x(georef, anchor="center"))
+lon = ma.compute(ma.longitude(georef))
+```
+
+`row_indices` and `column_indices` are zero-based pixel coordinates.
+`projected_x` and `projected_y` use the affine transform and report the axis
+unit declared by the grid CRS; they do not assume metres. `longitude` and
+`latitude` transform through the grid's own geodetic CRS with traditional
+longitude/latitude axis order and degree units. They never introduce WGS84
+implicitly. `anchor` may be `"center"` or `"corner"`.
+
+### Expression Inspection and Operation Discovery
+
+`expression.describe()` gives a concise human-readable summary.
+`expression.to_canonical_json()` returns the complete versioned, typed JSON
+representation used for deterministic scientific identity. Integers are
+stored as exact decimal text and finite floats use hexadecimal encoding;
+unsupported parameter types are rejected rather than serialized with `repr`.
+
+The sealed built-in operation catalog is available without executing kernels:
+
+```python
+ma.describe_operation("local.normalize_minmax")
+ma.list_operations(category="coordinate")
+ma.list_operations(execution_mode="file_backed")
+```
+
+The catalog cannot be extended by user callbacks in `0.2`.
 
 ### Focal Operations
 

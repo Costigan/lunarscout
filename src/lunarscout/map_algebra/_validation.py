@@ -27,7 +27,7 @@ def _normalize_scalar(value: Any, *, argument: str = "value") -> int | float:
 
 
 def _is_scalar(value: Any) -> bool:
-    return isinstance(value, (int, float, np.integer, np.floating))
+    return isinstance(value, Real)
 
 
 def _require_common_grid(operands: list[Raster]) -> None:
@@ -51,3 +51,54 @@ def _require_common_grid(operands: list[Raster]) -> None:
 
 def _infer_output_georef(operands: list[Raster]) -> GeoReference:
     return operands[0].georef.with_nodata(None)
+
+
+def _as_raster_operand(value: Any, *, argument: str = "value") -> Raster | int | float:
+    """Accept a ``Raster`` or a real numeric scalar for eager operations."""
+    if isinstance(value, Raster):
+        return value
+    if _is_scalar(value):
+        return _normalize_scalar(value, argument=argument)
+    raise MapAlgebraError(
+        f"Operand '{argument}' must be a Raster or a real numeric scalar.",
+        code="map_algebra_invalid_operand",
+        details={"argument": argument, "type": type(value).__name__},
+    )
+
+
+def _as_expression_operand(
+    value: Any,
+    *,
+    argument: str = "value",
+    grid_hint: GeoReference | None = None,
+) -> Any:
+    """Accept a ``RasterExpression``, ``Raster``, or a real numeric scalar
+    for expression-building operations.  ``Raster`` objects are wrapped as
+    in-memory constant expression nodes."""
+    from ._model import RasterExpression as _Expr
+    from ._sources import constant as _const
+
+    if isinstance(value, _Expr):
+        result: Any = value
+    if isinstance(value, Raster):
+        result = _const(value)
+    elif _is_scalar(value):
+        return _normalize_scalar(value, argument=argument)
+    elif not isinstance(value, _Expr):
+        raise MapAlgebraError(
+            f"Operand '{argument}' must be a RasterExpression, Raster, or a real numeric scalar.",
+            code="map_algebra_invalid_operand",
+            details={"argument": argument, "type": type(value).__name__},
+        )
+
+    if grid_hint is not None and result.grid is not None:
+        from ..alignment import _grid_differences
+
+        differences = _grid_differences(grid_hint, result.grid, affine_tolerance=0.0)
+        if differences:
+            raise MapAlgebraGridError(
+                f"Operand '{argument}' does not match the required grid.",
+                code="map_algebra_grid_mismatch",
+                details={"argument": argument, "differences": differences},
+            )
+    return result

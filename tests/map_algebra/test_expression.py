@@ -236,7 +236,7 @@ class TestIdentity:
         path = _write_tiff(tmp_path, "a.tif", np.ones((2, 2), dtype=np.float32))
         import json
         parsed = json.loads(source(path).to_json())
-        assert parsed["schema_version"] == 2
+        assert parsed["schema_version"] == 3
 
 
 class TestRasterExpressionBool:

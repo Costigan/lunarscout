@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, NoReturn
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, NoReturn
 
 import numpy as np
 
@@ -60,7 +61,12 @@ from ._units import (
     require_angle_units,
     require_matching_units,
 )
-from ._validation import _is_scalar, _normalize_scalar, _require_common_grid
+from ._validation import (
+    _as_raster_operand,
+    _is_scalar,
+    _normalize_scalar,
+    _require_common_grid,
+)
 from ._validity import (
     where_validity,
 )
@@ -566,6 +572,279 @@ def cast(
     return Raster(
         values=result_values, georef=raster.georef,
         valid=raster.valid, units=raster.units, name=raster.name,
+    )
+
+# ---------------------------------------------------------------------------
+# Classification
+# ---------------------------------------------------------------------------
+
+
+def reclassify_values(
+    raster: Raster,
+    mapping: Mapping[int | float, int | float],
+    *,
+    default: int | float | Literal["preserve", "invalidate"] | None = "invalidate",
+) -> Raster:
+    raster = _require_eager_raster(raster)
+    default = "invalidate" if default is None else default
+    if isinstance(default, str) and default not in {"preserve", "invalidate"}:
+        raise MapAlgebraError(
+            "default must be a numeric value, 'preserve', or 'invalidate'.",
+            code="map_algebra_invalid_reclassification_default",
+            details={"default": default},
+        )
+    output_values = list(mapping.values())
+    if default == "preserve":
+        output_values.append(raster.values.flat[0] if raster.values.size else np.int8(0))
+    elif not isinstance(default, str):
+        output_values.append(default)
+    target_dtype = _classification_dtype(output_values, fallback=raster.dtype)
+    result = (
+        raster.values.astype(target_dtype, copy=True)
+        if default == "preserve"
+        else np.zeros(raster.shape, dtype=target_dtype)
+    )
+    matched = np.zeros(raster.shape, dtype=np.bool_)
+    for old_val, new_val in mapping.items():
+        mask = raster.values == old_val
+        result[mask] = new_val
+        matched |= mask
+    result_valid = raster.valid.copy()
+    if default == "invalidate":
+        result_valid[~matched] = False
+    elif not isinstance(default, str):
+        result[~matched] = default
+    return Raster(
+        values=result,
+        georef=raster.georef,
+        valid=result_valid,
+        units=raster.units,
+        name=raster.name,
+    )
+
+
+def reclassify_ranges(
+    raster: Raster,
+    ranges: Sequence[tuple[int | float, int | float, int | float]],
+    *,
+    default: int | float | Literal["preserve", "invalidate"] | None = "invalidate",
+) -> Raster:
+    raster = _require_eager_raster(raster)
+    default = "invalidate" if default is None else default
+    if isinstance(default, str) and default not in {"preserve", "invalidate"}:
+        raise MapAlgebraError(
+            "default must be a numeric value, 'preserve', or 'invalidate'.",
+            code="map_algebra_invalid_reclassification_default",
+            details={"default": default},
+        )
+    normalized_ranges = tuple(ranges)
+    for index, (lower, upper, _) in enumerate(normalized_ranges):
+        if not lower < upper:
+            raise MapAlgebraError(
+                "Every reclassification range must have lower < upper.",
+                code="map_algebra_invalid_reclassification_range",
+                details={"index": index, "lower": lower, "upper": upper},
+            )
+    output_values = [new_val for _, _, new_val in normalized_ranges]
+    if default == "preserve":
+        output_values.append(raster.values.flat[0] if raster.values.size else np.int8(0))
+    elif not isinstance(default, str):
+        output_values.append(default)
+    target_dtype = _classification_dtype(output_values, fallback=raster.dtype)
+    result = (
+        raster.values.astype(target_dtype, copy=True)
+        if default == "preserve"
+        else np.zeros(raster.shape, dtype=target_dtype)
+    )
+    matched = np.zeros(raster.shape, dtype=np.bool_)
+    for lower, upper, new_val in normalized_ranges:
+        mask = (raster.values >= lower) & (raster.values < upper)
+        result[mask] = new_val
+        matched |= mask
+    result_valid = raster.valid.copy()
+    if default == "invalidate":
+        result_valid[~matched] = False
+    elif not isinstance(default, str):
+        result[~matched] = default
+    return Raster(
+        values=result,
+        georef=raster.georef,
+        valid=result_valid,
+        units=raster.units,
+        name=raster.name,
+    )
+
+
+def digitize(
+    raster: Raster,
+    bins: Sequence[int | float],
+    *,
+    right: bool = False,
+) -> Raster:
+    raster = _require_eager_raster(raster)
+    bins_arr = np.asarray(tuple(bins))
+    if bins_arr.ndim != 1 or bins_arr.dtype.kind not in "iuf" or not np.all(bins_arr[:-1] <= bins_arr[1:]):
+        raise MapAlgebraError(
+            "bins must be a one-dimensional monotonically increasing numeric sequence.",
+            code="map_algebra_invalid_bins",
+        )
+    result_values = np.digitize(raster.values, bins_arr, right=right)
+    result_valid = raster.valid.copy()
+    return Raster(
+        values=result_values,
+        georef=raster.georef,
+        valid=result_valid,
+        units=None,
+        name=raster.name,
+    )
+
+
+def one_hot(
+    raster: Raster,
+    classes: Sequence[int | float],
+) -> tuple[Raster, ...]:
+    """Return one Boolean raster per class, in caller-supplied order."""
+    raster = _require_eager_raster(raster)
+    normalized_classes = tuple(classes)
+    if not normalized_classes:
+        raise MapAlgebraError(
+            "classes must contain at least one value.",
+            code="map_algebra_empty_classes",
+        )
+    return tuple(
+        Raster(
+            values=raster.values == class_value,
+            georef=raster.georef,
+            valid=raster.valid.copy(),
+            units=None,
+            name=f"{raster.name or 'raster'}_{class_value}",
+        )
+        for class_value in normalized_classes
+    )
+
+
+def _classification_dtype(values: Sequence[Any], *, fallback: np.dtype[Any]) -> np.dtype[Any]:
+    if not values:
+        return fallback
+    dtypes: list[np.dtype[Any]] = []
+    for value in values:
+        if isinstance(value, np.generic):
+            dtypes.append(value.dtype)
+        elif isinstance(value, bool):
+            dtypes.append(np.dtype(np.bool_))
+        elif isinstance(value, int) and -(2**63) <= value <= 2**63 - 1:
+            dtypes.append(np.dtype(np.int64))
+        elif isinstance(value, float):
+            dtypes.append(np.dtype(np.float64))
+        else:
+            dtypes.append(np.min_scalar_type(value))
+    dtype = np.result_type(*dtypes)
+    if dtype.kind not in "biuf":
+        raise MapAlgebraDTypeError(
+            "Reclassification outputs must fit a supported numeric dtype.",
+            code="map_algebra_unsupported_dtype",
+            details={"dtype": str(dtype)},
+        )
+    return dtype
+
+
+def _require_eager_raster(value: Any) -> Raster:
+    operand = _as_raster_operand(value, argument="raster")
+    if not isinstance(operand, Raster):
+        raise MapAlgebraError(
+            "This operation requires a Raster operand.",
+            code="map_algebra_no_raster_operand",
+            details={"type": type(value).__name__},
+        )
+    return operand
+
+# ---------------------------------------------------------------------------
+# Normalization
+# ---------------------------------------------------------------------------
+
+
+def normalize_minmax(
+    raster: Raster,
+    *,
+    minimum: int | float | None = None,
+    maximum: int | float | None = None,
+) -> Raster:
+    raster = _require_eager_raster(raster)
+    valid_data = raster.values[raster.valid]
+    if valid_data.size == 0:
+        return Raster(
+            values=np.full(raster.shape, np.nan, dtype=np.float64),
+            georef=raster.georef,
+            valid=np.zeros(raster.shape, dtype=np.bool_),
+            units=None,
+            name=raster.name,
+        )
+    vmin = float(valid_data.min()) if minimum is None else float(minimum)
+    vmax = float(valid_data.max()) if maximum is None else float(maximum)
+    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax < vmin:
+        raise MapAlgebraError(
+            "minimum and maximum must be finite with maximum >= minimum.",
+            code="map_algebra_invalid_normalization_statistics",
+            details={"minimum": vmin, "maximum": vmax},
+        )
+    if vmax == vmin:
+        result_values = np.zeros(raster.shape, dtype=np.float64)
+        result_valid = np.zeros(raster.shape, dtype=np.bool_)
+    else:
+        result_values = (raster.values.astype(np.float64) - vmin) / (vmax - vmin)
+        result_valid = raster.valid & np.isfinite(result_values)
+    return Raster(
+        values=result_values.astype(np.float64, copy=False),
+        georef=raster.georef,
+        valid=result_valid,
+        units=None,
+        name=raster.name,
+    )
+
+
+def standardize(
+    raster: Raster,
+    *,
+    mean: int | float | None = None,
+    std: int | float | None = None,
+    ddof: float = 0,
+) -> Raster:
+    raster = _require_eager_raster(raster)
+    valid_data = raster.values[raster.valid]
+    if valid_data.size == 0:
+        return Raster(
+            values=np.full(raster.shape, np.nan, dtype=np.float64),
+            georef=raster.georef,
+            valid=np.zeros(raster.shape, dtype=np.bool_),
+            units=None,
+            name=raster.name,
+        )
+    if not np.isfinite(ddof) or ddof < 0:
+        raise MapAlgebraError(
+            "ddof must be finite and non-negative.",
+            code="map_algebra_invalid_ddof",
+            details={"ddof": ddof},
+        )
+    vmean = float(valid_data.mean()) if mean is None else float(mean)
+    vstd = float(valid_data.std(ddof=ddof)) if std is None else float(std)
+    if not np.isfinite(vmean) or not np.isfinite(vstd) or vstd < 0:
+        raise MapAlgebraError(
+            "mean must be finite and std must be finite and non-negative.",
+            code="map_algebra_invalid_normalization_statistics",
+            details={"mean": vmean, "std": vstd},
+        )
+    if vstd == 0:
+        result_valid = np.zeros(raster.shape, dtype=np.bool_)
+        result_values = np.zeros(raster.shape, dtype=np.float64)
+    else:
+        result_values = (raster.values.astype(np.float64) - vmean) / vstd
+        result_valid = raster.valid & np.isfinite(result_values)
+    return Raster(
+        values=result_values.astype(np.float64, copy=False),
+        georef=raster.georef,
+        valid=result_valid,
+        units=None,
+        name=raster.name,
     )
 
 # ---------------------------------------------------------------------------

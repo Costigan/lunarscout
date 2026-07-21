@@ -31,6 +31,7 @@ from .local import (
     coalesce,
     cos,
     degrees,
+    digitize,
     divide,
     equal,
     exp,
@@ -56,12 +57,17 @@ from .local import (
     minimum,
     multiply,
     negative,
+    normalize_minmax,
     not_equal,
+    one_hot,
     positive,
     power,
     radians,
+    reclassify_ranges,
+    reclassify_values,
     remainder,
     round_half_even as round,
+    standardize,
     set_invalid,
     sin,
     sqrt,
@@ -124,6 +130,18 @@ from .zonal import (
 from .distance import (
     distance_to,
     signed_distance,
+)
+from .coordinates import (
+    column_indices,
+    latitude,
+    longitude,
+    projected_x,
+    projected_y,
+    row_indices,
+)
+from ._registry import (
+    describe_operation,
+    list_operations,
 )
 
 
@@ -196,6 +214,171 @@ maximum = _wrap_binary(maximum, "local.maximum")
 power = _wrap_binary(power, "local.power")
 floor_divide = _wrap_binary(floor_divide, "local.floor_divide")
 remainder = _wrap_binary(remainder, "local.remainder")
+
+
+# ---------------------------------------------------------------------------
+# Expression-dispatch wrappers for classification and normalization
+# ---------------------------------------------------------------------------
+
+_reclassify_values_eager = reclassify_values
+_reclassify_ranges_eager = reclassify_ranges
+_digitize_eager = digitize
+_one_hot_eager = one_hot
+_normalize_minmax_eager = normalize_minmax
+_standardize_eager = standardize
+
+
+def _classification_expression_dtype(
+    raster: RasterExpression,
+    output_values: list[Any],
+    *,
+    preserve: bool,
+) -> np.dtype[Any] | None:
+    from .local import _classification_dtype
+
+    if raster.dtype is None:
+        return None
+    fallback = raster.dtype
+    values = list(output_values)
+    if preserve:
+        values.append(np.zeros((), dtype=fallback)[()])
+    return _classification_dtype(values, fallback=fallback)
+
+
+def reclassify_values(
+    raster: Any,
+    mapping: Any,
+    *,
+    default: Any = "invalidate",
+) -> Any:
+    if isinstance(raster, RasterExpression):
+        from ._model import _make_expr_node
+
+        default = "invalidate" if default is None else default
+        mapping_items = tuple(mapping.items())
+        output_values = [value for _, value in mapping_items]
+        if not isinstance(default, str):
+            output_values.append(default)
+        return _make_expr_node(
+            "local.reclassify_values",
+            (raster,),
+            grid=raster.grid,
+            dtype=_classification_expression_dtype(
+                raster, output_values, preserve=default == "preserve"
+            ),
+            units=raster.units,
+            params={"mapping": mapping_items, "default": default},
+        )
+    return _reclassify_values_eager(raster, mapping, default=default)
+
+
+def reclassify_ranges(
+    raster: Any,
+    ranges: Any,
+    *,
+    default: Any = "invalidate",
+) -> Any:
+    if isinstance(raster, RasterExpression):
+        from ._model import _make_expr_node
+
+        default = "invalidate" if default is None else default
+        normalized_ranges = tuple(tuple(item) for item in ranges)
+        output_values = [item[2] for item in normalized_ranges]
+        if not isinstance(default, str):
+            output_values.append(default)
+        return _make_expr_node(
+            "local.reclassify_ranges",
+            (raster,),
+            grid=raster.grid,
+            dtype=_classification_expression_dtype(
+                raster, output_values, preserve=default == "preserve"
+            ),
+            units=raster.units,
+            params={"ranges": normalized_ranges, "default": default},
+        )
+    return _reclassify_ranges_eager(raster, ranges, default=default)
+
+
+def digitize(raster: Any, bins: Any, *, right: bool = False) -> Any:
+    if isinstance(raster, RasterExpression):
+        from ._model import _make_expr_node
+
+        return _make_expr_node(
+            "local.digitize",
+            (raster,),
+            grid=raster.grid,
+            dtype=np.dtype(np.int64),
+            units=None,
+            params={"bins": tuple(bins), "right": right},
+        )
+    return _digitize_eager(raster, bins, right=right)
+
+
+def one_hot(raster: Any, classes: Any) -> tuple[Any, ...]:
+    normalized_classes = tuple(classes)
+    if not normalized_classes:
+        from ..errors import MapAlgebraError
+
+        raise MapAlgebraError(
+            "classes must contain at least one value.",
+            code="map_algebra_empty_classes",
+        )
+    if isinstance(raster, RasterExpression):
+        from ._model import _make_expr_node
+
+        return tuple(
+            _make_expr_node(
+                "local.one_hot",
+                (raster,),
+                grid=raster.grid,
+                dtype=np.dtype(np.bool_),
+                units=None,
+                params={"class_value": class_value},
+            )
+            for class_value in normalized_classes
+        )
+    return _one_hot_eager(raster, normalized_classes)
+
+
+def normalize_minmax(
+    raster: Any,
+    *,
+    minimum: Any = None,
+    maximum: Any = None,
+) -> Any:
+    if isinstance(raster, RasterExpression):
+        from ._model import _make_expr_node
+
+        return _make_expr_node(
+            "local.normalize_minmax",
+            (raster,),
+            grid=raster.grid,
+            dtype=np.dtype(np.float64),
+            units=None,
+            params={"minimum": minimum, "maximum": maximum},
+        )
+    return _normalize_minmax_eager(raster, minimum=minimum, maximum=maximum)
+
+
+def standardize(
+    raster: Any,
+    *,
+    mean: Any = None,
+    std: Any = None,
+    ddof: float = 0,
+) -> Any:
+    if isinstance(raster, RasterExpression):
+        from ._model import _make_expr_node
+
+        return _make_expr_node(
+            "local.standardize",
+            (raster,),
+            grid=raster.grid,
+            dtype=np.dtype(np.float64),
+            units=None,
+            params={"mean": mean, "std": std, "ddof": ddof},
+        )
+    return _standardize_eager(raster, mean=mean, std=std, ddof=ddof)
 
 
 # ---------------------------------------------------------------------------

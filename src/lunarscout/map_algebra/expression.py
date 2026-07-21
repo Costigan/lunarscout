@@ -51,6 +51,14 @@ _SPECIAL_OPS = {
     "local.where", "local.coalesce", "local.clip", "local.cast",
     "local.set_invalid", "local.fill_invalid",
     "local.is_valid", "local.is_invalid",
+    "local.reclassify_values", "local.reclassify_ranges", "local.digitize",
+    "local.one_hot", "local.normalize_minmax", "local.standardize",
+}
+
+_COORDINATE_OPS = {
+    "coordinate.row_indices", "coordinate.column_indices",
+    "coordinate.projected_x", "coordinate.projected_y",
+    "coordinate.longitude", "coordinate.latitude",
 }
 
 _TEMPORAL_REDUCTION_OP_IDS = {
@@ -71,6 +79,11 @@ def compute(expression: RasterExpression) -> Raster:
             continue
         if op_id == "constant":
             cache[node._node_id] = _load_constant_raster(node)
+            continue
+        if op_id in _COORDINATE_OPS:
+            from .coordinates import _compute_coordinate
+
+            cache[node._node_id] = _compute_coordinate(node)
             continue
 
         operands: list[Any] = []
@@ -219,6 +232,32 @@ def _eval_special(node: RasterExpression, operands: list[Any]) -> Raster:
         return _ma.is_valid(operands[0])
     elif op_id == "local.is_invalid":
         return _ma.is_invalid(operands[0])
+    elif op_id == "local.reclassify_values":
+        return _ma.reclassify_values(
+            operands[0], dict(node._params_dict["mapping"]),
+            default=node._params_dict["default"],
+        )
+    elif op_id == "local.reclassify_ranges":
+        return _ma.reclassify_ranges(
+            operands[0], node._params_dict["ranges"],
+            default=node._params_dict["default"],
+        )
+    elif op_id == "local.digitize":
+        return _ma.digitize(
+            operands[0], node._params_dict["bins"], right=node._params_dict["right"]
+        )
+    elif op_id == "local.one_hot":
+        return _ma.one_hot(operands[0], (node._params_dict["class_value"],))[0]
+    elif op_id == "local.normalize_minmax":
+        return _ma.normalize_minmax(
+            operands[0], minimum=node._params_dict["minimum"],
+            maximum=node._params_dict["maximum"],
+        )
+    elif op_id == "local.standardize":
+        return _ma.standardize(
+            operands[0], mean=node._params_dict["mean"], std=node._params_dict["std"],
+            ddof=node._params_dict["ddof"],
+        )
     raise MapAlgebraExpressionError(
         f"Unsupported special op: {op_id}",
         code="map_algebra_expression_eval_failed",

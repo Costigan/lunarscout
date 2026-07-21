@@ -295,13 +295,13 @@ sources[]
   sorted keys, fixed separators, UTF-8 encoding, and no insignificant
   whitespace. *(topological sort + sort_keys=True in to_json(); hex-float
   scalar encoding and versioned normalization helper deferred.)*
-- [ ] Encode scalars with an explicit type. Preserve arbitrary-size integers
+- [x] Encode scalars with an explicit type. Preserve arbitrary-size integers
   as decimal text and floating values with an exact hexadecimal form; do not
   emit JSON NaN or Infinity tokens.
-- [ ] Normalize enums, paths, CRS text, affine values, dtype strings,
+- [x] Normalize enums, paths, CRS text, affine values, dtype strings,
   footprints, percentile lists, and other structured parameters in one
   versioned helper.
-- [ ] Reject parameters that cannot be represented canonically rather than
+- [x] Reject parameters that cannot be represented canonically rather than
   falling back to `repr()` or pickle.
 - [ ] Make parsing untrusted expression JSON explicitly out of scope for
   `0.2`; serialization is for inspection, provenance, and identity of graphs
@@ -512,10 +512,10 @@ Support both functions and appropriate `Raster`/`RasterExpression` operators:
 - [x] Range and conversion: ``clip``, ``cast``, ``round``, ``floor``, ``ceil``, ``trunc``.
 - [x] Math: ``sqrt``, ``square``, ``exp``, ``log``, ``log10``, ``sin``, ``cos``, ``tan``,
   ``arcsin``, ``arccos``, ``arctan``, ``arctan2``, ``degrees``, ``radians``, ``hypot``.
-- [ ] Classification: ``reclassify_values``, ``reclassify_ranges``, ``digitize``,
+- [x] Classification: ``reclassify_values``, ``reclassify_ranges``, ``digitize``,
   and ``one_hot``. Require explicit default behavior for unmatched valid cells:
   preserve, set a value, or invalidate.
-- [ ] Normalize: ``normalize_minmax`` and ``standardize``, using supplied statistics
+- [x] Normalize: ``normalize_minmax`` and ``standardize``, using supplied statistics
   or explicit two-pass execution. Never hide a global pre-pass.
 
 Example acceptance target:
@@ -558,15 +558,15 @@ materializes an expression; and `ma.write()` evaluates it in bounded windows.
 
 ### 3.2 Coordinate rasters
 
-- [ ] `row_indices(grid)` and `column_indices(grid)`.
-- [ ] `projected_x(grid, anchor="center")` and
+- [x] `row_indices(grid)` and `column_indices(grid)`.
+- [x] `projected_x(grid, anchor="center")` and
   `projected_y(grid, anchor="center")`.
-- [ ] `longitude(grid, anchor="center")` and
+- [x] `longitude(grid, anchor="center")` and
   `latitude(grid, anchor="center")`, using the grid's own geodetic CRS.
 - [ ] Generate coordinate windows lazily in file mode; do not allocate two
   full coordinate rasters merely to process one output window.
-- [ ] Clearly label longitude/latitude units and axis order.
-- [ ] Do not provide an implicit WGS84 transform.
+- [x] Clearly label longitude/latitude units and axis order.
+- [x] Do not provide an implicit WGS84 transform.
 
 ### 3.3 Neighborhood and morphology operations
 
@@ -825,9 +825,9 @@ src/lunarscout/
 
 Implement and unit-test private helpers with single responsibilities:
 
-- [ ] `_as_raster_operand(value, *, argument)` accepts only `Raster` or a real
+- [x] `_as_raster_operand(value, *, argument)` accepts only `Raster` or a real
   scalar in eager operations.
-- [ ] `_as_expression_operand(value, *, argument, grid_hint)` accepts only
+- [x] `_as_expression_operand(value, *, argument, grid_hint)` accepts only
   `RasterExpression`, `Raster`, or a real scalar.
 - [ ] `_require_raster_shape(values, georef)` validates exactly two dimensions.
 - [ ] `_require_common_grid(operands)` reports every differing grid field in a

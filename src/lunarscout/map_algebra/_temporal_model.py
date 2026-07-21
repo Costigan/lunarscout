@@ -16,6 +16,13 @@ from ..georeference import GeoReference
 from ..temporal import TemporalCube
 from ..raster import Raster as _Raster, _validate_raster_dtype
 from ._model import RasterExpression
+from ._normalization import (
+    CANONICAL_SCHEMA_VERSION,
+    NORMALIZATION_VERSION,
+    normalize_canonical,
+    normalize_crs_wkt,
+)
+from ._registry import get_operation_spec
 from ._sources import constant as _spatial_constant
 from ._validation import _is_scalar
 
@@ -402,10 +409,15 @@ class TemporalRasterExpression:
         return f"TemporalRasterExpression({', '.join(parts)})"
 
     def scientific_identity(self) -> str:
-        return "sha256:" + _temporal_content_hash(self)
+        encoded = self.to_canonical_json().encode("utf-8")
+        return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
     def to_json(self) -> str:
         return _temporal_to_json(self)
+
+    def to_canonical_json(self) -> str:
+        """Return the versioned canonical temporal expression representation."""
+        return self.to_json()
 
     # -----------------------------------------------------------------
     # Operator overloads
@@ -514,6 +526,7 @@ def _make_tp_node(
     signal_name: str | None = None,
     params: dict[str, Any] | None = None,
 ) -> TemporalRasterExpression:
+    get_operation_spec(operation_id)
     sorted_params = tuple(sorted((params or {}).items()))
     return TemporalRasterExpression(
         _node_id=_next_tp_id(),
@@ -769,103 +782,104 @@ def _topological_sort_temporal(root: TemporalRasterExpression) -> list[TemporalR
     return result
 
 
-def _temporal_content_hash(expr: TemporalRasterExpression) -> str:
-    h = hashlib.sha256()
-    _add_to_tp_hash(h, expr)
-    return h.hexdigest()
-
-
-def _add_to_tp_hash(h: Any, expr: TemporalRasterExpression) -> None:
-    h.update(expr._operation_id.encode())
-    for op in expr._operands:
-        if isinstance(op, TemporalRasterExpression):
-            _add_to_tp_hash(h, op)
-        elif isinstance(op, RasterExpression):
-            h.update(op.scientific_identity().encode())
-        elif isinstance(op, _Raster):
-            parts = [
-                op.values.tobytes(),
-                op.valid.tobytes(),
-                str(op.shape), str(op.dtype), str(op.units),
-                str(op.georef.width), str(op.georef.height),
-                str(op.georef.projection_wkt),
-                ",".join(str(v) for v in op.georef.affine_transform),
-            ]
-            for p in parts:
-                h.update(p if isinstance(p, bytes) else p.encode())
-        elif isinstance(op, TemporalRaster):
-            parts = [
-                op.values.tobytes(),
-                op.valid.tobytes(),
-                op.times.tobytes(),
-                str(op.shape), str(op.dtype), str(op.units),
-                str(op.signal_name),
-                str(op.georef.width), str(op.georef.height),
-                str(op.georef.projection_wkt),
-                ",".join(str(v) for v in op.georef.affine_transform),
-            ]
-            for p in parts:
-                h.update(p if isinstance(p, bytes) else p.encode())
-        else:
-            h.update(repr(op).encode())
-    for k in sorted(expr._params_dict.keys()):
-        h.update(f"{k}={expr._params_dict[k]!r}".encode())
-
-
 def _temporal_to_json(expr: TemporalRasterExpression) -> str:
     nodes = _topological_sort_temporal(expr)
+    canonical_ids = {node._node_id: f"n{index}" for index, node in enumerate(nodes)}
     node_list: list[dict[str, Any]] = []
 
     for node in nodes:
         entry: dict[str, Any] = {
-            "node_id": node._node_id,
+            "node_id": canonical_ids[node._node_id],
             "operation_id": node._operation_id,
-            "params": {k: _json_safe_tp(v) for k, v in node._params_dict.items()},
+            "semantic_version": get_operation_spec(node._operation_id).version,
+            "normalized_parameters": {
+                k: normalize_canonical(v) for k, v in node._params_dict.items()
+            },
             "operands": [
-                _json_operand_tp(op) for op in node._operands
+                _json_operand_tp(op, canonical_ids=canonical_ids) for op in node._operands
             ],
             "grid": _grid_json_tp(node._inferred_grid),
             "dtype": str(node._inferred_dtype) if node._inferred_dtype is not None else None,
             "units": node._inferred_units,
             "times_count": len(node._inferred_times) if node._inferred_times is not None else None,
+            "times": _times_json_tp(node._inferred_times),
             "times_reduced": node._inferred_times is None,
             "signal_name": node._signal_name,
         }
         node_list.append(entry)
 
     return json.dumps(
-        {"schema_version": "temporal-1", "root_node_id": expr._node_id, "nodes": node_list},
-        sort_keys=True, indent=2,
+        {
+            "schema_version": CANONICAL_SCHEMA_VERSION,
+            "normalization_version": NORMALIZATION_VERSION,
+            "domain": "temporal",
+            "root_node_id": canonical_ids[expr._node_id],
+            "nodes": node_list,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
     )
 
 
-def _json_safe_tp(v: Any) -> Any:
-    if isinstance(v, (int, float, str, bool, type(None))):
-        return v
-    return repr(v)
-
-
-def _json_operand_tp(op: Any) -> Any:
+def _json_operand_tp(op: Any, *, canonical_ids: dict[str, str] | None = None) -> Any:
     if isinstance(op, TemporalRasterExpression):
-        return {"type": "temporal_expression", "node_id": op._node_id}
+        node_id = canonical_ids.get(op._node_id, op._node_id) if canonical_ids else op._node_id
+        return {"type": "temporal_expression", "node_id": node_id}
     if isinstance(op, RasterExpression):
-        return {"type": "raster_expression", "node_id": op._node_id}
+        return {
+            "type": "raster_expression",
+            "scientific_identity": op.scientific_identity(),
+        }
     if isinstance(op, _Raster):
-        return {"type": "raster", "shape": list(op.shape)}
-    if isinstance(op, (int, float, np.integer, np.floating)):
-        return {"type": "scalar", "value": float(op) if isinstance(op, (float, np.floating)) else int(op)}
-    return {"type": type(op).__name__}
+        import hashlib
+
+        digest = hashlib.sha256()
+        digest.update(op.values.tobytes(order="C"))
+        digest.update(op.valid.tobytes(order="C"))
+        return {
+            "type": "raster",
+            "shape": [str(size) for size in op.shape],
+            "dtype": op.dtype.str,
+            "content_sha256": digest.hexdigest(),
+        }
+    if isinstance(op, TemporalRaster):
+        import hashlib
+
+        digest = hashlib.sha256()
+        digest.update(op.values.tobytes(order="C"))
+        digest.update(op.valid.tobytes(order="C"))
+        digest.update(op.times.tobytes(order="C"))
+        return {
+            "type": "temporal_raster",
+            "shape": [str(size) for size in op.shape],
+            "dtype": op.dtype.str,
+            "content_sha256": digest.hexdigest(),
+        }
+    return normalize_canonical(op)
 
 
 def _grid_json_tp(georef: GeoReference | None) -> dict[str, Any] | None:
     if georef is None:
         return None
     return {
-        "width": georef.width,
-        "height": georef.height,
-        "pixel_size_x": georef.pixel_size_x,
-        "pixel_size_y": georef.pixel_size_y,
-        "crs_wkt": georef.projection_wkt[:80] + "..." if len(georef.projection_wkt) > 80 else georef.projection_wkt,
+        "width": normalize_canonical(georef.width),
+        "height": normalize_canonical(georef.height),
+        "affine": normalize_canonical(tuple(georef.affine_transform)),
+        "pixel_size_x": normalize_canonical(georef.pixel_size_x),
+        "pixel_size_y": normalize_canonical(georef.pixel_size_y),
+        "crs_wkt": normalize_crs_wkt(georef.projection_wkt),
+        "nodata": normalize_canonical(georef.nodata),
+    }
+
+
+def _times_json_tp(times: np.ndarray | None) -> dict[str, Any] | None:
+    if times is None:
+        return None
+    digest = hashlib.sha256(np.ascontiguousarray(times).tobytes()).hexdigest()
+    return {
+        "dtype": times.dtype.str,
+        "count": normalize_canonical(len(times)),
+        "sha256": digest,
     }
 
 

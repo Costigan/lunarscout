@@ -18,7 +18,6 @@ from lunarscout.map_algebra._temporal_model import (
     _temporal_broadcast,
     _make_tp_node,
     _topological_sort_temporal,
-    _temporal_content_hash,
 )
 from lunarscout.map_algebra import (
     compute,
@@ -371,12 +370,12 @@ class TestTemporalRasterExpressionModel:
             )
 
     def test_factory_construction_accepted(self):
-        node = _make_tp_node("test.op")
-        assert node._operation_id == "test.op"
+        node = _make_tp_node("local.add")
+        assert node._operation_id == "local.add"
         assert isinstance(node, TemporalRasterExpression)
 
     def test_truth_testing_forbidden(self):
-        node = _make_tp_node("test.op")
+        node = _make_tp_node("local.add")
         with pytest.raises(TypeError, match="truth testing"):
             bool(node)
 
@@ -402,7 +401,7 @@ class TestTemporalRasterExpressionModel:
         tr = _make_temporal_raster(num_layers=2)
         node = _temporal_constant(tr)
         js = node.to_json()
-        assert "temporal-1" in js
+        assert '"domain":"temporal"' in js
         assert "root_node_id" in js
         assert "nodes" in js
 
