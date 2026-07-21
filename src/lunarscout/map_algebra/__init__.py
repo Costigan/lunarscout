@@ -80,6 +80,22 @@ from .expression import (
 )
 from ._sources import source
 from ._writer import write
+from .focal import (
+    closing,
+    convolve,
+    dilate,
+    erode,
+    focal_count,
+    focal_max,
+    focal_mean,
+    focal_median,
+    focal_min,
+    focal_range,
+    focal_std,
+    focal_sum,
+    majority,
+    opening,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +136,46 @@ trunc = _wrap_unary(trunc, "local.trunc")
 round = _wrap_unary(round, "local.round")
 degrees = _wrap_unary(degrees, "local.degrees")
 radians = _wrap_unary(radians, "local.radians")
+
+
+# ---------------------------------------------------------------------------
+# Expression-dispatch wrappers for focal functions
+# ---------------------------------------------------------------------------
+
+def _wrap_focal(fn: Any, op_id: str) -> Any:
+    def _wrapper(raster: Any, *args: Any, **kwargs: Any) -> Any:
+        if isinstance(raster, RasterExpression):
+            from ._model import _make_expr_node
+            all_params = dict(kwargs)
+            if args:
+                all_params["_args"] = args
+            return _make_expr_node(
+                op_id, (raster,),
+                grid=raster.grid,
+                dtype=raster.dtype,
+                units=raster.units,
+                halo=1,
+                params=all_params,
+            )
+        return fn(raster, *args, **kwargs)
+    _wrapper.__name__ = fn.__name__
+    return _wrapper
+
+
+focal_sum = _wrap_focal(focal_sum, "focal.sum")
+focal_mean = _wrap_focal(focal_mean, "focal.mean")
+focal_min = _wrap_focal(focal_min, "focal.min")
+focal_max = _wrap_focal(focal_max, "focal.max")
+focal_range = _wrap_focal(focal_range, "focal.range")
+focal_std = _wrap_focal(focal_std, "focal.std")
+focal_count = _wrap_focal(focal_count, "focal.count")
+focal_median = _wrap_focal(focal_median, "focal.median")
+dilate = _wrap_focal(dilate, "focal.dilate")
+erode = _wrap_focal(erode, "focal.erode")
+opening = _wrap_focal(opening, "focal.opening")
+closing = _wrap_focal(closing, "focal.closing")
+majority = _wrap_focal(majority, "focal.majority")
+convolve = _wrap_focal(convolve, "focal.convolve")
 
 
 def raster(

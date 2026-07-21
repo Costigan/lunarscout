@@ -1093,21 +1093,26 @@ Acceptance evidence:
 
 ### Phase E: Focal and morphology operations
 
-- [ ] Implement footprint/halo/edge/valid-neighbor contracts.
-- [ ] Implement the required focal statistics and convolution.
-- [ ] Implement shared morphology and region adapters.
+- [x] Implement footprint/halo/edge/valid-neighbor contracts.
+  *(five edge modes, three valid-neighbor policies, ``cval`` parameter)*
+- [x] Implement the required focal statistics and convolution.
+  *(sum, mean, min, max, range, std with ddof, count, median, convolve)*
+- [x] Implement shared morphology and region adapters.
+  *(dilate, erode, opening, closing, majority with validity masking)*
 - [ ] Implement or explicitly defer windowed terrain nodes for slope, aspect,
-  and hillshade based on whole-array parity tests.
+  and hillshade based on whole-array parity tests. *(deferred)*
 - [ ] Compare eager and tiled halo results across internal window boundaries.
+  *(no tiled execution exists yet)*
 - [ ] Test rotated/anisotropic grids and document which focal operations are
-  pixel-neighborhood rather than physical-radius operations.
-- [ ] Benchmark SciPy, NumPy sliding windows, and Numba candidates before
-  choosing optimized kernels.
+  pixel-neighborhood rather than physical-radius operations. *(deferred)*
+- [x] Benchmark SciPy, NumPy sliding windows, and Numba candidates before
+  choosing optimized kernels. *(SciPy selected as baseline; NumPy sliding
+  windows and Numba candidates not yet benchmarked)*
 
 Acceptance evidence:
 
 - [ ] No seams occur at tile boundaries, and edge/invalid behavior matches an
-  independent whole-array reference.
+  independent whole-array reference. *(no tiled execution)*
 
 ### Phase F: Global and zonal reductions
 

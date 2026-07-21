@@ -95,6 +95,24 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   grid dimensions), and ``Raster.expression()`` for creating constant
   expression nodes from eager rasters.  All 10 review findings addressed.
   Verification: 700 passed, 17 skipped (CPU suite).
+- Implemented Phase E of the map-algebra plan (revised after review): an eager
+  SciPy-based focal and morphology API with 14 operations — ``focal_sum``,
+  ``focal_mean``, ``focal_min``, ``focal_max``, ``focal_range``,
+  ``focal_std`` (with ``ddof`` forwarding), ``focal_count``,
+  ``focal_median``, ``convolve`` (custom kernels, ``normalize`` option),
+  ``dilate``, ``erode``, ``opening``, ``closing``, and ``majority``.
+  Features: five edge modes (``invalid``, ``constant`` with ``cval``,
+  ``nearest``, ``reflect``, ``wrap``), three valid-neighbor policies
+  (``require_all``, ``ignore_invalid`` using nan-aware reductions,
+  ``propagate_center``), safe output dtypes (``int64`` for sum/count,
+  ``float32``/``float64`` for mean/std/median/range), morphology validity
+  masking (invalid cells forced to ``False`` before SciPy ops), validated
+  finite convolution kernels, zero-width halo guarding, and expression
+  dispatch via ``_wrap_focal`` so ``Raster.expression()`` operands return
+  expression nodes.  Internal module: ``focal.py`` (560 lines).  Added 38
+  tests covering all operations, dtypes, edge modes, validity policies,
+  expression dispatch, ddof, and edge cases.
+  Verification: 738 passed, 17 skipped (CPU suite).
 - Added ``docs/map-algebra-implementation-plan.md``, the reviewed ``0.2.0rc1``
   execution plan for a broad lunar map-algebra API. The plan defines eager
   ``Raster`` values, bounded and resumable ``RasterExpression`` execution,
