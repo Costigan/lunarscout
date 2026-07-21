@@ -6,6 +6,15 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- Added ``docs/map-algebra-implementation-plan.md``, the reviewed ``0.2.0rc1``
+  execution plan for a broad lunar map-algebra API. The plan defines eager
+  ``Raster`` values, bounded and resumable ``RasterExpression`` execution,
+  canonical validity and dtype semantics, local/focal/zonal/global/temporal
+  operations, distance fields, explicit non-terrestrial assumptions, durable
+  output, performance gates, and machine-readable explanation/provenance
+  features intended to support future human-reviewed LLM-assisted mission
+  analysis. This is a planning and API-design addition; it does not claim that
+  the map-algebra surface is implemented.
 - Revamped the example suite: renumbered scripts 00–10 to 01–10 for
   contiguous ordering; moved the historical HDF5 storage benchmark to
   ``benchmarks/``; deleted stale ``.pyc`` files; and added four new

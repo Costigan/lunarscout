@@ -1,5 +1,7 @@
 # Example Improvement Plan
 
+[Implementation of this plan has been completed.]
+
 ## Progress
 
 - [x] Delete stale `.pyc` files
