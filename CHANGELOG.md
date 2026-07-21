@@ -113,6 +113,25 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   tests covering all operations, dtypes, edge modes, validity policies,
   expression dispatch, ddof, and edge cases.
   Verification: 738 passed, 17 skipped (CPU suite).
+- Implemented Phase F of the map-algebra plan (revised after three review
+  rounds): global and zonal reduction operations — ``statistics()`` returning
+  a ``RasterStatistics`` dataclass (count, invalid_count, sum, mean, min, max,
+  range, variance, std), ``histogram()``, ``percentile()`` (exact linear /
+  approximate nearest-rank, both in-memory with documented float64 precision
+  limit), and ``unique_counts()`` (with ``max_unique`` safety bound); zonal
+  ``ZonalStatistics`` dataclass with sorted zone IDs, per-column int64/float64
+  arrays, ``include_zone_ids`` (dtype-validated), ``zone_nodata``, structured
+  errors for unknown statistics, ``to_dict`` / ``to_json`` / ``to_records``
+  (tuple of immutable ``MappingProxyType`` rows) / ``write_csv`` serializers,
+  and write-protected result arrays; ``zonal_stats()`` correctly separates
+  zone validity from value validity for accurate count/valid_count/
+  invalid_count; and ``zonal_raster()`` broadcasting to all zone-valid cells.
+  Internal modules: ``reductions.py``, ``zonal.py``.  Added 31 tests covering
+  statistics, histogram, percentile, unique_counts, zonal stats with
+  validity separation, percentiles, uint64 boundary IDs, zone_nodata,
+  include_zone_ids, empty zones, and immutable records.  Streaming/bounded
+  accumulators remain deferred.  Verification: 769 passed, 17 skipped
+  (CPU suite).
 - Added ``docs/map-algebra-implementation-plan.md``, the reviewed ``0.2.0rc1``
   execution plan for a broad lunar map-algebra API. The plan defines eager
   ``Raster`` values, bounded and resumable ``RasterExpression`` execution,

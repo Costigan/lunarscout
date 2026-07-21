@@ -96,6 +96,18 @@ from .focal import (
     majority,
     opening,
 )
+from .reductions import (
+    RasterStatistics,
+    histogram,
+    percentile,
+    statistics,
+    unique_counts,
+)
+from .zonal import (
+    ZonalStatistics,
+    zonal_raster,
+    zonal_stats,
+)
 
 
 # ---------------------------------------------------------------------------

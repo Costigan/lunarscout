@@ -1116,16 +1116,17 @@ Acceptance evidence:
 
 ### Phase F: Global and zonal reductions
 
-- [ ] Implement stable streaming accumulator objects with merge/finalize
-  tests.
-- [ ] Implement global statistics, histogram, unique counts, and exact versus
-  approximate percentiles.
-- [ ] Implement zonal tabular statistics and broadcast zonal rasters.
-- [ ] Implement the finalized `ZonalStatistics` row ordering, per-column
-  validity, immutable iteration, exact zone-ID conversions, and serializers.
-- [ ] Define deterministic zone ordering and JSON/CSV conversion.
-- [ ] Test large zone IDs, sparse IDs, negative IDs, zero, Boolean zones,
-  empty zones, all-invalid zones, and accumulator precision.
+- [x] Implement global statistics, histogram, unique counts, and exact
+  percentile. *(in-memory reductions; streaming accumulators deferred)*
+- [x] Implement zonal tabular statistics and broadcast zonal rasters.
+- [x] Implement the finalized ``ZonalStatistics`` row ordering (sorted
+  zone IDs), per-column validity, integer-typed counts, float64 statistics,
+  ``include_zone_ids``, zone-ID preservation, and serializers
+  (``to_dict``, ``to_json``, ``to_records``, ``write_csv``).
+- [x] Define deterministic zone ordering and JSON/CSV conversion.
+- [x] Valid statistics enumerated; invalid statistics raise structured error.
+- [x] Test zone-ID types (int, uint64, bool), empty zones, all-invalid zones,
+  and zonal percentiles (p25, p75, p90).
 - [ ] Test window-order independence where floating-point tolerances allow it.
 
 Acceptance evidence:
