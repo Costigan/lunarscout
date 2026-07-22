@@ -15,7 +15,7 @@ real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (normalization FP32 consistency)
+Last updated: 2026-07-22 (unit-bearing power contract)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -564,10 +564,13 @@ dependency until actual lunar workflows justify one.
   units, raise unless ``allow_unknown_units=True``.
 - [x] Multiplication/division of two unit-bearing rasters require explicit
   ``output_units``; scalar multiplication/division preserves raster units.
-- [ ] Powers require a dimensionless scalar exponent and explicit output units
-  for a unit-bearing raster unless exponent is one.
-  **PARTIAL:** scalar exponent validation exists; explicit unit-bearing power
-  output-unit handling is incomplete.
+- [x] Unit-bearing raster powers require a scalar exponent and explicit output
+  units unless exponent is one. Unit-bearing bases reject
+  raster exponents; scalar exponent one preserves units, other scalar powers
+  require a non-empty declaration, and raster exponents carrying no unit
+  metadata cannot claim one fixed output unit. Eager, expression, compute,
+  identity, registry, and supported windowed execution enforce the same
+  contract.
 - [x] Trigonometric operations require ``degrees`` or ``radians``; inverse
   trigonometric operations declare their output angle unit.
 - [x] ``clip``, reclassification, reductions, and comparisons document whether
@@ -1120,6 +1123,11 @@ sources select the documented CPU/interchange FP64 path. Int32 remains there
 until a native-32-bit centering algorithm proves large-adjacent-integer
 correctness. Focal and temporal accumulator paths remain to be reconciled and
 are not claimed complete.
+
+Unit-bearing power now uses one shared unit helper across eager and expression
+construction. The declared derived unit is replayed by compute/windowed
+execution and participates in identity. Raster exponents remain supported only
+for bases carrying no unit metadata and cannot declare one fixed output unit.
 
 ### 4.4 Operation registry
 

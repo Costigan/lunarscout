@@ -93,6 +93,7 @@ _LOCAL_BINARY_PARAMETERS: dict[str, tuple[tuple[str, str], ...]] = {
         ("numeric_errors", "Division-by-zero policy: invalid, keep, or raise."),
     ),
     "power": (
+        ("output_units", "Required for a unit-bearing base unless exponent is one."),
         ("overflow", "Integer overflow policy: raise, wrap, or promote."),
         ("numeric_errors", "Non-finite/negative-integer-exponent policy."),
     ),
@@ -133,7 +134,11 @@ _SPECS = (
         _spec(
             f"local.{name}", 2, "local", summary,
             parameters=_LOCAL_BINARY_PARAMETERS.get(name, ()),
-            version=2 if name in _LOCAL_BINARY_PARAMETERS else 1,
+            version=(3 if name == "power" else 2 if name in _LOCAL_BINARY_PARAMETERS else 1),
+            output_units_rule=(
+                "unit-bearing base requires scalar exponent and explicit output_units unless exponent is one"
+                if name == "power" else "operation-specific"
+            ),
             file_backed_available=True,
         )
         for name, summary in (

@@ -175,7 +175,8 @@ def _eval_binary(node: RasterExpression, operands: list[Any]) -> Raster:
         return _ma.remainder(a, b, overflow=overflow, numeric_errors=numeric_errors)
     elif node._operation_id == "local.power":
         return _ma.power(
-            a, b, overflow=overflow, numeric_errors=numeric_errors,
+            a, b, output_units=output_units, overflow=overflow,
+            numeric_errors=numeric_errors,
         )
     elif node._operation_id == "local.hypot":
         return _ma.hypot(a, b, numeric_errors=numeric_errors)

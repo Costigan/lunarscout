@@ -703,10 +703,11 @@ class TestOperationRegistry:
 
     def test_describe_numeric_power_and_cast_policies(self):
         power_desc = describe_operation("local.power")
-        assert power_desc["version"] == 2
+        assert power_desc["version"] == 3
         assert [item["name"] for item in power_desc["parameters"]] == [
-            "overflow", "numeric_errors",
+            "output_units", "overflow", "numeric_errors",
         ]
+        assert "scalar exponent" in power_desc["output_units_rule"]
 
         cast_desc = describe_operation("local.cast")
         assert cast_desc["version"] == 2

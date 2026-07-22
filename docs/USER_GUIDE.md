@@ -1476,6 +1476,16 @@ dtypes are rejected.
   rejects valid values outside the destination range. Integer-to-integer
   casts may request `overflow="wrap"`; wrapping floating values is rejected.
 
+`ma.power(base, exponent, *, output_units=...)` treats units explicitly. A
+unit-bearing raster base requires a scalar exponent. Exponent one preserves
+the base units; every other exponent requires a non-empty `output_units`
+declaration, for example `ma.power(distance, 2, output_units="square metres")`.
+A raster exponent is allowed only when it and the raster base carry no unit
+metadata; this is not an assertion that either is physically dimensionless.
+Because its exponent varies per cell, it cannot declare one fixed output unit.
+These checks run during eager or expression construction, before any kernel
+executes, and `output_units` participates in scientific identity.
+
 `float32` calculations remain in FP32; Lunarscout does not introduce FP64
 intermediates merely to check overflow or numeric domains. FP64 is used only
 when an input or the documented result/accumulator contract requires it. This

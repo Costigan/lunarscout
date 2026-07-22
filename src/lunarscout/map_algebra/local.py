@@ -65,6 +65,7 @@ from ._kernels import (
 )
 from ._units import (
     multiply_units,
+    power_units,
     require_angle_units,
     require_matching_units,
 )
@@ -263,25 +264,49 @@ def power(
     base: Raster | int | float,
     exponent: Raster | int | float,
     *,
+    output_units: str | None = None,
     overflow: OverflowPolicy = "raise",
     numeric_errors: NumericErrorsPolicy = "invalid",
 ) -> Raster:
+    """Raise values to a power with explicit derived-unit declarations.
+
+    A unit-bearing raster base requires a scalar exponent and, unless that
+    exponent is one, a non-empty ``output_units`` declaration.
+    """
     if isinstance(base, Raster) and isinstance(exponent, Raster):
         _require_common_grid([base, exponent])
+        units = power_units(
+            base_units=base.units, exponent_units=exponent.units,
+            exponent_is_scalar=False, output_units=output_units,
+        )
         return _dispatch_binary_raster_raster(
             base, exponent, _power, operation="power",
-            overflow=overflow, numeric_errors=numeric_errors,
+            output_units=units, overflow=overflow,
+            numeric_errors=numeric_errors,
         )
     if isinstance(base, Raster) and _is_scalar(exponent):
+        normalized_exponent = _normalize_scalar(exponent, argument="exponent")
+        units = power_units(
+            base_units=base.units, exponent_units=None,
+            exponent_is_scalar=True, exponent_value=normalized_exponent,
+            output_units=output_units,
+        )
         return _dispatch_binary_raster_scalar(
-            base, _normalize_scalar(exponent, argument="exponent"), _power,
-            operation="power", overflow=overflow, numeric_errors=numeric_errors,
+            base, normalized_exponent, _power,
+            operation="power", output_units=units, overflow=overflow,
+            numeric_errors=numeric_errors,
         )
     if _is_scalar(base) and isinstance(exponent, Raster):
+        units = power_units(
+            base_units=None, exponent_units=exponent.units,
+            exponent_is_scalar=False, output_units=output_units,
+            base_is_raster=False,
+        )
         return _dispatch_binary_raster_scalar(
             exponent, _normalize_scalar(base, argument="base"),
             _power,
-            operation="power", overflow=overflow, numeric_errors=numeric_errors,
+            operation="power", output_units=units, overflow=overflow,
+            numeric_errors=numeric_errors,
             scalar_left=True,
         )
     raise MapAlgebraError("power() requires at least one Raster operand.", code="map_algebra_no_raster_operand")

@@ -270,7 +270,16 @@ def _wrap_binary(fn: Any, op_id: str) -> Any:
             return _temporal_local_op(op_id, a, b)
         if isinstance(a, RasterExpression) or isinstance(b, RasterExpression):
             from ._model import _new_expr_op
-            return _new_expr_op(a, b, op_id, params=_normalized_numeric_params(kwargs))
+            params = _normalized_numeric_params(kwargs)
+            if op_id == "local.power" and "output_units" in params:
+                from ._units import normalize_output_units
+
+                normalized_units = normalize_output_units(params["output_units"])
+                if normalized_units is None:
+                    params.pop("output_units")
+                else:
+                    params["output_units"] = normalized_units
+            return _new_expr_op(a, b, op_id, params=params)
         return fn(a, b, **kwargs)
     return _wrapper
 

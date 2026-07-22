@@ -386,6 +386,7 @@ def _infer_expr_units(
     *,
     operation_id: str,
     output_units: str | None = None,
+    operands_in_order: list[Any] | None = None,
 ) -> str | None:
     units: list[str | None] = []
     for op in operands:
@@ -422,6 +423,26 @@ def _infer_expr_units(
                 details={"operation_id": operation_id, "units": units},
             )
         return None
+    if operation_id == "local.power":
+        from ._units import power_units
+
+        ordered = operands_in_order or operands
+        base = ordered[0]
+        exponent = ordered[1]
+        base_is_raster = isinstance(base, RasterExpression)
+        exponent_is_scalar = not isinstance(exponent, RasterExpression)
+        return power_units(
+            base_units=base.units if base_is_raster else None,
+            exponent_units=(
+                exponent.units
+                if isinstance(exponent, RasterExpression)
+                else None
+            ),
+            exponent_is_scalar=exponent_is_scalar,
+            exponent_value=exponent if exponent_is_scalar else None,
+            output_units=output_units,
+            base_is_raster=base_is_raster,
+        )
     if operation_id == "local.arctan2":
         return "radians"
     if operation_id == "local.hypot":
@@ -488,6 +509,7 @@ def _new_expr_op(
     units = _infer_expr_units(
         raster_ops, operation_id=op_id,
         output_units=(params or {}).get("output_units"),
+        operands_in_order=op_list,
     )
     return _make_expr_node(
         op_id, tuple(op_list), grid=grid, dtype=dtype, units=units, params=params,

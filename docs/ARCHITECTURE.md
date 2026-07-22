@@ -906,6 +906,19 @@ while retaining an explicit higher-precision contract. Both normalization
 operation semantic versions are 2. General GPU execution is not implied by
 this dtype contract.
 
+Power unit inference is centralized in `power_units`. A unit-bearing raster
+base must have a scalar exponent; exponent one preserves its units, while any
+other exponent requires an explicit non-empty output-unit declaration. Raster
+exponents must carry no unit metadata and are accepted only for a raster base
+that also carries no unit metadata, or for a scalar base. Absence of metadata
+does not assert physical dimensionlessness. A varying exponent cannot claim
+one fixed output unit. Validation
+occurs before eager execution and during expression construction. The declared
+output units are stored in node parameters and therefore affect scientific and
+restart identity after whitespace normalization; omitted and explicit `None`
+are canonical equivalents. The declaration is replayed by compute and windowed execution. The
+`local.power` semantic version is 3.
+
 Nodata and invalid-fill encoding is likewise centralized, but remains separate
 from scientific payload promotion. `_validate_nodata_representable` requires a
 finite encoding to round-trip exactly through its destination dtype, permits

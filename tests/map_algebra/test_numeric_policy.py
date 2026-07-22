@@ -30,7 +30,12 @@ from lunarscout.map_algebra import (
 from tests.map_algebra.conftest import MOON_PROJ4, MOON_WKT
 
 
-def _raster(values: np.ndarray, *, valid: np.ndarray | None = None):
+def _raster(
+    values: np.ndarray,
+    *,
+    valid: np.ndarray | None = None,
+    units: str | None = None,
+):
     height, width = values.shape
     grid = GeoReference(
         projection_wkt=MOON_WKT,
@@ -42,7 +47,7 @@ def _raster(values: np.ndarray, *, valid: np.ndarray | None = None):
         pixel_size_y=-20.0,
         nodata=None,
     )
-    return raster(values, grid, valid=valid)
+    return raster(values, grid, valid=valid, units=units)
 
 
 @pytest.mark.parametrize(
@@ -482,6 +487,99 @@ def test_uint64_power_one_preserves_value_beyond_float_exact_range():
     assert int(result.values[0, 0]) == value
 
 
+@pytest.mark.parametrize("as_expression", [False, True])
+def test_unit_bearing_power_requires_output_units(as_expression):
+    source = _raster(np.array([[2.0]], dtype=np.float32), units="metres")
+    operand = source.expression() if as_expression else source
+    with pytest.raises(MapAlgebraUnitError) as error:
+        power(operand, 2)
+    assert error.value.code == "map_algebra_missing_output_units"
+    assert error.value.details["base_units"] == "metres"
+
+
+def test_power_one_preserves_units_without_explicit_output_units():
+    source = _raster(np.array([[2.0]], dtype=np.float32), units="metres")
+    eager = power(source, 1)
+    expression = power(source.expression(), 1)
+    assert eager.units == expression.units == "metres"
+    assert compute(expression).units == "metres"
+
+
+def test_unit_bearing_power_explicit_units_have_eager_expression_parity():
+    source = _raster(np.array([[2.0, 3.0]], dtype=np.float32), units="metres")
+    eager = power(source, 2, output_units="square metres")
+    expression = power(
+        source.expression(), 2, output_units="square metres",
+    )
+    assert eager.units == expression.units == "square metres"
+    computed = compute(expression)
+    assert computed.units == "square metres"
+    np.testing.assert_array_equal(computed.values, eager.values)
+
+    other = power(source.expression(), 2, output_units="m2")
+    assert expression.scientific_identity() != other.scientific_identity()
+
+    whitespace = power(
+        source.expression(), 2, output_units="  square metres  ",
+    )
+    assert whitespace.units == "square metres"
+    assert whitespace.scientific_identity() == expression.scientific_identity()
+
+    unitless = _raster(np.array([[2.0]], dtype=np.float32)).expression()
+    assert power(unitless, 2).scientific_identity() == power(
+        unitless, 2, output_units=None,
+    ).scientific_identity()
+
+
+@pytest.mark.parametrize("as_expression", [False, True])
+def test_unit_bearing_base_rejects_raster_exponent(as_expression):
+    base = _raster(np.array([[2.0]], dtype=np.float32), units="metres")
+    exponent = _raster(np.array([[2.0]], dtype=np.float32))
+    left = base.expression() if as_expression else base
+    right = exponent.expression() if as_expression else exponent
+    with pytest.raises(MapAlgebraUnitError) as error:
+        power(left, right, output_units="square metres")
+    assert error.value.code == "map_algebra_unitful_power_requires_scalar_exponent"
+
+
+@pytest.mark.parametrize("scalar_base", [False, True])
+@pytest.mark.parametrize("as_expression", [False, True])
+def test_raster_exponent_must_be_dimensionless(scalar_base, as_expression):
+    exponent = _raster(
+        np.array([[2.0]], dtype=np.float32), units="dimensioned exponent",
+    )
+    exponent_operand = exponent.expression() if as_expression else exponent
+    base = (
+        2.0
+        if scalar_base
+        else _raster(np.array([[2.0]], dtype=np.float32))
+    )
+    if as_expression and not scalar_base:
+        base = base.expression()
+    with pytest.raises(MapAlgebraUnitError) as error:
+        power(base, exponent_operand)
+    assert error.value.code == "map_algebra_dimensioned_exponent"
+
+
+@pytest.mark.parametrize("as_expression", [False, True])
+def test_raster_exponent_rejects_fixed_output_units(as_expression):
+    base = _raster(np.array([[2.0]], dtype=np.float32))
+    exponent = _raster(np.array([[2.0]], dtype=np.float32))
+    left = base.expression() if as_expression else base
+    right = exponent.expression() if as_expression else exponent
+    with pytest.raises(MapAlgebraUnitError) as error:
+        power(left, right, output_units="fixed")
+    assert error.value.code == "map_algebra_unexpected_output_units"
+
+
+@pytest.mark.parametrize("output_units", ["", "   ", 3])
+def test_power_output_units_validation_is_structured(output_units):
+    source = _raster(np.array([[2.0]], dtype=np.float32), units="metres")
+    with pytest.raises(MapAlgebraUnitError) as error:
+        power(source, 2, output_units=output_units)
+    assert error.value.code == "map_algebra_invalid_output_units"
+
+
 def test_integer_power_wrap_is_explicit():
     source = _raster(np.array([[16]], dtype=np.uint8))
     result = power(source, 2, overflow="wrap")
@@ -632,6 +730,26 @@ def test_power_and_cast_have_windowed_eager_parity(tmp_path):
         assert written[0, 1] == 0
         np.testing.assert_array_equal(dataset.read_masks(1) > 0, eager.valid)
         assert dataset.dtypes[0] == "uint8"
+
+
+def test_unit_bearing_power_has_windowed_parity(tmp_path):
+    import rasterio
+
+    source = _raster(
+        np.array([[2.0, 3.0], [4.0, 5.0]], dtype=np.float32),
+        units="metres",
+    )
+    expression = power(
+        source.expression(), 2, output_units="square metres",
+    )
+    eager = compute(expression)
+    output = write(
+        tmp_path / "unit-power.tif", expression,
+        window_width=1, window_height=1,
+    )
+    with rasterio.open(output) as dataset:
+        np.testing.assert_array_equal(dataset.read(1), eager.values)
+        np.testing.assert_array_equal(dataset.read_masks(1) > 0, eager.valid)
 
 
 _SUPPORTED_DTYPES = (

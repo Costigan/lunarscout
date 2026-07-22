@@ -66,3 +66,68 @@ def multiply_units(
             )
         return output_units
     return units_a or units_b
+
+
+def normalize_output_units(output_units: str | None) -> str | None:
+    if output_units is None:
+        return None
+    if not isinstance(output_units, str) or not output_units.strip():
+        raise MapAlgebraUnitError(
+            "output_units must be a non-empty string or None.",
+            code="map_algebra_invalid_output_units",
+            details={"output_units": repr(output_units)},
+        )
+    return output_units.strip()
+
+
+def power_units(
+    *,
+    base_units: str | None,
+    exponent_units: str | None,
+    exponent_is_scalar: bool,
+    exponent_value: Any = None,
+    output_units: str | None = None,
+    base_is_raster: bool = True,
+) -> str | None:
+    """Infer power units without assigning one unit to variable exponents."""
+    normalized_output = normalize_output_units(output_units)
+
+    if not exponent_is_scalar:
+        if exponent_units is not None:
+            raise MapAlgebraUnitError(
+                "A raster exponent must carry no unit metadata under the "
+                "current power contract.",
+                code="map_algebra_dimensioned_exponent",
+                details={"exponent_units": exponent_units},
+            )
+        if base_is_raster and base_units is not None:
+            raise MapAlgebraUnitError(
+                "A unit-bearing raster base requires a scalar exponent.",
+                code="map_algebra_unitful_power_requires_scalar_exponent",
+                details={"base_units": base_units},
+            )
+        if normalized_output is not None:
+            raise MapAlgebraUnitError(
+                "A raster exponent cannot produce one fixed output unit.",
+                code="map_algebra_unexpected_output_units",
+                details={"output_units": normalized_output},
+            )
+        return None
+
+    if not base_is_raster:
+        return None
+    if base_units is None:
+        return normalized_output
+    if exponent_value == 1 and normalized_output is None:
+        return base_units
+    if normalized_output is None:
+        raise MapAlgebraUnitError(
+            "A unit-bearing raster raised to a power other than one requires "
+            "explicit output_units.",
+            code="map_algebra_missing_output_units",
+            details={
+                "base_units": base_units,
+                "exponent": repr(exponent_value),
+            },
+        )
+    return normalized_output

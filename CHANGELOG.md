@@ -6,6 +6,21 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra numeric consistency, part 7: unit-bearing power.** Added the
+  public `output_units` contract to `ma.power`. A unit-bearing raster base now
+  requires a scalar exponent; exponent one preserves source units, while every
+  other exponent requires an explicit non-empty derived-unit declaration.
+  Raster exponents must carry no units, are rejected for unit-bearing bases,
+  and cannot claim one fixed output unit. The shared helper runs before eager
+  kernels and during expression construction; compute and windowed execution
+  replay the declaration, and it participates in scientific/restart identity.
+  Equivalent whitespace and explicit-`None` declarations are canonicalized.
+  Bumped `local.power` to semantic version 3 and aligned its signature,
+  docstring, registry parameters, user guidance, architecture, and plan.
+  Verification: 1730 passed, 17 skipped in the ordinary CPU suite; 1268
+  map-algebra tests passed; 518 focused numeric, unit, identity, and window
+  tests passed; fresh-process public API and import-side-effect audit passed.
+
 - **Map-algebra numeric consistency, part 6: FP32 normalization.** Routed
   `normalize_minmax` and `standardize` through the shared result-dtype policy
   for both eager and expression construction. FP32 and Boolean/8/16-bit
