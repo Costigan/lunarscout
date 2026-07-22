@@ -3,7 +3,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from lunarscout.errors import MapAlgebraDTypeError, MapAlgebraError, MapAlgebraUnitError
+from lunarscout.errors import (
+    MapAlgebraDTypeError,
+    MapAlgebraError,
+    MapAlgebraUnitError,
+    RasterValidationError,
+)
 from lunarscout.georeference import GeoReference
 from lunarscout.map_algebra import (
     absolute,
@@ -15,6 +20,7 @@ from lunarscout.map_algebra import (
     coalesce,
     cos,
     divide,
+    describe_operation,
     equal,
     fill_invalid,
     floor,
@@ -482,6 +488,34 @@ class TestValidityHelpers:
         assert r.values[0, 1] == -9999.0
         assert r.values[1, 0] == -9999.0
         assert r.all_valid
+
+    @pytest.mark.parametrize("as_expression", [False, True])
+    def test_fill_invalid_rejects_lossy_integer_fill(self, as_expression):
+        raster_value = _make_raster(
+            np.array([[1, 99], [3, 4]], dtype=np.uint8),
+            valid=np.array([[True, False], [True, True]], dtype=np.bool_),
+        )
+        operand = raster_value.expression() if as_expression else raster_value
+        with pytest.raises(RasterValidationError) as error:
+            fill_invalid(operand, 300)
+        assert error.value.code == "raster_unrepresentable_nodata"
+
+    def test_fill_invalid_preserves_exact_uint64(self):
+        fill = 2**63 + 123
+        raster_value = _make_raster(
+            np.array([[1, 99], [3, 4]], dtype=np.uint64),
+            valid=np.array([[True, False], [True, True]], dtype=np.bool_),
+        )
+        result = fill_invalid(raster_value, fill)
+        assert result.dtype == np.dtype(np.uint64)
+        assert int(result.values[0, 1]) == fill
+        assert result.all_valid
+
+    def test_fill_invalid_registry_records_exact_encoding_contract(self):
+        description = describe_operation("local.fill_invalid")
+        assert description["version"] == 2
+        assert "exactly representable" in description["output_dtype_rule"]
+        assert description["validity_rule"] == "all cells valid after exact fill"
 
 
 # ---------------------------------------------------------------------------

@@ -6,12 +6,13 @@ from typing import Any, Literal, NoReturn
 import numpy as np
 
 from ..errors import MapAlgebraDTypeError, MapAlgebraError
-from ..raster import Raster, _validate_nodata_representable
+from ..raster import Raster, _fill_invalid_exact
 from ._dtypes import (
     CastOverflowPolicy,
     OverflowPolicy,
     cast_values,
     normalize_dtype,
+    result_dtype,
 )
 from ._validity import NumericErrorsPolicy
 from ._eager import (
@@ -591,6 +592,12 @@ def where(
     x: Raster | int | float | _InvalidSentinel,
     y: Raster | int | float | _InvalidSentinel,
 ) -> Raster:
+    """Select branch values using exact shared dtype and unit rules.
+
+    Raster branches must have matching units. Python integer branches are
+    represented exactly; if no supported common integer dtype exists, the
+    operation raises rather than selecting an inexact floating dtype.
+    """
     _require_boolean(condition, argument="condition")
     x_is_invalid = isinstance(x, _InvalidSentinel)
     y_is_invalid = isinstance(y, _InvalidSentinel)
@@ -617,95 +624,105 @@ def where(
             y_scalar = _normalize_scalar(y, argument="y")
 
     _require_common_grid(raster_operands)
-    georef = _infer_output_georef_single(condition)
-
-    if x_raster is not None and y_raster is not None:
-        result_values = np.where(cond_values, x_raster.values, y_raster.values)
-        result_valid = where_validity(cond_values, cond_valid, x_raster.valid, y_raster.valid)
-        return Raster(values=result_values, georef=georef, valid=result_valid)
-
-    if x_raster is not None and y_is_invalid:
-        result_values = np.where(cond_values, x_raster.values, 0)
-        result_valid = cond_valid & cond_values & x_raster.valid
-        return Raster(values=result_values, georef=georef, valid=result_valid, units=x_raster.units)
-
-    if x_is_invalid and y_raster is not None:
-        result_values = np.where(cond_values, 0, y_raster.values)
-        result_valid = cond_valid & ~cond_values & y_raster.valid
-        return Raster(values=result_values, georef=georef, valid=result_valid, units=y_raster.units)
-
-    if x_raster is not None and y_scalar is not None:
-        result_values = np.where(cond_values, x_raster.values, y_scalar)
-        result_valid = where_validity(
-            cond_values, cond_valid, x_raster.valid,
-            np.ones(condition.shape, dtype=np.bool_),
-        )
-        return Raster(values=result_values, georef=georef, valid=result_valid, units=x_raster.units)
-
-    if x_scalar is not None and y_raster is not None:
-        result_values = np.where(cond_values, x_scalar, y_raster.values)
-        result_valid = where_validity(
-            cond_values, cond_valid,
-            np.ones(condition.shape, dtype=np.bool_),
-            y_raster.valid,
-        )
-        return Raster(values=result_values, georef=georef, valid=result_valid, units=y_raster.units)
-
-    if x_scalar is not None and y_scalar is not None:
-        result_values = np.where(cond_values, x_scalar, y_scalar)
-        return Raster(values=result_values, georef=georef, valid=cond_valid.copy())
-
-    if x_scalar is not None and y_is_invalid:
-        result_values = np.where(cond_values, x_scalar, 0)
-        result_valid = cond_valid & cond_values
-        return Raster(values=result_values, georef=georef, valid=result_valid)
-
-    if x_is_invalid and y_scalar is not None:
-        result_values = np.where(cond_values, 0, y_scalar)
-        result_valid = cond_valid & ~cond_values
-        return Raster(values=result_values, georef=georef, valid=result_valid)
-
     if x_is_invalid and y_is_invalid:
         result_values = np.zeros(condition.shape, dtype=condition.values.dtype)
-        return Raster(values=result_values, georef=georef, valid=np.zeros(condition.shape, dtype=np.bool_))
+        return Raster(
+            values=result_values,
+            georef=_infer_output_georef_single(condition),
+            valid=np.zeros(condition.shape, dtype=np.bool_),
+        )
 
-    raise MapAlgebraError(
-        "where() requires at least one non-invalid Raster or scalar in the x or y branches.",
-        code="map_algebra_invalid_where",
+    branch_rasters = [
+        branch for branch in (x_raster, y_raster) if branch is not None
+    ]
+    if len(branch_rasters) == 2:
+        require_matching_units(
+            units_a=branch_rasters[0].units,
+            units_b=branch_rasters[1].units,
+        )
+    output_units = branch_rasters[0].units if branch_rasters else None
+    output_dtype = result_dtype(
+        tuple(branch.dtype for branch in branch_rasters),
+        operation="where",
+        scalars=tuple(
+            scalar for scalar in (x_scalar, y_scalar) if scalar is not None
+        ),
+    )
+    all_valid = np.ones(condition.shape, dtype=np.bool_)
+    all_invalid = np.zeros(condition.shape, dtype=np.bool_)
+
+    def branch_arrays(
+        branch: Raster | None,
+        scalar: int | float | None,
+    ) -> tuple[
+        np.ndarray[Any, Any],
+        np.ndarray[Any, np.dtype[np.bool_]],
+    ]:
+        if branch is not None:
+            return branch.values.astype(output_dtype, copy=False), branch.valid
+        if scalar is not None:
+            return np.asarray(scalar, dtype=output_dtype), all_valid
+        return np.asarray(0, dtype=output_dtype), all_invalid
+
+    x_values, x_valid = branch_arrays(x_raster, x_scalar)
+    y_values, y_valid = branch_arrays(y_raster, y_scalar)
+    result_values = np.where(cond_values, x_values, y_values)
+    result_valid = where_validity(
+        cond_values, cond_valid, x_valid, y_valid,
+    )
+    return Raster(
+        values=result_values,
+        georef=_infer_output_georef_single(condition),
+        valid=result_valid,
+        units=output_units,
     )
 
 
 def coalesce(*operands: Raster | int | float) -> Raster:
-    rasters: list[Raster] = []
-    for op in operands:
-        if isinstance(op, Raster):
-            rasters.append(op)
+    """Select the first valid value without floating-point intermediates.
+
+    Raster operands must have matching units. Python integer fallbacks are
+    represented exactly; incompatible signed/unsigned 64-bit domains raise a
+    structured dtype error rather than being combined through FP64.
+    """
+    normalized = tuple(
+        _as_raster_operand(op, argument=f"operands[{index}]")
+        for index, op in enumerate(operands)
+    )
+    rasters = [op for op in normalized if isinstance(op, Raster)]
     if not rasters:
         raise MapAlgebraError("coalesce() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
     _require_common_grid(rasters)
+    for raster in rasters[1:]:
+        require_matching_units(units_a=rasters[0].units, units_b=raster.units)
 
-    result_values = rasters[0].values.astype(np.float64, copy=True)
-    result_valid = rasters[0].valid.copy()
+    scalars = tuple(op for op in normalized if not isinstance(op, Raster))
+    target_dtype = result_dtype(
+        tuple(raster.dtype for raster in rasters),
+        operation="coalesce",
+        scalars=scalars,
+    )
+    result_values = np.zeros(rasters[0].shape, dtype=target_dtype)
+    result_valid = np.zeros(rasters[0].shape, dtype=np.bool_)
 
-    for op in operands:
-        if op is operands[0]:
-            continue
+    for op in normalized:
         still_invalid = ~result_valid
         if not np.any(still_invalid):
             break
         if isinstance(op, Raster):
-            result_values[still_invalid] = op.values[still_invalid].astype(np.float64)
-            result_valid = result_valid | op.valid
+            selected = still_invalid & op.valid
+            result_values[selected] = op.values[selected].astype(
+                target_dtype, copy=False,
+            )
+            result_valid[selected] = True
         else:
-            scalar = float(op)
-            result_values[still_invalid] = scalar
+            result_values[still_invalid] = np.asarray(op, dtype=target_dtype)
             result_valid[still_invalid] = True
-
-    target_dtype = np.result_type(*[r.values.dtype for r in rasters])
     return Raster(
-        values=result_values.astype(target_dtype, copy=False),
+        values=result_values,
         georef=_infer_output_georef_single(rasters[0]),
         valid=result_valid,
+        units=rasters[0].units,
     )
 
 
@@ -739,14 +756,10 @@ def set_invalid(raster: Raster, mask: Raster) -> Raster:
 
 
 def fill_invalid(raster: Raster, value: int | float) -> Raster:
-    validated = _validate_nodata_representable(value, raster.values.dtype)
-    if validated is None:
-        raise MapAlgebraError(
-            "fill_invalid() value must not be None.",
-            code="map_algebra_invalid_fill",
-        )
-    filled_values = raster.values.copy()
-    filled_values[~raster.valid] = validated
+    """Fill invalid cells using a value exactly representable by the dtype."""
+    filled_values, _validated = _fill_invalid_exact(
+        raster.values, raster.valid, value,
+    )
     return Raster(
         values=filled_values, georef=raster.georef,
         valid=np.ones(raster.shape, dtype=np.bool_),

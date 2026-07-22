@@ -15,7 +15,7 @@ real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (eager connected-region adapters)
+Last updated: 2026-07-22 (exact nodata and invalid-fill encoding)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -64,6 +64,46 @@ The active, non-large-raster sequence is:
 The completed bounded writer remains maintained. Any expansion of bounded
 operation coverage follows `docs/map-algebra-large-raster-plan.md` only after
 that plan is explicitly resumed.
+
+### Project-owner priority preference
+
+**The project owner prefers that remaining core-plan work proceed in the
+following criticality order, taking the highest-priority item allowed by its
+dependencies.** This ordering excludes the separately deferred large-raster
+plan and supersedes document order as a scheduling signal; it does not permit
+an incomplete dependency or scientific contract to be skipped.
+
+1. **Critical -- scientific and numeric consistency.** Make shared dtype
+   inference, casting, invalid-fill, nodata, accumulator, validity, and unit
+   rules authoritative across eager and expression paths. Preserve FP32 and
+   exact integer behavior, including values beyond the FP64 exact-integer
+   range.
+2. **Critical -- public errors and defensive validation.** Normalize
+   dependency failures into structured Lunarscout errors, make diagnostic
+   details consistent, complete planning limits, and preflight explicit
+   temporal materialization.
+3. **High -- identity and provenance guarantees.** Separate and independently
+   version scientific, restart, and execution-cache identities and protect
+   canonical representations with golden fixtures.
+4. **High -- operation-registry and execution-claim audit.** Make public
+   signatures, registry parameters, scientific rules, and advertised
+   execution modes agree, with generated coverage checks.
+5. **High -- operation discovery, `explain()`, and `plan()`.** Generate
+   complete read-only descriptions from normalized planner and registry data,
+   including scientifically significant choices and output contracts.
+6. **Medium -- remaining eager API contracts.** Close accepted notebook-sized
+   gaps such as selected focal percentiles, unit-bearing power, shared
+   morphology cleanup, deterministic zonal row iteration, and reviewed
+   extreme-nodata behavior without expanding deferred bounded execution.
+7. **Medium -- adversarial and boundary-test closure.** Complete relevant
+   dtype, value, validity, grid, identity, unit, storage, import-boundary, and
+   likely-user-error matrices through the public API in fresh processes.
+8. **Medium-low -- public reference documentation and examples.** Finish
+   per-operation contracts and the missing weighted-score, hazard-clearance,
+   zonal-summary, QGIS-mask, and human-review workflow examples.
+9. **Low -- eager/core CPU evidence.** Retain reproducible notebook-sized
+   correctness benchmarks and practical eager-size guidance; large-raster
+   scaling evidence remains in the deferred plan.
 
 ## 1. Outcome and boundaries
 
@@ -458,10 +498,17 @@ stored.
 ### 2.7 Dtype rules
 
 - [ ] Centralize dtype inference in one helper used by eager and expression
-  modes. **PARTIAL:** ``result_dtype()`` is shared broadly, but not yet proven
-  to be the sole path for every operation and scalar boundary.
+  modes. **PARTIAL:** ``result_dtype()`` is shared by arithmetic, unary, and
+  selection construction/execution. Exact ``where``/``coalesce`` Python
+  integer scalar inference, FP32 preservation, and incompatible 64-bit integer
+  rejection are now proven across eager, expression, and windowed paths, but
+  the helper is not yet proven to be the sole path for every operation and
+  scalar boundary.
 - [x] Use documented NumPy 2.x promotion (``np.result_type``) for ordinary
-  arithmetic, minimum/maximum, and ``where``, with explicit exceptions below.
+  arithmetic and minimum/maximum. Selection follows it with an exact-integer
+  refinement: Python integer branches use their smallest exact dtype, and a
+  signed/unsigned combination with no exact supported dtype raises rather than
+  selecting FP64.
 - [x] Comparisons and Boolean operations return ``bool`` in memory.
 - [x] True division returns at least ``float32``; use ``float64`` if an operand is
   ``float64`` or safe scalar inference requires it.
@@ -985,25 +1032,26 @@ Implement and unit-test private helpers with single responsibilities:
   literals and stable error codes.
   Numeric-error, arithmetic-overflow, cast-overflow, edge, and neighbor
   policies use typed literals and stable structured codes.
-- [ ] `_validate_output_encoding(dtype, nodata, invalid_value)` shares GeoTIFF
-  representability checks rather than duplicating them.
-  **PARTIAL:** exact-fill validation exists, but output encoding remains split
-  between eager raster and writer paths.
+- [x] `_validate_output_encoding(dtype, nodata, invalid_value)` shares GeoTIFF
+  representability checks rather than duplicating them. The canonical raster
+  validator is used by eager conversion, GeoTIFF metadata validation, and
+  writer preflight; public boundaries translate its failure into their domain
+  exception without changing the exact-representation rule.
 
 ### 4.2 Validity helpers
 
-- [ ] `_valid_from_nodata(values, nodata)` handles exact integer nodata, finite
-  floating nodata, and NaN nodata without lossy coercion.
-  **PARTIAL:** these cases work through raster construction/read paths, but not
-  through the specified shared helper.
+- [x] `_valid_from_nodata(values, nodata)` handles exact integer nodata, finite
+  floating nodata, and NaN nodata without lossy coercion. It validates and
+  normalizes through the shared encoding helper before comparing payloads.
 - [x] `_combine_validity_strict(*rasters)` intersects raster validity.
 - [x] `_where_validity(condition, x, y)` implements selected-branch validity.
 - [ ] `_coalesce_values_and_validity(...)` performs ordinary per-pixel
   selection after all operands needed for the current window are available.
   The first implementation reads every coalesce operand window; correctness
   must not depend on static validity analysis.
-  **PARTIAL:** eager coalesce is correct; a window helper awaits bounded
-  execution.
+  **PARTIAL:** eager, expression, and supported window execution select exact
+  first-valid values without FP64 intermediates, but the logic remains in the
+  eager semantic dispatcher rather than a separately named shared helper.
 - [x] Defer coalesce read short-circuiting. A later optional runtime
   optimization may stop requesting later operand windows only when values
   already computed for that output window leave no unresolved invalid pixels.
@@ -1014,10 +1062,9 @@ Implement and unit-test private helpers with single responsibilities:
   The common helper implements invalid/keep/structured-raise consistently for
   applicable pointwise arithmetic and math operations. Selection,
   classification, and normalization reducers retain dedicated contracts.
-- [ ] `_fill_invalid_exact(values, valid, fill, dtype)` validates exact
-  representation and never mutates an input array.
-  **PARTIAL:** equivalent validation exists in multiple paths rather than this
-  single shared helper.
+- [x] `_fill_invalid_exact(values, valid, fill, dtype)` validates exact
+  representation and never mutates an input array. ``Raster.filled()``, eager
+  ``fill_invalid``, ``to_existing``, and windowed output all use it.
 - [ ] `_read_rasterio_validity(dataset, band, window)` combines the band mask,
   dataset mask, nodata, and alpha semantics with dedicated tests and returns
   both canonical validity and a normalized provenance description. Inspect
@@ -1052,7 +1099,13 @@ exist, but they are not yet the sole path and the full operation-by-dtype
 matrix is not proven. Complete supported-dtype pair matrices now cover ordinary
 addition inference and representable unsafe casts; focused boundary tests cover
 exact ``int64``/``uint64`` values beyond ``2**53``, power, cast overflow, and
-FP32 preservation.
+FP32 preservation. Selection coverage additionally proves exact Python integer
+fallbacks, exact ``uint64`` coalescing through windowed GeoTIFF output,
+incompatible signed/unsigned 64-bit rejection, and eager/expression unit
+parity. Exact encoding coverage proves shared nodata/fill rejection and
+normalization across raster ingestion, eager conversion, GeoTIFF validation,
+and windowed output, including ``uint64`` values beyond ``2**53``. A combined
+``_cast_values_and_fill`` sole path remains incomplete.
 
 ### 4.4 Operation registry
 

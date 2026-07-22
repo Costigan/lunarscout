@@ -333,6 +333,52 @@ def test_write_rejects_unrepresentable_nodata(tmp_path, lunar_projection, affine
     assert captured.value.code == "geotiff_unrepresentable_nodata"
 
 
+@pytest.mark.parametrize("nodata", [0.1, np.inf, -np.inf])
+def test_write_rejects_non_exact_or_infinite_float32_nodata(
+    tmp_path, lunar_projection, affine_transform, nodata,
+) -> None:
+    georef = GeoReference(
+        projection_wkt=lunar_projection[0],
+        projection_proj4=lunar_projection[1],
+        affine_transform=affine_transform,
+        width=2,
+        height=2,
+        pixel_size_x=20.0,
+        pixel_size_y=-20.0,
+        nodata=nodata,
+    )
+    with pytest.raises(GeoTiffMetadataError) as captured:
+        write_geotiff(
+            tmp_path / "bad-float-nodata.tif",
+            np.ones((2, 2), dtype=np.float32),
+            georef,
+        )
+    assert captured.value.code == "geotiff_unrepresentable_nodata"
+
+
+def test_write_accepts_integral_float_metadata_for_integer_geotiff(
+    tmp_path, lunar_projection, affine_transform,
+) -> None:
+    georef = GeoReference(
+        projection_wkt=lunar_projection[0],
+        projection_proj4=lunar_projection[1],
+        affine_transform=affine_transform,
+        width=2,
+        height=2,
+        pixel_size_x=20.0,
+        pixel_size_y=-20.0,
+        nodata=0.0,
+    )
+    path = write_geotiff(
+        tmp_path / "integral-float-nodata.tif",
+        np.ones((2, 2), dtype=np.uint8),
+        georef,
+    )
+    _values, result_georef = read_geotiff(path)
+    assert result_georef is not None
+    assert result_georef.nodata == 0
+
+
 def test_write_preserves_uint64_nodata_above_float_exact_range(
     tmp_path,
     lunar_projection,

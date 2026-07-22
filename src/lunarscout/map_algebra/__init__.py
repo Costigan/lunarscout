@@ -17,6 +17,7 @@ from ..georeference import GeoReference
 from ..geotiff import read_geotiff as _read_geotiff
 from ..raster import (
     Raster,
+    _fill_invalid_exact,
     _validate_nodata_representable,
     _valid_from_nodata,
 )
@@ -433,6 +434,12 @@ def _expression_grid(*operands: Any) -> GeoReference | None:
 
 
 def where(condition: Any, x: Any, y: Any) -> Any:
+    """Select branch values with selected-branch validity.
+
+    Raster branches must share a grid and matching units. Dtype inference is
+    identical for eager and expression execution and never silently wraps a
+    Python integer branch.
+    """
     if not _has_expr(condition, x, y):
         return _where_eager(condition, x, y)
     from ._model import _make_expr_node, _to_expr_or_scalar
@@ -454,44 +461,76 @@ def where(condition: Any, x: Any, y: Any) -> Any:
         "invalid" if branch is invalid else _to_expr_or_scalar(branch)
         for branch in (x, y)
     )
-    dtype_inputs = [
-        branch.dtype if isinstance(branch, RasterExpression) else np.asarray(branch).dtype
-        for branch in branches
+    from ._dtypes import result_dtype
+    from ._units import require_matching_units
+
+    branch_expressions = [
+        branch for branch in branches if isinstance(branch, RasterExpression)
+    ]
+    if len(branch_expressions) == 2:
+        require_matching_units(
+            units_a=branch_expressions[0].units,
+            units_b=branch_expressions[1].units,
+        )
+    non_invalid_branches = tuple(
+        branch for branch in branches
         if not (isinstance(branch, str) and branch == "invalid")
-    ]
-    output_dtype = np.result_type(*dtype_inputs) if dtype_inputs else condition_expr.dtype
-    branch_units = [
-        branch.units
-        for branch in branches
-        if isinstance(branch, RasterExpression) and branch.units is not None
-    ]
+    )
+    output_dtype = (
+        result_dtype(
+            tuple(branch.dtype for branch in branch_expressions),
+            operation="where",
+            scalars=tuple(
+                branch for branch in non_invalid_branches
+                if not isinstance(branch, RasterExpression)
+            ),
+        )
+        if non_invalid_branches
+        else condition_expr.dtype
+    )
     return _make_expr_node(
         "local.where",
         (condition_expr, *branches),
         grid=_expression_grid(condition_expr, *branches),
         dtype=output_dtype,
-        units=branch_units[0] if branch_units else None,
+        units=branch_expressions[0].units if branch_expressions else None,
     )
 
 
 def coalesce(*operands: Any) -> Any:
+    """Select each cell's first valid operand without FP64 intermediates.
+
+    Raster operands must share a grid and matching units. Dtype inference is
+    identical for eager and expression execution.
+    """
     if not _has_expr(*operands):
         return _coalesce_eager(*operands)
     from ._model import _make_expr_node, _to_expr_or_scalar
 
     normalized = tuple(_to_expr_or_scalar(operand) for operand in operands)
-    dtypes = [
-        operand.dtype if isinstance(operand, RasterExpression) else np.asarray(operand).dtype
-        for operand in normalized
-    ]
+    from ._dtypes import result_dtype
+    from ._units import require_matching_units
+
     expression_operands = [
         operand for operand in normalized if isinstance(operand, RasterExpression)
     ]
+    for operand in expression_operands[1:]:
+        require_matching_units(
+            units_a=expression_operands[0].units,
+            units_b=operand.units,
+        )
     return _make_expr_node(
         "local.coalesce",
         normalized,
         grid=_expression_grid(*normalized),
-        dtype=np.result_type(*dtypes),
+        dtype=result_dtype(
+            tuple(operand.dtype for operand in expression_operands),
+            operation="coalesce",
+            scalars=tuple(
+                operand for operand in normalized
+                if not isinstance(operand, RasterExpression)
+            ),
+        ),
         units=expression_operands[0].units if expression_operands else None,
     )
 
@@ -532,6 +571,7 @@ def set_invalid(raster: Any, mask: Any) -> Any:
 
 
 def fill_invalid(raster: Any, value: Any) -> Any:
+    """Fill invalid cells with an exactly representable value."""
     if not isinstance(raster, RasterExpression):
         return _fill_invalid_eager(raster, value)
     from ._model import _make_expr_node, _to_expr_or_scalar
@@ -831,7 +871,8 @@ def raster(
 
     When ``valid`` is provided it is used directly.  Otherwise validity is
     derived from ``nodata``: ``"auto"`` uses ``georef.nodata``, an explicit
-    value uses that nodata, and ``None`` marks every pixel valid.
+    exactly representable value uses that nodata, and ``None`` marks every
+    pixel valid.
     """
     if np.ma.isMaskedArray(values):
         masked = np.ma.asarray(values)
@@ -943,12 +984,14 @@ def to_existing(
 ) -> tuple[NDArray[Any], GeoReference]:
     """Convert a ``Raster`` back to a bare ``(values, georef)`` tuple.
 
-    Invalid cells are filled with ``nodata`` and the returned
-    ``GeoReference`` carries that nodata value.
+    Invalid cells are filled with an exactly representable ``nodata`` and the
+    returned ``GeoReference`` carries its normalized encoding value.
     """
     validated_nodata = _validate_nodata_representable(nodata, raster_obj.values.dtype)
     if validated_nodata is not None:
-        values = raster_obj.filled(validated_nodata)
+        values, _validated_fill = _fill_invalid_exact(
+            raster_obj.values, raster_obj.valid, validated_nodata,
+        )
     else:
         values = raster_obj.values.copy()
     georef = raster_obj.georef.with_nodata(validated_nodata)

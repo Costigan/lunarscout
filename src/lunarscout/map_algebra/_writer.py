@@ -13,8 +13,9 @@ from ..errors import (
     MapAlgebraStorageError,
     OperationCancelledError,
     OutputExistsError,
+    RasterValidationError,
 )
-from ..raster import _validate_nodata_representable
+from ..raster import _fill_invalid_exact, _validate_nodata_representable
 from ._model import RasterExpression
 from ._planner import (
     _GEOTIFF_WRITE_OPTIONS,
@@ -31,6 +32,13 @@ from ._windowed import (
 _JOURNAL_FORMAT_VERSION = 2
 _DEFAULT_CHECKPOINT_INTERVAL = 16
 _JOURNAL_IDENTITY_TAG = "LUNARSCOUT_JOURNAL_IDENTITY"
+_SUPPORTED_OUTPUT_DTYPES = frozenset({
+    np.dtype(np.uint8), np.dtype(np.int8),
+    np.dtype(np.uint16), np.dtype(np.int16),
+    np.dtype(np.uint32), np.dtype(np.int32),
+    np.dtype(np.uint64), np.dtype(np.int64),
+    np.dtype(np.float32), np.dtype(np.float64),
+})
 
 
 def _staging_tiff_path(output_path: Path) -> Path:
@@ -273,6 +281,49 @@ def _staged_tiff_matches(
 LUNARSCOUT_NODATA_VALUE = "LUNARSCOUT_NODATA_VALUE"
 
 
+def _validate_output_encoding(
+    dtype: np.dtype[Any] | str,
+    invalid_value: Any,
+) -> tuple[np.dtype[Any], int | float]:
+    """Normalize one supported GeoTIFF dtype and exact invalid fill."""
+    try:
+        output_dtype = np.dtype(dtype)
+    except (TypeError, ValueError) as exc:
+        raise MapAlgebraStorageError(
+            f"Unsupported output dtype: {dtype!r}",
+            code="map_algebra_unsupported_output_dtype",
+            details={"dtype": repr(dtype), "error": str(exc)},
+        ) from exc
+    if output_dtype == np.dtype(np.bool_):
+        output_dtype = np.dtype(np.uint8)
+    if output_dtype not in _SUPPORTED_OUTPUT_DTYPES:
+        raise MapAlgebraStorageError(
+            f"Unsupported output dtype: {output_dtype}",
+            code="map_algebra_unsupported_output_dtype",
+            details={"dtype": str(output_dtype)},
+        )
+
+    candidate: Any
+    if invalid_value is None:
+        candidate = np.nan if output_dtype.kind == "f" else 0
+    else:
+        candidate = invalid_value
+    try:
+        normalized = _validate_nodata_representable(candidate, output_dtype)
+    except RasterValidationError as exc:
+        raise MapAlgebraStorageError(
+            "invalid_value cannot be represented exactly by the output dtype.",
+            code="map_algebra_unrepresentable_invalid_value",
+            details={
+                "dtype": str(output_dtype),
+                "invalid_value": repr(invalid_value),
+                **exc.details,
+            },
+        ) from exc
+    assert normalized is not None
+    return output_dtype, normalized  # type: ignore[return-value]
+
+
 def write(
     path: str | Path,
     expression: RasterExpression,
@@ -293,7 +344,9 @@ def write(
     each newly completed window is written. ``cancellation_requested`` is
     polled before execution and at window boundaries. Restart state is durably
     checkpointed every ``checkpoint_interval`` windows; matching state is
-    resumed automatically unless ``start_fresh`` is true.
+    resumed automatically unless ``start_fresh`` is true. ``invalid_value``
+    must be exactly representable by the output dtype; invalid encodings fail
+    during preflight before output or restart artifacts are modified.
     """
     output_path = Path(path).expanduser().resolve()
 
@@ -331,35 +384,10 @@ def write(
             code="map_algebra_missing_output_dtype",
         )
 
-    output_dtype = np.dtype(dtype) if dtype is not None else expression.dtype
-    if output_dtype == np.dtype(np.bool_):
-        output_dtype = np.dtype(np.uint8)
-
-    if output_dtype not in {
-        np.dtype(np.uint8), np.dtype(np.int8),
-        np.dtype(np.uint16), np.dtype(np.int16),
-        np.dtype(np.uint32), np.dtype(np.int32),
-        np.dtype(np.uint64), np.dtype(np.int64),
-        np.dtype(np.float32), np.dtype(np.float64),
-    }:
-        raise MapAlgebraStorageError(
-            f"Unsupported output dtype: {output_dtype}",
-            code="map_algebra_unsupported_output_dtype",
-            details={"dtype": str(output_dtype)},
-        )
-
-    if invalid_value is not None:
-        tmp_val: int | float = (
-            int(invalid_value)
-            if isinstance(invalid_value, (int, np.integer))
-            else float(invalid_value)
-        )
-        tmp_val = _validate_nodata_representable(tmp_val, output_dtype)  # type: ignore[assignment]
-    elif np.issubdtype(output_dtype, np.floating):
-        tmp_val = float(np.nan)
-    else:
-        tmp_val = 0
-    fill_val: int | float = _validate_nodata_representable(tmp_val, output_dtype)  # type: ignore[assignment]
+    output_dtype, fill_val = _validate_output_encoding(
+        expression.dtype if dtype is None else dtype,
+        invalid_value,
+    )
 
     restart_id = _build_restart_identity(expression, output_dtype, fill_val)
     journal_id_str = _build_journal_identity(
@@ -656,10 +684,23 @@ def _write_window(
     output_dtype: np.dtype[Any],
 ) -> None:
     window = ((y0, y0 + h), (x0, x0 + w))
-    block_values = values.astype(output_dtype, copy=False)
-    if not np.all(valid):
-        block_values = block_values.copy()
-        block_values[~valid] = fill
+    try:
+        block_values, _normalized_fill = _fill_invalid_exact(
+            values, valid, fill, dtype=output_dtype,
+        )
+    except RasterValidationError as exc:
+        raise MapAlgebraStorageError(
+            "Unable to encode an output window exactly.",
+            code="map_algebra_output_encoding_failed",
+            details={
+                "window_index": idx,
+                "x": x0,
+                "y": y0,
+                "width": w,
+                "height": h,
+                **exc.details,
+            },
+        ) from exc
     ds.write(block_values, 1, window=window)
     ds.write_mask(valid.astype(np.uint8) * 255, window=window)
 

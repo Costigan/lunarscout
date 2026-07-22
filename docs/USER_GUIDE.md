@@ -1434,6 +1434,21 @@ Default validity rules:
 - **`fill_invalid(raster, value)`** fills invalid cells and marks them valid.
 - **`set_invalid(raster, mask)`** invalidates via a Boolean condition.
 
+Nodata and invalid-fill values use one exact encoding rule. A finite value
+must round-trip through the raster or requested output dtype without changing;
+out-of-range integers, fractional integer fills, Boolean-as-integer fills, and
+positive or negative infinity are rejected. Floating dtypes additionally
+allow NaN. Because GDAL may expose integer nodata metadata as a Python float,
+finite integral metadata is normalized to the corresponding integer; Boolean
+metadata accepts only Boolean or exact 0/1 encodings. Use an explicit
+`np.float32` value when its already-rounded FP32 bit pattern is the intended
+encoding--an arbitrary Python float such as `0.1` is not exactly representable
+as `float32`.
+
+This contract is shared by `Raster.filled()`, `ma.fill_invalid()`,
+`ma.to_existing()`, raster ingestion, GeoTIFF metadata validation, and
+`ma.write()`. These conversions return new arrays and do not mutate the source.
+
 Validity provenance is recorded in `Raster.validity_provenance`, which
 distinguishes GDAL-band-mask, dataset-mask, alpha, nodata-derived, caller-
 supplied, and all-valid sources.
@@ -1445,6 +1460,11 @@ widths, `float32`, and `float64`. Object, string, datetime, and complex
 dtypes are rejected.
 
 - Ordinary arithmetic uses NumPy 2.x promotion (`np.result_type`).
+- Selection operations (`where` and `coalesce`) use the shared dtype engine
+  with an exact-integer refinement: a Python integer branch/fallback is
+  widened to its smallest exact supported dtype rather than weak-scalar
+  wrapping. Incompatible `int64`/`uint64` domains raise
+  `map_algebra_no_exact_promotion` instead of passing through FP64.
 - Comparisons and Boolean operations return `bool` in memory.
 - True division returns at least `float32`; `float64` if an operand is
   `float64` or safe scalar inference requires it.
@@ -1501,6 +1521,11 @@ rasters require explicit `output_units`. Trigonometric operations require
 `"degrees"` or `"radians"`. No operation infers metres merely because a
 coordinate number is large.
 
+`where` raster branches and all `coalesce` raster operands must also have
+matching units. Their result preserves those units; scalar branches and
+fallbacks are interpreted in the raster units. The eager, expression,
+`compute()`, and supported windowed-write paths use the same rule.
+
 ### Progress and Cancellation for Windowed Writes
 
 ``ma.write()`` accepts optional progress and cancellation callbacks for
@@ -1538,6 +1563,12 @@ deterministically. A failed overwrite preserves the previously completed
 destination.
 
 ### Restart and Resumable Writes
+
+Before creating or modifying staging artifacts, `ma.write()` validates that
+its invalid fill is exactly representable by the requested output dtype.
+Failure raises `MapAlgebraStorageError` with code
+`map_algebra_unrepresentable_invalid_value`; an existing destination and its
+restart state remain untouched.
 
 Windowed writes are resumable by default. The writer keeps a hidden staged
 GeoTIFF (``.{name}.lunarscout-partial.tif``) and a durable checkpoint
@@ -1606,6 +1637,9 @@ explaining use of `&`/`|` and parentheses.
 **Conditional and validity:** `ma.where`, `ma.coalesce`, `ma.is_valid`,
 `ma.is_invalid`, `ma.set_invalid`, `ma.fill_invalid`. The sentinel
 `ma.invalid` may appear in `where` branches to mark that side as invalid.
+`where` and `coalesce` preserve exact integer values without an FP64
+intermediate, including `uint64` values beyond `2**53`; they raise when no
+supported common integer dtype can represent every possible selected value.
 
 **Range and conversion:** `ma.clip`, `ma.cast`, `ma.round`, `ma.floor`,
 `ma.ceil`, `ma.trunc`.

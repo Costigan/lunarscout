@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from numbers import Integral, Real
 from typing import Any, NoReturn, TYPE_CHECKING
 
 import numpy as np
@@ -47,19 +48,67 @@ def _validate_raster_dtype(dtype: np.dtype[Any]) -> None:
 
 
 def _validate_nodata_representable(
-    nodata: int | float | None,
+    nodata: int | float | bool | None,
     dtype: np.dtype[Any],
-) -> int | float | None:
+) -> int | float | bool | None:
+    """Normalize one nodata/fill value without lossy coercion.
+
+    This is the shared in-memory encoding contract. Finite values must round
+    trip exactly through the target dtype; floating outputs additionally allow
+    NaN, while infinities are rejected. Integer-valued real inputs are accepted
+    for integer rasters because GDAL reports integer nodata metadata as a
+    floating Python value in some paths.
+    """
+    dtype = np.dtype(dtype)
     if nodata is None:
         return None
+    if dtype == np.dtype(np.bool_):
+        if isinstance(nodata, (bool, np.bool_)):
+            return bool(nodata)
+        if isinstance(nodata, Real):
+            try:
+                numeric = float(nodata)
+            except (TypeError, ValueError, OverflowError):
+                numeric = np.nan
+            if np.isfinite(numeric) and numeric in (0.0, 1.0):
+                return bool(int(numeric))
+        raise RasterValidationError(
+            "Boolean raster fill must be Boolean or an exact 0/1 encoding.",
+            code="raster_unrepresentable_nodata",
+            details={"dtype": str(dtype), "nodata": repr(nodata)},
+        )
     if np.issubdtype(dtype, np.integer):
-        if not isinstance(nodata, (int, np.integer)) or isinstance(nodata, bool):
+        if isinstance(nodata, (bool, np.bool_)):
             raise RasterValidationError(
                 "Integer raster nodata must be an integer value.",
                 code="raster_unrepresentable_nodata",
                 details={"dtype": str(dtype), "nodata": repr(nodata)},
             )
-        int_nodata = int(nodata)
+        if isinstance(nodata, Integral):
+            int_nodata = int(nodata)
+        elif isinstance(nodata, Real):
+            try:
+                finite = bool(np.isfinite(nodata))
+                numeric = float(nodata)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise RasterValidationError(
+                    "Integer raster nodata must be a finite integer value.",
+                    code="raster_unrepresentable_nodata",
+                    details={"dtype": str(dtype), "nodata": repr(nodata)},
+                ) from exc
+            if not finite or not numeric.is_integer():
+                raise RasterValidationError(
+                    "Integer raster nodata must be a finite integer value.",
+                    code="raster_unrepresentable_nodata",
+                    details={"dtype": str(dtype), "nodata": repr(nodata)},
+                )
+            int_nodata = int(numeric)
+        else:
+            raise RasterValidationError(
+                "Integer raster nodata must be a finite integer value.",
+                code="raster_unrepresentable_nodata",
+                details={"dtype": str(dtype), "nodata": repr(nodata)},
+            )
         limits = np.iinfo(dtype)
         if int_nodata < int(limits.min) or int_nodata > int(limits.max):
             raise RasterValidationError(
@@ -74,30 +123,106 @@ def _validate_nodata_representable(
             )
         return int_nodata
     if np.issubdtype(dtype, np.floating):
-        converted = dtype.type(nodata)
-        if isinstance(nodata, (int, float)) and np.isfinite(float(nodata)) and not np.isfinite(converted):
+        if isinstance(nodata, (bool, np.bool_)) or not isinstance(nodata, Real):
+            raise RasterValidationError(
+                "Floating raster nodata must be a finite real value or NaN.",
+                code="raster_unrepresentable_nodata",
+                details={"dtype": str(dtype), "nodata": repr(nodata)},
+            )
+        try:
+            original = float(nodata)
+            with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+                converted = dtype.type(nodata)
+            normalized = float(converted)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise RasterValidationError(
+                "Floating raster nodata must be a finite real value or NaN.",
+                code="raster_unrepresentable_nodata",
+                details={"dtype": str(dtype), "nodata": repr(nodata)},
+            ) from exc
+        if np.isnan(original):
+            return float(np.nan)
+        if not np.isfinite(original) or not np.isfinite(normalized):
             raise RasterValidationError(
                 "Nodata value cannot be exactly represented by the raster dtype.",
                 code="raster_unrepresentable_nodata",
                 details={"dtype": str(dtype), "nodata": repr(nodata)},
             )
-        return float(converted)
-    return nodata
+        if normalized != original:
+            raise RasterValidationError(
+                "Nodata value cannot be exactly represented by the raster dtype.",
+                code="raster_unrepresentable_nodata",
+                details={
+                    "dtype": str(dtype),
+                    "nodata": repr(nodata),
+                    "encoded": repr(normalized),
+                },
+            )
+        return normalized
+    raise RasterValidationError(
+        "Raster nodata requires a supported numeric or Boolean dtype.",
+        code="raster_unrepresentable_nodata",
+        details={"dtype": str(dtype), "nodata": repr(nodata)},
+    )
 
 
 def _valid_from_nodata(
     values: NDArray[Any],
-    nodata: int | float | None,
+    nodata: int | float | bool | None,
 ) -> NDArray[np.bool_]:
-    if nodata is None:
+    normalized = _validate_nodata_representable(nodata, values.dtype)
+    if normalized is None:
         return np.ones(values.shape, dtype=np.bool_)
     if np.issubdtype(values.dtype, np.floating) and (
-        isinstance(nodata, (int, float)) and np.isnan(float(nodata))
+        isinstance(normalized, float) and np.isnan(normalized)
     ):
         return ~np.isnan(values)
-    if np.issubdtype(values.dtype, np.integer) and isinstance(nodata, (int, float)):
-        return values != np.asarray(nodata, dtype=values.dtype)
-    return values != np.asarray(nodata, dtype=values.dtype)
+    return values != np.asarray(normalized, dtype=values.dtype)
+
+
+def _fill_invalid_exact(
+    values: NDArray[Any],
+    valid: NDArray[np.bool_],
+    fill: int | float | bool,
+    *,
+    dtype: np.dtype[Any] | None = None,
+) -> tuple[NDArray[Any], int | float | bool]:
+    """Return a filled copy using one validated target encoding.
+
+    Values are never mutated. A requested dtype conversion must be NumPy-safe;
+    callers that need a lossy conversion must construct an explicit cast before
+    encoding.
+    """
+    target_dtype = values.dtype if dtype is None else np.dtype(dtype)
+    normalized = _validate_nodata_representable(fill, target_dtype)
+    if normalized is None:  # Defensive: ``fill`` excludes None by contract.
+        raise RasterValidationError(
+            "An invalid-cell fill value is required.",
+            code="raster_missing_invalid_fill",
+            details={"dtype": str(target_dtype)},
+        )
+    if valid.shape != values.shape or valid.dtype != np.dtype(np.bool_):
+        raise RasterValidationError(
+            "Validity must be a Boolean array matching the values shape.",
+            code="raster_invalid_validity_shape",
+            details={
+                "values_shape": list(values.shape),
+                "valid_shape": list(valid.shape),
+                "valid_dtype": str(valid.dtype),
+            },
+        )
+    if not np.can_cast(values.dtype, target_dtype, casting="safe"):
+        raise RasterValidationError(
+            "Raster values cannot be safely converted to the encoding dtype.",
+            code="raster_unsafe_encoding_cast",
+            details={
+                "source_dtype": str(values.dtype),
+                "target_dtype": str(target_dtype),
+            },
+        )
+    result = values.astype(target_dtype, casting="safe", copy=True)
+    result[~valid] = normalized
+    return result, normalized
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -577,9 +702,12 @@ class Raster:
         )
 
     def filled(self, value: int | float) -> NDArray[Any]:
-        fill = np.asarray(value, dtype=self.values.dtype)
-        result = self.values.copy()
-        result[~self.valid] = fill
+        """Return a copy with invalid cells filled by an exact encoding value.
+
+        Lossy, out-of-range, Boolean-as-integer, and infinite encodings raise
+        ``RasterValidationError``; the source values are never mutated.
+        """
+        result, _fill = _fill_invalid_exact(self.values, self.valid, value)
         return result
 
     def masked(self) -> np.ma.MaskedArray[Any, Any]:

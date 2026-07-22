@@ -215,7 +215,15 @@ _SPECS = (
         )
         for name in ("min", "max")
     ),
-    _spec("local.where", 3, "local", "Select between branches by a Boolean condition.", file_backed_available=True),
+    _spec(
+        "local.where", 3, "local",
+        "Select between branches by a Boolean condition.",
+        version=2,
+        output_dtype_rule="exact common selection dtype",
+        output_units_rule="raster branches must have matching units",
+        validity_rule="condition validity and selected-branch validity",
+        file_backed_available=True,
+    ),
     _spec("local.round", 1, "local", "Round half to even.",
           version=2,
           parameters=(
@@ -225,7 +233,14 @@ _SPECS = (
     _spec("local.isclose", 2, "local", "Compare corresponding cells within tolerances.",
           parameters=(("rtol", "Relative tolerance."), ("atol", "Absolute tolerance."),
                       ("equal_nan", "Whether NaN values compare equal.")), file_backed_available=True),
-    _spec("local.coalesce", None, "local", "Select the first valid operand.", file_backed_available=True),
+    _spec(
+        "local.coalesce", None, "local", "Select the first valid operand.",
+        version=2,
+        output_dtype_rule="exact common selection dtype",
+        output_units_rule="raster operands must have matching units",
+        validity_rule="first valid operand",
+        file_backed_available=True,
+    ),
     _spec("local.clip", 1, "local", "Clip values to an interval.", file_backed_available=True),
     _spec(
         "local.cast", 1, "local", "Cast values to a requested dtype.",
@@ -237,7 +252,13 @@ _SPECS = (
         file_backed_available=True,
     ),
     _spec("local.set_invalid", 2, "local", "Invalidate cells selected by a mask.", file_backed_available=True),
-    _spec("local.fill_invalid", 2, "local", "Fill and validate invalid cells.", file_backed_available=True),
+    _spec(
+        "local.fill_invalid", 2, "local", "Fill and validate invalid cells.",
+        version=2,
+        output_dtype_rule="input dtype; fill must be exactly representable",
+        validity_rule="all cells valid after exact fill",
+        file_backed_available=True,
+    ),
     _spec("local.reclassify_values", 1, "classification", "Map exact input values to classes.",
           parameters=(("mapping", "Exact input-to-output mapping."), ("default", "Unmatched-cell behavior.")), file_backed_available=True),
     _spec("local.reclassify_ranges", 1, "classification", "Map half-open input ranges to classes.",

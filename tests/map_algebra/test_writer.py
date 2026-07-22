@@ -232,6 +232,96 @@ class TestWrite:
         with pytest.raises(MapAlgebraStorageError, match="Unsupported output dtype"):
             write(tmp_path / "out.tif", source(p), dtype="complex64")
 
+    @pytest.mark.parametrize(
+        "invalid_value", [-1, 256, 1.5, True, "5", np.inf, -np.inf],
+    )
+    def test_invalid_fill_preflight_is_exact_and_leaves_no_output_artifacts(
+        self, tmp_path, invalid_value,
+    ):
+        p = _write_tiff(
+            tmp_path, "fill-src.tif", np.array([[1, 2]], dtype=np.uint8),
+            dtype="uint8",
+        )
+        out = tmp_path / "invalid-fill.tif"
+        with pytest.raises(MapAlgebraStorageError) as error:
+            write(out, source(p), invalid_value=invalid_value)
+        assert error.value.code == "map_algebra_unrepresentable_invalid_value"
+        assert not out.exists()
+        assert not any(
+            path.name.startswith(".invalid-fill.tif")
+            for path in tmp_path.iterdir()
+        )
+
+    def test_float32_invalid_fill_must_be_exactly_representable(self, tmp_path):
+        p = _write_tiff(
+            tmp_path, "float-fill-src.tif",
+            np.array([[1.0, 2.0]], dtype=np.float32),
+        )
+        with pytest.raises(MapAlgebraStorageError) as error:
+            write(tmp_path / "float-fill.tif", source(p), invalid_value=0.1)
+        assert error.value.code == "map_algebra_unrepresentable_invalid_value"
+
+    def test_explicit_float32_invalid_fill_round_trips(self, tmp_path):
+        raster_value = ma_raster(
+            np.array([[1.0, 9.0]], dtype=np.float32),
+            _georef(1, 2),
+            valid=np.array([[True, False]], dtype=np.bool_),
+        )
+        fill = np.float32(0.1)
+        out = write(
+            tmp_path / "typed-float-fill.tif",
+            raster_value.expression(),
+            invalid_value=fill,
+        )
+        with rasterio.open(out) as dataset:
+            values = dataset.read(1)
+            assert values[0, 1] == fill
+            np.testing.assert_array_equal(
+                dataset.read_masks(1) > 0,
+                np.array([[True, False]], dtype=np.bool_),
+            )
+
+    def test_invalid_fill_preflight_preserves_existing_destination(self, tmp_path):
+        p = _write_tiff(
+            tmp_path, "preserve-fill-src.tif",
+            np.array([[1, 2]], dtype=np.uint8),
+            dtype="uint8",
+        )
+        out = tmp_path / "preserve-invalid-fill.tif"
+        write(out, source(p), invalid_value=0)
+        before = out.read_bytes()
+        with pytest.raises(MapAlgebraStorageError) as error:
+            write(out, source(p), overwrite=True, invalid_value=300)
+        assert error.value.code == "map_algebra_unrepresentable_invalid_value"
+        assert out.read_bytes() == before
+
+    def test_uint64_invalid_fill_beyond_float_exact_range_round_trips(
+        self, tmp_path,
+    ):
+        fill = 2**63 + 123
+        raster_value = ma_raster(
+            np.array([[7, 99]], dtype=np.uint64),
+            _georef(1, 2),
+            valid=np.array([[True, False]], dtype=np.bool_),
+        )
+        out = write(
+            tmp_path / "uint64-fill.tif",
+            raster_value.expression(),
+            invalid_value=fill,
+            window_width=1,
+            window_height=1,
+        )
+        with rasterio.open(out) as dataset:
+            values = dataset.read(1)
+            assert values.dtype == np.dtype(np.uint64)
+            assert int(values[0, 0]) == 7
+            assert int(values[0, 1]) == fill
+            assert dataset.tags(1)["LUNARSCOUT_NODATA_VALUE"] == str(fill)
+            np.testing.assert_array_equal(
+                dataset.read_masks(1) > 0,
+                np.array([[True, False]], dtype=np.bool_),
+            )
+
     def test_lossy_dtype_rejected(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
         with pytest.raises(MapAlgebraStorageError, match="safely convert"):

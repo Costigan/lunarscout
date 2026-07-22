@@ -23,6 +23,7 @@ _CHECKED_INTEGER_OPERATIONS = frozenset({
     "add", "subtract", "multiply", "floor_divide", "remainder", "negative",
     "absolute", "square", "power",
 })
+_SELECTION_OPERATIONS = frozenset({"where", "coalesce"})
 _SUPPORTED_DTYPES = frozenset(
     np.dtype(dtype)
     for dtype in (
@@ -85,7 +86,16 @@ def result_dtype(
     FP64 merely to make checking easier.
     """
     overflow = normalize_overflow(overflow)
-    inputs: tuple[Any, ...] = (*operand_dtypes, *(s for s in scalars if s is not None))
+    scalar_inputs: tuple[Any, ...]
+    if operation in _SELECTION_OPERATIONS:
+        scalar_inputs = tuple(
+            _selection_scalar_input(scalar, operation=operation)
+            for scalar in scalars
+            if scalar is not None
+        )
+    else:
+        scalar_inputs = tuple(s for s in scalars if s is not None)
+    inputs: tuple[Any, ...] = (*operand_dtypes, *scalar_inputs)
     try:
         inferred = np.dtype(np.result_type(*inputs))
     except (TypeError, ValueError) as exc:
@@ -102,6 +112,29 @@ def result_dtype(
 
     if operation in _COMPARISON_OPERATIONS:
         return np.dtype(np.bool_)
+    if operation in _SELECTION_OPERATIONS:
+        selection_input_dtypes = (
+            *operand_dtypes,
+            *(
+                value if isinstance(value, np.dtype) else np.asarray(value).dtype
+                for value in scalar_inputs
+            ),
+        )
+        if selection_input_dtypes and all(
+            dtype.kind in "biu" for dtype in selection_input_dtypes
+        ):
+            if inferred.kind not in "biu":
+                raise MapAlgebraDTypeError(
+                    "No supported integer dtype can represent every selected value.",
+                    code="map_algebra_no_exact_promotion",
+                    details={
+                        "operation": operation,
+                        "input_dtypes": [
+                            str(dtype) for dtype in selection_input_dtypes
+                        ],
+                    },
+                )
+        return normalize_dtype(inferred, operation=operation)
     if operation == "divide":
         if inferred == np.dtype(np.float32):
             return normalize_dtype(inferred, operation=operation)
@@ -115,6 +148,38 @@ def result_dtype(
             operand_dtypes, scalars, operation, scalar_left=scalar_left,
         )
     return normalize_dtype(inferred, operation=operation)
+
+
+def _selection_scalar_input(
+    value: int | float | bool,
+    *,
+    operation: str,
+) -> Any:
+    """Return a selection input that cannot silently truncate an integer.
+
+    NumPy 2 treats Python scalars as weakly typed.  That is useful for an
+    ordinary FP32 scalar such as ``-1.0``, but it lets ``where(uint8, 300)``
+    retain uint8 and wrap the selected scalar. Selection is not arithmetic:
+    Python integers must be representable by the inferred output dtype, so
+    they participate through their smallest exact dtype.
+    Python floats retain NumPy's FP32 weak-scalar behavior when their magnitude
+    is representable; larger finite values force FP64.
+    """
+    if isinstance(value, np.generic):
+        return normalize_dtype(value.dtype, operation=operation)
+    if isinstance(value, bool):
+        return np.dtype(np.bool_)
+    if isinstance(value, int):
+        return normalize_dtype(np.min_scalar_type(value), operation=operation)
+    if isinstance(value, float):
+        if np.isfinite(value) and abs(value) > float(np.finfo(np.float32).max):
+            return np.dtype(np.float64)
+        return value
+    raise MapAlgebraDTypeError(
+        f"Unsupported scalar for operation '{operation}'.",
+        code="map_algebra_dtype_inference_failed",
+        details={"operation": operation, "scalar_type": type(value).__name__},
+    )
 
 
 def accumulator_dtype(

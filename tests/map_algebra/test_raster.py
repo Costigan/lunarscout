@@ -283,6 +283,34 @@ class TestRasterFilledMasked:
         assert bool(ma.mask[1, 1]) is True
         assert bool(ma.mask[0, 0]) is False
 
+    @pytest.mark.parametrize("fill", [-1, 256, 1.5, True, "5"])
+    def test_filled_rejects_lossy_uint8_fill_without_mutation(
+        self, north_up_georef, fill,
+    ):
+        values = np.array([[7, 99], [8, 9]], dtype=np.uint8)
+        valid = np.array([[True, False], [True, True]], dtype=np.bool_)
+        raster_value = raster(
+            values, _make_2x2_georef(north_up_georef), valid=valid,
+        )
+        before = values.copy()
+        with pytest.raises(RasterValidationError) as error:
+            raster_value.filled(fill)
+        assert error.value.code == "raster_unrepresentable_nodata"
+        np.testing.assert_array_equal(values, before)
+
+    def test_filled_preserves_exact_uint64_and_never_mutates_source(
+        self, north_up_georef,
+    ):
+        fill = 2**63 + 123
+        values = np.array([[7, 99], [8, 9]], dtype=np.uint64)
+        valid = np.array([[True, False], [True, True]], dtype=np.bool_)
+        raster_value = raster(
+            values, _make_2x2_georef(north_up_georef), valid=valid,
+        )
+        filled = raster_value.filled(fill)
+        assert int(filled[0, 1]) == fill
+        assert int(values[0, 1]) == 99
+
 
 # ---------------------------------------------------------------------------
 # Metadata helpers
@@ -534,6 +562,28 @@ class TestValidFromNodata:
         assert not r.valid[0, 1]
         assert r.valid[0, 0]
 
+    @pytest.mark.parametrize("nodata", [np.inf, -np.inf, 0.1])
+    def test_float32_rejects_non_exact_or_infinite_nodata(
+        self, north_up_georef, nodata,
+    ):
+        values = np.ones((2, 2), dtype=np.float32)
+        with pytest.raises(RasterValidationError) as error:
+            raster(values, _make_2x2_georef(north_up_georef), nodata=nodata)
+        assert error.value.code == "raster_unrepresentable_nodata"
+
+    def test_uint64_nodata_beyond_float_exact_range_is_exact(
+        self, north_up_georef,
+    ):
+        nodata = 2**63 + 123
+        values = np.array([[nodata, nodata + 1], [0, 1]], dtype=np.uint64)
+        result = raster(
+            values, _make_2x2_georef(north_up_georef), nodata=nodata,
+        )
+        np.testing.assert_array_equal(
+            result.valid,
+            np.array([[False, True], [True, True]], dtype=np.bool_),
+        )
+
     def test_explicit_valid_overrides_nodata(self, north_up_georef):
         values = np.array([[1.0, -9999.0], [3.0, 4.0]], dtype=np.float32)
         georef = _make_2x2_georef(north_up_georef, nodata=-9999.0)
@@ -586,6 +636,17 @@ class TestMaskedArrayPreservation:
         georef = _make_2x2_georef(north_up_georef)
         r = raster(ma, georef, nodata=None)
         assert r.validity_provenance == "masked-array+nodata"
+
+    def test_masked_array_nodata_is_validated_before_comparison(
+        self, north_up_georef,
+    ):
+        values = np.ma.array(
+            np.array([[1, 2], [3, 4]], dtype=np.uint8),
+            mask=np.array([[False, True], [False, False]], dtype=np.bool_),
+        )
+        with pytest.raises(RasterValidationError) as error:
+            raster(values, _make_2x2_georef(north_up_georef), nodata=300)
+        assert error.value.code == "raster_unrepresentable_nodata"
 
 
 # ---------------------------------------------------------------------------

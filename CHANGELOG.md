@@ -6,6 +6,42 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra numeric consistency, part 4: exact nodata and invalid-fill
+  encoding.** Centralized exact encoding validation across raster ingestion,
+  `Raster.filled()`, eager `fill_invalid`, `to_existing`, GeoTIFF metadata, and
+  windowed output. Finite fills must round-trip through the target dtype;
+  out-of-range or fractional integers, Boolean-as-integer fills, infinities,
+  and lossy Python-float-to-FP32 encodings now raise structured errors instead
+  of wrapping or rounding. Explicit already-rounded `np.float32` encodings,
+  NaN floating nodata, GDAL-style integral floating integer metadata, and exact
+  0/1 Boolean metadata remain supported. Windowed writes preflight the encoding
+  before changing staging state, preserve an existing destination on failure,
+  and use the same non-mutating fill helper per window. Added exact `uint64`
+  coverage beyond `2**53`, masked-ingestion, eager/expression parity, stable
+  boundary errors, and multi-window storage round trips. Bumped
+  `local.fill_invalid` semantic version to 2. Verification: 1684 passed, 17
+  skipped in the ordinary CPU suite; 1222 map-algebra tests passed; fresh-
+  process public API/import and exact-output audit passed.
+
+- **Map-algebra numeric consistency, part 3: exact selection.** Routed eager
+  and expression ``where``/``coalesce`` dtype inference through the shared
+  numeric-policy helper. Python integer branches and fallbacks now use their
+  smallest exact supported dtype instead of NumPy weak-scalar wrapping;
+  incompatible signed ``int64``/``uint64`` domains raise structured
+  ``map_algebra_no_exact_promotion`` rather than passing through FP64.
+  ``coalesce`` now copies only first-valid values directly into the inferred
+  dtype, removing its unconditional FP64 intermediate and preserving exact
+  ``uint64`` values beyond ``2**53`` through eager, expression, and windowed
+  GeoTIFF execution. Selection preserves FP32 for representable Python
+  floating scalars, promotes out-of-range scalars to FP64, and consistently
+  validates/preserves raster units. Bumped ``local.where`` and
+  ``local.coalesce`` semantic versions to 2 and aligned registry metadata,
+  public docstrings, user guidance, architecture, and the implementation plan.
+  Recorded the project owner's criticality-first preference for all remaining
+  core-plan work. Verification: 1654 passed, 17 skipped in the ordinary CPU
+  suite; 1196 map-algebra tests passed; fresh-process public API/import audit
+  and ``git diff --check`` passed.
+
 - **Map-algebra eager connected-region adapters.** Added eager Boolean-Raster
   adapters for connected-region labeling, per-cell region sizes, size
   filtering, and internal borders. Adapters preserve the complete grid and

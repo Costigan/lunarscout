@@ -3,14 +3,20 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from lunarscout.errors import MapAlgebraDTypeError, MapAlgebraOperationError
+from lunarscout.errors import (
+    MapAlgebraDTypeError,
+    MapAlgebraOperationError,
+    MapAlgebraUnitError,
+)
 from lunarscout.georeference import GeoReference
 from lunarscout.map_algebra import (
     absolute,
     add,
     compute,
     cast,
+    coalesce,
     divide,
+    describe_operation,
     log,
     multiply,
     negative,
@@ -18,6 +24,7 @@ from lunarscout.map_algebra import (
     raster,
     sqrt,
     subtract,
+    where,
     write,
 )
 from tests.map_algebra.conftest import MOON_PROJ4, MOON_WKT
@@ -67,6 +74,154 @@ def test_uint64_above_float_exact_range_remains_exact():
     result = add(_raster(np.array([[value]], dtype=np.uint64)), 1)
     assert result.dtype == np.dtype(np.uint64)
     assert int(result.values[0, 0]) == value + 1
+
+
+def test_coalesce_preserves_uint64_beyond_float_exact_range_across_modes(
+    tmp_path,
+):
+    import rasterio
+
+    value = 2**63 + 123
+    missing = _raster(
+        np.array([[0, 1]], dtype=np.uint64),
+        valid=np.array([[False, True]], dtype=np.bool_),
+    )
+    fallback = _raster(np.array([[value, value + 1]], dtype=np.uint64))
+
+    eager = coalesce(missing, fallback)
+    expression = coalesce(missing.expression(), fallback.expression())
+    computed = compute(expression)
+    assert eager.dtype == expression.dtype == computed.dtype == np.dtype(np.uint64)
+    assert int(eager.values[0, 0]) == value
+    np.testing.assert_array_equal(computed.values, eager.values)
+
+    output = write(
+        tmp_path / "exact-coalesce.tif",
+        expression,
+        window_width=1,
+        window_height=1,
+    )
+    with rasterio.open(output) as dataset:
+        stored = dataset.read(1)
+        assert stored.dtype == np.dtype(np.uint64)
+        np.testing.assert_array_equal(stored, eager.values)
+
+
+@pytest.mark.parametrize("operation", [coalesce, where])
+def test_selection_scalar_uses_smallest_exact_integer_dtype(operation):
+    values = _raster(
+        np.array([[1, 2]], dtype=np.uint8),
+        valid=np.array([[False, True]], dtype=np.bool_),
+    )
+    if operation is coalesce:
+        eager = operation(values, 300)
+        expression = operation(values.expression(), 300)
+    else:
+        condition = _raster(np.array([[False, True]], dtype=np.bool_))
+        eager = operation(condition, values, 300)
+        expression = operation(condition.expression(), values.expression(), 300)
+    assert eager.dtype == expression.dtype == np.dtype(np.uint16)
+    assert int(eager.values[0, 0]) == 300
+    np.testing.assert_array_equal(compute(expression).values, eager.values)
+
+
+@pytest.mark.parametrize("operation", [coalesce, where])
+def test_selection_rejects_inexact_int64_uint64_union(operation):
+    signed = _raster(np.array([[-1]], dtype=np.int64))
+    unsigned = _raster(np.array([[2**63 + 1]], dtype=np.uint64))
+    args = (
+        (signed, unsigned)
+        if operation is coalesce
+        else (_raster(np.array([[True]], dtype=np.bool_)), signed, unsigned)
+    )
+    with pytest.raises(MapAlgebraDTypeError) as eager_error:
+        operation(*args)
+    assert eager_error.value.code == "map_algebra_no_exact_promotion"
+
+    expression_args = tuple(
+        value.expression() if hasattr(value, "expression") else value
+        for value in args
+    )
+    with pytest.raises(MapAlgebraDTypeError) as expression_error:
+        operation(*expression_args)
+    assert expression_error.value.code == "map_algebra_no_exact_promotion"
+
+
+@pytest.mark.parametrize("operation", [coalesce, where])
+def test_selection_keeps_float32_for_representable_python_float(operation):
+    values = _raster(np.array([[1.0, 2.0]], dtype=np.float32))
+    if operation is coalesce:
+        eager = operation(values, -1.0)
+        expression = operation(values.expression(), -1.0)
+    else:
+        condition = _raster(np.array([[True, False]], dtype=np.bool_))
+        eager = operation(condition, values, -1.0)
+        expression = operation(condition.expression(), values.expression(), -1.0)
+    assert eager.dtype == expression.dtype == np.dtype(np.float32)
+    assert compute(expression).dtype == np.dtype(np.float32)
+
+
+@pytest.mark.parametrize("operation", [coalesce, where])
+def test_selection_promotes_float32_for_out_of_range_python_float(operation):
+    values = _raster(
+        np.array([[1.0]], dtype=np.float32),
+        valid=np.array([[False]], dtype=np.bool_),
+    )
+    scalar = float(np.finfo(np.float32).max) * 2.0
+    if operation is coalesce:
+        eager = operation(values, scalar)
+        expression = operation(values.expression(), scalar)
+    else:
+        condition = _raster(np.array([[False]], dtype=np.bool_))
+        eager = operation(condition, values, scalar)
+        expression = operation(condition.expression(), values.expression(), scalar)
+    assert eager.dtype == expression.dtype == np.dtype(np.float64)
+    assert np.isfinite(eager.values[0, 0])
+    assert compute(expression).values[0, 0] == scalar
+
+
+@pytest.mark.parametrize("operation", [coalesce, where])
+def test_selection_units_are_preserved_and_mismatches_are_rejected(operation):
+    metres = _raster(np.array([[1.0]], dtype=np.float32)).with_units("metres")
+    seconds = _raster(np.array([[2.0]], dtype=np.float32)).with_units("seconds")
+    condition = _raster(np.array([[True]], dtype=np.bool_))
+    matching_args = (
+        (metres, metres)
+        if operation is coalesce
+        else (condition, metres, metres)
+    )
+    assert operation(*matching_args).units == "metres"
+    matching_expression_args = tuple(
+        value.expression() if hasattr(value, "expression") else value
+        for value in matching_args
+    )
+    matching_expression = operation(*matching_expression_args)
+    assert matching_expression.units == "metres"
+    assert compute(matching_expression).units == "metres"
+
+    mismatching_args = (
+        (metres, seconds)
+        if operation is coalesce
+        else (condition, metres, seconds)
+    )
+    with pytest.raises(MapAlgebraUnitError) as error:
+        operation(*mismatching_args)
+    assert error.value.code == "map_algebra_unit_mismatch"
+    mismatching_expression_args = tuple(
+        value.expression() if hasattr(value, "expression") else value
+        for value in mismatching_args
+    )
+    with pytest.raises(MapAlgebraUnitError) as expression_error:
+        operation(*mismatching_expression_args)
+    assert expression_error.value.code == "map_algebra_unit_mismatch"
+
+
+@pytest.mark.parametrize("operation_id", ["local.where", "local.coalesce"])
+def test_selection_registry_records_corrected_semantics(operation_id):
+    description = describe_operation(operation_id)
+    assert description["version"] == 2
+    assert description["output_dtype_rule"] == "exact common selection dtype"
+    assert "matching units" in description["output_units_rule"]
 
 
 def test_uint64_max_addition_raises_structured_overflow():

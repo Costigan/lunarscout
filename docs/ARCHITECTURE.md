@@ -872,6 +872,31 @@ signed/unsigned comparisons and source-dtype floating boundaries. Explicit
 wrapping is limited to integer-to-integer casts. Invalid payloads do not cause
 overflow failures because their encoded value is not scientific data.
 
+Selection operations use the same central dtype engine in eager expression
+construction and execution. ``where`` and ``coalesce`` treat Python integer
+branches as exact values rather than NumPy weak scalars, so a fallback such as
+300 cannot wrap into ``uint8``. They copy selected values directly into the
+inferred output dtype and never stage them through FP64. If signed ``int64``
+and ``uint64`` domains have no common exact supported dtype, construction
+raises ``map_algebra_no_exact_promotion``. Raster branches/operands must have
+matching units, which are preserved by every execution mode. Their operation
+semantic versions are 2 because these rules change scientific dtype, value,
+unit, and identity behavior from the earlier implementation.
+
+Nodata and invalid-fill encoding is likewise centralized, but remains separate
+from scientific payload promotion. `_validate_nodata_representable` requires a
+finite encoding to round-trip exactly through its destination dtype, permits
+NaN only for floating output, and rejects infinities and Boolean-as-integer
+fills. It normalizes integral floating metadata reported by GDAL and exact 0/1
+Boolean metadata. `_valid_from_nodata` validates before payload comparison;
+`_fill_invalid_exact` performs a safe dtype conversion into a new array and
+then fills invalid cells. Raster construction and conversion, eager
+`fill_invalid`, GeoTIFF validation, and windowed output all use these helpers.
+Public storage boundaries translate `RasterValidationError` into their own
+structured GeoTIFF or map-algebra storage errors while retaining stable domain
+codes. No encoding check promotes FP32 work or converts integer payloads
+through FP64.
+
 The common numeric-domain helper implements ``invalid``, ``keep``, and
 structured ``raise`` behavior for pointwise arithmetic and math kernels.
 Policies are expression parameters, so they participate in canonical
@@ -994,7 +1019,8 @@ Temporal computation follows the same pattern with an additional time axis:
 Expression output through `ma.write()` uses the same durable storage
 patterns as the horizon-derived product engine:
 
-1. Validate the expression graph and preflight output paths.
+1. Validate the expression graph, output paths, output dtype, and exact invalid
+   fill encoding. Encoding failure occurs before staging artifacts are changed.
 2. Create a hidden staged GeoTIFF and compact checkpoint journal. The TIFF
    and journal carry the same execution identity.
 3. Process output windows with bounded source reads, computational work,

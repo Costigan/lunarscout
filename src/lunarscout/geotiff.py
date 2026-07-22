@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import tempfile
 import warnings
-from numbers import Integral, Real
 from pathlib import Path
 
 import numpy as np
@@ -19,8 +18,10 @@ from .errors import (
     GeoTiffOpenError,
     GeoTiffWriteError,
     OutputExistsError,
+    RasterValidationError,
 )
 from .georeference import GeoReference
+from .raster import _validate_nodata_representable
 
 _NODATA_TAG = "LUNARSCOUT_NODATA_VALUE"
 _SUPPORTED_GEOTIFF_DTYPES = {
@@ -176,39 +177,14 @@ def _validate_nodata(dtype: np.dtype[Any], nodata: int | float | None) -> None:
             "Boolean arrays are not a supported GeoTIFF output datatype.",
             details={"dtype": str(dtype)},
         )
-    if np.issubdtype(dtype, np.integer):
-        if isinstance(nodata, Integral):
-            integer_nodata = int(nodata)
-        elif isinstance(nodata, Real) and np.isfinite(nodata) and float(nodata).is_integer():
-            integer_nodata = int(nodata)
-        else:
-            raise GeoTiffMetadataError(
-                "Integer output nodata must be a finite integer value.",
-                code="geotiff_unrepresentable_nodata",
-                details={"dtype": str(dtype), "nodata": nodata},
-            )
-        limits = np.iinfo(dtype)
-        if integer_nodata < int(limits.min) or integer_nodata > int(limits.max):
-            raise GeoTiffMetadataError(
-                "Output nodata cannot be represented by the array dtype.",
-                code="geotiff_unrepresentable_nodata",
-                details={"dtype": str(dtype), "nodata": nodata},
-            )
-        return
-    if np.issubdtype(dtype, np.floating):
-        with np.errstate(over="ignore", invalid="ignore"):
-            converted = np.asarray(nodata, dtype=dtype).item()
-        if np.isfinite(nodata) and not np.isfinite(converted):
-            raise GeoTiffMetadataError(
-                "Output nodata cannot be represented by the array dtype.",
-                code="geotiff_unrepresentable_nodata",
-                details={"dtype": str(dtype), "nodata": nodata},
-            )
-        return
-    raise GeoTiffDataTypeError(
-        "The NumPy datatype is not supported for GeoTIFF output.",
-        details={"dtype": str(dtype)},
-    )
+    try:
+        _validate_nodata_representable(nodata, dtype)
+    except RasterValidationError as exc:
+        raise GeoTiffMetadataError(
+            "Output nodata cannot be represented by the array dtype.",
+            code="geotiff_unrepresentable_nodata",
+            details={"dtype": str(dtype), "nodata": repr(nodata), **exc.details},
+        ) from exc
 
 
 def _creation_options(dtype: np.dtype[Any]) -> list[str]:
