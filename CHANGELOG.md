@@ -6,6 +6,19 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra eager connected-region adapters.** Added eager Boolean-Raster
+  adapters for connected-region labeling, per-cell region sizes, size
+  filtering, and internal borders. Adapters preserve the complete grid and
+  canonical validity mask, clear units, return deterministic ``int32`` labels/
+  sizes or Boolean filters/borders, reject numeric truthiness and expressions,
+  and delegate to the established array algorithms. Both the existing
+  ``ls.*`` array APIs and new map-algebra adapters accept explicit four- or
+  eight-neighbor connectivity; existing calls retain the eight-neighbor
+  default. Cleanup morphology follows the selected connectivity. Registry
+  metadata declares these operations eager-only/global-cost. Cross-window
+  connected-component reconciliation remains deferred. Verification: 1641
+  passed, 17 skipped in the ordinary CPU suite; 1183 map-algebra tests passed.
+
 - **Map-algebra eager API completion: layer stacks and focal validity
   thresholds.** Added public ``sum_layers``, ``mean_layers``, ``min_layers``,
   and ``max_layers`` helpers with strict validity intersection, grid/unit

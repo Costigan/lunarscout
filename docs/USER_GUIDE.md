@@ -83,7 +83,7 @@ import lunarscout as ls
 | `ls.available_resampling_algorithms()`                                     | List supported raster resampling algorithm names.                                   |
 | `ls.align(array, source_georef, target_georef, ...)`                       | Resample a raster from one grid onto another.                                       |
 | `ls.label_regions(mask, georef=None, ...)`                                 | Label connected boolean regions.                                                    |
-| `ls.region_sizes(labels)`                                                  | Return pixel counts for labeled regions.                                            |
+| `ls.region_sizes(mask, georef=None, ...)`                                 | Return each true cell's connected-region size.                                      |
 | `ls.filter_regions_by_size(mask, georef=None, ...)`                        | Keep or remove connected regions by size.                                           |
 | `ls.find_borders(mask, georef=None, ...)`                                  | Return border pixels for connected regions.                                         |
 | `ls.utc_datetime(...)`                                                     | Construct a timezone-aware UTC `datetime`.                                          |
@@ -326,7 +326,27 @@ large_regions, large_regions_georef = ls.filter_regions_by_size(
 borders, borders_georef = ls.find_borders(large_regions, large_regions_georef)
 ```
 
-TODO: Document connectivity behavior and recommended mask conventions.
+These established array-oriented functions treat nonzero numeric cells as
+true, preserve masked/nodata cells, and use eight-neighbor connectivity by
+default. Pass `connectivity=4` for cardinal neighbors only; `4` and `8` are the
+only accepted values. Cleanup erosion/opening uses the selected connectivity.
+
+Map algebra provides eager Boolean-`Raster` adapters with canonical validity:
+
+```python
+labels = ls.map_algebra.label_regions(candidate, connectivity=8)
+sizes = ls.map_algebra.region_sizes(candidate, connectivity=8)
+large = ls.map_algebra.filter_regions_by_size(
+    candidate, threshold=100, comparator=">=", connectivity=8,
+)
+borders = ls.map_algebra.find_borders(large, connectivity=8)
+```
+
+The adapters require a Boolean `Raster`; numeric nonzero truthiness is not
+implicit in map algebra. Labels and sizes are `int32`, filtered regions and
+borders are Boolean, units are cleared, and the input grid and validity mask
+are preserved. They are eager-only. File-backed connected-component labeling
+and cross-window reconciliation remain deferred.
 
 ## Temporal Data
 

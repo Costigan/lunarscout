@@ -15,7 +15,7 @@ real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (layer stacks and focal min-valid-count)
+Last updated: 2026-07-22 (eager connected-region adapters)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -45,8 +45,8 @@ is not counted as partial merely because adjacent functionality exists.
 
 | State | Scope |
 | --- | --- |
-| Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic output; halo-aware terrain and explicit cross-grid resampling ``write`` execution; writer progress/cancellation and compact checkpoint resume; public terrain/resample wrappers with categorical safety and validity policies; user guide, architecture, examples, and the ordinary CPU suite. |
-| Partial | Operation catalog metadata and coverage; analyst-facing ``explain`` detail; canonical identity golden fixtures; numeric-policy and dtype centralization; eager region adapters; structured-error normalization; exhaustive API tables; and adversarial/boundary tests. |
+| Completed | Public value types and adapters; eager local/classification/normalization and stack operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, connected-region adapters, global, zonal, and distance operations; temporal adapters and approved streaming reductions; atomic output; halo-aware terrain and explicit cross-grid resampling ``write`` execution; writer progress/cancellation and compact checkpoint resume; public terrain/resample wrappers with categorical safety and validity policies; user guide, architecture, examples, and the ordinary CPU suite. |
+| Partial | Operation catalog metadata and coverage; analyst-facing ``explain`` detail; canonical identity golden fixtures; numeric-policy and dtype centralization; structured-error normalization; exhaustive API tables; and adversarial/boundary tests. |
 | Deferred -- large-raster plan | All further bounded/windowed execution work: general halos and focal kernels, local fusion, cross-window region reconciliation, streaming global/zonal reducers, bounded distance fields, temporal spatial-window/time-batch mapping, concurrency controls, and empirical resource scaling. Current completed bounded capabilities remain supported. |
 | Skipped by decision | TestPyPI publication for ``0.2.0rc1``. Local artifact construction, inspection, and isolated installation remain completed evidence. |
 
@@ -56,11 +56,9 @@ The active, non-large-raster sequence is:
 
 1. centralize numeric policy, dtype inference, validity helpers, and structured
    error translation across eager and expression construction paths;
-2. complete eager/public API gaps such as region adapters and the reviewed
-   temporal reducer inventory;
-3. complete canonical identity fixtures, registry coverage, generated operation
+2. complete canonical identity fixtures, registry coverage, generated operation
    descriptions, `explain()`, and public API reference tables;
-4. close adversarial and boundary-test gaps and reconcile examples and release
+3. close adversarial and boundary-test gaps and reconcile examples and release
    documentation to the implemented surface.
 
 The completed bounded writer remains maintained. Any expansion of bounded
@@ -723,14 +721,14 @@ and crop to the destination window; that future execution work is deferred to
 
 ### 3.4 Region and zonal operations
 
-- [ ] Provide `label_regions`, `region_sizes`, `filter_regions_by_size`, and
+- [x] Provide `label_regions`, `region_sizes`, `filter_regions_by_size`, and
   `find_borders` adapters accepting and returning `Raster` while preserving the
-  existing array APIs. The eager adapter slice remains core work; bounded
-  labeling/filtering and cross-window reconciliation are deferred to the
-  large-raster plan.
-- [ ] Add configurable four- or eight-neighbor connectivity in the new API;
-  preserve eight-neighbor defaults for existing APIs. Eager connectivity
-  remains core work; bounded reconciliation is deferred.
+  existing array APIs. The eager adapter slice is complete; bounded labeling/
+  filtering and cross-window reconciliation are deferred to the large-raster
+  plan.
+- [x] Add configurable four- or eight-neighbor connectivity in the new API;
+  preserve eight-neighbor defaults for existing APIs. Bounded reconciliation
+  remains deferred.
 - [x] `zonal_stats(values, zones, *, statistics, zone_nodata=...)` returns a
   table-like `ZonalStatistics` value independent of pandas, conceptually:
 
@@ -1411,9 +1409,10 @@ Acceptance evidence:
   *(five edge modes, three valid-neighbor policies, ``cval`` parameter)*
 - [x] Implement the required focal statistics and convolution.
   *(sum, mean, min, max, range, std with ddof, count, median, convolve)*
-- [ ] Implement shared morphology and region adapters.
-  **PARTIAL:** dilate, erode, opening, closing, and majority exist; Raster
-  adapters for region labeling, filtering, and borders do not.
+- [x] Implement shared morphology and region adapters.
+  Dilate, erode, opening, closing, and majority exist; eager Boolean-Raster
+  adapters delegate region labeling, filtering, sizing, and borders to the
+  established array algorithms.
 - [x] Implement or explicitly defer windowed terrain nodes for slope, aspect,
   and hillshade based on whole-array parity tests.
 - [ ] Compare eager and tiled halo results across internal window boundaries

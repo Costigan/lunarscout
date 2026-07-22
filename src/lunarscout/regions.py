@@ -11,9 +11,29 @@ from .georeference import GeoReference
 
 CleanupMode: TypeAlias = Literal["none", "erosion", "opening"]
 Comparator: TypeAlias = Literal[">=", "<="]
+Connectivity: TypeAlias = Literal[4, 8]
 NodataArgument: TypeAlias = int | float | None | Literal["auto"]
 
-_CONNECTIVITY = np.ones((3, 3), dtype=np.uint8)
+_CONNECTIVITY_4 = np.asarray(
+    [[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8,
+)
+_CONNECTIVITY_8 = np.ones((3, 3), dtype=np.uint8)
+
+
+def _validate_connectivity(connectivity: int) -> tuple[Connectivity, NDArray[np.uint8]]:
+    if (
+        isinstance(connectivity, (bool, np.bool_))
+        or not isinstance(connectivity, (int, np.integer))
+        or int(connectivity) not in {4, 8}
+    ):
+        raise RegionOperationError(
+            "connectivity must be 4 or 8.",
+            code="region_invalid_argument",
+            details={"argument": "connectivity", "value": repr(connectivity)},
+        )
+    value: Connectivity = int(connectivity)  # type: ignore[assignment]
+    structure = _CONNECTIVITY_4 if value == 4 else _CONNECTIVITY_8
+    return value, structure
 
 
 def _validate_georef_shape(mask: Any, georef: GeoReference | None) -> np.ndarray:
@@ -120,12 +140,12 @@ def _clean_mask(
     *,
     cleanup: CleanupMode,
     iterations: int,
+    structure: NDArray[np.uint8],
 ) -> NDArray[np.bool_]:
     if cleanup == "none" or iterations == 0:
         return np.array(mask, dtype=bool, copy=True)
     from scipy import ndimage
 
-    structure = np.ones((3, 3), dtype=bool)
     if cleanup == "erosion":
         return np.asarray(
             ndimage.binary_erosion(mask, structure=structure, iterations=iterations),
@@ -137,10 +157,13 @@ def _clean_mask(
     )
 
 
-def _label(mask: NDArray[np.bool_]) -> NDArray[np.int32]:
+def _label(
+    mask: NDArray[np.bool_],
+    structure: NDArray[np.uint8],
+) -> NDArray[np.int32]:
     from scipy import ndimage
 
-    labels, _count = ndimage.label(mask, structure=_CONNECTIVITY)
+    labels, _count = ndimage.label(mask, structure=structure)
     return np.asarray(labels, dtype=np.int32)
 
 
@@ -203,17 +226,23 @@ def label_regions(
     nodata: NodataArgument = "auto",
     cleanup: CleanupMode = "none",
     iterations: int = 0,
+    connectivity: Connectivity = 8,
 ) -> tuple[NDArray[np.int32] | np.ma.MaskedArray, GeoReference | None]:
-    """Label eight-neighbor connected true regions."""
+    """Label connected true regions; connectivity defaults to eight neighbors."""
 
     mode, iteration_count = _validate_cleanup(cleanup, iterations)
+    _, structure = _validate_connectivity(connectivity)
     mask_bool, invalid, effective_nodata, nodata_active = _mask_and_invalid(
         mask,
         georef,
         nodata,
     )
     labels = _label(
-        _clean_mask(mask_bool, cleanup=mode, iterations=iteration_count)
+        _clean_mask(
+            mask_bool, cleanup=mode, iterations=iteration_count,
+            structure=structure,
+        ),
+        structure,
     )
     return (
         _numeric_output(
@@ -233,17 +262,23 @@ def region_sizes(
     nodata: NodataArgument = "auto",
     cleanup: CleanupMode = "none",
     iterations: int = 0,
+    connectivity: Connectivity = 8,
 ) -> tuple[NDArray[np.int32] | np.ma.MaskedArray, GeoReference | None]:
-    """Return each true pixel's eight-neighbor connected-region size."""
+    """Return each true pixel's connected-region size."""
 
     mode, iteration_count = _validate_cleanup(cleanup, iterations)
+    _, structure = _validate_connectivity(connectivity)
     mask_bool, invalid, effective_nodata, nodata_active = _mask_and_invalid(
         mask,
         georef,
         nodata,
     )
     labels = _label(
-        _clean_mask(mask_bool, cleanup=mode, iterations=iteration_count)
+        _clean_mask(
+            mask_bool, cleanup=mode, iterations=iteration_count,
+            structure=structure,
+        ),
+        structure,
     )
     counts = np.bincount(labels.ravel())
     sizes = np.asarray(counts[labels], dtype=np.int32)
@@ -268,6 +303,7 @@ def filter_regions_by_size(
     nodata: NodataArgument = "auto",
     cleanup: CleanupMode = "none",
     iterations: int = 0,
+    connectivity: Connectivity = 8,
 ) -> tuple[NDArray[np.bool_] | np.ma.MaskedArray, GeoReference | None]:
     """Keep original regions selected by cleanup-aware seed-region sizes."""
 
@@ -292,14 +328,19 @@ def filter_regions_by_size(
             details={"argument": "comparator", "value": comparator},
         )
     mode, iteration_count = _validate_cleanup(cleanup, iterations)
+    _, structure = _validate_connectivity(connectivity)
     mask_bool, invalid, effective_nodata, nodata_active = _mask_and_invalid(
         mask,
         georef,
         nodata,
     )
-    original_labels = _label(mask_bool)
+    original_labels = _label(mask_bool, structure)
     seed_labels = _label(
-        _clean_mask(mask_bool, cleanup=mode, iterations=iteration_count)
+        _clean_mask(
+            mask_bool, cleanup=mode, iterations=iteration_count,
+            structure=structure,
+        ),
+        structure,
     )
     seed_counts = np.bincount(seed_labels.ravel())
     keep_seed_ids = (
@@ -327,8 +368,9 @@ def find_borders(
     georef: GeoReference | None = None,
     *,
     nodata: NodataArgument = "auto",
+    connectivity: Connectivity = 8,
 ) -> tuple[NDArray[np.bool_] | np.ma.MaskedArray, GeoReference | None]:
-    """Return the eight-neighbor internal border of true mask regions."""
+    """Return the connectivity-defined internal border of true mask regions."""
 
     from scipy import ndimage
 
@@ -337,7 +379,7 @@ def find_borders(
         georef,
         nodata,
     )
-    structure = np.ones((3, 3), dtype=bool)
+    _, structure = _validate_connectivity(connectivity)
     eroded = ndimage.binary_erosion(
         mask_bool,
         structure=structure,

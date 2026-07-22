@@ -138,6 +138,12 @@ from .distance import (
     distance_to,
     signed_distance,
 )
+from .regions import (
+    filter_regions_by_size,
+    find_borders,
+    label_regions,
+    region_sizes,
+)
 from .coordinates import (
     column_indices,
     latitude,

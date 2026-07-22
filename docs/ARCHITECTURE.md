@@ -892,6 +892,15 @@ number of active footprint cells. Expression construction validates and
 records it, but executing general focal expressions in bounded windows remains
 deferred to the large-raster plan.
 
+Connected-region algorithms remain owned by the array-oriented
+``lunarscout.regions`` module. Its public functions retain eight-neighbor
+defaults and now accept explicit four-neighbor connectivity. The eager
+map-algebra adapters require Boolean ``Raster`` inputs, pass canonical invalid
+cells as a mask rather than interpreting payload/nodata again, delegate to the
+same algorithms, and return ``Raster`` results on the unchanged grid. Labels
+and sizes are ``int32``; filters and borders are Boolean. These operations are
+whole-raster/global-cost and have no expression or file-backed execution claim.
+
 ### 20.3 Execution architecture
 
 Execution has two strategies on one operation specification:
@@ -956,8 +965,9 @@ coordinates, preserving exact ``int64`` and ``uint64`` payloads above the
 53-bit mantissa precision of IEEE 754 double-precision floating point.
 
 **Deferred capabilities.**  General focal kernel window execution (halo from
-arbitrary footprint sizes), local fusion across consecutive nodes, region
-adapters, and global/zonal/distance/temporal bounded execution remain
+arbitrary footprint sizes), local fusion across consecutive nodes,
+cross-window connected-region reconciliation, and global/zonal/distance/
+temporal bounded execution remain
 deferred to a later milestone.
 
 ### 20.4 Temporal execution
@@ -1047,6 +1057,7 @@ src/lunarscout/
     local.py                     # public local functions
     focal.py                     # public neighborhood functions
     zonal.py                     # public zonal functions and results
+    regions.py                   # eager Boolean Raster region adapters
     reductions.py                # public global reductions
     distance.py                  # public distance functions
     coordinates.py               # public coordinate expressions

@@ -341,6 +341,48 @@ _SPECS = (
     _spec("global.histogram", 1, "global", "Calculate a global histogram.", cost_class="global"),
     _spec("global.percentile", 1, "global", "Calculate global percentiles.", cost_class="global"),
     _spec("global.unique_counts", 1, "global", "Count unique valid values.", cost_class="global"),
+    *(
+        _spec(
+            f"region.{name}", 1, "region", summary,
+            parameters=(
+                ("cleanup", "Pre-label cleanup: none, erosion, or opening."),
+                ("iterations", "Non-negative cleanup iteration count."),
+                ("connectivity", "Connected-neighbor rule: 4 or 8."),
+            ),
+            output_dtype_rule="int32",
+            output_units_rule="None",
+            validity_rule="preserve canonical input validity",
+            cost_class="global",
+        )
+        for name, summary in (
+            ("label_regions", "Label connected valid true cells."),
+            ("region_sizes", "Broadcast connected-region sizes to true cells."),
+        )
+    ),
+    _spec(
+        "region.filter_regions_by_size", 1, "region",
+        "Keep connected regions selected by pixel count.",
+        parameters=(
+            ("threshold", "Finite non-negative region-size threshold."),
+            ("comparator", "Threshold comparison: >= or <=."),
+            ("cleanup", "Pre-label cleanup: none, erosion, or opening."),
+            ("iterations", "Non-negative cleanup iteration count."),
+            ("connectivity", "Connected-neighbor rule: 4 or 8."),
+        ),
+        output_dtype_rule="bool",
+        output_units_rule="None",
+        validity_rule="preserve canonical input validity",
+        cost_class="global",
+    ),
+    _spec(
+        "region.find_borders", 1, "region",
+        "Return internal border cells of valid true regions.",
+        parameters=(("connectivity", "Border-neighbor rule: 4 or 8."),),
+        output_dtype_rule="bool",
+        output_units_rule="None",
+        validity_rule="preserve canonical input validity",
+        cost_class="global",
+    ),
     _spec("zonal.stats", 2, "zonal", "Calculate statistics grouped by zone.", cost_class="global"),
     _spec("zonal.raster", 2, "zonal", "Broadcast a zonal statistic to zone cells.", cost_class="global"),
     _spec("distance.to", 1, "distance", "Calculate distance to Boolean seed cells.", cost_class="global"),
