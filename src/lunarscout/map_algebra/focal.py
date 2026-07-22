@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal
 
 import numpy as np
@@ -44,6 +45,42 @@ def _validate_valid_neighbor(vn: str) -> ValidNeighbor:
     return vn  # type: ignore[return-value]
 
 
+def _validate_min_valid_count(
+    min_valid_count: int | None,
+    *,
+    valid_neighbor: ValidNeighbor,
+    footprint_count: int,
+) -> int | None:
+    if min_valid_count is None:
+        return None
+    if not isinstance(min_valid_count, int) or isinstance(min_valid_count, bool):
+        raise MapAlgebraError(
+            "min_valid_count must be an integer or None.",
+            code="map_algebra_invalid_min_valid_count",
+            details={"min_valid_count": repr(min_valid_count)},
+        )
+    if valid_neighbor != "ignore_invalid":
+        raise MapAlgebraError(
+            "min_valid_count is only valid with valid_neighbor='ignore_invalid'.",
+            code="map_algebra_invalid_min_valid_count",
+            details={
+                "min_valid_count": min_valid_count,
+                "valid_neighbor": valid_neighbor,
+            },
+        )
+    if min_valid_count < 1 or min_valid_count > footprint_count:
+        raise MapAlgebraError(
+            "min_valid_count must be between 1 and the footprint cell count.",
+            code="map_algebra_invalid_min_valid_count",
+            details={
+                "min_valid_count": min_valid_count,
+                "minimum": 1,
+                "maximum": footprint_count,
+            },
+        )
+    return min_valid_count
+
+
 def _validate_footprint(
     size: int | tuple[int, int] | None,
     footprint: np.ndarray | None,
@@ -56,8 +93,8 @@ def _validate_footprint(
         if fp.shape[0] % 2 != 1 or fp.shape[1] % 2 != 1:
             raise MapAlgebraError("Footprint dimensions must be odd.",
                                    code="map_algebra_invalid_footprint")
-        if fp.size == 0:
-            raise MapAlgebraError("Footprint must not be empty.",
+        if fp.size == 0 or not np.any(fp):
+            raise MapAlgebraError("Footprint must contain at least one active cell.",
                                    code="map_algebra_invalid_footprint")
         return fp, (fp.shape[0] // 2, fp.shape[1] // 2)
     if size is not None:
@@ -76,6 +113,49 @@ def _validate_footprint(
         return fp, (h // 2, w // 2)
     raise MapAlgebraError("Either size or footprint must be provided.",
                            code="map_algebra_invalid_footprint")
+
+
+def _validate_focal_expression_parameters(arguments: dict[str, Any]) -> None:
+    """Validate public focal parameters without executing a raster kernel."""
+    if "kernel" in arguments:
+        kernel = _validate_convolution_kernel(arguments["kernel"])
+        footprint_count = int(kernel.size)
+    else:
+        footprint, _ = _validate_footprint(
+            arguments.get("size"), arguments.get("footprint"),
+        )
+        footprint_count = int(np.count_nonzero(footprint))
+
+    if "edge" not in arguments and "valid_neighbor" not in arguments:
+        return
+    _validate_edge(arguments.get("edge", "invalid"))
+    valid_neighbor = _validate_valid_neighbor(
+        arguments.get("valid_neighbor", "require_all"),
+    )
+    _validate_min_valid_count(
+        arguments.get("min_valid_count"),
+        valid_neighbor=valid_neighbor,
+        footprint_count=footprint_count,
+    )
+
+
+def _validate_convolution_kernel(kernel: Any) -> np.ndarray:
+    candidate = np.asarray(kernel)
+    if (
+        candidate.ndim != 2
+        or candidate.shape[0] % 2 != 1
+        or candidate.shape[1] % 2 != 1
+    ):
+        raise MapAlgebraError(
+            "Convolution kernel must be two-dimensional with odd dimensions.",
+            code="map_algebra_invalid_kernel",
+        )
+    if candidate.dtype.kind not in "biuf" or not np.all(np.isfinite(candidate)):
+        raise MapAlgebraError(
+            "Convolution kernel must contain only finite real numeric values.",
+            code="map_algebra_invalid_kernel",
+        )
+    return candidate.astype(np.float64, copy=False)
 
 
 def _pad_array(
@@ -154,6 +234,7 @@ def _focal_generic(
     cval: float = 0.0,
     output_dtype: np.dtype | None = None,
     op_name: str = "focal",
+    min_valid_count: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     halo = (footprint.shape[0] // 2, footprint.shape[1] // 2)
     vals = raster.values.astype(np.float64, copy=False)
@@ -164,25 +245,32 @@ def _focal_generic(
 
     if valid_neighbor == "ignore_invalid":
         padded[~padded_mask] = np.nan
-        result_padded = ndimage.generic_filter(
-            padded, func, footprint=footprint, mode=scipy_mode, cval=np.nan,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            result_padded = ndimage.generic_filter(
+                padded, func, footprint=footprint, mode=scipy_mode, cval=np.nan,
+            )
         count_padded = ndimage.generic_filter(
             padded_mask.astype(np.float64), np.sum, footprint=footprint,
             mode=scipy_mode, cval=0.0,
         )
-        result_valid = count_padded[crop] > 0
+        threshold = 1 if min_valid_count is None else min_valid_count
+        result_valid = count_padded[crop] >= threshold
     elif valid_neighbor == "propagate_center":
         padded[~padded_mask] = np.nan
-        result_padded = ndimage.generic_filter(
-            padded, func, footprint=footprint, mode=scipy_mode, cval=np.nan,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            result_padded = ndimage.generic_filter(
+                padded, func, footprint=footprint, mode=scipy_mode, cval=np.nan,
+            )
         result_valid = vld.copy()
     else:
         padded[~padded_mask] = np.nan
-        result_padded = ndimage.generic_filter(
-            padded, func, footprint=footprint, mode=scipy_mode, cval=np.nan,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            result_padded = ndimage.generic_filter(
+                padded, func, footprint=footprint, mode=scipy_mode, cval=np.nan,
+            )
         count_padded = ndimage.generic_filter(
             padded_mask.astype(np.float64), np.sum, footprint=footprint,
             mode=scipy_mode, cval=0.0,
@@ -209,6 +297,7 @@ def _focal_special(
     neutral: float = 0.0,
     cval: float = 0.0,
     output_dtype: np.dtype | None = None,
+    min_valid_count: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     halo = (footprint.shape[0] // 2, footprint.shape[1] // 2)
     vals = raster.values.astype(np.float64, copy=False)
@@ -225,7 +314,8 @@ def _focal_special(
             padded_mask.astype(np.float64), np.sum, footprint=footprint,
             mode=scipy_mode, cval=0.0,
         )
-        result_valid = count_padded[crop] > 0
+        threshold = 1 if min_valid_count is None else min_valid_count
+        result_valid = count_padded[crop] >= threshold
     elif valid_neighbor == "propagate_center":
         padded[~padded_mask] = neutral
         result_padded = scipy_filter(padded, footprint=footprint, mode=scipy_mode,
@@ -258,12 +348,17 @@ def _focal_special(
 
 def _common_kwargs(
     size=None, footprint=None, edge="invalid", vn="require_all",
-    cval=0.0, op_name="focal",
+    cval=0.0, op_name="focal", min_valid_count=None,
 ):
     fp, halo = _validate_footprint(size, footprint)
     edge_v = _validate_edge(edge)
     vn_v = _validate_valid_neighbor(vn)
-    return fp, halo, edge_v, vn_v
+    minimum = _validate_min_valid_count(
+        min_valid_count,
+        valid_neighbor=vn_v,
+        footprint_count=int(np.count_nonzero(fp)),
+    )
+    return fp, halo, edge_v, vn_v, minimum
 
 
 def focal_sum(
@@ -273,15 +368,20 @@ def focal_sum(
     footprint: np.ndarray | None = None,
     edge: EdgeMode = "invalid",
     valid_neighbor: ValidNeighbor = "require_all",
+    min_valid_count: int | None = None,
     cval: float = 0.0,
 ) -> Raster:
-    fp, halo, e, vn = _common_kwargs(size, footprint, edge, valid_neighbor, cval)
+    fp, halo, e, vn, minimum = _common_kwargs(
+        size, footprint, edge, valid_neighbor, cval,
+        min_valid_count=min_valid_count,
+    )
     vals, mask = _focal_special(
         raster, fp,
         lambda x, **kw: ndimage.generic_filter(x, np.sum, **kw),
         edge=e, valid_neighbor=vn,
         neutral=0.0, cval=cval,
         output_dtype=_output_dtype(raster, "sum"),
+        min_valid_count=minimum,
     )
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
@@ -294,13 +394,18 @@ def focal_mean(
     footprint: np.ndarray | None = None,
     edge: EdgeMode = "invalid",
     valid_neighbor: ValidNeighbor = "require_all",
+    min_valid_count: int | None = None,
     cval: float = 0.0,
 ) -> Raster:
-    fp, halo, e, vn = _common_kwargs(size, footprint, edge, valid_neighbor, cval)
+    fp, halo, e, vn, minimum = _common_kwargs(
+        size, footprint, edge, valid_neighbor, cval,
+        min_valid_count=min_valid_count,
+    )
     vals, mask = _focal_generic(
         raster, fp, edge=e, valid_neighbor=vn,
         func=lambda w: np.nanmean(w), neutral=np.nan, cval=cval,
         output_dtype=_output_dtype(raster, "mean"), op_name="mean",
+        min_valid_count=minimum,
     )
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
@@ -313,13 +418,18 @@ def focal_min(
     footprint: np.ndarray | None = None,
     edge: EdgeMode = "invalid",
     valid_neighbor: ValidNeighbor = "require_all",
+    min_valid_count: int | None = None,
     cval: float = 0.0,
 ) -> Raster:
-    fp, halo, e, vn = _common_kwargs(size, footprint, edge, valid_neighbor, cval)
+    fp, halo, e, vn, minimum = _common_kwargs(
+        size, footprint, edge, valid_neighbor, cval,
+        min_valid_count=min_valid_count,
+    )
     vals, mask = _focal_special(raster, fp, ndimage.minimum_filter,
                                  edge=e, valid_neighbor=vn,
                                  neutral=np.inf, cval=cval,
-                                 output_dtype=_output_dtype(raster, "min"))
+                                 output_dtype=_output_dtype(raster, "min"),
+                                 min_valid_count=minimum)
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
 
@@ -331,13 +441,18 @@ def focal_max(
     footprint: np.ndarray | None = None,
     edge: EdgeMode = "invalid",
     valid_neighbor: ValidNeighbor = "require_all",
+    min_valid_count: int | None = None,
     cval: float = 0.0,
 ) -> Raster:
-    fp, halo, e, vn = _common_kwargs(size, footprint, edge, valid_neighbor, cval)
+    fp, halo, e, vn, minimum = _common_kwargs(
+        size, footprint, edge, valid_neighbor, cval,
+        min_valid_count=min_valid_count,
+    )
     vals, mask = _focal_special(raster, fp, ndimage.maximum_filter,
                                  edge=e, valid_neighbor=vn,
                                  neutral=-np.inf, cval=cval,
-                                 output_dtype=_output_dtype(raster, "max"))
+                                 output_dtype=_output_dtype(raster, "max"),
+                                 min_valid_count=minimum)
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
 
@@ -349,12 +464,15 @@ def focal_range(
     footprint: np.ndarray | None = None,
     edge: EdgeMode = "invalid",
     valid_neighbor: ValidNeighbor = "require_all",
+    min_valid_count: int | None = None,
     cval: float = 0.0,
 ) -> Raster:
     min_r = focal_min(raster, size=size, footprint=footprint, edge=edge,
-                       valid_neighbor=valid_neighbor, cval=cval)
+                       valid_neighbor=valid_neighbor,
+                       min_valid_count=min_valid_count, cval=cval)
     max_r = focal_max(raster, size=size, footprint=footprint, edge=edge,
-                       valid_neighbor=valid_neighbor, cval=cval)
+                       valid_neighbor=valid_neighbor,
+                       min_valid_count=min_valid_count, cval=cval)
     from .local import subtract
     result = subtract(max_r, min_r)
     dst = _output_dtype(raster, "range")
@@ -371,15 +489,20 @@ def focal_std(
     footprint: np.ndarray | None = None,
     edge: EdgeMode = "invalid",
     valid_neighbor: ValidNeighbor = "require_all",
+    min_valid_count: int | None = None,
     cval: float = 0.0,
     ddof: int = 0,
 ) -> Raster:
-    fp, halo, e, vn = _common_kwargs(size, footprint, edge, valid_neighbor, cval)
+    fp, halo, e, vn, minimum = _common_kwargs(
+        size, footprint, edge, valid_neighbor, cval,
+        min_valid_count=min_valid_count,
+    )
     ddof_val = int(ddof)
     vals, mask = _focal_generic(
         raster, fp, edge=e, valid_neighbor=vn,
         func=lambda w: np.nanstd(w, ddof=ddof_val), neutral=np.nan, cval=cval,
         output_dtype=_output_dtype(raster, "std"), op_name="std",
+        min_valid_count=minimum,
     )
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
@@ -392,11 +515,17 @@ def focal_count(
     footprint: np.ndarray | None = None,
     edge: EdgeMode = "invalid",
     valid_neighbor: ValidNeighbor = "ignore_invalid",
+    min_valid_count: int | None = None,
     cval: float = 0.0,
 ) -> Raster:
     fp, halo = _validate_footprint(size, footprint)
     e = _validate_edge(edge)
     vn = _validate_valid_neighbor(valid_neighbor)
+    minimum = _validate_min_valid_count(
+        min_valid_count,
+        valid_neighbor=vn,
+        footprint_count=int(np.count_nonzero(fp)),
+    )
     vals = raster.values.astype(np.float64, copy=False)
     vld = raster.valid.copy()
     padded, padded_mask, crop = _pad_array(vals, vld, halo, e, cval=cval)
@@ -408,7 +537,11 @@ def focal_count(
             padded_mask.astype(np.float64), np.sum, footprint=fp,
             mode=scipy_mode, cval=0.0,
         )
-        result_valid = np.ones(raster.shape, dtype=np.bool_)
+        result_valid = (
+            np.ones(raster.shape, dtype=np.bool_)
+            if minimum is None
+            else count_padded[crop] >= minimum
+        )
     elif vn == "propagate_center":
         count_padded = ndimage.generic_filter(
             padded_mask.astype(np.float64), np.sum, footprint=fp,
@@ -437,13 +570,18 @@ def focal_median(
     footprint: np.ndarray | None = None,
     edge: EdgeMode = "invalid",
     valid_neighbor: ValidNeighbor = "require_all",
+    min_valid_count: int | None = None,
     cval: float = 0.0,
 ) -> Raster:
-    fp, halo, e, vn = _common_kwargs(size, footprint, edge, valid_neighbor, cval)
+    fp, halo, e, vn, minimum = _common_kwargs(
+        size, footprint, edge, valid_neighbor, cval,
+        min_valid_count=min_valid_count,
+    )
     vals, mask = _focal_generic(
         raster, fp, edge=e, valid_neighbor=vn,
         func=lambda w: np.nanmedian(w), neutral=np.nan, cval=cval,
         output_dtype=_output_dtype(raster, "median"), op_name="median",
+        min_valid_count=minimum,
     )
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
@@ -461,21 +599,18 @@ def convolve(
     normalize: bool = False,
     edge: EdgeMode = "invalid",
     valid_neighbor: ValidNeighbor = "require_all",
+    min_valid_count: int | None = None,
     cval: float = 0.0,
 ) -> Raster:
-    kernel = np.asarray(kernel, dtype=np.float64)
-    if kernel.ndim != 2:
-        raise MapAlgebraError("Convolution kernel must be two-dimensional.",
-                               code="map_algebra_invalid_kernel")
-    if kernel.shape[0] % 2 != 1 or kernel.shape[1] % 2 != 1:
-        raise MapAlgebraError("Convolution kernel dimensions must be odd.",
-                               code="map_algebra_invalid_kernel")
-    if not np.all(np.isfinite(kernel)):
-        raise MapAlgebraError("Convolution kernel must contain only finite values.",
-                               code="map_algebra_invalid_kernel")
+    kernel = _validate_convolution_kernel(kernel)
 
     e = _validate_edge(edge)
     vn = _validate_valid_neighbor(valid_neighbor)
+    minimum = _validate_min_valid_count(
+        min_valid_count,
+        valid_neighbor=vn,
+        footprint_count=int(kernel.size),
+    )
     if normalize:
         s = float(np.sum(np.abs(kernel)))
         if s > 0:
@@ -504,7 +639,14 @@ def convolve(
     elif vn == "propagate_center":
         result_valid = vld.copy()
     else:
-        result_valid = np.ones(raster.shape, dtype=np.bool_)
+        if minimum is None:
+            result_valid = np.ones(raster.shape, dtype=np.bool_)
+        else:
+            mask_count = ndimage.convolve(
+                padded_mask.astype(np.float64), np.ones(kernel.shape),
+                mode=scipy_mode, cval=0.0,
+            )
+            result_valid = mask_count[crop] >= minimum
 
     if e == "invalid":
         _apply_edge_invalid(result_valid, halo)

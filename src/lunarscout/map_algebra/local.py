@@ -369,6 +369,89 @@ def maximum(
         )
     raise MapAlgebraError("maximum() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
+
+def _require_layer_stack(
+    layers: tuple[Raster, ...],
+    *,
+    operation: str,
+) -> tuple[Raster, ...]:
+    if not layers:
+        raise MapAlgebraError(
+            f"{operation}() requires at least one Raster.",
+            code="map_algebra_empty_layers",
+            details={"operation": operation},
+        )
+    for index, layer in enumerate(layers):
+        if not isinstance(layer, Raster):
+            raise MapAlgebraError(
+                f"{operation}() layers must be Raster values.",
+                code="map_algebra_invalid_layer",
+                details={
+                    "operation": operation,
+                    "layer_index": index,
+                    "type": type(layer).__name__,
+                },
+            )
+    return layers
+
+
+def sum_layers(
+    *layers: Raster,
+    overflow: OverflowPolicy = "raise",
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
+    """Add one or more registered layers with strict validity intersection."""
+    checked = _require_layer_stack(layers, operation="sum_layers")
+    result = add(
+        checked[0], 0, overflow=overflow, numeric_errors=numeric_errors,
+    )
+    for layer in checked[1:]:
+        result = add(
+            result, layer, overflow=overflow, numeric_errors=numeric_errors,
+        )
+    return result
+
+
+def mean_layers(
+    *layers: Raster,
+    overflow: OverflowPolicy = "raise",
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
+    """Calculate the arithmetic mean with strict validity intersection."""
+    checked = _require_layer_stack(layers, operation="mean_layers")
+    total = sum_layers(
+        *checked, overflow=overflow, numeric_errors=numeric_errors,
+    )
+    return divide(total, len(checked), numeric_errors=numeric_errors)
+
+
+def min_layers(
+    *layers: Raster,
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
+    """Calculate the cell-wise minimum with strict validity intersection."""
+    checked = _require_layer_stack(layers, operation="min_layers")
+    result = minimum(
+        checked[0], checked[0], numeric_errors=numeric_errors,
+    )
+    for layer in checked[1:]:
+        result = minimum(result, layer, numeric_errors=numeric_errors)
+    return result
+
+
+def max_layers(
+    *layers: Raster,
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
+    """Calculate the cell-wise maximum with strict validity intersection."""
+    checked = _require_layer_stack(layers, operation="max_layers")
+    result = maximum(
+        checked[0], checked[0], numeric_errors=numeric_errors,
+    )
+    for layer in checked[1:]:
+        result = maximum(result, layer, numeric_errors=numeric_errors)
+    return result
+
 # ---------------------------------------------------------------------------
 # Comparisons
 # ---------------------------------------------------------------------------

@@ -1567,6 +1567,14 @@ pixel or pixels. Both function calls and Python operators are supported.
 `ma.floor_divide`, `ma.remainder`, `ma.power`, `ma.negative`, `ma.positive`,
 `ma.absolute`, `ma.square`.
 
+**Layer stacks:** `ma.sum_layers(*layers)`, `ma.mean_layers(*layers)`,
+`ma.min_layers(*layers)`, and `ma.max_layers(*layers)` combine one or more
+rasters using strict validity intersection and matching grids/units. They are
+compositional helpers over ordinary local operations, so their dtype,
+`overflow`, and `numeric_errors` behavior is identical to the corresponding
+left-associated arithmetic. They accept mixed eager/expression operands and
+do not allocate a three-dimensional stack.
+
 **Comparisons:** `ma.equal`, `ma.not_equal`, `ma.less`, `ma.less_equal`,
 `ma.greater`, `ma.greater_equal`, `ma.isclose`.
 
@@ -1779,6 +1787,13 @@ and positive. Edge modes: `"invalid"` (default), `"constant"`, `"nearest"`,
 `"reflect"`, `"wrap"`. Valid-neighbor policies: `"require_all"`,
 `"ignore_invalid"` (with `min_valid_count`), `"propagate_center"`.
 
+With `valid_neighbor="ignore_invalid"`, `min_valid_count` may be an integer
+from 1 through the number of active footprint cells. The output is invalid
+where fewer cells are valid. It is rejected with the other validity policies
+so a silently ignored threshold cannot enter a calculation. When omitted,
+existing behavior is preserved: statistics require at least one valid
+neighbor, while `focal_count` and convolution retain a meaningful valid zero.
+
 **Statistics:** `ma.focal_sum`, `ma.focal_mean`, `ma.focal_min`,
 `ma.focal_max`, `ma.focal_range`, `ma.focal_std` (with `ddof`),
 `ma.focal_count`, `ma.focal_median`.
@@ -1794,7 +1809,9 @@ smoothed = ma.focal_mean(raster, size=5, edge="nearest")
 opened = ma.opening(mask, size=3)
 ```
 
-Focal operations are eager-only in `0.2`.
+Focal kernels are eager-only in `0.2`. Expression construction records focal
+parameters for inspection and identity, but bounded focal execution remains in
+the deferred large-raster plan.
 
 ### Zonal Operations
 

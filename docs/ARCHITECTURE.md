@@ -879,6 +879,19 @@ scientific and restart identity and are replayed unchanged by eager and
 windowed execution. No helper introduces FP64 or 64-bit integer arithmetic
 solely to perform these checks.
 
+Variadic layer combinations are compositional public helpers rather than a
+separate kernel family. ``sum_layers`` and ``mean_layers`` expand into the
+ordinary checked add/divide graph; ``min_layers`` and ``max_layers`` expand
+into pairwise minimum/maximum nodes. This keeps eager, expression, windowed,
+identity, unit, validity, and numeric-policy behavior on the same enforced
+paths and avoids materializing a ``(layer, y, x)`` temporary stack.
+
+Eager focal statistics share one validated ``min_valid_count`` contract.
+The parameter is meaningful only with ``ignore_invalid`` and is bounded by the
+number of active footprint cells. Expression construction validates and
+records it, but executing general focal expressions in bounded windows remains
+deferred to the large-raster plan.
+
 ### 20.3 Execution architecture
 
 Execution has two strategies on one operation specification:

@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 
 from ..errors import (
     GeoTiffOpenError,
+    MapAlgebraError,
     RasterValidationError,
 )
 from ..georeference import GeoReference
@@ -55,7 +56,10 @@ from .local import (
     logical_not,
     logical_or,
     logical_xor,
+    max_layers as _max_layers_eager,
     maximum,
+    mean_layers as _mean_layers_eager,
+    min_layers as _min_layers_eager,
     minimum,
     multiply,
     negative,
@@ -70,6 +74,7 @@ from .local import (
     remainder,
     round_half_even as round,
     standardize,
+    sum_layers as _sum_layers_eager,
     set_invalid,
     sin,
     sqrt,
@@ -283,6 +288,92 @@ logical_or = _wrap_binary(logical_or, "local.logical_or")
 logical_xor = _wrap_binary(logical_xor, "local.logical_xor")
 hypot = _wrap_binary(hypot, "local.hypot")
 arctan2 = _wrap_binary(arctan2, "local.arctan2")
+
+
+def _validate_nonempty_layers(layers: tuple[Any, ...], *, operation: str) -> None:
+    if not layers:
+        raise MapAlgebraError(
+            f"{operation}() requires at least one Raster or RasterExpression.",
+            code="map_algebra_empty_layers",
+            details={"operation": operation},
+        )
+    for index, layer in enumerate(layers):
+        if not isinstance(layer, (Raster, RasterExpression)):
+            raise MapAlgebraError(
+                f"{operation}() layers must be Raster or RasterExpression values.",
+                code="map_algebra_invalid_layer",
+                details={
+                    "operation": operation,
+                    "layer_index": index,
+                    "type": type(layer).__name__,
+                },
+            )
+
+
+def sum_layers(
+    *layers: Any,
+    overflow: Literal["raise", "wrap", "promote"] = "raise",
+    numeric_errors: Literal["invalid", "keep", "raise"] = "invalid",
+) -> Any:
+    _validate_nonempty_layers(layers, operation="sum_layers")
+    if not _has_expr(*layers):
+        return _sum_layers_eager(
+            *layers, overflow=overflow, numeric_errors=numeric_errors,
+        )
+    result = add(
+        layers[0], 0, overflow=overflow, numeric_errors=numeric_errors,
+    )
+    for layer in layers[1:]:
+        result = add(
+            result, layer, overflow=overflow, numeric_errors=numeric_errors,
+        )
+    return result
+
+
+def mean_layers(
+    *layers: Any,
+    overflow: Literal["raise", "wrap", "promote"] = "raise",
+    numeric_errors: Literal["invalid", "keep", "raise"] = "invalid",
+) -> Any:
+    _validate_nonempty_layers(layers, operation="mean_layers")
+    if not _has_expr(*layers):
+        return _mean_layers_eager(
+            *layers, overflow=overflow, numeric_errors=numeric_errors,
+        )
+    total = sum_layers(
+        *layers, overflow=overflow, numeric_errors=numeric_errors,
+    )
+    return divide(total, len(layers), numeric_errors=numeric_errors)
+
+
+def min_layers(
+    *layers: Any,
+    numeric_errors: Literal["invalid", "keep", "raise"] = "invalid",
+) -> Any:
+    _validate_nonempty_layers(layers, operation="min_layers")
+    if not _has_expr(*layers):
+        return _min_layers_eager(*layers, numeric_errors=numeric_errors)
+    result = minimum(
+        layers[0], layers[0], numeric_errors=numeric_errors,
+    )
+    for layer in layers[1:]:
+        result = minimum(result, layer, numeric_errors=numeric_errors)
+    return result
+
+
+def max_layers(
+    *layers: Any,
+    numeric_errors: Literal["invalid", "keep", "raise"] = "invalid",
+) -> Any:
+    _validate_nonempty_layers(layers, operation="max_layers")
+    if not _has_expr(*layers):
+        return _max_layers_eager(*layers, numeric_errors=numeric_errors)
+    result = maximum(
+        layers[0], layers[0], numeric_errors=numeric_errors,
+    )
+    for layer in layers[1:]:
+        result = maximum(result, layer, numeric_errors=numeric_errors)
+    return result
 
 
 _isclose_eager = isclose
@@ -678,9 +769,17 @@ def standardize(
 # ---------------------------------------------------------------------------
 
 def _wrap_focal(fn: Any, op_id: str) -> Any:
+    fn_signature = signature(fn)
+
+    @wraps(fn)
     def _wrapper(raster: Any, *args: Any, **kwargs: Any) -> Any:
+        bound = fn_signature.bind(raster, *args, **kwargs)
         if isinstance(raster, RasterExpression):
+            from .focal import _validate_focal_expression_parameters
             from ._model import _make_expr_node
+
+            bound.apply_defaults()
+            _validate_focal_expression_parameters(dict(bound.arguments))
             all_params = dict(kwargs)
             if args:
                 all_params["_args"] = args
@@ -693,7 +792,6 @@ def _wrap_focal(fn: Any, op_id: str) -> Any:
                 params=all_params,
             )
         return fn(raster, *args, **kwargs)
-    _wrapper.__name__ = fn.__name__
     return _wrapper
 
 

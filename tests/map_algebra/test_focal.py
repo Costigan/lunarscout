@@ -10,6 +10,7 @@ from lunarscout.map_algebra import (
     closing,
     convolve,
     dilate,
+    describe_operation,
     erode,
     focal_count,
     focal_max,
@@ -70,6 +71,31 @@ class TestFocalSum:
         result = focal_sum(r, size=3, edge="invalid")
         assert not result.valid[0, 0]
         assert result.valid[2, 2]
+
+    @pytest.mark.parametrize(
+        "operation",
+        [
+            focal_sum, focal_mean, focal_min, focal_max, focal_range,
+            focal_std, focal_median,
+        ],
+    )
+    def test_min_valid_count_controls_ignore_invalid(self, operation):
+        values = np.arange(9, dtype=np.float32).reshape(3, 3)
+        valid = np.array(
+            [[True, True, False], [True, True, False], [True, False, False]],
+            dtype=np.bool_,
+        )
+        source = ma_raster(values, _georef(3, 3), valid=valid)
+        accepted = operation(
+            source, size=3, edge="nearest", valid_neighbor="ignore_invalid",
+            min_valid_count=5,
+        )
+        rejected = operation(
+            source, size=3, edge="nearest", valid_neighbor="ignore_invalid",
+            min_valid_count=6,
+        )
+        assert accepted.valid[1, 1]
+        assert not rejected.valid[1, 1]
 
 
 class TestFocalMean:
@@ -132,6 +158,22 @@ class TestFocalCount:
         result = focal_count(r, size=(3, 5), edge="nearest")
         assert result.shape == (5, 5)
 
+    def test_explicit_min_valid_count_preserves_default_zero_count_contract(self):
+        source = ma_raster(
+            np.ones((3, 3), dtype=np.float32), _georef(3, 3),
+            valid=np.zeros((3, 3), dtype=np.bool_),
+        )
+        default = focal_count(
+            source, size=3, edge="nearest", valid_neighbor="ignore_invalid",
+        )
+        thresholded = focal_count(
+            source, size=3, edge="nearest", valid_neighbor="ignore_invalid",
+            min_valid_count=1,
+        )
+        assert default.valid[1, 1]
+        assert default.values[1, 1] == 0
+        assert not thresholded.valid[1, 1]
+
 
 class TestFocalMedian:
     def test_median(self):
@@ -188,6 +230,17 @@ class TestFootprint:
         with pytest.raises(MapAlgebraError):
             focal_sum(r, size=2)
 
+    @pytest.mark.parametrize("as_expression", [False, True])
+    def test_all_false_footprint_rejected(self, as_expression):
+        source = _make(np.ones((3, 3), dtype=np.float32))
+        operand = source.expression() if as_expression else source
+        with pytest.raises(MapAlgebraError) as error:
+            focal_sum(
+                operand, footprint=np.zeros((3, 3), dtype=np.bool_),
+                valid_neighbor="ignore_invalid", min_valid_count=1,
+            )
+        assert error.value.code == "map_algebra_invalid_footprint"
+
 
 class TestConvolution:
     def test_identity(self):
@@ -214,11 +267,77 @@ class TestConvolution:
         with pytest.raises(MapAlgebraError):
             convolve(r, kernel)
 
+    @pytest.mark.parametrize("as_expression", [False, True])
+    def test_complex_kernel_rejected_consistently(self, as_expression):
+        kernel = np.ones((3, 3), dtype=np.complex64)
+        source = _make(np.ones((3, 3), dtype=np.float32))
+        operand = source.expression() if as_expression else source
+        with pytest.raises(MapAlgebraError) as error:
+            convolve(operand, kernel)
+        assert error.value.code == "map_algebra_invalid_kernel"
+
     def test_one_by_one_kernel(self):
         kernel = np.array([[2.0]], dtype=np.float64)
         r = _make(np.ones((3, 3), dtype=np.float32))
         result = convolve(r, kernel, edge="invalid")
         np.testing.assert_array_equal(result.values, np.full((3, 3), 2.0, dtype=np.float32))
+
+    def test_min_valid_count(self):
+        kernel = np.ones((3, 3), dtype=np.float64)
+        valid = np.ones((3, 3), dtype=np.bool_)
+        valid.flat[:5] = False
+        source = ma_raster(
+            np.ones((3, 3), dtype=np.float32), _georef(3, 3), valid=valid,
+        )
+        result = convolve(
+            source, kernel, edge="nearest", valid_neighbor="ignore_invalid",
+            min_valid_count=5,
+        )
+        assert not result.valid[1, 1]
+
+
+class TestMinValidCountValidation:
+    @pytest.mark.parametrize("value", [0, 10, 1.5, True])
+    def test_invalid_count_is_structured(self, value):
+        source = _make(np.ones((3, 3), dtype=np.float32))
+        with pytest.raises(MapAlgebraError) as error:
+            focal_mean(
+                source, size=3, edge="nearest",
+                valid_neighbor="ignore_invalid", min_valid_count=value,
+            )
+        assert error.value.code == "map_algebra_invalid_min_valid_count"
+
+    def test_count_requires_ignore_invalid_policy(self):
+        source = _make(np.ones((3, 3), dtype=np.float32))
+        with pytest.raises(MapAlgebraError) as error:
+            focal_mean(
+                source, size=3, edge="nearest",
+                valid_neighbor="require_all", min_valid_count=3,
+            )
+        assert error.value.code == "map_algebra_invalid_min_valid_count"
+
+    def test_cross_footprint_uses_active_cell_count(self):
+        source = _make(np.ones((3, 3), dtype=np.float32))
+        footprint = np.array(
+            [[False, True, False], [True, True, True], [False, True, False]],
+            dtype=np.bool_,
+        )
+        with pytest.raises(MapAlgebraError) as error:
+            focal_mean(
+                source, footprint=footprint, edge="nearest",
+                valid_neighbor="ignore_invalid", min_valid_count=6,
+            )
+        assert error.value.code == "map_algebra_invalid_min_valid_count"
+        assert error.value.details["maximum"] == 5
+
+    def test_registry_metadata_matches_public_parameter(self):
+        description = describe_operation("focal.mean")
+        assert description["version"] == 2
+        assert description["file_backed_available"] is False
+        assert [item["name"] for item in description["parameters"]] == [
+            "size", "footprint", "edge", "valid_neighbor",
+            "min_valid_count", "cval",
+        ]
 
 
 class TestMorphology:
@@ -284,3 +403,22 @@ class TestExpressionDispatch:
         result_expr = dilate(expr, size=3)
         from lunarscout.map_algebra import RasterExpression
         assert isinstance(result_expr, RasterExpression)
+
+    def test_min_valid_count_changes_identity_and_validates_without_execution(self):
+        expression = _make(np.ones((3, 3), dtype=np.float32)).expression()
+        three = focal_mean(
+            expression, size=3, valid_neighbor="ignore_invalid",
+            min_valid_count=3,
+        )
+        four = focal_mean(
+            expression, size=3, valid_neighbor="ignore_invalid",
+            min_valid_count=4,
+        )
+        assert three.scientific_identity() != four.scientific_identity()
+
+        with pytest.raises(MapAlgebraError) as error:
+            focal_mean(
+                expression, size=3, valid_neighbor="ignore_invalid",
+                min_valid_count=10,
+            )
+        assert error.value.code == "map_algebra_invalid_min_valid_count"

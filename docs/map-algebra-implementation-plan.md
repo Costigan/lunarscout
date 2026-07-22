@@ -5,7 +5,7 @@ materialization, bounded zero-halo local/coordinate writes, halo-aware
 terrain execution, explicit cross-grid resampling, documentation, examples,
 writer progress/cancellation, compact durable restart journaling, and local
 release-artifact checks are implemented. Registry metadata, identity
-separation, numeric-policy centralization, eager API gaps, structured-error
+separation, remaining eager API gaps, structured-error
 normalization, per-operation reference documentation, and adversarial test
 coverage remain partial. All further work whose primary purpose is processing
 maps too large for memory is deferred by project decision and moved to
@@ -15,7 +15,7 @@ real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (numeric consistency part 2)
+Last updated: 2026-07-22 (layer stacks and focal min-valid-count)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -46,7 +46,7 @@ is not counted as partial merely because adjacent functionality exists.
 | State | Scope |
 | --- | --- |
 | Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic output; halo-aware terrain and explicit cross-grid resampling ``write`` execution; writer progress/cancellation and compact checkpoint resume; public terrain/resample wrappers with categorical safety and validity policies; user guide, architecture, examples, and the ordinary CPU suite. |
-| Partial | Operation catalog metadata and coverage; analyst-facing ``explain`` detail; canonical identity golden fixtures; numeric-policy and dtype centralization; eager stack helpers and region adapters; structured-error normalization; exhaustive API tables; and adversarial/boundary tests. |
+| Partial | Operation catalog metadata and coverage; analyst-facing ``explain`` detail; canonical identity golden fixtures; numeric-policy and dtype centralization; eager region adapters; structured-error normalization; exhaustive API tables; and adversarial/boundary tests. |
 | Deferred -- large-raster plan | All further bounded/windowed execution work: general halos and focal kernels, local fusion, cross-window region reconciliation, streaming global/zonal reducers, bounded distance fields, temporal spatial-window/time-batch mapping, concurrency controls, and empirical resource scaling. Current completed bounded capabilities remain supported. |
 | Skipped by decision | TestPyPI publication for ``0.2.0rc1``. Local artifact construction, inspection, and isolated installation remain completed evidence. |
 
@@ -56,8 +56,8 @@ The active, non-large-raster sequence is:
 
 1. centralize numeric policy, dtype inference, validity helpers, and structured
    error translation across eager and expression construction paths;
-2. complete eager/public API gaps such as stack combinations, region adapters,
-   `min_valid_count`, and the reviewed temporal reducer inventory;
+2. complete eager/public API gaps such as region adapters and the reviewed
+   temporal reducer inventory;
 3. complete canonical identity fixtures, registry coverage, generated operation
    descriptions, `explain()`, and public API reference tables;
 4. close adversarial and boundary-test gaps and reconcile examples and release
@@ -606,10 +606,11 @@ Support both functions and appropriate `Raster`/`RasterExpression` operators:
 
 - [x] Arithmetic: ``add``, ``subtract``, ``multiply``, ``divide``, ``floor_divide``,
   ``remainder``, ``power``, ``negative``, ``positive``, ``absolute``.
-- [ ] Pairwise/stack combination: ``minimum``, ``maximum``, ``sum_layers``,
+- [x] Pairwise/stack combination: ``minimum``, ``maximum``, ``sum_layers``,
   ``mean_layers``, ``min_layers``, ``max_layers``.
-  **PARTIAL:** ``minimum`` and ``maximum`` are implemented;
-  ``sum_layers``/``mean_layers``/``min_layers``/``max_layers`` are deferred.
+  Variadic helpers compose the ordinary local operations without allocating a
+  three-dimensional stack, preserving their checked dtype, numeric, grid,
+  unit, expression, and windowed-write contracts.
 - [x] Comparisons: ``equal``, ``not_equal``, ``less``, ``less_equal``, ``greater``,
   ``greater_equal``, ``isclose``.
 - [x] Boolean: ``logical_not``, ``logical_and``, ``logical_or``, ``logical_xor``;
@@ -700,10 +701,10 @@ and crop to the destination window; that future execution work is deferred to
   `wrap`; document that `wrap` is mathematical and usually inappropriate for
   regional lunar rasters. **PARTIAL:** all modes are implemented eagerly, but
   the documented caution and file-backed parity evidence are incomplete.
-- [ ] Valid-neighbor policy: `require_all`, `ignore_invalid` with
+- [x] Valid-neighbor policy: `require_all`, `ignore_invalid` with
   `min_valid_count`, or `propagate_center`. Record it in expression identity.
-  **PARTIAL:** the three policies and expression parameters exist, but
-  ``min_valid_count`` is not implemented and bounded execution is deferred.
+  The eager contract and expression validation/identity are implemented;
+  bounded execution remains deferred to the large-raster plan.
 - [ ] Integrate existing region cleanup behavior with shared morphology
   helpers without changing current public results. This eager/shared-helper
   cleanup remains core work.
@@ -1302,9 +1303,9 @@ Acceptance evidence:
 - [x] Implement strict Boolean operations and truth-test diagnostics.
 - [x] Implement ``where``, ``coalesce``, validity functions, clip, cast, and the
   core math inventory.
-- [ ] Implement reclassification and stack combination.
-  **PARTIAL:** reclassification, digitization, and one-hot operations are
-  implemented, as are pairwise min/max; stack combination is not.
+- [x] Implement reclassification and stack combination.
+  Reclassification, digitization, one-hot, pairwise min/max, and compositional
+  variadic stack helpers are implemented.
 - [ ] Add property-based-style randomized tests using deterministic seeds;
   compare valid cells with direct NumPy reference calculations.
   **PARTIAL:** deterministic analytic coverage is extensive; the requested

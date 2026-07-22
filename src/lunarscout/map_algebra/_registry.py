@@ -180,6 +180,41 @@ _SPECS = (
             ("is_valid", "Return the validity mask."), ("is_invalid", "Return the invalidity mask."),
         )
     ),
+    _spec(
+        "local.sum_layers", None, "local",
+        "Add one or more layers by composing ordinary local addition.",
+        parameters=(
+            ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+            ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
+        ),
+        output_dtype_rule="left-associated local.add promotion",
+        output_units_rule="all layers must have matching units",
+        validity_rule="strict intersection",
+    ),
+    _spec(
+        "local.mean_layers", None, "local",
+        "Calculate the arithmetic mean of one or more layers.",
+        parameters=(
+            ("overflow", "Integer sum overflow policy: raise, wrap, or promote."),
+            ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
+        ),
+        output_dtype_rule="sum_layers followed by true division",
+        output_units_rule="all layers must have matching units",
+        validity_rule="strict intersection",
+    ),
+    *(
+        _spec(
+            f"local.{name}_layers", None, "local",
+            f"Calculate the cell-wise {name} of one or more layers.",
+            parameters=((
+                "numeric_errors", "Non-finite policy: invalid, keep, or raise.",
+            ),),
+            output_dtype_rule=f"left-associated local.{name}imum promotion",
+            output_units_rule="all layers must have matching units",
+            validity_rule="strict intersection",
+        )
+        for name in ("min", "max")
+    ),
     _spec("local.where", 3, "local", "Select between branches by a Boolean condition.", file_backed_available=True),
     _spec("local.round", 1, "local", "Round half to even.",
           version=2,
@@ -228,9 +263,42 @@ _SPECS = (
         )
     ),
     *(
-        _spec(f"focal.{name}", 1, "focal", f"Apply focal {name}.", cost_class="neighborhood")
-        for name in ("sum", "mean", "min", "max", "range", "std", "count", "median",
-                     "dilate", "erode", "opening", "closing", "majority", "convolve")
+        _spec(
+            f"focal.{name}", 1, "focal", f"Apply focal {name}.",
+            version=2,
+            parameters=(
+                ("size", "Odd scalar or rectangular neighborhood dimensions."),
+                ("footprint", "Explicit odd two-dimensional Boolean footprint."),
+                ("edge", "Edge mode: invalid, constant, nearest, reflect, or wrap."),
+                ("valid_neighbor", "Validity policy for neighborhood cells."),
+                ("min_valid_count", "Minimum valid cells when ignoring invalid neighbors."),
+                ("cval", "Constant padding value."),
+                *((
+                    ("ddof", "Delta degrees of freedom."),
+                ) if name == "std" else ()),
+            ),
+            cost_class="neighborhood",
+        )
+        for name in ("sum", "mean", "min", "max", "range", "std", "count", "median")
+    ),
+    *(
+        _spec(
+            f"focal.{name}", 1, "focal", f"Apply focal {name}.",
+            cost_class="neighborhood",
+        )
+        for name in ("dilate", "erode", "opening", "closing", "majority")
+    ),
+    _spec(
+        "focal.convolve", 2, "focal", "Apply a finite convolution kernel.",
+        version=2,
+        parameters=(
+            ("normalize", "Normalize by the sum of absolute kernel weights."),
+            ("edge", "Edge mode: invalid, constant, nearest, reflect, or wrap."),
+            ("valid_neighbor", "Validity policy for neighborhood cells."),
+            ("min_valid_count", "Minimum valid cells when ignoring invalid neighbors."),
+            ("cval", "Constant padding value."),
+        ),
+        cost_class="neighborhood",
     ),
     _spec("terrain.slope", 1, "terrain", "Calculate terrain slope from an elevation raster.",
           parameters=(("output_nodata", "Sentinel value at invalid cells (default NaN)."),

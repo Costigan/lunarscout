@@ -6,6 +6,21 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra eager API completion: layer stacks and focal validity
+  thresholds.** Added public ``sum_layers``, ``mean_layers``, ``min_layers``,
+  and ``max_layers`` helpers with strict validity intersection, grid/unit
+  validation, checked overflow and numeric-error policies, mixed
+  eager/expression dispatch, deterministic identity, and bounded windowed
+  writes through composition of existing local nodes. The helpers do not
+  allocate a three-dimensional layer stack. Added ``min_valid_count`` to eager
+  focal statistics and convolution for ``valid_neighbor="ignore_invalid"``,
+  with footprint-aware bounds, structured validation, expression identity,
+  and preservation of the existing default zero-count contract. Focal
+  registry metadata and expression-time parameter validation now match the
+  public signatures. General bounded focal execution remains deferred.
+  Verification: 1621 passed, 17 skipped in the ordinary CPU suite; 1163
+  map-algebra tests passed.
+
 - **Map-algebra numeric consistency, part 2.** Completed exact checked integer
   power using bounded repeated squaring, with ``raise``, exact ``promote``, and
   explicit ``wrap`` overflow policies and numeric-domain handling for negative
