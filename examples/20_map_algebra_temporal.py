@@ -33,12 +33,16 @@ def main() -> None:
 
     out = scenario.output_path("analysis/temporal/mean_sun.tif")
     out.parent.mkdir(parents=True, exist_ok=True)
-    print(ma.write(out, mean_sun, dtype="float32", invalid_value=-9999.0))
+    # Temporal reductions are not yet spatial-window planner nodes. Make their
+    # whole-raster materialization explicit before using the bounded writer.
+    mean_raster = ma.compute(mean_sun)
+    print(ma.write(out, mean_raster.expression(), dtype="float32", invalid_value=-9999.0))
 
     candidate = (mean_sun >= 0.40) & (slope.expression() <= 8.0)
     out = scenario.output_path("analysis/temporal/temporal_candidate.tif")
     out.parent.mkdir(parents=True, exist_ok=True)
-    print(ma.write(out, candidate, dtype="uint8", invalid_value=0))
+    candidate_raster = ma.compute(candidate)
+    print(ma.write(out, candidate_raster.expression(), dtype="uint8", invalid_value=0))
 
     series.close()
 

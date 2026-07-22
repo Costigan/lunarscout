@@ -53,6 +53,7 @@ _SPECIAL_OPS = {
     "local.is_valid", "local.is_invalid",
     "local.reclassify_values", "local.reclassify_ranges", "local.digitize",
     "local.one_hot", "local.normalize_minmax", "local.standardize",
+    "local.isclose",
 }
 
 _COORDINATE_OPS = {
@@ -201,7 +202,7 @@ def _eval_unary(node: RasterExpression, operands: list[Any]) -> Raster:
     elif op_id == "local.trunc":
         return _ma.trunc(a)
     elif op_id == "local.round":
-        return _ma.round_half_even(a)
+        return _ma.round_half_even(a, ndigits=node._params_dict.get("ndigits", 0))
     elif op_id == "local.degrees":
         return _ma.degrees(a)
     elif op_id == "local.radians":
@@ -217,13 +218,31 @@ def _eval_special(node: RasterExpression, operands: list[Any]) -> Raster:
 
     op_id = node._operation_id
     if op_id == "local.where":
-        return _ma.where(operands[0], operands[1], operands[2])
+        branches = [
+            _ma.invalid if isinstance(value, str) and value == "invalid" else value
+            for value in operands[1:]
+        ]
+        return _ma.where(operands[0], branches[0], branches[1])
+    elif op_id == "local.isclose":
+        return _ma.isclose(
+            operands[0], operands[1],
+            rtol=node._params_dict["rtol"],
+            atol=node._params_dict["atol"],
+            equal_nan=node._params_dict["equal_nan"],
+        )
     elif op_id == "local.coalesce":
         return _ma.coalesce(*operands)
     elif op_id == "local.clip":
-        return _ma.clip(operands[0])
+        return _ma.clip(
+            operands[0],
+            lower=node._params_dict.get("lower"),
+            upper=node._params_dict.get("upper"),
+        )
     elif op_id == "local.cast":
-        return _ma.cast(operands[0], operands[1])
+        return _ma.cast(
+            operands[0], operands[1],
+            casting=node._params_dict.get("casting", "safe"),
+        )
     elif op_id == "local.set_invalid":
         return _ma.set_invalid(operands[0], operands[1])
     elif op_id == "local.fill_invalid":
@@ -381,6 +400,22 @@ def plan(expression: RasterExpression, *, output: str | None = None) -> dict[str
     if expression._inferred_grid is not None:
         grid_str = f"{expression._inferred_grid.width}x{expression._inferred_grid.height}"
 
+    from ._planner import plan_expression as _plan_expression
+
+    ep = _plan_expression(expression)
+    planner_info: dict[str, Any] = {
+        "window_width": ep.window_width,
+        "window_height": ep.window_height,
+        "n_windows_x": ep.n_windows_x,
+        "n_windows_y": ep.n_windows_y,
+        "total_windows": ep.total_windows,
+        "passes": ep.n_passes,
+        "n_sources": ep.n_sources,
+        "n_operations": ep.n_operations,
+        "halos": ep.halos,
+        "estimated_peak_bytes": ep.estimated_per_window_bytes,
+    }
+
     return {
         "node_count": len(nodes),
         "source_count": len(sources),
@@ -391,4 +426,5 @@ def plan(expression: RasterExpression, *, output: str | None = None) -> dict[str
         "output_units": expression._inferred_units,
         "sources": source_descs,
         "output_path": output,
+        "planner": planner_info,
     }

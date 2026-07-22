@@ -1,17 +1,19 @@
 # Broad Map-Algebra API Implementation Plan
 
 Status: The eager ``0.2`` map-algebra surface, expression construction and
-eager materialization, temporal streaming reducers, documentation, examples,
-and local release-artifact checks are implemented. Bounded spatial expression
-execution and the APIs that depend on it are deferred to ``0.3``. Registry
-metadata, identity separation, per-operation reference documentation, and
-resource/performance evidence remain partial. TestPyPI publication is skipped
-by project decision; there are no external users for a useful candidate cycle,
-and publishing will resume at a later milestone intended for real PyPI.
+materialization, bounded zero-halo local/coordinate writes, temporal streaming
+reducers, documentation, examples, and local release-artifact checks are
+implemented. Halo-aware focal/terrain execution and other APIs that depend on
+cross-window planning remain deferred to ``0.3``. Registry metadata, identity
+separation, planner limits, durable restart, per-operation reference
+documentation, and empirical resource/performance evidence remain partial.
+TestPyPI publication is skipped by project decision; there are no external
+users for a useful candidate cycle, and publishing will resume at a later
+milestone intended for real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-21 (rigorous reconciliation after Phase I review)
+Last updated: 2026-07-21 (bounded-execution implementation review and rigorous reconciliation)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -41,9 +43,9 @@ is not counted as partial merely because adjacent functionality exists.
 
 | State | Scope |
 | --- | --- |
-| Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic whole-raster output; user guide, examples, local wheel/sdist checks, and the ordinary CPU suite. |
-| Partial | Operation catalog metadata and coverage; analyst-facing ``explain`` and dry-run ``plan`` detail; distinct scientific/restart/execution-cache identities and golden fixtures; numeric-policy and dtype centralization; focal expression execution; durable restart; exhaustive API tables, test matrix, and benchmarks. |
-| Deferred to 0.3 | Spatial planner, window enumeration, local fusion and source cache; bounded local/focal/coordinate kernels; terrain expression nodes; ``resample_to``; map-algebra region adapters; bounded global/zonal/distance execution; per-window journal/resume and resource-scaling evidence. |
+| Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic output; user guide, examples, local wheel/sdist checks, and the ordinary CPU suite. |
+| Partial | Planner limits and memory estimates; operation catalog metadata and coverage; analyst-facing ``explain`` and dry-run ``plan`` detail; distinct scientific/restart/execution-cache identities and golden fixtures; numeric-policy and dtype centralization; focal expression execution; durable restart; exhaustive API tables, test matrix, and empirical benchmarks. |
+| Deferred to 0.3 | Local fusion; progress/cancellation and per-window journal/resume; halo-aware focal/terrain kernels; ``resample_to``; map-algebra region adapters; bounded global/zonal/distance execution; temporal mapping; and resource-scaling evidence. |
 | Skipped by decision | TestPyPI publication for ``0.2.0rc1``. Local artifact construction, inspection, and isolated installation remain completed evidence. |
 
 ### Next implementation sequence
@@ -51,8 +53,9 @@ is not counted as partial merely because adjacent functionality exists.
 The next major milestone is not four independent operation additions. Bounded
 spatial execution is the critical path:
 
-1. finish the planner, window enumeration, local fusion, bounded source cache,
-   and windowed local/coordinate execution;
+1. **COMPLETED:** implement defensive graph planning, streaming window
+   enumeration, bounded source caching, and zero-halo local/coordinate
+   execution. Local fusion and empirical peak-memory measurement remain open.
 2. make writer progress, cancellation, journaling, and restart operate on those
    windows;
 3. add halo-aware focal and terrain nodes with whole-array parity;
@@ -643,10 +646,8 @@ materializes an expression; and `ma.write()` evaluates it in bounded windows.
   `projected_y(grid, anchor="center")`.
 - [x] `longitude(grid, anchor="center")` and
   `latitude(grid, anchor="center")`, using the grid's own geodetic CRS.
-- [ ] Generate coordinate windows lazily in file mode; do not allocate two
+- [x] Generate coordinate windows lazily in file mode; do not allocate two
   full coordinate rasters merely to process one output window.
-  **DEFERRED TO 0.3:** coordinate nodes are lazy at construction but eager at
-  materialization until the spatial window executor exists.
 - [x] Clearly label longitude/latitude units and axis order.
 - [x] Do not provide an implicit WGS84 transform.
 
@@ -874,7 +875,9 @@ both a common spatial grid and compatible time coordinates.
   example, `ma.temporal_mean(sun_series) >= 0.60` may combine with a static
   slope expression and be written window by window without first creating a
   complete mean GeoTIFF. **PARTIAL:** reductions are composable expressions,
-  but the spatial writer currently materializes the complete result.
+  but the bounded spatial writer rejects temporal nodes. Callers must
+  explicitly ``compute()`` the reduction before writing until
+  temporal-to-spatial window planning exists.
 - [ ] File-backed temporal mapping initially writes the existing timestamped
   GeoTIFF-series format through `TemporalGeoTiffSeriesWriter`. Generic
   multi-band BigTIFF expression output is deferred until its mask, timestamp,
@@ -1060,31 +1063,41 @@ OperationSpec(
   normalized-parameter bytes, footprint dimensions, and requested output
   bands. Limits prevent accidental or generated expressions from exhausting
   planning resources and fail before source execution or output staging.
-  **DEFERRED TO 0.3.**
+  **PARTIAL:** node, depth, and source limits are enforced and tested;
+  normalized-parameter bytes, footprint dimensions, and output-band limits are
+  not.
 - [ ] Infer one output grid, dtype, units, validity behavior, and maximum halo
   before creating output staging.
-  **PARTIAL:** nodes carry grid, dtype, and units; validity/halo inference and
-  pre-staging planner validation are incomplete.
+  **PARTIAL:** grid, dtype, units, and the zero-halo restriction are validated
+  before staging; general validity and halo inference are deferred.
 - [ ] Fuse consecutive local operations into one window task to avoid
   unnecessary full-window writes; correctness comes before aggressive fusion.
-- [ ] Do not fuse across global reductions, resampling, distance transforms, or
+  **PARTIAL:** the execution graph is processed per-window with no intermediate
+  materialization; explicit fusion grouping across consecutive nodes is deferred.
+- [x] Do not fuse across global reductions, resampling, distance transforms, or
   operations with incompatible halos.
-- [ ] Reuse a source window within a task when multiple nodes request it.
-- [ ] Bound source dataset handles, decoded windows, and output queues.
+  *(unsupported operations are rejected during planning.)*
+- [x] Reuse a source window within a task when multiple nodes request it.
+  *(SourceWindowCache with LRU eviction; same ``(node_id, window_idx)`` key.)*
+- [x] Bound source dataset handles, decoded windows, and output queues.
+  *(explicit ``max_datasets`` and ``max_windows`` bounds; datasets and caches
+  close on success and failure; output is synchronous with no queue.)*
 - [ ] Select window sizes from output block geometry with a conservative
   default of 128 by 128; record the choice in progress metadata but not
   scientific identity.
+  **PARTIAL:** dimensions are configurable with a 128-by-128 default, but are
+  not yet selected from actual output block geometry.
 - [ ] Calculate halos in source pixel coordinates and crop exactly once.
-  **DEFERRED TO 0.3:** fusion, bounded caches, window selection, and halo
-  execution depend on the spatial planner.
-- [ ] Emit a readable plan description for diagnostics and tests.
-  **PARTIAL:** ``ma.plan()`` summarizes graph/source/output metadata, not an
-  executable resource plan.
+  **DEFERRED TO 0.3:** halo calculation awaits focal/terrain nodes.
+- [x] Emit a readable plan description for diagnostics and tests.
+  *(``plan()`` now reports window layout, source count, estimated per-window
+  memory, and other planner metadata.)*
 - [ ] Implement read-only `ma.plan()` and `ma.explain()` on top of normalized
   graph and planner data. Neither function may execute numerical kernels,
   create staging, or write output.
-  **PARTIAL:** both are read-only, but they are not backed by the deferred
-  window planner and explanation metadata is incomplete.
+  **PARTIAL:** both are read-only and ``plan()`` propagates structured planner
+  failures, but ``explain()`` is not yet generated from normalized planner and
+  registry metadata.
 
 ### 4.6 File-backed sources and output
 
@@ -1095,6 +1108,21 @@ OperationSpec(
   **PARTIAL:** core metadata is preflighted; complete mask-flag validation is
   deferred to reads.
 - [x] Open datasets lazily during execution and close them deterministically.
+- [x] ``ma.write()`` evaluates expressions in bounded windows; peak working
+  memory depends on active sources, graph complexity, and window size -- not
+  total raster area. Output is synchronous and coordinate rasters are generated only for
+  the requested window.
+- [x] Source window reads are cached (LRU) and reused within one task.
+- [x] Dataset handles and caches have explicit bounds (``max_datasets``,
+  ``max_windows``) and are closed after success and failure.
+- [x] Supported operations reuse the eager semantic dispatcher, preserving
+  grid, validity, dtype, units, numeric policy, and deterministic invalid-fill
+  behavior. File-backed normalization requires caller-supplied statistics;
+  measured statistics fail during planning rather than becoming tile-local.
+- [x] Focal, global, zonal, distance, resampling, and temporal nodes are
+  rejected during planning (before output staging or pixel execution).
+- [x] Existing atomic overwrite guarantees and restart-manifest identity
+  checks are preserved.
 - [ ] Extend or reuse the existing durable product-storage patterns for
   staging, overwrite protection, cancellation, progress, journaling, and
   atomic publication.
@@ -1246,8 +1274,8 @@ Acceptance evidence:
 - [x] Implement immutable expression nodes and the sealed operation registry.
   *(both expression nodes and the sealed static registry are implemented)*
 - [x] Implement GeoTIFF, in-memory, scalar, and coordinate sources.
-  *(coordinate sources are expression nodes, but still materialize whole
-  coordinate rasters during execution)*
+  *(coordinate sources materialize only the requested window during
+  ``ma.write()``; ``ma.compute()`` remains explicitly whole-raster)*
 - [x] Implement expression operator overloads and stable JSON identity.
 - [ ] Implement canonical typed serialization plus distinct scientific,
   restart, and execution-cache identities with golden fixtures.
@@ -1255,26 +1283,41 @@ Acceptance evidence:
 - [ ] Implement ``describe()``, ``ma.explain()``, ``ma.plan()``, and
   machine-readable operation introspection without executing kernels or
   writing files.
-  **PARTIAL:** these read-only interfaces exist; operation metadata and the
-  planner-backed resource description are incomplete.
+  **PARTIAL:** these read-only interfaces and a basic planner-backed resource
+  description exist; operation metadata and explanation coverage remain
+  incomplete.
 - [ ] Implement the planner, window enumeration, local fusion, source cache,
   cancellation checks, and progress events.
-  **DEFERRED TO 0.3.**
-- [ ] Implement window kernels for every Phase B local operation.
-  **DEFERRED TO 0.3.**
-- [ ] Test many window/block sizes, including outputs smaller than one block
+  **PARTIAL:** defensive planning, constant-memory enumeration, bounded source
+  caching, zero-halo local execution, and output cropping exist. Fusion,
+  cancellation, and progress remain deferred.
+- [x] Implement window kernels for every Phase B local operation.
+  *(all local binary, unary, and special operations dispatch through
+  ``_windowed.py``; parity tested against eager results.)*
+- [x] Test many window/block sizes, including outputs smaller than one block
   and dimensions not divisible by 128.
+  *(``test_planner_windows.py`` covers smaller-than-block, non-divisible,
+  partial edges, and multiple window sizes.)
 - [ ] Measure peak memory against increasing raster dimensions and prove it is
   bounded by window/graph complexity rather than total raster area.
+  **PARTIAL:** the planner estimate is invariant with raster area and the code
+  contains no area-sized window list or output mask, but an estimate is not an
+  empirical peak-memory measurement.
 
-The remaining Phase C execution tests and acceptance evidence are **DEFERRED TO
-0.3** with the spatial planner.
+The remaining Phase C fusion, resource measurement, progress, and cancellation
+work is **DEFERRED TO 0.3**.
 
 Acceptance evidence:
 
-- [ ] Eager and windowed outputs have identical payload and validity for
+- [x] Eager and windowed outputs have identical payload and validity for
   integer/Boolean operations and documented tolerances for floating operations.
+  *(parity tests in ``test_planner_windows.py``.)*
 - [ ] Source datasets and caches close after success, failure, and cancellation.
+  **PARTIAL:** success/failure cleanup and bounded cache eviction are tested;
+  cancellation is not implemented.
+- [x] ``ma.write()`` no longer materializes the complete expression; it reads
+  bounded source windows and processes per-window. Repeated source windows
+  reuse cached data (``test_repeated_window_read_cached``).
 
 ### Phase D: Durable expression output
 
@@ -1610,10 +1653,10 @@ trying to make an example convenient:
   model.
 - [x] No cost-distance, route extraction, rover policy, energy model, thermal
   model, or path optimizer in `0.2`.
-- [ ] No silent full-raster materialization in a file-backed operation.
-  **PARTIAL / CURRENT LIMITATION:** ``ma.write()`` accepts file sources but
-  currently materializes the complete expression before writing. The API and
-  registry must not describe that path as bounded file-backed execution.
+- [x] No silent full-raster materialization in a file-backed operation.
+  ``ma.write()`` now evaluates expressions in bounded windows; source reads,
+  coordinate generation, intermediate computation, and output writing are all
+  window-bounded. ``ma.compute()`` remains the explicit whole-raster path.
 - [x] No CUDA-only core algebra operation unless separately justified with the
   same explicit exception used for horizon generation.
 

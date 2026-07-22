@@ -187,9 +187,32 @@ logical_not = _wrap_unary(logical_not, "local.logical_not")
 floor = _wrap_unary(floor, "local.floor")
 ceil = _wrap_unary(ceil, "local.ceil")
 trunc = _wrap_unary(trunc, "local.trunc")
-round = _wrap_unary(round, "local.round")
+_round_eager = round
+
+
+def round(a: Any, ndigits: int = 0) -> Any:
+    if not isinstance(a, RasterExpression):
+        return _round_eager(a, ndigits)
+    if not isinstance(ndigits, int) or isinstance(ndigits, bool):
+        raise TypeError("ndigits must be an integer.")
+    from ._model import _make_expr_node
+    return _make_expr_node(
+        "local.round", (a,), grid=a.grid, dtype=a.dtype, units=a.units,
+        params={"ndigits": ndigits},
+    )
+
+
 degrees = _wrap_unary(degrees, "local.degrees")
 radians = _wrap_unary(radians, "local.radians")
+
+
+_positive_eager = positive
+
+
+def positive(a: Any) -> Any:
+    if isinstance(a, RasterExpression):
+        return a
+    return _positive_eager(a)
 
 
 def _wrap_binary(fn: Any, op_id: str) -> Any:
@@ -214,6 +237,211 @@ maximum = _wrap_binary(maximum, "local.maximum")
 power = _wrap_binary(power, "local.power")
 floor_divide = _wrap_binary(floor_divide, "local.floor_divide")
 remainder = _wrap_binary(remainder, "local.remainder")
+less = _wrap_binary(less, "local.less")
+less_equal = _wrap_binary(less_equal, "local.less_equal")
+greater = _wrap_binary(greater, "local.greater")
+greater_equal = _wrap_binary(greater_equal, "local.greater_equal")
+equal = _wrap_binary(equal, "local.equal")
+not_equal = _wrap_binary(not_equal, "local.not_equal")
+logical_and = _wrap_binary(logical_and, "local.logical_and")
+logical_or = _wrap_binary(logical_or, "local.logical_or")
+logical_xor = _wrap_binary(logical_xor, "local.logical_xor")
+hypot = _wrap_binary(hypot, "local.hypot")
+arctan2 = _wrap_binary(arctan2, "local.arctan2")
+
+
+_isclose_eager = isclose
+
+
+def isclose(
+    a: Any,
+    b: Any,
+    *,
+    rtol: float = 1e-5,
+    atol: float = 1e-8,
+    equal_nan: bool = False,
+) -> Any:
+    if not _has_expr(a, b):
+        return _isclose_eager(
+            a, b, rtol=rtol, atol=atol, equal_nan=equal_nan,
+        )
+    from ._model import _make_expr_node, _to_expr_or_scalar
+    left = _to_expr_or_scalar(a)
+    right = _to_expr_or_scalar(b)
+    return _make_expr_node(
+        "local.isclose",
+        (left, right),
+        grid=_expression_grid(left, right),
+        dtype=np.dtype(np.bool_),
+        units=None,
+        params={"rtol": rtol, "atol": atol, "equal_nan": equal_nan},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Expression-dispatch wrappers for conditional and validity operations
+# ---------------------------------------------------------------------------
+
+_where_eager = where
+_coalesce_eager = coalesce
+_is_valid_eager = is_valid
+_is_invalid_eager = is_invalid
+_set_invalid_eager = set_invalid
+_fill_invalid_eager = fill_invalid
+_clip_eager = clip
+_cast_eager = cast
+
+
+def _expression_grid(*operands: Any) -> GeoReference | None:
+    from ._model import _infer_common_grid
+
+    return _infer_common_grid(
+        [operand for operand in operands if isinstance(operand, RasterExpression)]
+    )
+
+
+def where(condition: Any, x: Any, y: Any) -> Any:
+    if not _has_expr(condition, x, y):
+        return _where_eager(condition, x, y)
+    from ._model import _make_expr_node, _to_expr_or_scalar
+    from ..errors import MapAlgebraDTypeError
+
+    condition_expr = _to_expr_or_scalar(condition)
+    if not isinstance(condition_expr, RasterExpression):
+        raise MapAlgebraDTypeError(
+            "where() condition must be a Boolean raster expression.",
+            code="map_algebra_requires_boolean",
+        )
+    if condition_expr.dtype != np.dtype(np.bool_):
+        raise MapAlgebraDTypeError(
+            "where() condition must have boolean dtype.",
+            code="map_algebra_requires_boolean",
+            details={"dtype": str(condition_expr.dtype)},
+        )
+    branches = tuple(
+        "invalid" if branch is invalid else _to_expr_or_scalar(branch)
+        for branch in (x, y)
+    )
+    dtype_inputs = [
+        branch.dtype if isinstance(branch, RasterExpression) else np.asarray(branch).dtype
+        for branch in branches
+        if not (isinstance(branch, str) and branch == "invalid")
+    ]
+    output_dtype = np.result_type(*dtype_inputs) if dtype_inputs else condition_expr.dtype
+    branch_units = [
+        branch.units
+        for branch in branches
+        if isinstance(branch, RasterExpression) and branch.units is not None
+    ]
+    return _make_expr_node(
+        "local.where",
+        (condition_expr, *branches),
+        grid=_expression_grid(condition_expr, *branches),
+        dtype=output_dtype,
+        units=branch_units[0] if branch_units else None,
+    )
+
+
+def coalesce(*operands: Any) -> Any:
+    if not _has_expr(*operands):
+        return _coalesce_eager(*operands)
+    from ._model import _make_expr_node, _to_expr_or_scalar
+
+    normalized = tuple(_to_expr_or_scalar(operand) for operand in operands)
+    dtypes = [
+        operand.dtype if isinstance(operand, RasterExpression) else np.asarray(operand).dtype
+        for operand in normalized
+    ]
+    expression_operands = [
+        operand for operand in normalized if isinstance(operand, RasterExpression)
+    ]
+    return _make_expr_node(
+        "local.coalesce",
+        normalized,
+        grid=_expression_grid(*normalized),
+        dtype=np.result_type(*dtypes),
+        units=expression_operands[0].units if expression_operands else None,
+    )
+
+
+def is_valid(raster: Any) -> Any:
+    if not isinstance(raster, RasterExpression):
+        return _is_valid_eager(raster)
+    from ._model import _make_expr_node
+    return _make_expr_node(
+        "local.is_valid", (raster,), grid=raster.grid,
+        dtype=np.dtype(np.bool_), units=None,
+    )
+
+
+def is_invalid(raster: Any) -> Any:
+    if not isinstance(raster, RasterExpression):
+        return _is_invalid_eager(raster)
+    from ._model import _make_expr_node
+    return _make_expr_node(
+        "local.is_invalid", (raster,), grid=raster.grid,
+        dtype=np.dtype(np.bool_), units=None,
+    )
+
+
+def set_invalid(raster: Any, mask: Any) -> Any:
+    if not _has_expr(raster, mask):
+        return _set_invalid_eager(raster, mask)
+    from ._model import _make_expr_node, _to_expr_or_scalar
+    raster_expr = _to_expr_or_scalar(raster)
+    mask_expr = _to_expr_or_scalar(mask)
+    if not isinstance(raster_expr, RasterExpression) or not isinstance(mask_expr, RasterExpression):
+        raise TypeError("set_invalid() requires raster operands.")
+    return _make_expr_node(
+        "local.set_invalid", (raster_expr, mask_expr),
+        grid=_expression_grid(raster_expr, mask_expr), dtype=raster_expr.dtype,
+        units=raster_expr.units,
+    )
+
+
+def fill_invalid(raster: Any, value: Any) -> Any:
+    if not isinstance(raster, RasterExpression):
+        return _fill_invalid_eager(raster, value)
+    from ._model import _make_expr_node, _to_expr_or_scalar
+    validated = _validate_nodata_representable(value, raster.dtype)
+    return _make_expr_node(
+        "local.fill_invalid", (raster, _to_expr_or_scalar(validated)),
+        grid=raster.grid, dtype=raster.dtype, units=raster.units,
+    )
+
+
+def clip(raster: Any, *, lower: Any = None, upper: Any = None) -> Any:
+    if not isinstance(raster, RasterExpression):
+        return _clip_eager(raster, lower=lower, upper=upper)
+    from ._model import _make_expr_node
+    return _make_expr_node(
+        "local.clip", (raster,), grid=raster.grid, dtype=raster.dtype,
+        units=raster.units, params={"lower": lower, "upper": upper},
+    )
+
+
+def cast(raster: Any, dtype: Any, *, casting: str = "safe") -> Any:
+    if not isinstance(raster, RasterExpression):
+        return _cast_eager(raster, dtype, casting=casting)
+    from ._model import _make_expr_node
+    from ..errors import MapAlgebraDTypeError
+    target_dtype = np.dtype(dtype)
+    if casting not in {"safe", "same_kind", "unsafe"}:
+        raise MapAlgebraDTypeError(
+            f"Unknown casting policy: {casting}",
+            code="map_algebra_invalid_casting",
+            details={"casting": casting},
+        )
+    if raster.dtype is not None and not np.can_cast(raster.dtype, target_dtype, casting=casting):
+        raise MapAlgebraDTypeError(
+            f"Cannot cast {raster.dtype} to {target_dtype} with casting='{casting}'.",
+            code="map_algebra_unsafe_cast",
+            details={"source_dtype": str(raster.dtype), "target_dtype": str(target_dtype)},
+        )
+    return _make_expr_node(
+        "local.cast", (raster, target_dtype), grid=raster.grid,
+        dtype=target_dtype, units=raster.units, params={"casting": casting},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +511,14 @@ def reclassify_ranges(
 
         default = "invalidate" if default is None else default
         normalized_ranges = tuple(tuple(item) for item in ranges)
+        for index, item in enumerate(normalized_ranges):
+            if len(item) != 3 or not item[0] < item[1]:
+                from ..errors import MapAlgebraError
+                raise MapAlgebraError(
+                    "Every reclassification range must have lower < upper.",
+                    code="map_algebra_invalid_reclassification_range",
+                    details={"index": index, "range": item},
+                )
         output_values = [item[2] for item in normalized_ranges]
         if not isinstance(default, str):
             output_values.append(default)
@@ -303,13 +539,25 @@ def digitize(raster: Any, bins: Any, *, right: bool = False) -> Any:
     if isinstance(raster, RasterExpression):
         from ._model import _make_expr_node
 
+        normalized_bins = tuple(bins)
+        bins_array = np.asarray(normalized_bins)
+        if (
+            bins_array.ndim != 1
+            or bins_array.dtype.kind not in "iuf"
+            or not np.all(bins_array[:-1] <= bins_array[1:])
+        ):
+            from ..errors import MapAlgebraError
+            raise MapAlgebraError(
+                "bins must be a one-dimensional monotonically increasing numeric sequence.",
+                code="map_algebra_invalid_bins",
+            )
         return _make_expr_node(
             "local.digitize",
             (raster,),
             grid=raster.grid,
             dtype=np.dtype(np.int64),
             units=None,
-            params={"bins": tuple(bins), "right": right},
+            params={"bins": normalized_bins, "right": right},
         )
     return _digitize_eager(raster, bins, right=right)
 
@@ -565,24 +813,26 @@ def _read_rasterio_validity_provenance(
 ) -> str:
     if mask_flags is None:
         return "all_valid"
-    flags = mask_flags[band_idx]
-    if not hasattr(flags, "value"):
-        return "all_valid"
-    all_valid = getattr(flags.__class__, "all_valid", None)
-    per_dataset = getattr(flags.__class__, "per_dataset", None)
-    per_band = getattr(flags.__class__, "per_band", None)
-    alpha = getattr(flags.__class__, "alpha", None)
-    nodata_flag = getattr(flags.__class__, "nodata", None)
-    if all_valid is not None and (int(flags) & int(all_valid)):
+    band_flags = mask_flags[band_idx]
+    flags = (
+        tuple(band_flags)
+        if isinstance(band_flags, (list, tuple, set, frozenset))
+        else (band_flags,)
+    )
+    names = {
+        str(getattr(flag, "name", flag)).lower().split(".")[-1]
+        for flag in flags
+    }
+    if "all_valid" in names:
         return "all_valid"
     parts = []
-    if per_dataset is not None and (int(flags) & int(per_dataset)):
+    if "per_dataset" in names:
         parts.append("per_dataset")
-    if per_band is not None and (int(flags) & int(per_band)):
+    if "per_band" in names:
         parts.append("per_band")
-    if alpha is not None and (int(flags) & int(alpha)):
+    if "alpha" in names:
         parts.append("alpha")
-    if nodata_flag is not None and (int(flags) & int(nodata_flag)):
+    if "nodata" in names:
         parts.append("nodata")
     return "+".join(parts) if parts else "all_valid"
 

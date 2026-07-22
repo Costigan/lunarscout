@@ -13,9 +13,11 @@ from ..errors import (
     MapAlgebraStorageError,
     OutputExistsError,
 )
-from ..raster import Raster, _validate_nodata_representable
+from ..raster import _validate_nodata_representable
 from ._model import RasterExpression
-from .expression import compute
+from ._planner import plan_expression
+from ._windows import SourceWindowCache
+from ._windowed import execute_windowed
 
 
 def _manifest_path(output_path: Path) -> Path:
@@ -56,58 +58,46 @@ def _write_manifest_atomic(
         raise
 
 
-def _write_raster_with_mask(
-    output_path: Path,
-    raster: Raster,
-    *,
-    compress: bool = True,
-) -> None:
+def _create_staged_tiff(
+    path: Path,
+    width: int,
+    height: int,
+    output_dtype: np.dtype[Any],
+    georef: Any,
+    compress: bool,
+    nodata: int | float,
+) -> tuple[Any, Path]:
     import rasterio
     from rasterio.transform import Affine
 
-    georef = raster.georef
-    values = raster.values
-    valid = raster.valid
-
     profile = {
         "driver": "GTiff",
-        "width": int(georef.width),
-        "height": int(georef.height),
+        "width": width,
+        "height": height,
         "count": 1,
-        "dtype": values.dtype,
+        "dtype": output_dtype,
         "crs": georef.projection_wkt,
         "transform": Affine.from_gdal(*georef.affine_transform),
         "tiled": True,
         "blockxsize": 128,
         "blockysize": 128,
         "compress": "deflate" if compress else None,
-        "predictor": 3 if np.issubdtype(values.dtype, np.floating) else 2,
+        "predictor": 3 if np.issubdtype(output_dtype, np.floating) else 2,
         "BIGTIFF": "IF_SAFER",
+        "nodata": nodata,
     }
-    if georef.nodata is not None:
-        profile["nodata"] = georef.nodata
 
     fd, tmp_name = tempfile.mkstemp(
-        prefix="." + output_path.name + ".",
+        prefix="." + path.name + ".",
         suffix=".tmp.tif",
-        dir=output_path.parent,
+        dir=path.parent,
     )
     os.close(fd)
     tmp_path = Path(tmp_name)
     tmp_path.unlink()
 
-    try:
-        with rasterio.open(tmp_path, "w", **profile) as ds:
-            ds.write(values, 1)
-            mask = valid.astype(np.uint8) * 255
-            ds.write_mask(mask)
-            if georef.nodata is not None and np.issubdtype(values.dtype, np.integer):
-                ds.update_tags(1, **{"LUNARSCOUT_NODATA_VALUE": str(int(georef.nodata))})
-
-        os.replace(tmp_path, output_path)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
+    ds = rasterio.open(tmp_path, "w", **profile)
+    return ds, tmp_path
 
 
 def write(
@@ -118,6 +108,8 @@ def write(
     start_fresh: bool = False,
     dtype: np.dtype[Any] | str | None = None,
     invalid_value: int | float | None = None,
+    window_width: int = 128,
+    window_height: int = 128,
 ) -> Path:
     output_path = Path(path).expanduser().resolve()
 
@@ -161,6 +153,26 @@ def write(
 
     restart_id = _build_restart_identity(expression, output_dtype, fill if fill is not None else 0)
 
+    # Plan and validate the complete graph before modifying any existing output.
+    plan = plan_expression(
+        expression,
+        window_width=window_width,
+        window_height=window_height,
+    )
+    if plan.grid is None:
+        raise MapAlgebraExpressionError(
+            "Plan has no output grid.",
+            code="map_algebra_missing_output_grid",
+        )
+    if output_dtype != plan.output_dtype:
+        _validate_output_dtype_conversion(output_dtype, plan)
+        expression = _make_cast_expression(expression, output_dtype)
+        plan = plan_expression(
+            expression,
+            window_width=window_width,
+            window_height=window_height,
+        )
+
     # ---------- check existing output ----------
     manifest_path = _manifest_path(output_path)
 
@@ -180,63 +192,91 @@ def write(
             details={"path": str(output_path)},
         )
 
-    # ---------- compute ----------
-    raster = compute(expression)
+    grid = plan.grid
+    if grid is None:
+        raise MapAlgebraExpressionError("Plan has no output grid.", code="map_algebra_missing_output_grid")
+    g_w = grid.width
+    g_h = grid.height
 
-    if output_dtype != raster.dtype:
-        ok = False
-        if np.issubdtype(raster.dtype, np.bool_) and output_dtype == np.dtype(np.uint8):
-            ok = True
-        elif np.issubdtype(raster.dtype, np.floating) and np.issubdtype(output_dtype, np.floating):
-            ok = True
-        elif np.issubdtype(raster.dtype, np.integer) and np.issubdtype(output_dtype, np.integer):
-            if np.iinfo(output_dtype).max >= np.iinfo(raster.dtype).max:
-                ok = True
-        elif np.issubdtype(output_dtype, np.floating) and (
-            np.issubdtype(raster.dtype, np.integer) or np.issubdtype(raster.dtype, np.bool_)
-        ):
-            ok = True
-        if not ok:
-            raise MapAlgebraStorageError(
-                f"Cannot safely convert output from {raster.dtype} to {output_dtype}. "
-                f"Use ma.cast() explicitly before writing.",
-                code="map_algebra_unsafe_output_cast",
-                details={"source_dtype": str(raster.dtype), "target_dtype": str(output_dtype)},
-            )
-        from .local import cast
-        raster = cast(raster, output_dtype, casting="unsafe")
-
-    fill = _validate_nodata_representable(fill, output_dtype)
-
-    values = raster.filled(fill) if fill is not None else raster.values.copy()
-    georef = raster.georef.with_nodata(fill)
-    out_raster = Raster(
-        values=values,
-        georef=georef,
-        valid=raster.valid,
-        name=raster.name,
-        units=raster.units,
-    )
-
-    # ---------- atomic two-file commit ----------
+    # ---------- windowed execution ----------
     staging_dir = Path(tempfile.mkdtemp(prefix=".lunarscout_write.", dir=output_path.parent))
     staging_tiff = staging_dir / output_path.name
     staging_manifest = staging_dir / manifest_path.name
+    backup_tiff = staging_dir / (output_path.name + ".previous")
+    backup_manifest = staging_dir / (manifest_path.name + ".previous")
     committed = False
+    published_tiff = False
+    published_manifest = False
+
+    ds: Any | None = None
+    ds_tmp_path: Path | None = None
     try:
-        _write_raster_with_mask(staging_tiff, out_raster)
+        ds, ds_tmp_path = _create_staged_tiff(
+            staging_tiff,
+            g_w,
+            g_h,
+            output_dtype,
+            grid,
+            compress=True,
+            nodata=fill,
+        )
+
+        def _write_block(
+            idx: int, x0: int, y0: int, w: int, h: int,
+            values: np.ndarray[Any, Any],
+            valid: np.ndarray[Any, Any],
+        ) -> None:
+            window = ((y0, y0 + h), (x0, x0 + w))
+            block_values = values.astype(output_dtype, copy=False)
+            if not np.all(valid):
+                block_values = block_values.copy()
+                block_values[~valid] = fill
+            ds.write(block_values, 1, window=window)
+            ds.write_mask(valid.astype(np.uint8) * 255, window=window)
+
+        with ds:
+            with SourceWindowCache(
+                max_datasets=16,
+                max_windows=max(1, min(64, plan.n_sources)),
+            ) as cache:
+                execute_windowed(plan, cache, write_block=_write_block)
+            if np.issubdtype(output_dtype, np.integer):
+                ds.update_tags(1, LUNARSCOUT_NODATA_VALUE=str(int(fill)))
+        ds = None
+
+        # Move from temp to staging
+        assert ds_tmp_path is not None
+        os.replace(ds_tmp_path, staging_tiff)
+        ds_tmp_path = None
+
         _write_manifest_atomic(staging_manifest, restart_id)
 
         if output_path.exists():
-            output_path.unlink()
+            os.replace(output_path, backup_tiff)
         if manifest_path.exists():
-            manifest_path.unlink()
+            os.replace(manifest_path, backup_manifest)
 
         os.replace(staging_tiff, output_path)
+        published_tiff = True
         os.replace(staging_manifest, manifest_path)
+        published_manifest = True
         committed = True
+        backup_tiff.unlink(missing_ok=True)
+        backup_manifest.unlink(missing_ok=True)
     finally:
+        if ds is not None:
+            ds.close()
+        if ds_tmp_path is not None:
+            ds_tmp_path.unlink(missing_ok=True)
         if not committed:
+            if published_tiff:
+                output_path.unlink(missing_ok=True)
+            if published_manifest:
+                manifest_path.unlink(missing_ok=True)
+            if backup_tiff.exists():
+                os.replace(backup_tiff, output_path)
+            if backup_manifest.exists():
+                os.replace(backup_manifest, manifest_path)
             staging_tiff.unlink(missing_ok=True)
             staging_manifest.unlink(missing_ok=True)
         try:
@@ -245,6 +285,37 @@ def write(
             pass
 
     return output_path
+
+
+def _make_cast_expression(expression: RasterExpression, target_dtype: np.dtype[Any]) -> RasterExpression:
+    """Create a cast node wrapping the expression."""
+    from ._model import _make_expr_node
+    return _make_expr_node(
+        "local.cast",
+        (expression, target_dtype),
+        grid=expression._inferred_grid,
+        dtype=target_dtype,
+        units=expression._inferred_units,
+        params={"casting": "unsafe"},
+    )
+
+
+def _validate_output_dtype_conversion(
+    output_dtype: np.dtype[Any],
+    plan: Any,
+) -> None:
+    src_dtype = plan.output_dtype
+    if src_dtype is None or src_dtype == output_dtype:
+        return
+
+    ok = bool(np.can_cast(src_dtype, output_dtype, casting="safe"))
+    if not ok:
+        raise MapAlgebraStorageError(
+            f"Cannot safely convert output from {src_dtype} to {output_dtype}. "
+            f"Use ma.cast() explicitly before writing.",
+            code="map_algebra_unsafe_output_cast",
+            details={"source_dtype": str(src_dtype), "target_dtype": str(output_dtype)},
+        )
 
 
 def _load_manifest(manifest_path: Path) -> dict[str, Any] | None:

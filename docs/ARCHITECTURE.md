@@ -841,14 +841,17 @@ Execution has two strategies on one operation specification:
    according to the operation's declared validity rule, and numeric domains
    are applied to invalidate undefined results.
 
-2. **File-backed** (`RasterExpression` in, evaluated by `ma.compute()` or
-   bound in windows by `ma.write()`) topologically sorts the expression DAG,
-   loads source metadata without opening datasets, infers one output grid
-   and dtype, enumerates output windows (default 128 by 128), reads source
-   windows with required halos, applies each operation per window, and writes
-   results. Consecutive local operations are fused into one window task
-   to avoid unnecessary intermediate writes. Source datasets are opened
-   lazily during execution and closed deterministically.
+2. **File-backed / windowed** (`RasterExpression` in, evaluated by
+   `ma.write()`) topologically sorts the expression DAG, validates the graph
+   (rejecting unsupported focal/global/zonal/distance/temporal nodes), infers
+   one output grid and dtype, enumerates output windows (default 128 by 128),
+   reads zero-halo source windows via a bounded LRU cache, applies
+   each operation per window in topo order, and writes results block by block.
+   Nonzero-halo and unsupported operation families are rejected before output
+   staging. Consecutive local operations are evaluated within the same window
+   pass without full-raster intermediate materialization; explicit local
+   fusion is not implemented. Source datasets are opened lazily
+   during execution and closed deterministically with bounded cache eviction.
 
 `ma.compute()` materializes an expression as a `Raster` (suitable for small
 rasters). `ma.write()` evaluates in bounded windows and produces a staged,
@@ -921,12 +924,16 @@ src/lunarscout/
     zonal.py                     # public zonal functions and results
     reductions.py                # public global reductions
     distance.py                  # public distance functions
+    coordinates.py               # public coordinate expressions
     expression.py                # compute, explain, plan for RasterExpression
     temporal.py                  # temporal_source, temporal reductions
     _model.py                    # RasterExpression node model
     _temporal_model.py           # TemporalRaster, TemporalRasterExpression
     _sources.py                  # GeoTIFF and in-memory sources
-    _writer.py                   # staged GeoTIFF expression output
+    _writer.py                   # staged GeoTIFF expression output (windowed)
+    _planner.py                  # graph validation, pass enumeration, window plan
+    _windows.py                  # window enumeration, bounded source cache, coordinate windows
+    _windowed.py                 # per-window expression execution (local/coordinate kernels)
     _eager.py                    # eager dispatch
     _kernels.py                  # spatial NumPy kernels
     _dtypes.py                   # promotion, casting, overflow

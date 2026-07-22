@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 import rasterio
@@ -102,6 +104,34 @@ class TestWrite:
         with rasterio.open(out) as ds:
             data = ds.read(1)
             np.testing.assert_array_equal(data, np.full((2, 2), 6.0, dtype=np.float32))
+
+    def test_failed_manifest_publish_restores_previous_output(self, tmp_path, monkeypatch):
+        import lunarscout.map_algebra._writer as writer_module
+
+        source_path = _write_tiff(
+            tmp_path, "restore_source.tif", np.ones((2, 2), dtype=np.float32)
+        )
+        output = tmp_path / "restore.tif"
+        write(output, source(source_path) + 1)
+        manifest = output.with_suffix(output.suffix + ".manifest.json")
+        previous_manifest = manifest.read_bytes()
+
+        real_replace = writer_module.os.replace
+
+        def fail_manifest_publish(src, dst):
+            if str(dst) == str(manifest) and Path(src).name == manifest.name:
+                raise OSError("injected manifest publication failure")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(writer_module.os, "replace", fail_manifest_publish)
+        with pytest.raises(OSError, match="injected"):
+            write(output, source(source_path) + 5, overwrite=True)
+
+        with rasterio.open(output) as dataset:
+            np.testing.assert_array_equal(
+                dataset.read(1), np.full((2, 2), 2.0, dtype=np.float32)
+            )
+        assert manifest.read_bytes() == previous_manifest
 
     def test_dtype_override(self, tmp_path):
         p = _write_tiff(tmp_path, "src.tif", np.array([[1.5, 2.5]], dtype=np.float32))

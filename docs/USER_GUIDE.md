@@ -1342,9 +1342,11 @@ The API has two modes with visibly different entry points:
 1. **Eager mode** accepts `Raster`, explicit NumPy arrays through adapters,
    or scalars, and returns `Raster`. All values are in memory.
 2. **File-backed mode** starts with `ma.source(path)` or
-   `ma.temporal_source(series)`, constructs a lazy expression, and executes
-   only through `ma.compute()` or `ma.write()`. GeoTIFF sources are read
-   window-by-window; the complete raster is never silently materialized.
+   `ma.temporal_source(series)` and constructs a lazy expression.
+   `ma.compute()` explicitly materializes a result. For zero-halo spatial
+   local and coordinate expressions, `ma.write()` reads and writes bounded
+   windows; unsupported focal/global/zonal/distance/temporal nodes fail during
+   planning rather than silently materializing the complete raster.
 
 Never pass a file path to an eager operation. Use `ma.read()` to read a
 GeoTIFF as an in-memory `Raster`, or `ma.source()` to defer reading.
@@ -1371,7 +1373,7 @@ automatically wrapped as an in-memory constant node.
 | `ma.read(path, *, band, units, name)` | Read a single-band GeoTIFF as a `Raster`. |
 | `ma.source(path, *, band, units, identity)` | Read metadata only; returns `RasterExpression`. |
 | `ma.compute(expression)` | Materialize a `RasterExpression` as a `Raster`. |
-| `ma.write(path, expression, *, overwrite, dtype, invalid_value)` | Evaluate in bounded windows, write staged GeoTIFF with GDAL mask. |
+| `ma.write(path, expression, *, overwrite, dtype, invalid_value, window_width, window_height)` | Evaluate a supported zero-halo expression in bounded windows and write a staged GeoTIFF with a GDAL mask. |
 
 ### Grids and Grid Validation
 
@@ -1381,8 +1383,9 @@ equality alone is never accepted as grid compatibility. Use
 georeferenced rasters.
 
 Scalars broadcast over any raster. A length-one or one-dimensional array is
-not a scalar and is rejected. Align explicitly with `ma.align()` or
-`ma.resample_to()`; implicit alignment is never performed.
+not a scalar and is rejected. The existing array API `ls.align()` remains
+available; map-algebra `ma.align()` and `ma.resample_to()` adapters are deferred.
+Implicit alignment is never performed.
 
 ### Validity and Mask Rules
 
@@ -1640,7 +1643,8 @@ candidate = (sun_expr >= 0.60)  # TemporalRasterExpression
 ```python
 mean_sun = ma.temporal_mean(sun_expr)    # RasterExpression (spatial)
 valid = (mean_sun >= 0.40) & (slope <= 8.0)
-ma.write("candidate.tif", valid, dtype="uint8", invalid_value=0)
+valid_raster = ma.compute(valid)         # explicit whole-raster materialization
+ma.write("candidate.tif", valid_raster.expression(), dtype="uint8", invalid_value=0)
 ```
 
 Reductions are evaluated eagerly when applied directly to a `TemporalRaster`
@@ -1650,6 +1654,8 @@ Reductions are evaluated eagerly when applied directly to a `TemporalRaster`
 `ma.temporal_sum`, `ma.temporal_count`. Reducer output dtypes use `float64`
 accumulators for mean, std, and floating sum; `int64` for integer sum and
 count; and the source dtype for min and max. `temporal_count` has no units.
+The bounded spatial writer does not yet execute temporal reduction nodes;
+materialize them explicitly with `ma.compute()` before writing.
 
 Use `ma.compute_temporal()` to materialize a `TemporalRasterExpression` as
 an in-memory `TemporalRaster`. Eager computation is suitable for small-to-

@@ -6,6 +6,36 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra 0.3 critical-path slice 1: bounded spatial window execution.**
+  ``ma.write()`` no longer materializes the complete spatial expression; it
+  evaluates the expression graph per output window, reading bounded source
+  windows with an LRU source-window cache and writing results block-by-block.
+  Peak working memory depends on active sources, graph complexity, window
+  size, and synchronous window output—not total raster area. Coordinate
+  rasters are generated only for the requested window. Repeated source windows within a
+  task are reused from the cache. Dataset handles and caches have explicit
+  bounds and close after success and failure. Existing atomic overwrite
+  guarantees remain intact. ``ma.compute()`` remains the explicit
+  whole-raster materialization path.
+  New private modules:
+  - ``_planner.py``: topological validation, node/depth/source limits,
+    unsupported-operation rejection (focal, global, zonal, distance, temporal),
+    window size selection, and planner metadata reporting.
+  - ``_windows.py``: output window enumeration, bounded source-window reading
+    with LRU caching, coordinate window generation, and explicit cache bounds.
+  - ``_windowed.py``: per-window expression evaluation through the shared eager
+    semantic dispatcher for local binary, unary, classification, conditional,
+    and supplied-statistic normalization operations.
+  Updated ``plan()`` to report window layout, source count, estimated
+  per-window memory, and planner metadata. Registry now advertises
+  ``file_backed`` support for classification/normalization operations
+  exercised through the windowed executor. Measured min/max or mean/standard
+  deviation normalization is rejected in file-backed mode until a bounded
+  multi-pass reducer is implemented. Focal/global/zonal/distance/temporal nodes
+  are rejected before staging; callers must use explicit ``compute()`` where
+  whole-raster materialization is intended. The temporal example now makes
+  that boundary explicit.
+  Verification: 1088 passed, 17 skipped (ordinary CPU suite).
 - Completed the remaining small and medium Phase I map-algebra inventory:
   exact-value and half-open-range reclassification, digitization, one-hot
   class rasters, min/max normalization, standardization, and lazy row,

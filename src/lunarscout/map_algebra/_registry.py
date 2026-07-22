@@ -67,7 +67,7 @@ def _spec(
 
 _SPECS = (
     _spec("source", 0, "source", "Read a registered GeoTIFF source.", file_backed_available=True),
-    _spec("constant", 1, "source", "Use an in-memory raster constant."),
+    _spec("constant", 1, "source", "Use an in-memory raster constant.", file_backed_available=True),
     *(
         _spec(f"local.{name}", 2, "local", summary, file_backed_available=True)
         for name, summary in (
@@ -104,30 +104,35 @@ _SPECS = (
             ("arcsin", "Calculate arcsine."), ("arccos", "Calculate arccosine."),
             ("arctan", "Calculate arctangent."), ("logical_not", "Apply Boolean NOT."),
             ("floor", "Round down."), ("ceil", "Round up."),
-            ("trunc", "Truncate fractional values."), ("round", "Round half to even."),
+            ("trunc", "Truncate fractional values."),
             ("degrees", "Convert radians to degrees."), ("radians", "Convert degrees to radians."),
             ("is_valid", "Return the validity mask."), ("is_invalid", "Return the invalidity mask."),
         )
     ),
     _spec("local.where", 3, "local", "Select between branches by a Boolean condition.", file_backed_available=True),
+    _spec("local.round", 1, "local", "Round half to even.",
+          parameters=(("ndigits", "Number of decimal digits."),), file_backed_available=True),
+    _spec("local.isclose", 2, "local", "Compare corresponding cells within tolerances.",
+          parameters=(("rtol", "Relative tolerance."), ("atol", "Absolute tolerance."),
+                      ("equal_nan", "Whether NaN values compare equal.")), file_backed_available=True),
     _spec("local.coalesce", None, "local", "Select the first valid operand.", file_backed_available=True),
     _spec("local.clip", 1, "local", "Clip values to an interval.", file_backed_available=True),
     _spec("local.cast", 1, "local", "Cast values to a requested dtype.", file_backed_available=True),
     _spec("local.set_invalid", 2, "local", "Invalidate cells selected by a mask.", file_backed_available=True),
     _spec("local.fill_invalid", 2, "local", "Fill and validate invalid cells.", file_backed_available=True),
     _spec("local.reclassify_values", 1, "classification", "Map exact input values to classes.",
-          parameters=(("mapping", "Exact input-to-output mapping."), ("default", "Unmatched-cell behavior."))),
+          parameters=(("mapping", "Exact input-to-output mapping."), ("default", "Unmatched-cell behavior.")), file_backed_available=True),
     _spec("local.reclassify_ranges", 1, "classification", "Map half-open input ranges to classes.",
-          parameters=(("ranges", "Half-open lower, upper, output triples."), ("default", "Unmatched-cell behavior."))),
+          parameters=(("ranges", "Half-open lower, upper, output triples."), ("default", "Unmatched-cell behavior.")), file_backed_available=True),
     _spec("local.digitize", 1, "classification", "Assign values to ordered bins.",
-          parameters=(("bins", "Monotonically increasing bin edges."), ("right", "Use right-closed bins."))),
+          parameters=(("bins", "Monotonically increasing bin edges."), ("right", "Use right-closed bins.")), file_backed_available=True),
     _spec("local.one_hot", 1, "classification", "Create one Boolean raster per requested class.",
-          parameters=(("classes", "Class values in output order."),)),
-    _spec("local.normalize_minmax", 1, "normalization", "Scale values by a minimum and maximum.",
-          parameters=(("minimum", "Supplied or measured minimum."), ("maximum", "Supplied or measured maximum."))),
-    _spec("local.standardize", 1, "normalization", "Center and scale values by mean and standard deviation.",
+          parameters=(("classes", "Class values in output order."),), file_backed_available=True),
+    _spec("local.normalize_minmax", 1, "normalization", "Scale values by a minimum and maximum; file-backed execution requires both statistics.",
+          parameters=(("minimum", "Supplied or measured minimum."), ("maximum", "Supplied or measured maximum.")), file_backed_available=True),
+    _spec("local.standardize", 1, "normalization", "Center and scale values by mean and standard deviation; file-backed execution requires both statistics.",
           parameters=(("mean", "Supplied or measured mean."), ("std", "Supplied or measured standard deviation."),
-                      ("ddof", "Delta degrees of freedom for a measured standard deviation."))),
+                      ("ddof", "Delta degrees of freedom for a measured standard deviation.")), file_backed_available=True),
     *(
         _spec(f"coordinate.{name}", 0, "coordinate", summary, file_backed_available=True)
         for name, summary in (

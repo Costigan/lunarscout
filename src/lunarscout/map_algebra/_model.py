@@ -268,8 +268,20 @@ class RasterExpression:
     def __floordiv__(self, other: object) -> RasterExpression:
         return _new_expr_op(self, other, "local.floor_divide")
 
+    def __rfloordiv__(self, other: object) -> RasterExpression:
+        return _new_expr_op(self, other, "local.floor_divide", swap=True)
+
     def __mod__(self, other: object) -> RasterExpression:
         return _new_expr_op(self, other, "local.remainder")
+
+    def __rmod__(self, other: object) -> RasterExpression:
+        return _new_expr_op(self, other, "local.remainder", swap=True)
+
+    def __pow__(self, other: object) -> RasterExpression:
+        return _new_expr_op(self, other, "local.power")
+
+    def __rpow__(self, other: object) -> RasterExpression:
+        return _new_expr_op(self, other, "local.power", swap=True)
 
     def __lt__(self, other: object) -> RasterExpression:
         return _new_expr_op(self, other, "local.less")
@@ -374,10 +386,21 @@ def _infer_expr_units(
     *,
     operation_id: str,
 ) -> str | None:
-    units = []
+    units: list[str | None] = []
     for op in operands:
-        if isinstance(op, RasterExpression) and op.units is not None:
+        if isinstance(op, RasterExpression):
             units.append(op.units)
+    equality_required = operation_id in (
+        "local.add", "local.subtract", "local.minimum", "local.maximum",
+        "local.less", "local.less_equal", "local.greater", "local.greater_equal",
+        "local.equal", "local.not_equal", "local.isclose",
+    )
+    if equality_required and len(units) > 1 and any(unit != units[0] for unit in units[1:]):
+        raise MapAlgebraExpressionError(
+            f"Unit mismatch in '{operation_id}': {units}",
+            code="map_algebra_unit_mismatch",
+            details={"operation_id": operation_id, "units": units},
+        )
     if operation_id in (
         "local.less", "local.less_equal", "local.greater", "local.greater_equal",
         "local.equal", "local.not_equal", "local.logical_and", "local.logical_or",
@@ -387,13 +410,18 @@ def _infer_expr_units(
     if operation_id in ("local.add", "local.subtract", "local.minimum", "local.maximum"):
         if len(units) == 0:
             return None
-        if len(units) == 2 and units[0] != units[1]:
-            raise MapAlgebraExpressionError(
-                f"Unit mismatch in '{operation_id}': {units[0]} vs {units[1]}",
-                code="map_algebra_unit_mismatch",
-            )
         return units[0] if units else None
     if operation_id in ("local.multiply", "local.divide"):
+        if len(units) > 1 and all(unit is not None for unit in units):
+            raise MapAlgebraExpressionError(
+                f"'{operation_id}' with two unit-bearing rasters requires explicit output units.",
+                code="map_algebra_missing_output_units",
+                details={"operation_id": operation_id, "units": units},
+            )
+        return None
+    if operation_id == "local.arctan2":
+        return "radians"
+    if operation_id == "local.hypot":
         return None
     return units[0] if units else None
 
@@ -420,11 +448,26 @@ def _new_expr_op(
     )
     is_boolean = op_id in ("local.logical_and", "local.logical_or", "local.logical_xor")
 
+    if is_boolean:
+        for index, operand in enumerate(raster_ops):
+            if operand.dtype != np.dtype(np.bool_):
+                raise MapAlgebraExpressionError(
+                    f"Boolean operation '{op_id}' requires Boolean raster operands.",
+                    code="map_algebra_requires_boolean",
+                    details={"argument_index": index, "dtype": str(operand.dtype)},
+                )
+
     if is_comparison or is_boolean:
         dtype = _infer_comparison_dtype()
     else:
-        dtypes = [op.dtype for op in raster_ops if op.dtype is not None]
-        dtype = np.result_type(*dtypes) if dtypes else None
+        dtype_inputs = [
+            op.dtype if isinstance(op, RasterExpression) else op
+            for op in op_list
+            if not isinstance(op, RasterExpression) or op.dtype is not None
+        ]
+        dtype = np.result_type(*dtype_inputs) if dtype_inputs else None
+        if op_id == "local.divide" and dtype is not None and np.issubdtype(dtype, np.integer):
+            dtype = np.dtype(np.float64)
 
     units = _infer_expr_units(raster_ops, operation_id=op_id)
     return _make_expr_node(op_id, tuple(op_list), grid=grid, dtype=dtype, units=units)
@@ -437,11 +480,26 @@ def _new_expr_unary(
     expr = _to_expr_or_scalar(self_expr)
     if isinstance(expr, RasterExpression):
         is_logic = op_id == "local.logical_not"
+        if is_logic and expr.dtype != np.dtype(np.bool_):
+            raise MapAlgebraExpressionError(
+                "logical_not requires a Boolean raster operand.",
+                code="map_algebra_requires_boolean",
+                details={"dtype": str(expr.dtype)},
+            )
+        if op_id in {"local.sin", "local.cos", "local.tan"}:
+            from ._units import require_angle_units
+            require_angle_units(expr.units, argument="a")
+        output_units = (
+            "radians" if op_id in {"local.arcsin", "local.arccos", "local.arctan", "local.radians"}
+            else "degrees" if op_id == "local.degrees"
+            else None if op_id in {"local.sin", "local.cos", "local.tan"}
+            else expr.units
+        )
         return _make_expr_node(
             op_id, (expr,),
             grid=expr.grid,
             dtype=_infer_comparison_dtype() if is_logic else expr.dtype,
-            units=None,
+            units=output_units,
         )
     raise MapAlgebraExpressionError(
         f"Unary operation requires a Raster or RasterExpression operand.",
