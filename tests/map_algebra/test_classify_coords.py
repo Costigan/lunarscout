@@ -516,7 +516,8 @@ class TestOperationRegistry:
         desc = describe_operation("local.add")
         assert desc["id"] == "local.add"
         assert desc["category"] == "local"
-        assert desc["version"] == 1
+        assert desc["version"] == 2
+        assert [item["name"] for item in desc["parameters"]] == ["overflow"]
 
     def test_list_operations(self):
         ops = list_operations()

@@ -4,7 +4,20 @@ from typing import Any, Literal
 
 import numpy as np
 
-_NumericErrorsPolicy = Literal["invalid", "keep", "raise"]
+from ..errors import MapAlgebraOperationError
+
+NumericErrorsPolicy = Literal["invalid", "keep", "raise"]
+_NumericErrorsPolicy = NumericErrorsPolicy
+
+
+def normalize_numeric_errors(value: str) -> NumericErrorsPolicy:
+    if value not in {"invalid", "keep", "raise"}:
+        raise MapAlgebraOperationError(
+            "numeric_errors must be 'invalid', 'keep', or 'raise'.",
+            code="map_algebra_invalid_numeric_errors",
+            details={"numeric_errors": value},
+        )
+    return value  # type: ignore[return-value]
 
 
 def intersect_validity(*masks: np.ndarray[Any, np.dtype[np.bool_]]) -> np.ndarray[Any, np.dtype[np.bool_]]:
@@ -40,17 +53,24 @@ def apply_numeric_domain(
     *,
     operation: str,
     policy: _NumericErrorsPolicy = "invalid",
+    domain_errors: np.ndarray[Any, np.dtype[np.bool_]] | None = None,
 ) -> np.ndarray[Any, np.dtype[np.bool_]]:
+    policy = normalize_numeric_errors(policy)
+    nonfinite = ~np.isfinite(values)
+    failing = nonfinite if domain_errors is None else (nonfinite | domain_errors)
     if policy == "keep":
         return valid.copy()
     if policy == "invalid":
-        nonfinite = ~np.isfinite(values)
-        new_invalid = valid & ~nonfinite
+        new_invalid = valid & ~failing
         return new_invalid
     if policy == "raise":
-        if np.any(~np.isfinite(values[valid])):
-            raise ValueError(
-                f"Operation '{operation}' produced non-finite values at valid pixels."
+        affected = valid & failing
+        count = int(np.count_nonzero(affected))
+        if count:
+            raise MapAlgebraOperationError(
+                f"Operation '{operation}' produced non-finite values at valid pixels.",
+                code="map_algebra_numeric_error",
+                details={"operation": operation, "affected_pixels": count},
             )
         return valid.copy()
-    raise ValueError(f"Unknown numeric errors policy: {policy}")
+    raise AssertionError("unreachable")

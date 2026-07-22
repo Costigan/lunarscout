@@ -10,12 +10,11 @@ from ..georeference import GeoReference
 from ..raster import Raster
 
 
-def _normalize_scalar(value: Any, *, argument: str = "value") -> int | float:
+def _normalize_scalar(value: Any, *, argument: str = "value") -> Any:
     if isinstance(value, (int, float, np.integer, np.floating)):
-        if isinstance(value, np.integer):
-            return int(value)
-        if isinstance(value, np.floating):
-            return float(value)
+        # Preserve explicit NumPy scalar precision. NumPy 2 treats Python
+        # scalars as weakly typed, while np.float64/np.int64 are deliberate
+        # dtype choices that must participate in shared dtype inference.
         return value
     if isinstance(value, Real):
         return float(value)

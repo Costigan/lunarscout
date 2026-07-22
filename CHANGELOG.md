@@ -6,6 +6,29 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra numeric consistency, part 1.** Recorded consumer-grade GPU
+  precision policy: inferred FP32 calculations remain FP32, and FP64 is used
+  only when an input or documented result/accumulator contract requires it.
+  Replaced FP64-based checked-integer intermediates for add, subtract,
+  multiply, floor divide, remainder, negate, absolute, and square with exact
+  native-integer boundary checks. Exact ``int64``/``uint64`` values beyond
+  ``2**53`` are preserved; ``overflow="promote"`` selects an exact supported
+  integer dtype or raises a structured error when none exists, while explicit
+  ``"wrap"`` retains NumPy behavior. Centralized arithmetic and unary
+  expression dtype inference through the shared dtype helper, including
+  correct Boolean results for integer comparisons and preservation of explicit
+  NumPy scalar precision. Added public ``numeric_errors="invalid"|"keep"|"raise"``
+  handling to division, floor division, remainder, square root, exponential,
+  logarithm, arcsine/arccosine, and square operations, with structured
+  ``map_algebra_numeric_error`` failures and eager/expression/window parity.
+  Numeric policies are recorded in expression identity and operation-registry
+  metadata. Integer power, the cast overflow policy, and the exhaustive dtype
+  pair matrix remain explicitly partial.
+  The accelerator contract also records that FP64 and software-emulated
+  ``int64``/``uint64`` are CPU correctness/interchange capabilities rather
+  than CUDA hot-path dependencies; future GPU planning must reject or
+  explicitly route such work unless separately benchmarked.
+
 - **Map-algebra planning split.** Further work whose primary purpose is
   processing maps too large for memory is deferred by project decision and
   moved from the core implementation plan into

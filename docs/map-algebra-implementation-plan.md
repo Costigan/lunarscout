@@ -466,14 +466,42 @@ stored.
 - [x] Comparisons and Boolean operations return ``bool`` in memory.
 - [x] True division returns at least ``float32``; use ``float64`` if an operand is
   ``float64`` or safe scalar inference requires it.
+- [x] Preserve ``float32`` execution for ``float32`` inputs and inferred
+  ``float32`` outputs. Do not introduce ``float64`` intermediates as a general
+  strategy for domain checks, overflow checks, eager/window parity, or future
+  accelerator kernels. Consumer-grade GPUs are the expected deployment
+  hardware and commonly have substantially lower FP64 throughput. FP64 is
+  used only when an input, requested dtype, accumulator contract, or documented
+  scientific result explicitly requires it.
+- [x] Treat FP64 and 64-bit integer arithmetic as CPU correctness/interchange
+  capabilities, not GPU execution prerequisites. Consumer NVIDIA GPUs have
+  poor FP64 throughput and software-emulate general ``int64``/``uint64`` ALU
+  work. Normal future CUDA hot paths therefore use FP32 and Boolean/8/16/32-bit
+  integers. A planner must reject or explicitly route required 64-bit work to
+  CPU unless a separately benchmarked kernel establishes an acceptable
+  contract; successful CUDA compilation alone is not evidence of suitability.
+- [ ] Detect signed and unsigned integer overflow entirely in the integer
+  domain. In particular, never convert ``int64`` or ``uint64`` values to
+  ``float64`` to decide representability: values beyond ``2**53`` must remain
+  exact. Promotion selects an exact supported integer dtype when one exists;
+  otherwise raise a structured error rather than silently using an inexact
+  floating dtype. **PARTIAL:** the covered add/subtract/multiply/floor-divide/
+  remainder/negate/absolute/square kernels now satisfy this contract in eager,
+  expression, and windowed execution; integer power remains incomplete.
 - [x] Integer reductions use an accumulator dtype that prevents ordinary small
   raster overflow; document exact sum/count/mean/std output rules.
-  *(accumulator_dtype() promotes to int64/float64.)*
-- [x] Integer arithmetic does not silently saturate. ``overflow="wrap"`` follows
+  *(accumulator_dtype() uses int64 for signed integers, uint64 for unsigned
+  integers, preserves float32, and uses float64 for float64.)*
+- [ ] Integer arithmetic does not silently saturate. ``overflow="wrap"`` follows
   NumPy, ``overflow="raise"`` is the public default for checked eager integer
   operations, and ``overflow="promote"`` promotes to a safe supported dtype.
-- [x] ``cast()`` supports ``casting="safe"``, ``"same_kind"``, and ``"unsafe"`` and an
-  explicit overflow policy.
+  **PARTIAL:** exact integer-domain checks and exact promotion are implemented
+  for add, subtract, multiply, floor divide, remainder, negate, absolute, and
+  square in eager and expression execution. Integer power still needs the same
+  contract.
+- [ ] ``cast()`` supports ``casting="safe"``, ``"same_kind"``, and ``"unsafe"`` and an
+  explicit overflow policy. **PARTIAL:** the three casting modes and structured
+  failures exist; a separate cast overflow policy is not yet public.
 - [x] Boolean GeoTIFF output requires an explicit integer encoding, defaulting
   to ``uint8`` values 0 and 1 with a separate validity mask.
   *(write() auto-converts bool dtype to uint8.)*
@@ -957,8 +985,10 @@ Implement and unit-test private helpers with single responsibilities:
 - [ ] `_normalize_numeric_errors`, `_normalize_overflow`,
   `_normalize_edge_mode`, and `_normalize_valid_neighbor_policy` return typed
   literals and stable error codes.
-  **PARTIAL:** edge and neighbor policies are normalized; numeric-error and
-  overflow policy coverage is incomplete.
+  **PARTIAL:** numeric-error and overflow normalization now use typed literals
+  and stable structured codes for the covered core operations; edge/neighbor
+  policies are also normalized. Integer power and cast overflow coverage remain
+  incomplete.
 - [ ] `_validate_output_encoding(dtype, nodata, invalid_value)` shares GeoTIFF
   representability checks rather than duplicating them.
   **PARTIAL:** exact-fill validation exists, but output encoding remains split
@@ -985,8 +1015,10 @@ Implement and unit-test private helpers with single responsibilities:
   do not add general SSA-style validity proof to the `0.2` planner.
 - [ ] `_apply_numeric_domain(valid, values, policy, operation)` handles new
   non-finite/domain errors consistently.
-  **PARTIAL:** a common domain helper exists, but public error translation and
-  policy use are not yet uniform.
+  **PARTIAL:** the common helper now implements invalid/keep/structured-raise
+  consistently for division, floor division, remainder, sqrt, exp, log/log10,
+  arcsin/arccos, and square. Remaining numeric operations have not all exposed
+  the public policy.
 - [ ] `_fill_invalid_exact(values, valid, fill, dtype)` validates exact
   representation and never mutates an input array.
   **PARTIAL:** equivalent validation exists in multiple paths rather than this
@@ -1006,15 +1038,24 @@ Implement and unit-test private helpers with single responsibilities:
 - [ ] `_accumulator_dtype(operation, source_dtype)` defines streaming
   accumulator precision.
 - [ ] `_checked_integer_kernel(...)` detects overflow without allocating
-  unbounded temporary arrays.
+  unbounded temporary arrays and without converting integer operands or
+  results to floating point. Checks must be expressible as bounded native
+  integer comparisons suitable for later CPU and CUDA kernels. **PARTIAL:**
+  native integer checks cover add/subtract/multiply/floor-divide/remainder and
+  unary negate/absolute/square; integer power remains. Exact 64-bit cases are
+  CPU reference/correctness paths and must not become a CUDA hot-path
+  dependency.
 - [ ] `_cast_values_and_fill(...)` applies casting and output encoding in a
   deterministic order.
 - [ ] Add table-driven tests covering every supported dtype pair and boundary
-  scalar, including `uint64` values beyond float exact range.
+  scalar, including `uint64` values beyond float exact range. Include tests
+  proving that ``float32`` operations retain ``float32`` intermediates/results
+  unless their documented contract explicitly promotes them.
 
 **PARTIAL:** centralized dtype, accumulator, checked-integer, and cast helpers
-exist, but they are not yet the sole path and the full boundary matrix,
-especially exact ``uint64`` behavior, is not proven.
+exist, but they are not yet the sole path and the full pairwise dtype matrix is
+not proven. Focused exact ``int64``/``uint64`` boundaries beyond ``2**53`` and
+FP32-preservation tests now exist.
 
 ### 4.4 Operation registry
 
@@ -1271,8 +1312,9 @@ Acceptance evidence:
   **PARTIAL:** deterministic analytic coverage is extensive; the requested
   randomized matrix is incomplete.
 - [ ] Test every invalidity, dtype, overflow, unit, scalar, and grid branch.
-  **PARTIAL:** major branches are covered, but Section 7 remains open and exact
-  ``uint64`` and policy edges are known gaps.
+  **PARTIAL:** major branches and focused exact ``int64``/``uint64`` values
+  beyond ``2**53`` are covered, but the exhaustive Section 7 dtype-pair and
+  policy matrix remains open.
 - [ ] Convert the landing-site screening example to a new additional example,
   retaining the old array-oriented example as compatibility evidence.
   **PARTIAL:** the additional map-algebra screening example exists; explicit

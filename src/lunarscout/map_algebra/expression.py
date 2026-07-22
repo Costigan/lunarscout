@@ -129,14 +129,17 @@ def _eval_binary(node: RasterExpression, operands: list[Any]) -> Raster:
     from lunarscout.map_algebra import local as _ma
 
     a, b = operands[0], operands[1]
+    numeric_errors = node._params_dict.get("numeric_errors", "invalid")
+    overflow = node._params_dict.get("overflow", "raise")
+    output_units = node._params_dict.get("output_units")
     if node._operation_id == "local.add":
-        return _ma.add(a, b)
+        return _ma.add(a, b, overflow=overflow)
     elif node._operation_id == "local.subtract":
-        return _ma.subtract(a, b)
+        return _ma.subtract(a, b, overflow=overflow)
     elif node._operation_id == "local.multiply":
-        return _ma.multiply(a, b)
+        return _ma.multiply(a, b, output_units=output_units, overflow=overflow)
     elif node._operation_id == "local.divide":
-        return _ma.divide(a, b)
+        return _ma.divide(a, b, output_units=output_units, numeric_errors=numeric_errors)
     elif node._operation_id == "local.minimum":
         return _ma.minimum(a, b)
     elif node._operation_id == "local.maximum":
@@ -160,9 +163,9 @@ def _eval_binary(node: RasterExpression, operands: list[Any]) -> Raster:
     elif node._operation_id == "local.logical_xor":
         return _ma.logical_xor(a, b)
     elif node._operation_id == "local.floor_divide":
-        return _ma.floor_divide(a, b)
+        return _ma.floor_divide(a, b, overflow=overflow, numeric_errors=numeric_errors)
     elif node._operation_id == "local.remainder":
-        return _ma.remainder(a, b)
+        return _ma.remainder(a, b, overflow=overflow, numeric_errors=numeric_errors)
     elif node._operation_id == "local.power":
         return _ma.power(a, b)
     elif node._operation_id == "local.hypot":
@@ -180,20 +183,22 @@ def _eval_unary(node: RasterExpression, operands: list[Any]) -> Raster:
 
     a = operands[0]
     op_id = node._operation_id
+    numeric_errors = node._params_dict.get("numeric_errors", "invalid")
+    overflow = node._params_dict.get("overflow", "raise")
     if op_id == "local.negative":
-        return _ma.negative(a)
+        return _ma.negative(a, overflow=overflow)
     elif op_id == "local.absolute":
-        return _ma.absolute(a)
+        return _ma.absolute(a, overflow=overflow)
     elif op_id == "local.sqrt":
-        return _ma.sqrt(a)
+        return _ma.sqrt(a, numeric_errors=numeric_errors)
     elif op_id == "local.square":
-        return _ma.square(a)
+        return _ma.square(a, overflow=overflow, numeric_errors=numeric_errors)
     elif op_id == "local.exp":
-        return _ma.exp(a)
+        return _ma.exp(a, numeric_errors=numeric_errors)
     elif op_id == "local.log":
-        return _ma.log(a)
+        return _ma.log(a, numeric_errors=numeric_errors)
     elif op_id == "local.log10":
-        return _ma.log10(a)
+        return _ma.log10(a, numeric_errors=numeric_errors)
     elif op_id == "local.sin":
         return _ma.sin(a)
     elif op_id == "local.cos":
@@ -201,9 +206,9 @@ def _eval_unary(node: RasterExpression, operands: list[Any]) -> Raster:
     elif op_id == "local.tan":
         return _ma.tan(a)
     elif op_id == "local.arcsin":
-        return _ma.arcsin(a)
+        return _ma.arcsin(a, numeric_errors=numeric_errors)
     elif op_id == "local.arccos":
-        return _ma.arccos(a)
+        return _ma.arccos(a, numeric_errors=numeric_errors)
     elif op_id == "local.arctan":
         return _ma.arctan(a)
     elif op_id == "local.logical_not":

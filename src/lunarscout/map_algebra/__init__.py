@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import wraps
+from inspect import signature
 from pathlib import Path
 from typing import Any, Literal
 
@@ -158,16 +160,34 @@ def _is_temporal_expr(a: Any) -> bool:
     return isinstance(a, TemporalRasterExpression)
 
 
+def _normalized_numeric_params(kwargs: dict[str, Any]) -> dict[str, Any]:
+    params = dict(kwargs)
+    if "overflow" in params:
+        from ._dtypes import normalize_overflow
+
+        params["overflow"] = normalize_overflow(params["overflow"])
+    if "numeric_errors" in params:
+        from ._validity import normalize_numeric_errors
+
+        params["numeric_errors"] = normalize_numeric_errors(params["numeric_errors"])
+    return params
+
+
 def _wrap_unary(fn: Any, op_id: str) -> Any:
-    def _wrapper(a: Any) -> Any:
+    fn_signature = signature(fn)
+
+    @wraps(fn)
+    def _wrapper(a: Any, **kwargs: Any) -> Any:
+        fn_signature.bind(a, **kwargs)
         if isinstance(a, TemporalRasterExpression):
+            if kwargs:
+                raise TypeError(f"{fn.__name__}() numeric policies are not supported for temporal expressions yet.")
             from ._temporal_model import _temporal_local_op
             return _temporal_local_op(op_id, a)
         if isinstance(a, RasterExpression):
             from ._model import _new_expr_unary
-            return _new_expr_unary(a, op_id)
-        return fn(a)
-    _wrapper.__name__ = fn.__name__
+            return _new_expr_unary(a, op_id, params=_normalized_numeric_params(kwargs))
+        return fn(a, **kwargs)
     return _wrapper
 
 
@@ -217,15 +237,20 @@ def positive(a: Any) -> Any:
 
 
 def _wrap_binary(fn: Any, op_id: str) -> Any:
+    fn_signature = signature(fn)
+
+    @wraps(fn)
     def _wrapper(a: Any, b: Any, **kwargs: Any) -> Any:
+        fn_signature.bind(a, b, **kwargs)
         if isinstance(a, (TemporalRasterExpression, TemporalRaster)) or isinstance(b, (TemporalRasterExpression, TemporalRaster)):
+            if kwargs:
+                raise TypeError(f"{fn.__name__}() keyword policies are not supported for temporal expressions yet.")
             from ._temporal_model import _temporal_local_op
             return _temporal_local_op(op_id, a, b)
         if isinstance(a, RasterExpression) or isinstance(b, RasterExpression):
             from ._model import _new_expr_op
-            return _new_expr_op(a, b, op_id)
+            return _new_expr_op(a, b, op_id, params=_normalized_numeric_params(kwargs))
         return fn(a, b, **kwargs)
-    _wrapper.__name__ = fn.__name__
     return _wrapper
 
 
@@ -426,7 +451,8 @@ def cast(raster: Any, dtype: Any, *, casting: str = "safe") -> Any:
         return _cast_eager(raster, dtype, casting=casting)
     from ._model import _make_expr_node
     from ..errors import MapAlgebraDTypeError
-    target_dtype = np.dtype(dtype)
+    from ._dtypes import normalize_dtype
+    target_dtype = normalize_dtype(dtype, operation="cast")
     if casting not in {"safe", "same_kind", "unsafe"}:
         raise MapAlgebraDTypeError(
             f"Unknown casting policy: {casting}",

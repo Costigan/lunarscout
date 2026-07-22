@@ -62,14 +62,55 @@ def _spec(
     summary: str,
     **kwargs: Any,
 ) -> OperationSpec:
-    return OperationSpec(operation_id, 1, arity, category, summary, **kwargs)
+    version = kwargs.pop("version", 1)
+    return OperationSpec(operation_id, version, arity, category, summary, **kwargs)
+
+
+_LOCAL_BINARY_PARAMETERS: dict[str, tuple[tuple[str, str], ...]] = {
+    "add": (("overflow", "Integer overflow policy: raise, wrap, or promote."),),
+    "subtract": (("overflow", "Integer overflow policy: raise, wrap, or promote."),),
+    "multiply": (
+        ("output_units", "Required output units for two unit-bearing rasters."),
+        ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+    ),
+    "divide": (
+        ("output_units", "Required output units for two unit-bearing rasters."),
+        ("numeric_errors", "Non-finite/domain policy: invalid, keep, or raise."),
+    ),
+    "floor_divide": (
+        ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+        ("numeric_errors", "Division-by-zero policy: invalid, keep, or raise."),
+    ),
+    "remainder": (
+        ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+        ("numeric_errors", "Division-by-zero policy: invalid, keep, or raise."),
+    ),
+}
+
+_LOCAL_UNARY_PARAMETERS: dict[str, tuple[tuple[str, str], ...]] = {
+    "negative": (("overflow", "Integer overflow policy: raise, wrap, or promote."),),
+    "absolute": (("overflow", "Integer overflow policy: raise, wrap, or promote."),),
+    "square": (
+        ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+        ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
+    ),
+    **{
+        name: (("numeric_errors", "Non-finite/domain policy: invalid, keep, or raise."),)
+        for name in ("sqrt", "exp", "log", "log10", "arcsin", "arccos")
+    },
+}
 
 
 _SPECS = (
     _spec("source", 0, "source", "Read a registered GeoTIFF source.", file_backed_available=True),
     _spec("constant", 1, "source", "Use an in-memory raster constant.", file_backed_available=True),
     *(
-        _spec(f"local.{name}", 2, "local", summary, file_backed_available=True)
+        _spec(
+            f"local.{name}", 2, "local", summary,
+            parameters=_LOCAL_BINARY_PARAMETERS.get(name, ()),
+            version=2 if name in _LOCAL_BINARY_PARAMETERS else 1,
+            file_backed_available=True,
+        )
         for name, summary in (
             ("add", "Add corresponding cells."),
             ("subtract", "Subtract corresponding cells."),
@@ -94,7 +135,12 @@ _SPECS = (
         )
     ),
     *(
-        _spec(f"local.{name}", 1, "local", summary, file_backed_available=True)
+        _spec(
+            f"local.{name}", 1, "local", summary,
+            parameters=_LOCAL_UNARY_PARAMETERS.get(name, ()),
+            version=2 if name in _LOCAL_UNARY_PARAMETERS else 1,
+            file_backed_available=True,
+        )
         for name, summary in (
             ("negative", "Negate cells."), ("absolute", "Calculate absolute values."),
             ("sqrt", "Calculate square roots."), ("square", "Square cells."),

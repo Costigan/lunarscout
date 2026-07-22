@@ -832,6 +832,37 @@ node) and introspection (by powering `ma.describe_operation()` and
 `ma.list_operations()`). The same metadata feeds the explain/plan tools and
 the docstrings, preventing silent divergence.
 
+### 20.2.1 Numeric precision and accelerator constraint
+
+Map-algebra numeric policy is designed for consumer-grade GPUs as the normal
+accelerator environment. ``float32`` inputs and operations whose inferred
+output is ``float32`` therefore remain in FP32. The implementation must not
+use FP64 intermediates as a general-purpose mechanism for overflow detection,
+domain validation, eager/window parity, or accelerator implementation. FP64
+is used only when an input, explicit requested dtype, accumulator contract, or
+documented scientific result requires it.
+
+Consumer NVIDIA GPUs also do not provide a native general-purpose 64-bit
+integer ALU path; 64-bit integer arithmetic is software-emulated and may be
+slower than FP64. Consequently, CUDA map-algebra hot paths target FP32 and
+Boolean/8/16/32-bit integer operations. FP64, ``int64``, and ``uint64`` remain
+supported CPU correctness, interchange, identity, and storage types, but
+accelerator planning must not depend on them. A future CUDA planner must reject
+or route a 64-bit operation to an explicit CPU path unless a separately
+benchmarked kernel establishes an acceptable contract; it must never silently
+run an emulated 64-bit regional workload merely because compilation succeeds.
+
+Integer correctness is independent of floating-point precision. Signed and
+unsigned overflow checks operate in the integer domain with exact boundary
+comparisons; ``int64`` and ``uint64`` values, especially those beyond
+``2**53``, are never converted to ``float64`` to decide whether a result is
+representable. ``overflow="promote"`` selects an exact supported integer dtype
+when one exists. If no supported integer dtype can represent the result, the
+operation raises a structured map-algebra error rather than silently selecting
+an inexact floating dtype. These rules apply equally to eager, windowed, and
+future CUDA kernels; on CUDA, a required 64-bit exact operation makes the node
+ineligible for the normal GPU fast path.
+
 ### 20.3 Execution architecture
 
 Execution has two strategies on one operation specification:

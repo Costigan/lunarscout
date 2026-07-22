@@ -1432,6 +1432,32 @@ dtypes are rejected.
   a safe dtype, and `"wrap"` follows NumPy.
 - `ma.cast()` supports `casting="safe"`, `"same_kind"`, and `"unsafe"`.
 
+`float32` calculations remain in FP32; Lunarscout does not introduce FP64
+intermediates merely to check overflow or numeric domains. FP64 is used only
+when an input or the documented result/accumulator contract requires it. This
+matters on the consumer-grade GPUs expected for Lunarscout, where FP64
+throughput is commonly much lower than FP32 throughput.
+
+Likewise, exact `int64`/`uint64` behavior is a CPU correctness and interchange
+capability, not a planned CUDA hot path: consumer NVIDIA GPUs software-emulate
+general 64-bit integer ALU work. Future accelerator planning will use FP32 and
+at-most-32-bit integer kernels normally, and will reject or explicitly route
+required 64-bit work to CPU unless a separately benchmarked kernel justifies
+otherwise.
+
+Checked integer addition, subtraction, multiplication, floor division,
+remainder, negation, absolute value, and squaring perform exact integer-domain
+boundary checks. In particular, `int64` and `uint64` values beyond `2**53` are
+not converted to floating point. `overflow="promote"` chooses an exact wider
+integer dtype when one exists and otherwise raises a structured error.
+
+`ma.divide`, `ma.floor_divide`, `ma.remainder`, `ma.sqrt`, `ma.exp`, `ma.log`,
+`ma.log10`, `ma.arcsin`, `ma.arccos`, and `ma.square` expose numeric-domain
+handling where applicable. `numeric_errors="invalid"` (the default) invalidates
+new non-finite/domain-error pixels, `"keep"` preserves their input validity,
+and `"raise"` raises `MapAlgebraOperationError` with code
+`map_algebra_numeric_error`. Existing invalid pixels do not cause `"raise"`.
+
 ### Unit Rules
 
 Units are conservative metadata. Add, subtract, and comparison operations

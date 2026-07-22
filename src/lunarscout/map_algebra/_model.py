@@ -385,6 +385,7 @@ def _infer_expr_units(
     operands: list[Any],
     *,
     operation_id: str,
+    output_units: str | None = None,
 ) -> str | None:
     units: list[str | None] = []
     for op in operands:
@@ -412,6 +413,8 @@ def _infer_expr_units(
             return None
         return units[0] if units else None
     if operation_id in ("local.multiply", "local.divide"):
+        if output_units is not None:
+            return output_units
         if len(units) > 1 and all(unit is not None for unit in units):
             raise MapAlgebraExpressionError(
                 f"'{operation_id}' with two unit-bearing rasters requires explicit output units.",
@@ -431,6 +434,7 @@ def _new_expr_op(
     other: Any,
     op_id: str,
     swap: bool = False,
+    params: dict[str, Any] | None = None,
 ) -> RasterExpression:
     left = _to_expr_or_scalar(self_expr)
     right = _to_expr_or_scalar(other)
@@ -460,22 +464,41 @@ def _new_expr_op(
     if is_comparison or is_boolean:
         dtype = _infer_comparison_dtype()
     else:
-        dtype_inputs = [
-            op.dtype if isinstance(op, RasterExpression) else op
-            for op in op_list
-            if not isinstance(op, RasterExpression) or op.dtype is not None
-        ]
-        dtype = np.result_type(*dtype_inputs) if dtype_inputs else None
-        if op_id == "local.divide" and dtype is not None and np.issubdtype(dtype, np.integer):
-            dtype = np.dtype(np.float64)
+        from ._dtypes import result_dtype
 
-    units = _infer_expr_units(raster_ops, operation_id=op_id)
-    return _make_expr_node(op_id, tuple(op_list), grid=grid, dtype=dtype, units=units)
+        operand_dtypes = tuple(
+            op.dtype for op in op_list
+            if isinstance(op, RasterExpression) and op.dtype is not None
+        )
+        scalars = tuple(
+            op for op in op_list if not isinstance(op, RasterExpression)
+        )
+        dtype = result_dtype(
+            operand_dtypes,
+            operation=op_id.removeprefix("local."),
+            scalars=scalars,
+            overflow=(params or {}).get("overflow", "raise"),
+            scalar_left=(
+                len(op_list) == 2
+                and not isinstance(op_list[0], RasterExpression)
+                and isinstance(op_list[1], RasterExpression)
+            ),
+        ) if operand_dtypes else None
+
+    units = _infer_expr_units(
+        raster_ops, operation_id=op_id,
+        output_units=(params or {}).get("output_units"),
+    )
+    return _make_expr_node(
+        op_id, tuple(op_list), grid=grid, dtype=dtype, units=units, params=params,
+    )
 
 
 def _new_expr_unary(
     self_expr: RasterExpression | Raster,
     op_id: str,
+    *,
+    params: dict[str, Any] | None = None,
 ) -> RasterExpression:
     expr = _to_expr_or_scalar(self_expr)
     if isinstance(expr, RasterExpression):
@@ -495,11 +518,23 @@ def _new_expr_unary(
             else None if op_id in {"local.sin", "local.cos", "local.tan"}
             else expr.units
         )
+        from ._dtypes import result_dtype
+
+        dtype = (
+            _infer_comparison_dtype()
+            if is_logic
+            else result_dtype(
+                (expr.dtype,),
+                operation=op_id.removeprefix("local."),
+                overflow=(params or {}).get("overflow", "raise"),
+            ) if expr.dtype is not None else None
+        )
         return _make_expr_node(
             op_id, (expr,),
             grid=expr.grid,
-            dtype=_infer_comparison_dtype() if is_logic else expr.dtype,
+            dtype=dtype,
             units=output_units,
+            params=params,
         )
     raise MapAlgebraExpressionError(
         f"Unary operation requires a Raster or RasterExpression operand.",
