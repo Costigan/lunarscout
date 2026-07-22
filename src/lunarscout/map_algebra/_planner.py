@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,6 +16,19 @@ _MAX_NODES = 10_000
 _MAX_DEPTH = 500
 _MAX_SOURCES = 1_000
 _DEFAULT_WINDOW = 128
+_DEFAULT_JOURNAL_CHECKPOINT_INTERVAL = 16
+_JOURNAL_IDENTITY_VERSION = 2
+_GEOTIFF_WRITE_OPTIONS: dict[str, Any] = {
+    "driver": "GTiff",
+    "tiled": True,
+    "block_width": 128,
+    "block_height": 128,
+    "compression": "deflate",
+    "float_predictor": 3,
+    "integer_predictor": 2,
+    "bigtiff": "IF_SAFER",
+    "validity": "gdal_dataset_mask",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +62,98 @@ class ExecutionPlan:
     @property
     def halos(self) -> int:
         return self.maximum_halo
+
+    def journal_identity(
+        self,
+        expression: RasterExpression,
+        output_dtype: np.dtype[Any],
+        fill: int | float | None,
+        checkpoint_interval: int = _DEFAULT_JOURNAL_CHECKPOINT_INTERVAL,
+    ) -> str:
+        return _build_journal_identity(
+            expression, output_dtype, fill, self.window_width, self.window_height,
+            checkpoint_interval,
+        )
+
+    def journal_identity_inputs(
+        self,
+        expression: RasterExpression,
+        output_dtype: np.dtype[Any],
+        fill: int | float | None,
+        checkpoint_interval: int = _DEFAULT_JOURNAL_CHECKPOINT_INTERVAL,
+    ) -> dict[str, Any]:
+        """Return the enforced, read-only inputs to journal identity."""
+        return _journal_identity_inputs(
+            expression, output_dtype, fill, self.window_width, self.window_height,
+            checkpoint_interval,
+        )
+
+    @property
+    def is_windowed(self) -> bool:
+        return self.total_windows > 0
+
+    @property
+    def resumable_stages(self) -> tuple[str, ...]:
+        return ("windowed_execution",)
+
+    @property
+    def journal_available(self) -> bool:
+        return self.is_windowed
+
+    @property
+    def supports_progress(self) -> bool:
+        return self.is_windowed
+
+    @property
+    def supports_cancellation(self) -> bool:
+        return self.is_windowed
+
+
+def _build_journal_identity(
+    expression: RasterExpression,
+    output_dtype: np.dtype[Any],
+    fill: int | float | None,
+    window_width: int,
+    window_height: int,
+    checkpoint_interval: int = _DEFAULT_JOURNAL_CHECKPOINT_INTERVAL,
+) -> str:
+    payload = _journal_identity_inputs(
+        expression, output_dtype, fill, window_width, window_height,
+        checkpoint_interval,
+    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _journal_identity_inputs(
+    expression: RasterExpression,
+    output_dtype: np.dtype[Any],
+    fill: int | float | None,
+    window_width: int,
+    window_height: int,
+    checkpoint_interval: int = _DEFAULT_JOURNAL_CHECKPOINT_INTERVAL,
+) -> dict[str, Any]:
+    grid = expression._inferred_grid
+    fill_repr = "nan" if (isinstance(fill, float) and np.isnan(fill)) else repr(fill)
+    return {
+        "identity_version": _JOURNAL_IDENTITY_VERSION,
+        "scientific_identity": expression.scientific_identity(),
+        "output_dtype": str(output_dtype),
+        "invalid_fill": fill_repr,
+        "destination_grid": {
+            "projection_wkt": grid.projection_wkt if grid else None,
+            "affine_transform": list(grid.affine_transform) if grid else None,
+            "width": grid.width if grid else None,
+            "height": grid.height if grid else None,
+        },
+        "window_layout": {
+            "width": window_width,
+            "height": window_height,
+            "order": "row_major",
+        },
+        "checkpoint_interval": checkpoint_interval,
+        "write_options": dict(_GEOTIFF_WRITE_OPTIONS),
+    }
 
 
 def plan_expression(

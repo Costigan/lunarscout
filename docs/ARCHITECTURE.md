@@ -896,10 +896,9 @@ coordinates, preserving exact ``int64`` and ``uint64`` payloads above the
 53-bit mantissa precision of IEEE 754 double-precision floating point.
 
 **Deferred capabilities.**  General focal kernel window execution (halo from
-arbitrary footprint sizes), local fusion across consecutive nodes, completed-
-window journal/resume, cancellation/progress hooks, region adapters, and
-global/zonal/distance/temporal bounded execution remain deferred to a later
-milestone.
+arbitrary footprint sizes), local fusion across consecutive nodes, region
+adapters, and global/zonal/distance/temporal bounded execution remain
+deferred to a later milestone.
 
 ### 20.4 Temporal execution
 
@@ -926,18 +925,36 @@ Expression output through `ma.write()` uses the same durable storage
 patterns as the horizon-derived product engine:
 
 1. Validate the expression graph and preflight output paths.
-2. Create a hidden staged GeoTIFF and manifest.
+2. Create a hidden staged GeoTIFF and compact checkpoint journal. The TIFF
+   and journal carry the same execution identity.
 3. Process output windows with bounded source reads, computational work,
    and GDAL block writes.
-4. Write the GDAL mask band at dataset creation time.
-5. Publish atomically: write a manifest JSON with scientific and restart
-   identity, then swap to the destination path. A failed overwrite
-   preserves the prior complete output.
+4. At each checkpoint boundary (default 16 windows), close the staged
+   TIFF to flush data, atomically update the checkpoint journal, and
+   reopen the TIFF.
+5. Write each window's values and GDAL mask before advancing the completed
+   row-major prefix. Validate staged dtype, CRS, transform, nodata, block
+   layout, dimensions, and identity before resuming it.
+6. Publish the staged TIFF and staged manifest with paired exception rollback.
+   Clean up journal and staging artifacts only after both swaps succeed. A
+   failed overwrite restores the prior complete output and prior manifest.
 
-The restart manifest binds output to the expression scientific identity,
-output dtype, invalid fill value, and grid dimensions. Restart skips
-recomputation when the stored manifest matches. There is no per-window
-journal in `0.2`; full recomputation occurs on manifest mismatch.
+The restart manifest binds completed output to the expression scientific
+identity, output dtype, invalid fill value, and grid dimensions. The checkpoint
+journal identity additionally binds the complete destination grid, window
+layout, checkpoint interval, validity encoding, and enforced GeoTIFF write
+options. The journal
+stores a compact contiguous completed-window prefix rather than an area-sized
+set. A matching journal and identically tagged, structurally validated TIFF
+allow resumption from the last checkpoint. Either artifact alone, or an
+incompatible, malformed, stale, or truncated journal, is discarded and its
+windows are recomputed.
+
+Progress and cancellation callbacks are supported: progress reports
+completed-window count, total, and current window index after each successfully
+written window, including completion exactly once; cancellation is
+checked before execution and between windows, checkpoints prior completed
+work, raises ``OperationCancelledError``, and never publishes a partial output.
 
 ### 20.6 Dispatch rules
 

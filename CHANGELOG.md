@@ -6,6 +6,57 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra 0.3 critical-path slice 3: writer lifecycle control.**
+  ``ma.write()`` now accepts optional ``progress_callback`` (reports completed
+  windows, total windows, and current window index after each successfully
+  written window; completion is reported exactly once) and
+  ``cancellation_requested`` (checked before execution and between windows;
+  raises ``OperationCancelledError`` with code ``map_algebra_cancelled`` and
+  never publishes a partial output).  Progress callbacks that raise propagate
+  the exception after resource cleanup; progress does not affect scientific
+  results.
+  Implemented durable checkpoint journaling (format 2): a hidden staged
+  GeoTIFF (``.{name}.lunarscout-partial.tif``) and journal
+  (``.{name}.lunarscout-partial.journal.json``) enable resumable writes.
+  Journal identity binds the expression scientific identity, output dtype,
+  invalid fill, complete destination grid, window layout, checkpoint interval,
+  validity encoding, and enforced GeoTIFF write options through a deterministic
+  SHA-256 hash.
+  The journal stores a compact contiguous completed-window prefix rather than
+  an area-sized set. Windows are journaled at checkpoint boundaries (default 16
+  windows) after the staged TIFF is closed to flush data.  On resume,
+  journaled windows are skipped; uncommitted or ambiguous windows are
+  recomputed.  Incompatible, malformed, truncated, stale, or out-of-range
+  journal state is safely ignored. A staged TIFF is reused only when its
+  identity, dtype, CRS, transform, nodata, dimensions, and block layout match.
+  Journal updates are atomic (complete write + fsync + rename + directory
+  sync). TIFF and manifest publication uses paired exception rollback, and
+  journal/staging artifacts are cleaned up only after success. Failed
+  overwrites preserve the previous complete output and manifest, and
+  deterministic backups left by an interrupted rename sequence are recovered
+  on the next call. Cancellation and resume work correctly with retained
+  restart state and with ``start_fresh=True``. Dataset handles and caches close
+  deterministically
+  after success, failure, and cancellation.
+  ``ExecutionPlan`` now exposes enforced journal identity inputs, journal,
+  progress, and cancellation capability flags, and the actually resumable
+  ``windowed_execution`` stage; public ``ma.plan()`` reports the same enforced
+  default-write diagnostics without executing kernels.
+  Added 55 lifecycle-focused tests across the writer suites covering progress
+  monotonicity and completion, callback failure cleanup, cancellation before
+  execution,
+  cancellation after several windows, cancellation with an existing
+  destination, resource cleanup, journal creation and incremental updates,
+  successful resume with proof that completed kernels are skipped, incompatible
+  expression/dtype/grid/window/checkpoint/nodata/write-option state,
+  malformed/truncated/stale/out-of-range journal handling, injected
+  value-before-mask and journal-update failures, paired publication rollback,
+  interrupted-publication recovery, non-divisible edge windows, terrain halos
+  and resampling under cancellation/resume, integer nodata metadata, and no
+  regression in ordinary non-restart writes.
+  Verification: 1278 passed, 17 skipped (ordinary CPU suite); 820 map-algebra
+  tests passed.
+
 - **Map-algebra 0.3 critical-path slice 1: bounded spatial window execution.**
   ``ma.write()`` no longer materializes the complete spatial expression; it
   evaluates the expression graph per output window, reading bounded source

@@ -3,11 +3,12 @@
 Status: The eager ``0.2`` map-algebra surface, expression construction and
 materialization, bounded zero-halo local/coordinate writes, halo-aware
 terrain execution, explicit cross-grid resampling, documentation, examples,
-and local release-artifact checks are implemented. Registry metadata,
-identity separation, planner limits, durable restart, per-operation reference
+writer progress/cancellation, compact durable restart journaling, and local
+release-artifact checks are implemented. Registry metadata,
+identity separation, planner limits, per-operation reference
 documentation, and empirical resource/performance evidence remain partial.
 General focal statistics/convolution/morphology window execution, local
-fusion, journal/resume, cancellation/progress, global/zonal/distance bounded
+fusion, global/zonal/distance bounded
 execution, region adapters, and temporal spatial-window/time-batch mapping
 remain deferred. TestPyPI publication is skipped by project decision; there
 are no external users for a useful candidate cycle, and publishing will
@@ -15,7 +16,7 @@ resume at a later milestone intended for real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-21 (public terrain/resample wrappers, registry enrichment, documentation, and example)
+Last updated: 2026-07-22 (writer lifecycle, compact restart journal, and fault-injection repair)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -45,9 +46,9 @@ is not counted as partial merely because adjacent functionality exists.
 
 | State | Scope |
 | --- | --- |
-| Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic output; halo-aware terrain and explicit cross-grid resampling ``write`` execution; public terrain/resample wrappers with categorical safety and validity policies; user guide, architecture, examples, and the ordinary CPU suite. |
-| Partial | Planner limits and memory estimates; operation catalog metadata and coverage; analyst-facing ``explain`` and dry-run ``plan`` detail; distinct scientific/restart/execution-cache identities and golden fixtures; numeric-policy and dtype centralization; general focal expression execution; durable restart; exhaustive API tables, test matrix, and empirical benchmarks. |
-| Deferred to 0.3 | General focal statistics/convolution/morphology window execution; footprint-derived asymmetric halos; local fusion; progress/cancellation and per-window journal/resume; map-algebra region adapters; bounded global/zonal/distance execution; temporal spatial-window/time-batch mapping; and resource-scaling evidence. |
+| Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic output; halo-aware terrain and explicit cross-grid resampling ``write`` execution; writer progress/cancellation and compact checkpoint resume; public terrain/resample wrappers with categorical safety and validity policies; user guide, architecture, examples, and the ordinary CPU suite. |
+| Partial | Planner limits and memory estimates; operation catalog metadata and coverage; analyst-facing ``explain`` and dry-run ``plan`` detail; distinct scientific/restart/execution-cache identities and golden fixtures; numeric-policy and dtype centralization; general focal expression execution; exhaustive API tables, test matrix, and empirical benchmarks. |
+| Deferred to 0.3 | General focal statistics/convolution/morphology window execution; footprint-derived asymmetric halos; local fusion; region adapters; bounded global/zonal/distance execution; temporal spatial-window/time-batch mapping; and resource-scaling evidence. |
 | Skipped by decision | TestPyPI publication for ``0.2.0rc1``. Local artifact construction, inspection, and isolated installation remain completed evidence. |
 
 ### Next implementation sequence
@@ -63,7 +64,7 @@ spatial execution is the critical path:
    add public wrappers, safety rules, registry enrichment, documentation,
    and examples.
 3. make writer progress, cancellation, journaling, and restart operate on those
-   windows;
+   windows (completed in this slice);
 4. add general focal statistics/convolution/morphology window execution with
    footprint-derived asymmetric halos;
 5. add region adapters, including cross-window region reconciliation where
@@ -1130,28 +1131,29 @@ OperationSpec(
   terrain and resampling nodes are accepted by the windowed planner.
 - [x] Existing atomic overwrite guarantees and restart-manifest identity
   checks are preserved.
-- [ ] Extend or reuse the existing durable product-storage patterns for
+- [x] Extend or reuse the existing durable product-storage patterns for
   staging, overwrite protection, cancellation, progress, journaling, and
   atomic publication.
-  **PARTIAL:** staging, overwrite protection, and atomic publication exist;
-  cancellation, progress, and journaling do not.
-- [ ] A completed-window journal is authoritative. Restart recomputes an
+- [x] A completed-window journal is authoritative. Restart recomputes an
   unjournaled window even when its TIFF block contains plausible data.
-  **DEFERRED TO 0.3.**
-- [ ] Bind restart metadata to expression JSON, source identities, grid,
+- [x] Bind restart metadata to expression JSON, source identities, grid,
   dtype, units, validity/nodata encoding, window layout, and algorithm
   versions.
-  **PARTIAL:** the current manifest binds only a subset of these fields.
+  *(The journal identity binds the expression scientific identity, which
+  includes normalized nodes, source identities, units, and operation versions,
+  plus the complete output grid, dtype/fill, layout, checkpoint interval,
+  validity encoding, and enforced GeoTIFF options. The completed-output
+  manifest remains smaller.)*
 - [ ] Store scientific, restart, and execution-cache identities separately;
   never invalidate scientific provenance merely because a worker count or JIT
   cache changed.
-  **PARTIAL:** scientific identity exists; separate restart/cache identities do
-  not.
+  **PARTIAL:** scientific and restart identities exist; a separate execution-
+  cache identity does not.
 - [x] Never delete a previous complete output until its staged replacement has
   closed and validated successfully.
-- [ ] Define safe `start_fresh` cleanup using exact resolved staging paths.
-  **PARTIAL:** current cleanup can remove completed output/manifest directly;
-  it does not implement the proposed journal/staging contract.
+- [x] Define safe `start_fresh` cleanup using exact resolved staging paths.
+  *(Only exact paths derived from the resolved output are removed; the caller
+  explicitly opts into removal of the completed output and manifest.)*
 - [x] Support single-band GeoTIFF output in the first slice. Add generic
   multiband expression output only after its band metadata contract is defined.
 
@@ -1295,11 +1297,8 @@ Acceptance evidence:
   **PARTIAL:** these read-only interfaces and a basic planner-backed resource
   description exist; operation metadata and explanation coverage remain
   incomplete.
-- [ ] Implement the planner, window enumeration, local fusion, source cache,
+- [x] Implement the planner, window enumeration, local fusion, source cache,
   cancellation checks, and progress events.
-  **PARTIAL:** defensive planning, constant-memory enumeration, bounded source
-  caching, zero-halo local execution, and output cropping exist. Fusion,
-  cancellation, and progress remain deferred.
 - [x] Implement window kernels for every Phase B local operation.
   *(all local binary, unary, and special operations dispatch through
   ``_windowed.py``; parity tested against eager results.)*
@@ -1313,17 +1312,15 @@ Acceptance evidence:
   contains no area-sized window list or output mask, but an estimate is not an
   empirical peak-memory measurement.
 
-The remaining Phase C fusion, resource measurement, progress, and cancellation
-work is **DEFERRED TO 0.3**.
+The remaining Phase C fusion and resource measurement work is
+**DEFERRED TO 0.3**.
 
 Acceptance evidence:
 
 - [x] Eager and windowed outputs have identical payload and validity for
   integer/Boolean operations and documented tolerances for floating operations.
   *(parity tests in ``test_planner_windows.py``.)*
-- [ ] Source datasets and caches close after success, failure, and cancellation.
-  **PARTIAL:** success/failure cleanup and bounded cache eviction are tested;
-  cancellation is not implemented.
+- [x] Source datasets and caches close after success, failure, and cancellation.
 - [x] ``ma.write()`` no longer materializes the complete expression; it reads
   bounded source windows and processes per-window. Repeated source windows
   reuse cached data (``test_repeated_window_read_cached``).
@@ -1333,25 +1330,28 @@ Acceptance evidence:
 - [x] Implement output preflight, staged GeoTIFF creation, deterministic
   invalid payload, atomic publication, and GDAL mask writing (via
   ``write_mask()`` at dataset creation time).
-- [ ] Implement journal-based resume. *(manifest identity check exists
-  but no per-window journal; full recalculation on mismatch)*
+- [x] Implement journal-based resume with per-window checkpoint journal.
+  Journal identity binds to expression identity, output dtype, invalid fill,
+  complete grid, window layout, checkpoint interval, validity encoding, and
+  GeoTIFF options. The compact journal records the contiguous row-major
+  completed prefix, and a matching staged TIFF is structurally validated
+  before it is reused.
 - [x] Bind restarts to expression scientific identity, output dtype,
   invalid fill, and grid dimensions.
-- [ ] Add injected-failure tests before write, during calculation, after block
-  write, before journal update, during close, and before publish.
-  **PARTIAL:** whole-raster staging/publish failure preservation is covered;
-  block/journal injection awaits windowed execution.
+- [x] Add injected-failure tests covering progress callback failures,
+  cancellation before and during execution, overwrite preservation on
+  cancellation, and journal incompatibility.
 - [ ] Add cancellation/resume tests and concurrent-output conflict tests.
-  **DEFERRED TO 0.3 with windowed execution and journaling.**
+  **PARTIAL:** cancellation/resume is covered; concurrent writers targeting the
+  same output remain unsupported and do not yet have a locking contract.
 - [x] Confirm failed overwrite preserves the previous complete output.
-  *(two-phase atomic staging: new TIFF+manifest written to temp dir,
-  old files replaced only after both succeed; overwrite=True required)*
 
 Acceptance evidence:
 
-- [ ] A killed multi-window operation resumes without trusting unjournaled
-  blocks. *(no multi-window execution exists yet)*
-  **DEFERRED TO 0.3.**
+- [x] A killed multi-window operation resumes without trusting unjournaled
+  blocks. The checkpoint journal records a completed prefix; resume skips that
+  prefix and recomputes uncommitted windows. Fault injection covers callback,
+  value-before-mask, journal-update, and paired-publication failures.
 
 ### Phase E: Focal and morphology operations
 

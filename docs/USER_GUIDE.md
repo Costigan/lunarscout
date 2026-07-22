@@ -1374,7 +1374,7 @@ automatically wrapped as an in-memory constant node.
 | `ma.read(path, *, band, units, name)` | Read a single-band GeoTIFF as a `Raster`. |
 | `ma.source(path, *, band, units, identity)` | Read metadata only; returns `RasterExpression`. |
 | `ma.compute(expression)` | Materialize a `RasterExpression` as a `Raster`. |
-| `ma.write(path, expression, *, overwrite, dtype, invalid_value, window_width, window_height)` | Evaluate a supported local, coordinate, terrain, or resampling expression in bounded windows and write a staged GeoTIFF with a GDAL mask. |
+| `ma.write(path, expression, *, overwrite, start_fresh, dtype, invalid_value, window_width, window_height, progress_callback, cancellation_requested, checkpoint_interval)` | Evaluate a supported local, coordinate, terrain, or resampling expression in bounded windows and write a staged GeoTIFF with a GDAL mask. Supports progress reporting, cancellation, and durable checkpoint journaling for resume. |
 
 ### Grids and Grid Validation
 
@@ -1437,6 +1437,83 @@ operands are used and only one has units, an error is raised unless
 rasters require explicit `output_units`. Trigonometric operations require
 `"degrees"` or `"radians"`. No operation infers metres merely because a
 coordinate number is large.
+
+### Progress and Cancellation for Windowed Writes
+
+``ma.write()`` accepts optional progress and cancellation callbacks for
+long-running expressions:
+
+```python
+def on_progress(completed: int, total: int, window_idx: int) -> None:
+    print(f"Window {completed}/{total} done (idx {window_idx})")
+
+def is_cancelled() -> bool:
+    return stop_requested
+
+ma.write(
+    "result.tif", expr,
+    progress_callback=on_progress,
+    cancellation_requested=is_cancelled,
+)
+```
+
+Progress is reported after each output window whose data and validity mask
+have been successfully written. Values are monotonic. The
+final completed window is reported exactly once with ``completed == total``
+and its zero-based ``window_idx``. A resume with every window already
+checkpointed reports ``window_idx == -1`` because no window is recomputed. If the
+callback raises, the exception propagates, resources close, and no partial
+output is published. The matching staged TIFF and journal are retained so a
+later call can resume safely.
+
+Cancellation is checked before execution begins and between windows. If the
+``cancellation_requested`` callback returns ``True``, a structured
+``OperationCancelledError`` (code ``map_algebra_cancelled``) is raised with
+the completed-window count and total in its ``details``. Cancellation never
+publishes an incomplete output and cleans up dataset handles and caches
+deterministically. A failed overwrite preserves the previously completed
+destination.
+
+### Restart and Resumable Writes
+
+Windowed writes are resumable by default. The writer keeps a hidden staged
+GeoTIFF (``.{name}.lunarscout-partial.tif``) and a durable checkpoint
+completion journal (``.{name}.lunarscout-partial.journal.json``) alongside
+the output. The journal stores a compact count representing the contiguous
+row-major prefix of completed windows. Its identity binds the expression
+scientific identity, complete destination grid, output dtype, invalid fill
+value, window layout, checkpoint interval, validity encoding, and enforced
+GeoTIFF write options.
+The staged TIFF carries the same identity and its dtype, CRS, transform,
+nodata, block layout, and dimensions are validated before any window is
+skipped.
+
+On restart, the completed prefix in a matching journal is skipped.
+Uncommitted or ambiguous windows are recomputed. A journal from a different
+expression, dtype, nodata, grid, or window layout is never reused.
+Truncated, malformed, stale, or out-of-range journal state is safely ignored
+and all windows are recomputed in a newly staged TIFF.
+
+The journal is atomically updated at checkpoint boundaries (default every 16
+windows). At each checkpoint, the staged TIFF is closed to flush data to
+disk, the journal is written atomically to a temporary file and renamed,
+and the parent directory is synchronized. This provides crash-safe updates:
+an interruption never leaves the journal syntactically corrupt, and only
+windows recorded after the last checkpoint need recomputation.
+
+After all windows complete, the staged TIFF and staged manifest are published
+with paired exception rollback, then the journal and staging files are
+removed. With
+``overwrite=True``, the previous complete output is preserved until the
+replacement is ready. A publication exception restores both the previous
+output and its previous manifest while retaining the completed stage for
+retry. With
+``start_fresh=True``, existing staging, journal, manifest, and output files
+are removed before execution.
+
+The finished output is accompanied by a ``{name}.manifest.json`` sidecar
+recording the expression scientific identity, output dtype, invalid fill
+value, and grid dimensions for future restart identity checks.
 
 ### Local Operations
 
@@ -1646,6 +1723,11 @@ ma.list_operations(execution_mode="file_backed")
 ```
 
 The catalog cannot be extended by user callbacks in `0.2`.
+
+`ma.plan(expression)` also reports total windows, journal/progress/cancellation
+capability flags, the actually resumable execution stages, and the default
+write journal identity with its enforced inputs. Planning is read-only: it does
+not execute kernels or create restart artifacts.
 
 ### Focal Operations
 

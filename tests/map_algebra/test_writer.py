@@ -117,9 +117,12 @@ class TestWrite:
         previous_manifest = manifest.read_bytes()
 
         real_replace = writer_module.os.replace
+        injected = [False]
+        staging_manifest = writer_module._staging_manifest_path(output.resolve())
 
         def fail_manifest_publish(src, dst):
-            if str(dst) == str(manifest) and Path(src).name == manifest.name:
+            if Path(src) == staging_manifest and Path(dst) == manifest and not injected[0]:
+                injected[0] = True
                 raise OSError("injected manifest publication failure")
             return real_replace(src, dst)
 
@@ -130,6 +133,40 @@ class TestWrite:
         with rasterio.open(output) as dataset:
             np.testing.assert_array_equal(
                 dataset.read(1), np.full((2, 2), 2.0, dtype=np.float32)
+            )
+        assert manifest.read_bytes() == previous_manifest
+
+        monkeypatch.setattr(writer_module.os, "replace", real_replace)
+        write(output, source(source_path) + 5, overwrite=True)
+        with rasterio.open(output) as dataset:
+            np.testing.assert_array_equal(
+                dataset.read(1), np.full((2, 2), 6.0, dtype=np.float32)
+            )
+
+    def test_failed_output_backup_preserves_previous_output(self, tmp_path, monkeypatch):
+        import lunarscout.map_algebra._writer as writer_module
+
+        source_path = _write_tiff(
+            tmp_path, "backup_source.tif", np.ones((2, 2), dtype=np.float32),
+        )
+        output = tmp_path / "backup.tif"
+        write(output, source(source_path) + 1)
+        manifest = output.with_suffix(output.suffix + ".manifest.json")
+        previous_manifest = manifest.read_bytes()
+        real_replace = writer_module.os.replace
+
+        def fail_output_backup(src, dst):
+            if Path(src) == output.resolve():
+                raise OSError("injected output backup failure")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(writer_module.os, "replace", fail_output_backup)
+        with pytest.raises(OSError, match="backup failure"):
+            write(output, source(source_path) + 5, overwrite=True)
+
+        with rasterio.open(output) as dataset:
+            np.testing.assert_array_equal(
+                dataset.read(1), np.full((2, 2), 2.0, dtype=np.float32),
             )
         assert manifest.read_bytes() == previous_manifest
 

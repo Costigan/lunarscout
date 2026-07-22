@@ -5,7 +5,10 @@ from typing import Any, Callable
 
 import numpy as np
 
-from ..errors import MapAlgebraExpressionError
+from ..errors import (
+    MapAlgebraExpressionError,
+    OperationCancelledError,
+)
 from ..georeference import GeoReference
 from ..raster import Raster
 from ._model import RasterExpression
@@ -18,14 +21,19 @@ WriteBlock = Callable[
     None,
 ]
 
+CancellationCheck = Callable[[], bool]
+ProgressCallback = Callable[[int, int, int], None]
+
 
 def execute_windowed(
     plan: ExecutionPlan,
     cache: SourceWindowCache,
     *,
     write_block: WriteBlock | None = None,
+    completed_windows: set[int] | None = None,
+    cancellation_requested: CancellationCheck | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> Raster | None:
-    """Execute a local/coordinate plan one bounded output window at a time."""
     if plan.grid is None:
         raise MapAlgebraExpressionError(
             "Plan has no output grid.",
@@ -33,7 +41,15 @@ def execute_windowed(
         )
 
     grid = plan.grid
+    completed = completed_windows if completed_windows is not None else set()
+    total = plan.total_windows
     collecting = write_block is None
+    if collecting and completed:
+        raise MapAlgebraExpressionError(
+            "Completed windows can only be skipped when a write callback is supplied.",
+            code="map_algebra_invalid_completed_windows",
+            details={"completed_windows": len(completed)},
+        )
     full_values: np.ndarray[Any, Any] | None = None
     full_valid: np.ndarray[Any, Any] | None = None
     if collecting:
@@ -48,6 +64,23 @@ def execute_windowed(
             plan.window_width,
             plan.window_height,
         ):
+            if idx in completed:
+                cache.discard_window(idx)
+                continue
+
+            if cancellation_requested is not None and cancellation_requested():
+                raise OperationCancelledError(
+                    f"Windowed execution cancelled before window "
+                    f"{len(completed) + 1} "
+                    f"of {total}.",
+                    code="map_algebra_cancelled",
+                    details={
+                        "completed_windows": len(completed),
+                        "total_windows": total,
+                        "window_index": idx,
+                    },
+                )
+
             values, valid = _execute_window(
                 plan, cache, idx, x0, y0, width, height,
             )
@@ -57,7 +90,14 @@ def execute_windowed(
                 assert full_values is not None and full_valid is not None
                 full_values[y0 : y0 + height, x0 : x0 + width] = values
                 full_valid[y0 : y0 + height, x0 : x0 + width] = valid
+            completed.add(idx)
             cache.discard_window(idx)
+
+            if progress_callback is not None:
+                progress_callback(len(completed), total, idx)
+    except OperationCancelledError:
+        cache.close()
+        raise
     except Exception:
         cache.close()
         raise

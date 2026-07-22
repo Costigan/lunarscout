@@ -416,6 +416,14 @@ def plan(expression: RasterExpression, *, output: str | None = None) -> dict[str
     from ._planner import plan_expression as _plan_expression
 
     ep = _plan_expression(expression)
+    planned_dtype = expression._inferred_dtype
+    if planned_dtype == np.dtype(np.bool_):
+        planned_dtype = np.dtype(np.uint8)
+    default_fill: int | float = (
+        float(np.nan)
+        if planned_dtype is not None and np.issubdtype(planned_dtype, np.floating)
+        else 0
+    )
     planner_info: dict[str, Any] = {
         "window_width": ep.window_width,
         "window_height": ep.window_height,
@@ -427,7 +435,18 @@ def plan(expression: RasterExpression, *, output: str | None = None) -> dict[str
         "n_operations": ep.n_operations,
         "halos": ep.halos,
         "estimated_peak_bytes": ep.estimated_per_window_bytes,
+        "journal_available": ep.journal_available,
+        "supports_progress": ep.supports_progress,
+        "supports_cancellation": ep.supports_cancellation,
+        "resumable_stages": ep.resumable_stages,
     }
+    if planned_dtype is not None:
+        planner_info["default_write_journal_identity"] = ep.journal_identity(
+            expression, planned_dtype, default_fill,
+        )
+        planner_info["default_write_journal_identity_inputs"] = (
+            ep.journal_identity_inputs(expression, planned_dtype, default_fill)
+        )
 
     return {
         "node_count": len(nodes),
