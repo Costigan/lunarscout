@@ -306,6 +306,31 @@ class TestOneHot:
 # ---------------------------------------------------------------------------
 
 class TestNormalizeMinmax:
+    @pytest.mark.parametrize(
+        ("source_dtype", "minimum", "maximum", "expected_dtype"),
+        [
+            (np.float32, None, None, np.float32),
+            (np.int16, 0.0, 20.0, np.float32),
+            (np.int32, 0.0, 20.0, np.float64),
+            (np.float64, 0.0, 20.0, np.float64),
+            (np.int64, 0.0, 20.0, np.float64),
+            (np.float32, np.float64(0.0), 20.0, np.float64),
+            (np.float32, 0.0, 1e40, np.float64),
+        ],
+    )
+    def test_shared_precision_policy(
+        self, source_dtype, minimum, maximum, expected_dtype,
+    ):
+        raster = _make_raster(
+            values=np.array([[0, 5], [10, 15]], dtype=source_dtype),
+            georef=_make_georef(width=2, height=2),
+        )
+        kwargs = {"minimum": minimum, "maximum": maximum}
+        eager = normalize_minmax(raster, **kwargs)
+        expression = normalize_minmax(raster.expression(), **kwargs)
+        assert eager.dtype == expression.dtype == np.dtype(expected_dtype)
+        assert compute(expression).dtype == eager.dtype
+
     def test_basic(self):
         georef = _make_georef(width=2, height=2)
         values = np.array([[0, 5], [10, 15]], dtype=np.float32)
@@ -315,6 +340,17 @@ class TestNormalizeMinmax:
         assert result.values[0, 0] == 0.0
         assert result.values[1, 1] == 1.0
         assert result.values[0, 1] == pytest.approx(1.0 / 3.0, abs=1e-10)
+
+    def test_large_adjacent_int32_values_do_not_collapse(self):
+        base = 2**30
+        raster = _make_raster(
+            values=np.array([[base, base + 1]], dtype=np.int32),
+            georef=_make_georef(width=2, height=1),
+        )
+        result = normalize_minmax(raster)
+        assert result.dtype == np.dtype(np.float64)
+        np.testing.assert_array_equal(result.values, [[0.0, 1.0]])
+        assert result.all_valid
 
     def test_explicit_range(self):
         georef = _make_georef(width=2, height=2)
@@ -330,6 +366,7 @@ class TestNormalizeMinmax:
         valid = np.zeros((2, 2), dtype=np.bool_)
         raster = Raster(values=values, georef=georef, valid=valid)
         result = normalize_minmax(raster)
+        assert result.dtype == np.dtype(np.float32)
         assert not np.any(result.valid)
         assert np.all(np.isnan(result.values[~result.valid]))
 
@@ -373,6 +410,29 @@ class TestNormalizeMinmax:
 # ---------------------------------------------------------------------------
 
 class TestStandardize:
+    @pytest.mark.parametrize(
+        ("source_dtype", "mean", "std", "expected_dtype"),
+        [
+            (np.float32, None, None, np.float32),
+            (np.int16, 0.0, 1.0, np.float32),
+            (np.int32, 0.0, 1.0, np.float64),
+            (np.float64, 0.0, 1.0, np.float64),
+            (np.uint64, 0.0, 1.0, np.float64),
+            (np.float32, np.float64(0.0), 1.0, np.float64),
+        ],
+    )
+    def test_shared_precision_policy(
+        self, source_dtype, mean, std, expected_dtype,
+    ):
+        raster = _make_raster(
+            values=np.array([[1, 2], [3, 4]], dtype=source_dtype),
+            georef=_make_georef(width=2, height=2),
+        )
+        eager = standardize(raster, mean=mean, std=std)
+        expression = standardize(raster.expression(), mean=mean, std=std)
+        assert eager.dtype == expression.dtype == np.dtype(expected_dtype)
+        assert compute(expression).dtype == eager.dtype
+
     def test_basic(self):
         georef = _make_georef(width=2, height=2)
         values = np.array([[1, 2], [3, 4]], dtype=np.float32)
@@ -381,6 +441,17 @@ class TestStandardize:
         result = standardize(raster)
         expected = (values - 2.5) / np.sqrt(1.25)
         np.testing.assert_array_almost_equal(result.values, expected)
+
+    def test_large_adjacent_int32_values_remain_distinct(self):
+        base = 2**30
+        raster = _make_raster(
+            values=np.array([[base, base + 1]], dtype=np.int32),
+            georef=_make_georef(width=2, height=1),
+        )
+        result = standardize(raster)
+        assert result.dtype == np.dtype(np.float64)
+        assert result.values[0, 0] < result.values[0, 1]
+        assert result.all_valid
 
     def test_explicit_stats(self):
         georef = _make_georef(width=2, height=2)
@@ -601,6 +672,16 @@ class TestRasterExpressionDescribe:
 # ---------------------------------------------------------------------------
 
 class TestOperationRegistry:
+    @pytest.mark.parametrize(
+        "operation_id",
+        ["local.normalize_minmax", "local.standardize"],
+    )
+    def test_normalization_precision_contract(self, operation_id):
+        description = describe_operation(operation_id)
+        assert description["version"] == 2
+        assert "FP32" in description["output_dtype_rule"]
+        assert "typed FP64" in description["output_dtype_rule"]
+
     @pytest.mark.parametrize(
         "operation_id",
         ["local.reclassify_values", "local.reclassify_ranges"],

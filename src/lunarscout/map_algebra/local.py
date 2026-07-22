@@ -998,31 +998,38 @@ def normalize_minmax(
     maximum: int | float | None = None,
 ) -> Raster:
     raster = _require_eager_raster(raster)
+    output_dtype = result_dtype(
+        (raster.dtype,),
+        operation="normalize_minmax",
+        scalars=(minimum, maximum),
+    )
     valid_data = raster.values[raster.valid]
     if valid_data.size == 0:
         return Raster(
-            values=np.full(raster.shape, np.nan, dtype=np.float64),
+            values=np.full(raster.shape, np.nan, dtype=output_dtype),
             georef=raster.georef,
             valid=np.zeros(raster.shape, dtype=np.bool_),
             units=None,
             name=raster.name,
         )
-    vmin = float(valid_data.min()) if minimum is None else float(minimum)
-    vmax = float(valid_data.max()) if maximum is None else float(maximum)
+    working_data = valid_data.astype(output_dtype, copy=False)
+    vmin = output_dtype.type(working_data.min() if minimum is None else minimum)
+    vmax = output_dtype.type(working_data.max() if maximum is None else maximum)
     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax < vmin:
         raise MapAlgebraError(
             "minimum and maximum must be finite with maximum >= minimum.",
             code="map_algebra_invalid_normalization_statistics",
-            details={"minimum": vmin, "maximum": vmax},
+            details={"minimum": float(vmin), "maximum": float(vmax)},
         )
     if vmax == vmin:
-        result_values = np.zeros(raster.shape, dtype=np.float64)
+        result_values = np.zeros(raster.shape, dtype=output_dtype)
         result_valid = np.zeros(raster.shape, dtype=np.bool_)
     else:
-        result_values = (raster.values.astype(np.float64) - vmin) / (vmax - vmin)
+        values = raster.values.astype(output_dtype, copy=False)
+        result_values = (values - vmin) / (vmax - vmin)
         result_valid = raster.valid & np.isfinite(result_values)
     return Raster(
-        values=result_values.astype(np.float64, copy=False),
+        values=result_values.astype(output_dtype, copy=False),
         georef=raster.georef,
         valid=result_valid,
         units=None,
@@ -1038,10 +1045,15 @@ def standardize(
     ddof: float = 0,
 ) -> Raster:
     raster = _require_eager_raster(raster)
+    output_dtype = result_dtype(
+        (raster.dtype,),
+        operation="standardize",
+        scalars=(mean, std),
+    )
     valid_data = raster.values[raster.valid]
     if valid_data.size == 0:
         return Raster(
-            values=np.full(raster.shape, np.nan, dtype=np.float64),
+            values=np.full(raster.shape, np.nan, dtype=output_dtype),
             georef=raster.georef,
             valid=np.zeros(raster.shape, dtype=np.bool_),
             units=None,
@@ -1053,22 +1065,28 @@ def standardize(
             code="map_algebra_invalid_ddof",
             details={"ddof": ddof},
         )
-    vmean = float(valid_data.mean()) if mean is None else float(mean)
-    vstd = float(valid_data.std(ddof=ddof)) if std is None else float(std)
+    working_data = valid_data.astype(output_dtype, copy=False)
+    vmean = output_dtype.type(
+        working_data.mean(dtype=output_dtype) if mean is None else mean
+    )
+    vstd = output_dtype.type(
+        working_data.std(ddof=ddof, dtype=output_dtype) if std is None else std
+    )
     if not np.isfinite(vmean) or not np.isfinite(vstd) or vstd < 0:
         raise MapAlgebraError(
             "mean must be finite and std must be finite and non-negative.",
             code="map_algebra_invalid_normalization_statistics",
-            details={"mean": vmean, "std": vstd},
+            details={"mean": float(vmean), "std": float(vstd)},
         )
     if vstd == 0:
         result_valid = np.zeros(raster.shape, dtype=np.bool_)
-        result_values = np.zeros(raster.shape, dtype=np.float64)
+        result_values = np.zeros(raster.shape, dtype=output_dtype)
     else:
-        result_values = (raster.values.astype(np.float64) - vmean) / vstd
+        values = raster.values.astype(output_dtype, copy=False)
+        result_values = (values - vmean) / vstd
         result_valid = raster.valid & np.isfinite(result_values)
     return Raster(
-        values=result_values.astype(np.float64, copy=False),
+        values=result_values.astype(output_dtype, copy=False),
         georef=raster.georef,
         valid=result_valid,
         units=None,

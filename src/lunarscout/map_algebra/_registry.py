@@ -271,9 +271,11 @@ _SPECS = (
           parameters=(("bins", "Monotonically increasing bin edges."), ("right", "Use right-closed bins.")), file_backed_available=True),
     _spec("local.one_hot", 1, "classification", "Create one Boolean raster per requested class.",
           parameters=(("classes", "Class values in output order."),), file_backed_available=True),
-    _spec("local.normalize_minmax", 1, "normalization", "Scale values by a minimum and maximum; file-backed execution requires both statistics.",
+    _spec("local.normalize_minmax", 1, "normalization", "Scale values by a minimum and maximum; file-backed execution requires both statistics.", version=2,
+          output_dtype_rule="FP32 for FP32 and Boolean/8/16-bit inputs unless typed FP64 statistics require FP64; otherwise FP64",
           parameters=(("minimum", "Supplied or measured minimum."), ("maximum", "Supplied or measured maximum.")), file_backed_available=True),
-    _spec("local.standardize", 1, "normalization", "Center and scale values by mean and standard deviation; file-backed execution requires both statistics.",
+    _spec("local.standardize", 1, "normalization", "Center and scale values by mean and standard deviation; file-backed execution requires both statistics.", version=2,
+          output_dtype_rule="FP32 for FP32 and Boolean/8/16-bit inputs unless typed FP64 statistics require FP64; otherwise FP64",
           parameters=(("mean", "Supplied or measured mean."), ("std", "Supplied or measured standard deviation."),
                       ("ddof", "Delta degrees of freedom for a measured standard deviation.")), file_backed_available=True),
     *(

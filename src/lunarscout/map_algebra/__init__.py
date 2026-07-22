@@ -784,14 +784,21 @@ def normalize_minmax(
     minimum: Any = None,
     maximum: Any = None,
 ) -> Any:
+    """Normalize valid values to [0, 1] using the shared precision policy."""
     if isinstance(raster, RasterExpression):
         from ._model import _make_expr_node
+        from ._dtypes import result_dtype
 
         return _make_expr_node(
             "local.normalize_minmax",
             (raster,),
             grid=raster.grid,
-            dtype=np.dtype(np.float64),
+            dtype=(
+                None if raster.dtype is None else result_dtype(
+                    (raster.dtype,), operation="normalize_minmax",
+                    scalars=(minimum, maximum),
+                )
+            ),
             units=None,
             params={"minimum": minimum, "maximum": maximum},
         )
@@ -805,14 +812,21 @@ def standardize(
     std: Any = None,
     ddof: float = 0,
 ) -> Any:
+    """Center and scale valid values using the shared precision policy."""
     if isinstance(raster, RasterExpression):
         from ._model import _make_expr_node
+        from ._dtypes import result_dtype
 
         return _make_expr_node(
             "local.standardize",
             (raster,),
             grid=raster.grid,
-            dtype=np.dtype(np.float64),
+            dtype=(
+                None if raster.dtype is None else result_dtype(
+                    (raster.dtype,), operation="standardize",
+                    scalars=(mean, std),
+                )
+            ),
             units=None,
             params={"mean": mean, "std": std, "ddof": ddof},
         )

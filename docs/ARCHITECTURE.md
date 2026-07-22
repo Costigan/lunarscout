@@ -894,6 +894,18 @@ it never samples one current payload as a proxy for the source domain. Eager
 construction, expression construction, compute, and supported window execution
 therefore agree. Both reclassification operation semantic versions are 2.
 
+Normalization also uses `result_dtype` in eager and expression construction.
+`normalize_minmax` and `standardize` keep FP32 and Boolean/8/16-bit source data
+in FP32, including their array arithmetic and data-derived statistics. A supplied
+NumPy FP64 statistic, a Python statistic outside the finite FP32 range, an
+FP64 source, or a 32/64-bit integer source selects the CPU/interchange FP64
+path. Int32 remains on that correctness path because converting large adjacent
+integers to FP32 before centering can erase their difference.
+This avoids automatic FP64 work for the ordinary consumer-GPU-oriented case
+while retaining an explicit higher-precision contract. Both normalization
+operation semantic versions are 2. General GPU execution is not implied by
+this dtype contract.
+
 Nodata and invalid-fill encoding is likewise centralized, but remains separate
 from scientific payload promotion. `_validate_nodata_representable` requires a
 finite encoding to round-trip exactly through its destination dtype, permits

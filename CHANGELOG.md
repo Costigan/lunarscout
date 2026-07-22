@@ -6,6 +6,23 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra numeric consistency, part 6: FP32 normalization.** Routed
+  `normalize_minmax` and `standardize` through the shared result-dtype policy
+  for both eager and expression construction. FP32 and Boolean/8/16-bit
+  sources now calculate data-derived statistics and normalized arrays in FP32
+  instead of unconditionally converting all work to FP64. Explicit NumPy FP64
+  statistics, Python statistics outside the finite FP32 range, FP64 sources,
+  and 32/64-bit integer sources retain the documented CPU/interchange FP64
+  correctness path; int32 is not demoted because large adjacent integers can
+  collapse before centering.
+  Eager, expression, compute, all-invalid, and supported multi-window execution
+  now agree on output dtype. Bumped both normalization semantic versions to 2
+  and aligned registry metadata, docstrings, user guidance, architecture, and
+  the implementation plan. Verification: 1714 passed, 17 skipped in the
+  ordinary CPU suite; 1252 map-algebra tests passed; 502 focused numeric,
+  normalization, classification, and window tests passed; fresh-process public
+  API and import-side-effect audit passed.
+
 - **Map-algebra numeric consistency, part 5: exact reclassification.** Routed
   eager and expression `reclassify_values`/`reclassify_ranges` output inference
   through the shared exact dtype engine. Small Python integer classes now use

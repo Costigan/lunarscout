@@ -1665,9 +1665,16 @@ supported windowed-write paths use the same rule.
 
 **Normalization:** `ma.normalize_minmax` and `ma.standardize` use only valid
 cells when statistics are omitted. Supplying the minimum/maximum or mean/
-standard deviation makes the statistics explicit. Results are `float64` and
-dimensionless. A zero normalization range or zero standard deviation produces
-an all-invalid result rather than assigning an arbitrary scientific value.
+standard deviation makes the statistics explicit. Results are dimensionless.
+FP32 and Boolean/8/16-bit inputs calculate and return FP32 unless a supplied
+NumPy FP64 statistic or an out-of-FP32-range Python statistic requires FP64.
+FP64 and 32/64-bit integer inputs use the CPU/interchange FP64 path. Int32 is
+not demoted because large adjacent integers can collapse when converted to
+FP32 before centering. This rule is identical for eager, expression, and
+supported windowed execution; Lunarscout does not promote ordinary FP32
+normalization merely for implementation convenience. A zero normalization
+range or zero standard deviation produces an all-invalid result rather than
+assigning an arbitrary scientific value.
 
 ```python
 candidate = (slope <= 8.0) & (sun >= 0.60)

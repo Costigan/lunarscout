@@ -24,6 +24,7 @@ _CHECKED_INTEGER_OPERATIONS = frozenset({
     "absolute", "square", "power",
 })
 _EXACT_OUTPUT_OPERATIONS = frozenset({"where", "coalesce", "reclassify"})
+_NORMALIZATION_OPERATIONS = frozenset({"normalize_minmax", "standardize"})
 _SUPPORTED_DTYPES = frozenset(
     np.dtype(dtype)
     for dtype in (
@@ -86,6 +87,10 @@ def result_dtype(
     FP64 merely to make checking easier.
     """
     overflow = normalize_overflow(overflow)
+    if operation in _NORMALIZATION_OPERATIONS:
+        return _normalization_dtype(
+            operand_dtypes, scalars=scalars, operation=operation,
+        )
     scalar_inputs: tuple[Any, ...]
     if operation in _EXACT_OUTPUT_OPERATIONS:
         scalar_inputs = tuple(
@@ -148,6 +153,46 @@ def result_dtype(
             operand_dtypes, scalars, operation, scalar_left=scalar_left,
         )
     return normalize_dtype(inferred, operation=operation)
+
+
+def _normalization_dtype(
+    operand_dtypes: tuple[np.dtype[Any], ...],
+    *,
+    scalars: tuple[int | float | bool | None, ...],
+    operation: str,
+) -> np.dtype[Any]:
+    """Choose FP32 unless source/statistic precision explicitly requires FP64."""
+    if len(operand_dtypes) != 1:
+        raise MapAlgebraDTypeError(
+            f"Operation '{operation}' requires exactly one raster dtype.",
+            code="map_algebra_dtype_inference_failed",
+            details={
+                "operation": operation,
+                "operand_dtypes": [str(dtype) for dtype in operand_dtypes],
+            },
+        )
+    source = normalize_dtype(operand_dtypes[0], operation=operation)
+    if source == np.dtype(np.float64) or (
+        source.kind in "iu" and source.itemsize > 2
+    ):
+        return np.dtype(np.float64)
+    for scalar in scalars:
+        if scalar is None:
+            continue
+        if isinstance(scalar, np.generic):
+            scalar_dtype = normalize_dtype(scalar.dtype, operation=operation)
+            if scalar_dtype == np.dtype(np.float64) or (
+                scalar_dtype.kind in "iu" and scalar_dtype.itemsize > 4
+            ):
+                return np.dtype(np.float64)
+        elif isinstance(scalar, (int, float)) and not isinstance(scalar, bool):
+            try:
+                magnitude = abs(float(scalar))
+            except OverflowError:
+                return np.dtype(np.float64)
+            if np.isfinite(magnitude) and magnitude > float(np.finfo(np.float32).max):
+                return np.dtype(np.float64)
+    return np.dtype(np.float32)
 
 
 def _exact_output_scalar_input(

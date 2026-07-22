@@ -15,7 +15,7 @@ real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (exact reclassification dtype inference)
+Last updated: 2026-07-22 (normalization FP32 consistency)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -503,8 +503,9 @@ stored.
   integer scalar inference, FP32 preservation, and incompatible 64-bit integer
   rejection are now proven across eager, expression, and windowed paths.
   Reclassification output inference also uses the helper, including complete
-  source-domain preservation, but it is not yet proven to be the sole path for
-  every operation and scalar boundary.
+  source-domain preservation. Normalization eager/expression construction and
+  execution share the same FP32-first rule, but the helper is not yet proven to
+  be the sole path for every operation and scalar boundary.
 - [x] Use documented NumPy 2.x promotion (``np.result_type``) for ordinary
   arithmetic and minimum/maximum. Selection follows it with an exact-integer
   refinement: Python integer branches use their smallest exact dtype, and a
@@ -1111,6 +1112,14 @@ uses ``result_dtype`` for exact output classes and defaults, avoids gratuitous
 ``int64`` for small Python integer classes, preserves typed FP32, includes the
 complete input dtype for ``default="preserve"``, and proves exact eager,
 expression, and multi-window ``uint64`` behavior.
+
+Normalization now uses ``result_dtype`` for eager/expression inference and
+performs ordinary FP32 and Boolean/8/16-bit work in FP32; explicit FP64
+statistics, out-of-FP32-range statistics, FP64 sources, and 32/64-bit integer
+sources select the documented CPU/interchange FP64 path. Int32 remains there
+until a native-32-bit centering algorithm proves large-adjacent-integer
+correctness. Focal and temporal accumulator paths remain to be reconciled and
+are not claimed complete.
 
 ### 4.4 Operation registry
 

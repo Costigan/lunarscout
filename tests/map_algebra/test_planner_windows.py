@@ -619,6 +619,7 @@ class TestWindowedSemanticCoverage:
             source(path), {0.0: 10.0, 1.0: 20.0, 2.0: 30.0}, default=40.0,
         )
         expression = ma.normalize_minmax(classified, minimum=10.0, maximum=40.0)
+        assert expression.dtype == np.dtype(np.float32)
         _assert_windowed_matches_compute(
             expression, tmp_path / "classify_out.tif",
             window_width=3, window_height=64,
@@ -656,6 +657,7 @@ class TestWindowedSemanticCoverage:
             expression = ma.one_hot(raster, (1.0, 3.0))[1]
         else:
             expression = ma.standardize(raster, mean=2.0, std=1.5)
+            assert expression.dtype == np.dtype(np.float32)
         _assert_windowed_matches_compute(
             expression, tmp_path / f"{operation}_out.tif",
             window_width=3, window_height=64,
