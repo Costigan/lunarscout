@@ -102,6 +102,19 @@ def compute(expression: RasterExpression) -> Raster:
             result = _eval_special(node, operands)
         elif op_id in _TEMPORAL_REDUCTION_OP_IDS:
             result = _eval_temporal_reduction(node, operands)
+        elif op_id in {"terrain.slope", "terrain.aspect", "terrain.hillshade"}:
+            from ._spatial import evaluate_terrain
+
+            result = evaluate_terrain(node, operands[0])
+        elif op_id == "alignment.resample_to":
+            from ._spatial import evaluate_resample
+
+            if node.grid is None:
+                raise MapAlgebraExpressionError(
+                    "Resampling expression has no destination grid.",
+                    code="map_algebra_missing_output_grid",
+                )
+            result = evaluate_resample(node, operands[0], node.grid)
         else:
             raise MapAlgebraExpressionError(
                 f"Unknown operation in compute: {op_id}",

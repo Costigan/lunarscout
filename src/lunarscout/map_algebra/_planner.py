@@ -30,6 +30,7 @@ class ExecutionPlan:
     n_windows_y: int
     total_windows: int
     estimated_per_window_bytes: int
+    maximum_halo: int
 
     @property
     def n_passes(self) -> int:
@@ -45,7 +46,7 @@ class ExecutionPlan:
 
     @property
     def halos(self) -> int:
-        return 0
+        return self.maximum_halo
 
 
 def plan_expression(
@@ -90,7 +91,10 @@ def plan_expression(
     nw = max(1, (grid.width + window_width - 1) // window_width)
     nh = max(1, (grid.height + window_height - 1) // window_height)
 
-    per_window = _estimate_per_window(sources, operations, window_width, window_height)
+    maximum_halo = _maximum_source_halo(topo)
+    per_window = _estimate_per_window(
+        sources, operations, window_width, window_height, maximum_halo,
+    )
 
     return ExecutionPlan(
         topo_order=tuple(topo),
@@ -105,6 +109,7 @@ def plan_expression(
         n_windows_y=nh,
         total_windows=nw * nh,
         estimated_per_window_bytes=per_window,
+        maximum_halo=maximum_halo,
     )
 
 
@@ -158,7 +163,6 @@ def _reject_unsupported(topo: list[RasterExpression]) -> None:
         if (
             spec.category in _UNSUPPORTED_CATEGORIES
             or (node._operation_id != "constant" and not spec.file_backed_available)
-            or node._halo != 0
         ):
             raise MapAlgebraExpressionError(
                 f"Operation '{node._operation_id}' is not yet supported "
@@ -167,6 +171,18 @@ def _reject_unsupported(topo: list[RasterExpression]) -> None:
                 details={
                     "operation_id": node._operation_id,
                     "category": spec.category,
+                },
+            )
+        if node._halo and node._operation_id not in {
+            "terrain.slope", "terrain.aspect", "terrain.hillshade",
+        }:
+            raise MapAlgebraExpressionError(
+                f"Operation '{node._operation_id}' has no reviewed halo-aware window kernel.",
+                code="map_algebra_unsupported_windowed_operation",
+                details={
+                    "operation_id": node._operation_id,
+                    "category": spec.category,
+                    "halo": node._halo,
                 },
             )
         if node._operation_id == "local.normalize_minmax":
@@ -215,8 +231,9 @@ def _estimate_per_window(
     operations: list[RasterExpression],
     window_width: int,
     window_height: int,
+    maximum_halo: int,
 ) -> int:
-    cells = window_width * window_height
+    cells = (window_width + 2 * maximum_halo) * (window_height + 2 * maximum_halo)
     source_bytes = sum(
         cells * ((source._inferred_dtype or np.dtype(np.float64)).itemsize + 1)
         for source in sources
@@ -229,3 +246,23 @@ def _estimate_per_window(
     # the per-window graph. Three operation-sized buffers conservatively cover
     # the result plus ordinary NumPy kernel temporaries.
     return source_bytes * 2 + operation_bytes * 3 + cells * 2
+
+
+def _maximum_source_halo(topo: list[RasterExpression]) -> int:
+    """Return the largest cumulative same-grid halo requested from a source."""
+    required: dict[str, int] = {node._node_id: 0 for node in topo}
+    for node in reversed(topo):
+        node_requirement = required[node._node_id]
+        child_requirement = node_requirement + max(0, int(node._halo))
+        for operand in node._operands:
+            if not isinstance(operand, RasterExpression):
+                continue
+            if node._operation_id == "alignment.resample_to":
+                # Resampling maps into another pixel coordinate system. Its
+                # interpolation support is accounted for by the source-window
+                # mapper rather than expressed as an output-grid halo.
+                propagated = 0
+            else:
+                propagated = child_requirement
+            required[operand._node_id] = max(required[operand._node_id], propagated)
+    return max(required.values(), default=0)

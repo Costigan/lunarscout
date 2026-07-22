@@ -1,19 +1,21 @@
 # Broad Map-Algebra API Implementation Plan
 
 Status: The eager ``0.2`` map-algebra surface, expression construction and
-materialization, bounded zero-halo local/coordinate writes, temporal streaming
-reducers, documentation, examples, and local release-artifact checks are
-implemented. Halo-aware focal/terrain execution and other APIs that depend on
-cross-window planning remain deferred to ``0.3``. Registry metadata, identity
-separation, planner limits, durable restart, per-operation reference
+materialization, bounded zero-halo local/coordinate writes, halo-aware
+terrain execution, explicit cross-grid resampling, documentation, examples,
+and local release-artifact checks are implemented. Registry metadata,
+identity separation, planner limits, durable restart, per-operation reference
 documentation, and empirical resource/performance evidence remain partial.
-TestPyPI publication is skipped by project decision; there are no external
-users for a useful candidate cycle, and publishing will resume at a later
-milestone intended for real PyPI.
+General focal statistics/convolution/morphology window execution, local
+fusion, journal/resume, cancellation/progress, global/zonal/distance bounded
+execution, region adapters, and temporal spatial-window/time-batch mapping
+remain deferred. TestPyPI publication is skipped by project decision; there
+are no external users for a useful candidate cycle, and publishing will
+resume at a later milestone intended for real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-21 (bounded-execution implementation review and rigorous reconciliation)
+Last updated: 2026-07-21 (public terrain/resample wrappers, registry enrichment, documentation, and example)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -43,9 +45,9 @@ is not counted as partial merely because adjacent functionality exists.
 
 | State | Scope |
 | --- | --- |
-| Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic output; user guide, examples, local wheel/sdist checks, and the ordinary CPU suite. |
-| Partial | Planner limits and memory estimates; operation catalog metadata and coverage; analyst-facing ``explain`` and dry-run ``plan`` detail; distinct scientific/restart/execution-cache identities and golden fixtures; numeric-policy and dtype centralization; focal expression execution; durable restart; exhaustive API tables, test matrix, and empirical benchmarks. |
-| Deferred to 0.3 | Local fusion; progress/cancellation and per-window journal/resume; halo-aware focal/terrain kernels; ``resample_to``; map-algebra region adapters; bounded global/zonal/distance execution; temporal mapping; and resource-scaling evidence. |
+| Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic output; halo-aware terrain and explicit cross-grid resampling ``write`` execution; public terrain/resample wrappers with categorical safety and validity policies; user guide, architecture, examples, and the ordinary CPU suite. |
+| Partial | Planner limits and memory estimates; operation catalog metadata and coverage; analyst-facing ``explain`` and dry-run ``plan`` detail; distinct scientific/restart/execution-cache identities and golden fixtures; numeric-policy and dtype centralization; general focal expression execution; durable restart; exhaustive API tables, test matrix, and empirical benchmarks. |
+| Deferred to 0.3 | General focal statistics/convolution/morphology window execution; footprint-derived asymmetric halos; local fusion; progress/cancellation and per-window journal/resume; map-algebra region adapters; bounded global/zonal/distance execution; temporal spatial-window/time-batch mapping; and resource-scaling evidence. |
 | Skipped by decision | TestPyPI publication for ``0.2.0rc1``. Local artifact construction, inspection, and isolated installation remain completed evidence. |
 
 ### Next implementation sequence
@@ -56,10 +58,14 @@ spatial execution is the critical path:
 1. **COMPLETED:** implement defensive graph planning, streaming window
    enumeration, bounded source caching, and zero-halo local/coordinate
    execution. Local fusion and empirical peak-memory measurement remain open.
-2. make writer progress, cancellation, journaling, and restart operate on those
+2. **COMPLETED:** add halo-aware terrain nodes with whole-array
+   parity; add explicit cross-grid ``resample_to`` planning and execution;
+   add public wrappers, safety rules, registry enrichment, documentation,
+   and examples.
+3. make writer progress, cancellation, journaling, and restart operate on those
    windows;
-3. add halo-aware focal and terrain nodes with whole-array parity;
-4. add explicit cross-grid ``resample_to`` planning and execution;
+4. add general focal statistics/convolution/morphology window execution with
+   footprint-derived asymmetric halos;
 5. add region adapters, including cross-window region reconciliation where
    bounded execution requires it; and
 6. close bounded global/zonal/distance and temporal-mapping gaps, then collect
@@ -67,8 +73,8 @@ spatial execution is the critical path:
 
 The registry metadata audit, identity separation, API tables, missing eager
 stack helpers, and error-normalization gaps are independent partial work. They
-may be completed before or alongside the ``0.3`` planner, but they do not
-replace it.
+may be completed before or alongside the remaining ``0.3`` planner, but they do
+not replace it.
 
 ## 1. Outcome and boundaries
 
@@ -397,10 +403,8 @@ Use three identities because they answer different questions:
 
 - [x] Every non-scalar raster operand in an operation must use the same grid by
   ``require_same_grid()``. Never accept shape equality as compatibility.
-- [ ] Never align implicitly. Users must call eager ``ma.align()`` or expression
+- [x] Never align implicitly. Users must call eager ``ma.align()`` or expression
   ``ma.resample_to()`` explicitly.
-  **PARTIAL:** implicit alignment is rejected, but these map-algebra adapters
-  are deferred to ``0.3``; the existing root alignment API remains available.
 - [x] Scalars may broadcast over a raster. A length-one or one-dimensional
   array is not a scalar and is rejected.
 - [x] A raster operation needs at least one raster operand so its output grid is
@@ -680,16 +684,15 @@ and crop to the destination window.
   ``min_valid_count`` is not implemented and bounded execution is deferred.
 - [ ] Integrate existing region cleanup behavior with shared morphology
   helpers without changing current public results. **DEFERRED TO 0.3.**
-- [ ] Register `slope`, `aspect`, and `hillshade` as map-algebra operations.
+- [x] Register `slope`, `aspect`, and `hillshade` as map-algebra operations.
   Eager `Raster` calls delegate to the existing scientific implementations.
   Expression calls create nodes with a one-pixel source halo and window kernels
   that preserve the existing nodata, `compute_edges`, dtype, scale, unit, and
-  numerical behavior. **DEFERRED TO 0.3; requires halo-aware window execution.**
-- [ ] Compare each terrain expression over many internal window boundaries
+  numerical behavior.
+- [x] Compare each terrain expression over many internal window boundaries
   against its existing whole-array implementation. If exact semantic parity is
   not initially achievable, declare that operation eager-only; never silently
   materialize a file-backed source or publish a seam-bearing result.
-  **DEFERRED TO 0.3.**
 - [ ] Consider `roughness`, terrain ruggedness index, topographic position
   index, and curvature only after their definitions, units, edge behavior, and
   GDAL compatibility targets have independent tests.
@@ -806,21 +809,22 @@ introducing route policy.
 
 ### 3.7 Alignment and resampling expressions
 
-- [ ] `ma.align(raster, to=..., ...) -> Raster` delegates to the existing eager
-  alignment implementation while preserving canonical validity.
-  **DEFERRED TO 0.3:** the existing root array API remains available; no
-  map-algebra adapter exists.
-- [ ] `ma.resample_to(expression, grid, *, resampling, ...)` is an explicit
+- [x] `ma.align(raster, to=..., ...) -> Raster` matches the existing eager
+  alignment contract through the shared resampling core while preserving
+  canonical validity.
+- [x] `ma.resample_to(expression, grid, *, resampling, ...)` is an explicit
   expression node and may not be inserted automatically by another operation.
-  **DEFERRED TO 0.3; requires cross-grid window planning.**
-- [ ] Resample the validity mask conservatively: nearest for categorical
+- [x] Resample the validity mask conservatively: nearest for categorical
   validity by default, with a documented coverage-threshold option for
-  interpolating numeric data. **DEFERRED TO 0.3.**
-- [ ] Distinguish categorical from continuous resampling and reject obviously
-  unsafe combinations unless explicitly overridden. **DEFERRED TO 0.3.**
+  interpolating numeric data.
+- [x] Distinguish categorical from continuous resampling and reject obviously
+  unsafe combinations unless explicitly overridden.
 - [ ] Add integration tests for differing CRS, shifted origins, partial
   coverage, nodata, rotated grids, and exact 64-bit nodata payloads.
-  **DEFERRED TO 0.3.**
+  **PARTIAL:** differing CRS, shifts, partial coverage, explicit masks,
+  rotations, and exact signed/unsigned 64-bit value payloads are covered.
+  Extreme declared GeoTIFF nodata metadata remains limited by Rasterio/GDAL
+  representability and needs a separately reviewed contract.
 
 ### 3.8 Temporal map algebra
 
@@ -1068,8 +1072,9 @@ OperationSpec(
   not.
 - [ ] Infer one output grid, dtype, units, validity behavior, and maximum halo
   before creating output staging.
-  **PARTIAL:** grid, dtype, units, and the zero-halo restriction are validated
-  before staging; general validity and halo inference are deferred.
+  **PARTIAL:** grid, dtype, units, and cumulative one-pixel terrain halos are
+  validated before staging; general validity inference and arbitrary focal
+  footprint halos are deferred.
 - [ ] Fuse consecutive local operations into one window task to avoid
   unnecessary full-window writes; correctness comes before aggressive fusion.
   **PARTIAL:** the execution graph is processed per-window with no intermediate
@@ -1088,7 +1093,8 @@ OperationSpec(
   **PARTIAL:** dimensions are configurable with a 128-by-128 default, but are
   not yet selected from actual output block geometry.
 - [ ] Calculate halos in source pixel coordinates and crop exactly once.
-  **DEFERRED TO 0.3:** halo calculation awaits focal/terrain nodes.
+  **PARTIAL:** one-pixel terrain halos are implemented and crop exactly once;
+  general focal footprint-derived asymmetric halos remain deferred.
 - [x] Emit a readable plan description for diagnostics and tests.
   *(``plan()`` now reports window layout, source count, estimated per-window
   memory, and other planner metadata.)*
@@ -1119,8 +1125,9 @@ OperationSpec(
   grid, validity, dtype, units, numeric policy, and deterministic invalid-fill
   behavior. File-backed normalization requires caller-supplied statistics;
   measured statistics fail during planning rather than becoming tile-local.
-- [x] Focal, global, zonal, distance, resampling, and temporal nodes are
-  rejected during planning (before output staging or pixel execution).
+- [x] Unsupported focal, global, zonal, distance, and temporal nodes are
+  rejected during planning before output staging or pixel execution. Reviewed
+  terrain and resampling nodes are accepted by the windowed planner.
 - [x] Existing atomic overwrite guarantees and restart-manifest identity
   checks are preserved.
 - [ ] Extend or reuse the existing durable product-storage patterns for
@@ -1153,7 +1160,9 @@ OperationSpec(
 - [x] Implement and validate eager NumPy/SciPy CPU behavior first.
 - [ ] Implement bounded windowed CPU behavior second and compare it exactly or
   within documented tolerance to eager results.
-  **DEFERRED TO 0.3.**
+  **PARTIAL:** local, coordinate, terrain, and reviewed resampling operations
+  have validated windowed execution; general focal/global/zonal/distance and
+  temporal windowed execution remains deferred.
 - [x] Use Numba CPU only where benchmarks show a useful improvement and cache
   behavior is acceptable in installed wheels.
   **NOT APPLICABLE:** no Numba map-algebra kernels were selected.
@@ -1353,10 +1362,12 @@ Acceptance evidence:
 - [ ] Implement shared morphology and region adapters.
   **PARTIAL:** dilate, erode, opening, closing, and majority exist; Raster
   adapters for region labeling, filtering, and borders do not.
-- [ ] Implement or explicitly defer windowed terrain nodes for slope, aspect,
-  and hillshade based on whole-array parity tests. **DEFERRED TO 0.3.**
-- [ ] Compare eager and tiled halo results across internal window boundaries.
-  *(no tiled execution exists yet)*
+- [x] Implement or explicitly defer windowed terrain nodes for slope, aspect,
+  and hillshade based on whole-array parity tests.
+- [ ] Compare eager and tiled halo results across internal window boundaries
+  for general focal statistics and morphology.
+  *(terrain operations have validated seamless tiled execution; general focal
+  remains deferred.)*
 - [ ] Test rotated/anisotropic grids and document which focal operations are
   pixel-neighborhood rather than physical-radius operations.
   **PARTIAL:** eager grid cases are covered; the complete documentation and
@@ -1368,8 +1379,9 @@ Acceptance evidence:
 Acceptance evidence:
 
 - [ ] No seams occur at tile boundaries, and edge/invalid behavior matches an
-  independent whole-array reference. *(no tiled execution)*
-  **DEFERRED TO 0.3.**
+  independent whole-array reference.
+  **PARTIAL:** terrain nodes have seamless tiled parity; general focal and
+  morphology nodes do not yet have tiled execution.
 
 ### Phase F: Global and zonal reductions
 

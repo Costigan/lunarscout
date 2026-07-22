@@ -842,21 +842,64 @@ Execution has two strategies on one operation specification:
    are applied to invalidate undefined results.
 
 2. **File-backed / windowed** (`RasterExpression` in, evaluated by
-   `ma.write()`) topologically sorts the expression DAG, validates the graph
+   ``ma.write()``) topologically sorts the expression DAG, validates the graph
    (rejecting unsupported focal/global/zonal/distance/temporal nodes), infers
    one output grid and dtype, enumerates output windows (default 128 by 128),
-   reads zero-halo source windows via a bounded LRU cache, applies
-   each operation per window in topo order, and writes results block by block.
-   Nonzero-halo and unsupported operation families are rejected before output
-   staging. Consecutive local operations are evaluated within the same window
-   pass without full-raster intermediate materialization; explicit local
-   fusion is not implemented. Source datasets are opened lazily
-   during execution and closed deterministically with bounded cache eviction.
+   and writes results block by block. Consecutive local operations are
+   evaluated within the same window pass without full-raster intermediate
+   materialization; explicit local fusion is not implemented. Source datasets
+   are opened lazily during execution and closed deterministically with
+   bounded cache eviction.
 
-`ma.compute()` materializes an expression as a `Raster` (suitable for small
-rasters). `ma.write()` evaluates in bounded windows and produces a staged,
+``ma.compute()`` materializes an expression as a ``Raster`` (suitable for small
+rasters). ``ma.write()`` evaluates in bounded windows and produces a staged,
 atomically-published GeoTIFF with a GDAL validity mask and a restart
 manifest.
+
+**Recursive per-node window requests.**  Each operation node in the expression
+DAG requests the window it needs from its operands.  Leaf nodes (sources,
+constants, coordinates) serve data from the bounded ``SourceWindowCache``;
+intermediate nodes compute on the windows returned by their operands.  A
+per-window memo table prevents redundant recomputation when a sub-expression
+is referenced by multiple consumers.
+
+**Halo-aware terrain execution.**  Terrain nodes (``terrain.slope``,
+``terrain.aspect``, ``terrain.hillshade``) declare a one-pixel halo.  During
+windowed execution, each terrain node expands its request by one pixel on each
+edge, evaluates the full terrain kernel through the same existing scientific
+implementation used by eager compute, and then crops the result back to the
+exact output window.  This expand-and-crop cycle occurs once per terrain node
+(for example, two nested terrain nodes expand by two pixels at the leaf). The
+``ExecutionPlan.maximum_halo`` field reports the largest cumulative halo
+required from any source.
+
+**Cumulative halo planning.**  The planner walks the DAG in reverse
+topological order and propagates each node's halo requirement to its
+operands.  For example, a terrain node with ``halo=1`` that is itself an
+operand of a second terrain node requires a cumulative halo of 2 from the
+source.  Resampling nodes (``alignment.resample_to``) break the halo chain
+because they map into a different pixel coordinate system; their interpolation
+support is accounted for by the destination-window-to-source-window mapper.
+
+**Destination-to-source window mapping.**  For resampling, an output window is
+mapped conservatively into the source pixel grid by forming the destination
+window's spatial envelope, transforming its bounds with 21-point edge
+densification, adding
+interpolation support pixels (one for bilinear/nearest, two for cubic, three
+for lanczos), and clipping to the source extent.  Source reads are therefore
+bounded to the footprint actually needed for each output window.
+
+**Exact nearest-neighbour for 64-bit integers.**  ``nearest`` resampling uses
+a pure-NumPy implementation that avoids GDAL's ``float64`` intermediate
+casting.  The custom path directly indexes the source array with integer
+coordinates, preserving exact ``int64`` and ``uint64`` payloads above the
+53-bit mantissa precision of IEEE 754 double-precision floating point.
+
+**Deferred capabilities.**  General focal kernel window execution (halo from
+arbitrary footprint sizes), local fusion across consecutive nodes, completed-
+window journal/resume, cancellation/progress hooks, region adapters, and
+global/zonal/distance/temporal bounded execution remain deferred to a later
+milestone.
 
 ### 20.4 Temporal execution
 
@@ -933,7 +976,9 @@ src/lunarscout/
     _writer.py                   # staged GeoTIFF expression output (windowed)
     _planner.py                  # graph validation, pass enumeration, window plan
     _windows.py                  # window enumeration, bounded source cache, coordinate windows
-    _windowed.py                 # per-window expression execution (local/coordinate kernels)
+    _windowed.py                 # per-window expression execution (local/coordinate/terrain/resample kernels)
+    _spatial.py                  # terrain expression construction, resampling expression construction,
+                                 #   destination-to-source window mapping, eager terrain/resample evaluators
     _eager.py                    # eager dispatch
     _kernels.py                  # spatial NumPy kernels
     _dtypes.py                   # promotion, casting, overflow

@@ -23,6 +23,7 @@ _DETERMINISTIC_SCRIPTS = [
     "08_streaming_reductions.py",
     "09_qgis_vrt.py",
     "10_landing_site_screening.py",
+    "21_map_algebra_terrain_resample.py",
 ]
 
 
@@ -58,6 +59,10 @@ def test_deterministic_example_sequence_runs(tmp_path: Path) -> None:
     assert (scenario / "analysis" / "terrain" / "slope_deg.tif").is_file()
     assert (scenario / "analysis" / "synthetic_sun.temporal" / "COMPLETE").is_file()
     assert (scenario / "analysis" / "screening" / "candidate_sites.tif").is_file()
+    terrain_resample = tmp_path / "terrain_resample"
+    assert (terrain_resample / "slope.tif").is_file()
+    assert (terrain_resample / "resampled_hillshade.tif").is_file()
+    assert (terrain_resample / "combined_score.tif").is_file()
 
 
 def test_historical_hdf5_prototype_when_manual_dependencies_are_present(

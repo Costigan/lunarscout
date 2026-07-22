@@ -76,7 +76,7 @@ class SourceWindowCache:
         self._max_windows = max_windows
         self._datasets: OrderedDict[str, Any] = OrderedDict()
         self._windows: OrderedDict[
-            tuple[str, int],
+            tuple[str, int, int, int, int, int],
             tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]],
         ] = OrderedDict()
         self._closed = False
@@ -105,7 +105,7 @@ class SourceWindowCache:
         w: int,
         h: int,
     ) -> np.ndarray[Any, Any]:
-        cache_key = (node._node_id, window_idx)
+        cache_key = (node._node_id, window_idx, x0, y0, w, h)
         if cache_key in self._windows:
             self._windows.move_to_end(cache_key)
             return self._windows[cache_key][0].copy()
@@ -140,7 +140,7 @@ class SourceWindowCache:
         w: int,
         h: int,
     ) -> np.ndarray[Any, Any]:
-        cache_key = (node._node_id, window_idx)
+        cache_key = (node._node_id, window_idx, x0, y0, w, h)
         if cache_key in self._windows:
             self._windows.move_to_end(cache_key)
             return self._windows[cache_key][1].copy()
@@ -150,7 +150,7 @@ class SourceWindowCache:
 
     def _cache_window(
         self,
-        key: tuple[str, int],
+        key: tuple[str, int, int, int, int, int],
         values: np.ndarray[Any, Any],
         valid: np.ndarray[Any, Any],
     ) -> None:

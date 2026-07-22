@@ -1343,10 +1343,11 @@ The API has two modes with visibly different entry points:
    or scalars, and returns `Raster`. All values are in memory.
 2. **File-backed mode** starts with `ma.source(path)` or
    `ma.temporal_source(series)` and constructs a lazy expression.
-   `ma.compute()` explicitly materializes a result. For zero-halo spatial
-   local and coordinate expressions, `ma.write()` reads and writes bounded
-   windows; unsupported focal/global/zonal/distance/temporal nodes fail during
-   planning rather than silently materializing the complete raster.
+   `ma.compute()` explicitly materializes a result. For supported local,
+   coordinate, terrain, and resampling expressions, `ma.write()` reads and
+   writes bounded windows; unsupported general focal/global/zonal/distance/
+   temporal nodes fail during planning rather than silently materializing the
+   complete raster.
 
 Never pass a file path to an eager operation. Use `ma.read()` to read a
 GeoTIFF as an in-memory `Raster`, or `ma.source()` to defer reading.
@@ -1373,7 +1374,7 @@ automatically wrapped as an in-memory constant node.
 | `ma.read(path, *, band, units, name)` | Read a single-band GeoTIFF as a `Raster`. |
 | `ma.source(path, *, band, units, identity)` | Read metadata only; returns `RasterExpression`. |
 | `ma.compute(expression)` | Materialize a `RasterExpression` as a `Raster`. |
-| `ma.write(path, expression, *, overwrite, dtype, invalid_value, window_width, window_height)` | Evaluate a supported zero-halo expression in bounded windows and write a staged GeoTIFF with a GDAL mask. |
+| `ma.write(path, expression, *, overwrite, dtype, invalid_value, window_width, window_height)` | Evaluate a supported local, coordinate, terrain, or resampling expression in bounded windows and write a staged GeoTIFF with a GDAL mask. |
 
 ### Grids and Grid Validation
 
@@ -1384,8 +1385,9 @@ georeferenced rasters.
 
 Scalars broadcast over any raster. A length-one or one-dimensional array is
 not a scalar and is rejected. The existing array API `ls.align()` remains
-available; map-algebra `ma.align()` and `ma.resample_to()` adapters are deferred.
-Implicit alignment is never performed.
+available.  Map-algebra `ma.align()` and `ma.resample_to()` are explicit
+cross-grid operations that are never inserted implicitly by other
+map-algebra operations.
 
 ### Validity and Mask Rules
 
@@ -1486,6 +1488,128 @@ Every classification and normalization function accepts either an eager
 `Raster` or a `RasterExpression`. `one_hot` returns a tuple in the same order
 as its `classes` argument; each tuple member has the same eager or expression
 mode as its input.
+
+### Terrain Operations (slope, aspect, hillshade)
+
+Terrain operations compute gradient-derived rasters from an elevation source.
+They accept a ``Raster`` to compute eagerly or a ``RasterExpression`` to return
+a lazy expression node.  Expression nodes carry a one-pixel halo so that
+bounded window execution produces seamless results across internal tile
+boundaries.
+
+```python
+dem = ma.read("dem.tif", units="metres")
+
+slope_deg = ma.slope(dem)
+aspect_deg = ma.aspect(dem, compute_edges=True)
+shade = ma.hillshade(dem, azimuth=315.0, altitude=45.0)
+```
+
+Eager results are in-memory ``Raster`` values.  For large rasters, construct
+an expression and use ``ma.write()`` (or ``ma.compute()``):
+
+```python
+dem_expr = ma.source("dem.tif", units="metres")
+slope_expr = ma.slope(dem_expr, units="degrees")
+ma.write("slope.tif", slope_expr)
+```
+
+All terrain operations require a one-pixel source halo.  ``ma.write()`` reads
+each output window with a one-pixel expansion, evaluates the terrain kernel,
+and crops back to the exact output window.  This produces identical results to
+``ma.compute()`` across internal window seams.
+
+**``ma.slope(raster, *, output_nodata=np.nan, units="degrees",
+compute_edges=False, scale=1.0)``**
+
+Returns ``float32`` slope.  ``units`` may be ``"degrees"`` (default) or
+``"percent"``. ``scale`` is the positive horizontal-to-vertical unit ratio
+used by the established terrain kernel; elevation is divided by this value
+before its gradient is calculated.
+
+**``ma.aspect(raster, *, output_nodata=np.nan, compute_edges=False)``**
+
+Returns ``float32`` azimuth in degrees.  Flat cells (zero gradient in both
+directions) are invalid independent of the ``output_nodata`` value.
+
+**``ma.hillshade(raster, *, output_nodata=0, azimuth=315.0, altitude=45.0,
+compute_edges=False, scale=1.0, z_factor=1.0)``**
+
+Returns ``uint8`` shaded relief.  ``azimuth`` is degrees clockwise from north;
+``altitude`` is degrees above the horizon.  ``z_factor`` exaggerates vertical
+relief.  Output values range from 0 to 255; a valid hillshade pixel at zero
+is distinct from an invalid fill cell.
+
+Canonical validity for all terrain products is computed from the source
+elevation and neighbourhood gradient, independent of the ``output_nodata``
+sentinel value.  For example, a valid aspect of 270 degrees may equal
+an ``output_nodata`` of 270, and that does not make the pixel invalid.
+
+When ``compute_edges=False`` (the default), the one-pixel border is marked
+invalid because the gradient kernel cannot be applied at the raster edge.
+Set ``compute_edges=True`` to calculate boundary gradients where source and
+neighbourhood validity otherwise permit it.
+
+### Resampling and Alignment
+
+``ma.resample_to()`` is an explicit cross-grid resampling node.  It is never
+inserted implicitly by other map-algebra operations.  ``ma.align()`` is the
+eager ``Raster`` adapter.
+
+```python
+aligned = ma.align(dem, to=target_grid, resampling="bilinear")
+resampled = ma.resample_to(dem_expr, target_grid, resampling="nearest")
+```
+
+**``ma.resample_to(raster, grid, *, resampling="nearest",
+output_dtype=None, validity_coverage_threshold=None,
+categorical=None, allow_unsafe=False)``**
+
+Accepts a ``Raster`` (returns materialised ``Raster``) or a
+``RasterExpression`` (returns an ``alignment.resample_to`` expression node).
+Supported resampling names include ``nearest``, ``bilinear``, ``cubic``,
+``cubicspline``, ``lanczos``, ``average``, ``mode``, and the full set listed
+by ``ls.available_resampling_algorithms()``.
+
+**Categorical vs. continuous safety.**  By default, integer and Boolean
+source dtypes are treated as categorical: only ``nearest`` and ``mode`` are
+allowed.  Interpolating or aggregating a categorical source raises
+``AlignmentError`` unless ``allow_unsafe=True``.  ``mode`` on explicitly
+continuous data also requires ``allow_unsafe=True``.  Boolean interpolation
+always requires ``allow_unsafe=True`` because the resulting fractional values
+are rarely meaningful. Override with ``categorical=False`` or
+``categorical=True``. Categorical inference always uses the source dtype, not
+``output_dtype``. Continuous interpolation into an integer output is rejected
+unless ``allow_unsafe=True`` because it can round or truncate results. Other
+unsafe dtype conversions likewise require the explicit override.
+
+**Validity resampling.**  By default, validity is resampled with nearest-
+neighbour semantics (categorical validity).  When
+``validity_coverage_threshold`` is supplied as a float between 0 and 1, each
+output pixel must have at least that fraction of valid source coverage to be
+considered valid, using the ``average`` resampling algorithm on the source
+validity mask.
+
+**Exact 64-bit nearest sampling.**  ``nearest`` resampling uses a custom
+implementation that preserves exact ``int64`` and ``uint64`` payloads beyond
+the 53-bit mantissa precision of ``float64``.  GDAL's built-in nearest
+resampling casts large integers through ``float64`` and can round them.
+
+**``ma.align(raster, *, to, resampling="nearest",
+output_nodata="auto", output_dtype=None, validity_coverage_threshold=None,
+categorical=None, allow_unsafe=False)``**
+
+Eagerly resample a ``Raster`` onto a destination grid.  Accepts a ``Raster``
+only; ``RasterExpression`` operands must use ``ma.resample_to()``.  This is
+the map-algebra adapter corresponding to the root-level ``ls.align()``.
+``output_nodata="auto"`` preserves the source grid's nodata metadata; a
+numeric value sets destination nodata and ``None`` disables it. Canonical
+validity is always carried separately from this encoding metadata.
+
+**No implicit resampling.**  Binary or local operations on rasters with
+mismatched grids raise ``GridMismatchError`` during expression construction.
+Callers must explicitly insert a ``resample_to`` node before combining
+rasters from different grids.
 
 ### Coordinate Expressions
 

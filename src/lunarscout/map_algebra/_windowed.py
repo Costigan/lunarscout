@@ -107,25 +107,112 @@ def _execute_window(
     width: int,
     height: int,
 ) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]:
+    assert plan.grid is not None
+    memo: dict[tuple[str, int, int, int, int], Raster] = {}
+    root = _execute_node_window(
+        plan.topo_order[-1], cache, window_idx, x0, y0, width, height, memo,
+    )
+    return root.values, root.valid
+
+
+def _execute_node_window(
+    node: RasterExpression,
+    cache: SourceWindowCache,
+    window_idx: int,
+    x0: int,
+    y0: int,
+    width: int,
+    height: int,
+    memo: dict[tuple[str, int, int, int, int], Raster],
+) -> Raster:
+    from ._spatial import (
+        evaluate_resample,
+        evaluate_terrain,
+        source_window_for_resampling,
+    )
     from .expression import _eval_binary, _eval_special, _eval_unary
 
-    assert plan.grid is not None
-    window_grid = _window_grid(plan.grid, x0, y0, width, height)
-    results: dict[str, Raster] = {}
+    key = (node._node_id, x0, y0, width, height)
+    cached = memo.get(key)
+    if cached is not None:
+        return cached
+    grid = node.grid
+    if grid is None:
+        raise MapAlgebraExpressionError(
+            f"Operation '{node.operation_id}' has no inferred grid.",
+            code="map_algebra_missing_output_grid",
+            details={"operation_id": node.operation_id},
+        )
+    window_grid = _window_grid(grid, x0, y0, width, height)
+    operation_id = node.operation_id
 
-    for node in plan.topo_order:
-        operation_id = node._operation_id
-        if operation_id in {"source", "constant"} or operation_id.startswith("coordinate."):
-            results[node._node_id] = Raster(
-                values=cache.read_values(node, window_idx, x0, y0, width, height),
-                georef=window_grid,
-                valid=cache.read_valid(node, window_idx, x0, y0, width, height),
-                units=node._inferred_units,
+    if operation_id in {"source", "constant"} or operation_id.startswith("coordinate."):
+        result = Raster(
+            values=cache.read_values(node, window_idx, x0, y0, width, height),
+            georef=window_grid,
+            valid=cache.read_valid(node, window_idx, x0, y0, width, height),
+            units=node.units,
+        )
+    elif operation_id in _TERRAIN_OPERATION_IDS:
+        operand = _single_expression_operand(node)
+        expanded_x0 = max(0, x0 - node.halo)
+        expanded_y0 = max(0, y0 - node.halo)
+        expanded_x1 = min(grid.width, x0 + width + node.halo)
+        expanded_y1 = min(grid.height, y0 + height + node.halo)
+        expanded = _execute_node_window(
+            operand,
+            cache,
+            window_idx,
+            expanded_x0,
+            expanded_y0,
+            expanded_x1 - expanded_x0,
+            expanded_y1 - expanded_y0,
+            memo,
+        )
+        terrain = evaluate_terrain(node, expanded)
+        crop_x0 = x0 - expanded_x0
+        crop_y0 = y0 - expanded_y0
+        result = Raster(
+            values=terrain.values[
+                crop_y0 : crop_y0 + height,
+                crop_x0 : crop_x0 + width,
+            ],
+            georef=window_grid,
+            valid=terrain.valid[
+                crop_y0 : crop_y0 + height,
+                crop_x0 : crop_x0 + width,
+            ],
+            units=node.units,
+            validity_provenance=terrain.validity_provenance,
+        )
+    elif operation_id == "alignment.resample_to":
+        operand = _single_expression_operand(node)
+        if operand.grid is None:
+            raise MapAlgebraExpressionError(
+                "Resampling source has no inferred grid.",
+                code="map_algebra_missing_output_grid",
             )
-            continue
-
+        source_request = source_window_for_resampling(
+            operand.grid,
+            grid,
+            x0=x0,
+            y0=y0,
+            width=width,
+            height=height,
+            resampling=str(node._params_dict["resampling"]),
+        )
+        if source_request is None:
+            source = None
+        else:
+            source = _execute_node_window(
+                operand, cache, window_idx, *source_request, memo,
+            )
+        result = evaluate_resample(node, source, window_grid)
+    else:
         operands = [
-            results[operand._node_id]
+            _execute_node_window(
+                operand, cache, window_idx, x0, y0, width, height, memo,
+            )
             if isinstance(operand, RasterExpression)
             else operand
             for operand in node._operands
@@ -142,10 +229,18 @@ def _execute_window(
                 code="map_algebra_unsupported_windowed_operation",
                 details={"operation_id": operation_id},
             )
-        results[node._node_id] = result
+    memo[key] = result
+    return result
 
-    root = results[plan.topo_order[-1]._node_id]
-    return root.values, root.valid
+
+def _single_expression_operand(node: RasterExpression) -> RasterExpression:
+    if len(node._operands) != 1 or not isinstance(node._operands[0], RasterExpression):
+        raise MapAlgebraExpressionError(
+            f"Operation '{node.operation_id}' requires one raster expression operand.",
+            code="map_algebra_expression_eval_failed",
+            details={"operation_id": node.operation_id},
+        )
+    return node._operands[0]
 
 
 _BINARY_OPERATION_IDS = frozenset({
@@ -175,4 +270,12 @@ _SPECIAL_OPERATION_IDS = frozenset({
 
 WINDOWED_OPERATION_IDS = (
     _BINARY_OPERATION_IDS | _UNARY_OPERATION_IDS | _SPECIAL_OPERATION_IDS
+    | frozenset({
+        "terrain.slope", "terrain.aspect", "terrain.hillshade",
+        "alignment.resample_to",
+    })
 )
+
+_TERRAIN_OPERATION_IDS = frozenset({
+    "terrain.slope", "terrain.aspect", "terrain.hillshade",
+})

@@ -143,6 +143,7 @@ from ._registry import (
     describe_operation,
     list_operations,
 )
+from ._spatial import make_resample_expression, make_terrain_expression
 
 
 # ---------------------------------------------------------------------------
@@ -897,3 +898,441 @@ def read(
         name=raster_name,
         validity_provenance="geotiff:" + provenance,
     )
+
+
+# ---------------------------------------------------------------------------
+# Public terrain wrappers
+# ---------------------------------------------------------------------------
+
+
+def slope(
+    raster: Raster | RasterExpression,
+    *,
+    output_nodata: int | float = np.nan,
+    units: str = "degrees",
+    compute_edges: bool = False,
+    scale: float = 1.0,
+) -> Raster | RasterExpression:
+    """Calculate terrain slope from an elevation raster.
+
+    Accepts a ``Raster`` to compute the slope eagerly, or a
+    ``RasterExpression`` to return a ``terrain.slope`` expression node
+    that can be materialised later with ``ma.compute()`` or ``ma.write()``.
+
+    Parameters
+    ----------
+    raster:
+        Elevation raster or expression.
+    output_nodata:
+        Sentinel value stored at invalid cells. Defaults to ``NaN``.
+    units:
+        ``"degrees"`` (default) or ``"percent"``.
+    compute_edges:
+        When ``False`` (default), border pixels are marked invalid.
+    scale:
+        Positive horizontal-to-vertical unit ratio. Elevation is divided by
+        this value before the gradient is calculated.
+    """
+    return _terrain_dispatch(
+        "terrain.slope", raster, output_nodata=output_nodata,
+        units=units, compute_edges=compute_edges, scale=scale,
+    )
+
+
+def aspect(
+    raster: Raster | RasterExpression,
+    *,
+    output_nodata: int | float = np.nan,
+    compute_edges: bool = False,
+) -> Raster | RasterExpression:
+    """Calculate terrain aspect (azimuth) from an elevation raster.
+
+    Accepts a ``Raster`` to compute the aspect eagerly, or a
+    ``RasterExpression`` to return a ``terrain.aspect`` expression node.
+
+    Parameters
+    ----------
+    raster:
+        Elevation raster or expression.
+    output_nodata:
+        Sentinel value stored at invalid cells. Defaults to ``NaN``.
+    compute_edges:
+        When ``False`` (default), border pixels are marked invalid.
+    """
+    return _terrain_dispatch(
+        "terrain.aspect", raster, output_nodata=output_nodata,
+        compute_edges=compute_edges,
+    )
+
+
+def hillshade(
+    raster: Raster | RasterExpression,
+    *,
+    output_nodata: int | float = 0,
+    azimuth: float = 315.0,
+    altitude: float = 45.0,
+    compute_edges: bool = False,
+    scale: float = 1.0,
+    z_factor: float = 1.0,
+) -> Raster | RasterExpression:
+    """Calculate a shaded relief raster from an elevation raster.
+
+    Accepts a ``Raster`` to compute hillshade eagerly, or a
+    ``RasterExpression`` to return a ``terrain.hillshade`` expression node.
+
+    Parameters
+    ----------
+    raster:
+        Elevation raster or expression.
+    output_nodata:
+        Sentinel value stored at invalid cells. Defaults to ``0``.
+    azimuth:
+        Illumination azimuth in degrees clockwise from north.  Default 315.
+    altitude:
+        Illumination altitude in degrees above the horizon.  Default 45.
+    compute_edges:
+        When ``False`` (default), border pixels are marked invalid.
+    scale:
+        Horizontal-to-vertical ratio.  Default 1.0.
+    z_factor:
+        Vertical exaggeration factor.  Default 1.0.
+    """
+    return _terrain_dispatch(
+        "terrain.hillshade", raster, output_nodata=output_nodata,
+        azimuth=azimuth, altitude=altitude,
+        compute_edges=compute_edges, scale=scale,
+        z_factor=z_factor,
+    )
+
+
+def _terrain_dispatch(
+    operation_id: str,
+    raster: Raster | RasterExpression,
+    **parameters: Any,
+) -> Raster | RasterExpression:
+    if isinstance(raster, RasterExpression):
+        return make_terrain_expression(operation_id, raster, **parameters)
+    if isinstance(raster, Raster):
+        expr = make_terrain_expression(operation_id, raster.expression(), **parameters)
+        return compute(expr)
+    raise TypeError(
+        f"slope/aspect/hillshade expect a Raster or RasterExpression, "
+        f"not {type(raster).__name__}. Use ls.slope() / ls.aspect() / "
+        f"ls.hillshade() for bare NumPy arrays."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public resampling and alignment wrappers
+# ---------------------------------------------------------------------------
+
+
+_CATEGORICAL_RESAMPLING = frozenset({"nearest", "mode"})
+
+
+def _is_categorical_dtype(dtype: np.dtype[Any]) -> bool:
+    return dtype.kind in "bi"
+
+
+def resample_to(
+    raster: Raster | RasterExpression,
+    grid: GeoReference,
+    *,
+    resampling: str = "nearest",
+    output_dtype: Any = None,
+    validity_coverage_threshold: float | None = None,
+    categorical: bool | None = None,
+    allow_unsafe: bool = False,
+) -> Raster | RasterExpression:
+    """Resample a raster or expression onto an explicit destination grid.
+
+    ``resample_to`` is an explicit cross-grid operation.  It is never
+    inserted implicitly by other map-algebra operations.
+
+    Parameters
+    ----------
+    raster:
+        Source raster or expression.
+    grid:
+        Destination ``GeoReference`` grid.
+    resampling:
+        Algorithm name.  ``"nearest"`` is the default.
+    output_dtype:
+        Explicit output dtype.  When ``None`` the source dtype is preserved.
+    validity_coverage_threshold:
+        When a float between 0 and 1, each output pixel must have at least
+        this fraction of valid source coverage.  When ``None``, validity
+        follows the default nearest-neighbour categorical rule.
+    categorical:
+        When ``True``, apply categorical safety rules (only ``nearest`` and
+        ``mode`` are allowed).  When ``None``, inferred from the source
+        dtype: integer and Boolean rasters are treated as categorical.
+    allow_unsafe:
+        Suppress the categorical/interpolation safety rejection.  Use only
+        when the caller understands why a resampling combination is safe
+        for their specific data.
+    """
+    if not isinstance(grid, GeoReference):
+        from ..errors import AlignmentError
+
+        raise AlignmentError(
+            "resample_to() requires a GeoReference destination grid.",
+            code="alignment_invalid_destination_grid",
+            details={"type": type(grid).__name__},
+        )
+    normalized_resampling = str(resampling).strip().lower()
+    from ..alignment import _resampling_algorithm
+
+    _resampling_algorithm(normalized_resampling)
+
+    if isinstance(raster, RasterExpression):
+        source_dtype = _raster_expression_source_dtype(raster)
+        target_dtype = _resampling_output_dtype(source_dtype, output_dtype)
+        _validate_resampling_safety(
+            normalized_resampling,
+            source_dtype=source_dtype,
+            output_dtype=target_dtype,
+            categorical=categorical,
+            allow_unsafe=allow_unsafe,
+        )
+        return make_resample_expression(
+            raster, grid,
+            resampling=normalized_resampling,
+            output_dtype=output_dtype,
+            validity_coverage_threshold=validity_coverage_threshold,
+        )
+    if isinstance(raster, Raster):
+        source_dtype = raster.dtype
+        target_dtype = _resampling_output_dtype(source_dtype, output_dtype)
+        _validate_resampling_safety(
+            normalized_resampling,
+            source_dtype=source_dtype,
+            output_dtype=target_dtype,
+            categorical=categorical,
+            allow_unsafe=allow_unsafe,
+        )
+        expr = make_resample_expression(
+            raster.expression(), grid,
+            resampling=normalized_resampling,
+            output_dtype=output_dtype,
+            validity_coverage_threshold=validity_coverage_threshold,
+        )
+        return compute(expr)
+    raise TypeError(
+        f"resample_to() expects a Raster or RasterExpression, "
+        f"not {type(raster).__name__}."
+    )
+
+
+def _raster_expression_source_dtype(
+    expr: RasterExpression,
+) -> np.dtype[Any]:
+    if expr.dtype is not None:
+        return expr.dtype
+    return np.dtype(np.float64)
+
+
+def _resampling_output_dtype(
+    source_dtype: np.dtype[Any],
+    output_dtype: Any,
+) -> np.dtype[Any]:
+    if output_dtype is None:
+        return source_dtype
+    try:
+        return np.dtype(output_dtype)
+    except (TypeError, ValueError) as exc:
+        from ..errors import AlignmentError
+
+        raise AlignmentError(
+            "Invalid resampling output dtype.",
+            code="alignment_invalid_output_dtype",
+            details={"output_dtype": str(output_dtype)},
+        ) from exc
+
+
+def _validate_resampling_safety(
+    resampling: str,
+    *,
+    source_dtype: np.dtype[Any],
+    output_dtype: np.dtype[Any],
+    categorical: bool | None,
+    allow_unsafe: bool,
+) -> None:
+    from ..errors import AlignmentError
+
+    supported_dtypes = {
+        np.dtype(np.bool_),
+        np.dtype(np.int8), np.dtype(np.uint8),
+        np.dtype(np.int16), np.dtype(np.uint16),
+        np.dtype(np.int32), np.dtype(np.uint32),
+        np.dtype(np.int64), np.dtype(np.uint64),
+        np.dtype(np.float32), np.dtype(np.float64),
+    }
+    if source_dtype not in supported_dtypes or output_dtype not in supported_dtypes:
+        raise AlignmentError(
+            "Resampling requires a supported Boolean, integer, or floating dtype.",
+            code="alignment_unsupported_dtype",
+            details={
+                "source_dtype": str(source_dtype),
+                "output_dtype": str(output_dtype),
+            },
+        )
+    if categorical is not None and not isinstance(categorical, (bool, np.bool_)):
+        raise AlignmentError(
+            "categorical must be True, False, or None.",
+            code="alignment_invalid_categorical_flag",
+            details={"categorical": categorical},
+        )
+    if categorical is None:
+        categorical = _is_categorical_dtype(source_dtype)
+
+    if allow_unsafe:
+        return
+
+    if not np.can_cast(source_dtype, output_dtype, casting="safe"):
+        raise AlignmentError(
+            f"Output dtype {output_dtype} is not a safe conversion from {source_dtype}. "
+            "Use allow_unsafe=True to override.",
+            code="alignment_unsafe_output_dtype",
+            details={
+                "source_dtype": str(source_dtype),
+                "output_dtype": str(output_dtype),
+            },
+        )
+
+    if categorical and resampling not in _CATEGORICAL_RESAMPLING:
+        raise AlignmentError(
+            f"Resampling '{resampling}' is not safe for categorical data "
+            f"(source dtype {source_dtype}). Use allow_unsafe=True to override.",
+            code="alignment_unsafe_categorical_resampling",
+            details={
+                "resampling": resampling,
+                "source_dtype": str(source_dtype),
+                "allowed": sorted(_CATEGORICAL_RESAMPLING),
+            },
+        )
+
+    if resampling == "mode" and not categorical:
+        raise AlignmentError(
+            "Resampling 'mode' is intended for categorical data. "
+            "Use allow_unsafe=True to apply mode to non-categorical data.",
+            code="alignment_unsafe_categorical_resampling",
+            details={"resampling": "mode", "source_dtype": str(source_dtype)},
+        )
+
+    if source_dtype.kind == "b" and resampling not in _CATEGORICAL_RESAMPLING:
+        raise AlignmentError(
+            f"Boolean raster cannot be resampled with '{resampling}'. "
+            f"Use nearest or allow_unsafe=True.",
+            code="alignment_unsafe_categorical_resampling",
+            details={"resampling": resampling, "source_dtype": str(source_dtype)},
+        )
+
+    if (
+        not categorical
+        and output_dtype.kind in "iu"
+        and resampling not in _CATEGORICAL_RESAMPLING
+    ):
+        raise AlignmentError(
+            f"Continuous resampling '{resampling}' into integer dtype "
+            f"{output_dtype} can round or truncate values. Select a floating "
+            "output_dtype or use allow_unsafe=True.",
+            code="alignment_unsafe_integer_interpolation",
+            details={
+                "resampling": resampling,
+                "source_dtype": str(source_dtype),
+                "output_dtype": str(output_dtype),
+            },
+        )
+
+
+def align(
+    raster: Raster,
+    *,
+    to: GeoReference,
+    resampling: str = "nearest",
+    output_nodata: int | float | None | Literal["auto"] = "auto",
+    output_dtype: Any = None,
+    validity_coverage_threshold: float | None = None,
+    categorical: bool | None = None,
+    allow_unsafe: bool = False,
+) -> Raster:
+    """Eagerly resample a ``Raster`` onto a destination grid.
+
+    This is the map-algebra adapter corresponding to the root-level
+    ``ls.align()``.  It accepts a ``Raster`` (not a
+    ``RasterExpression``) and returns a materialised ``Raster``.
+
+    Parameters
+    ----------
+    raster:
+        Source ``Raster`` value.
+    to:
+        Destination ``GeoReference`` grid.
+    resampling:
+        Algorithm name.  ``"nearest"`` is the default.
+    output_nodata:
+        ``"auto"`` preserves the source grid's nodata metadata; a numeric
+        value sets destination nodata and ``None`` disables it. Canonical
+        validity remains independent of this payload metadata.
+    output_dtype:
+        Explicit output dtype.
+    validity_coverage_threshold:
+        Optional minimum valid coverage fraction per output pixel.
+    categorical:
+        Explicit categorical flag.
+    allow_unsafe:
+        Suppress categorical safety rejection.
+    """
+    if not isinstance(raster, Raster):
+        if isinstance(raster, RasterExpression):
+            from ..errors import AlignmentError
+
+            raise AlignmentError(
+                "ma.align() requires a Raster. Use ma.resample_to() for "
+                "RasterExpression operands.",
+                code="alignment_expression_requires_resample_to",
+            )
+        raise TypeError(
+            f"ma.align() requires a Raster, not {type(raster).__name__}."
+        )
+    if not isinstance(to, GeoReference):
+        from ..errors import AlignmentError
+
+        raise AlignmentError(
+            "align() requires to=GeoReference.",
+            code="alignment_invalid_destination_grid",
+            details={"type": type(to).__name__},
+        )
+    if output_nodata == "auto":
+        destination_nodata = raster.georef.nodata
+    elif output_nodata is None or isinstance(
+        output_nodata, (int, float, np.integer, np.floating),
+    ):
+        destination_nodata = output_nodata
+    else:
+        from ..errors import AlignmentError
+
+        raise AlignmentError(
+            "output_nodata must be 'auto', None, or a numeric value.",
+            code="alignment_invalid_output_nodata",
+            details={"output_nodata": output_nodata},
+        )
+    if isinstance(destination_nodata, (np.integer, np.floating)):
+        destination_nodata = destination_nodata.item()
+    target_dtype = _resampling_output_dtype(raster.dtype, output_dtype)
+    from ..geotiff import _validate_nodata
+
+    _validate_nodata(target_dtype, destination_nodata)
+    destination_grid = to.with_nodata(destination_nodata)
+    result = resample_to(
+        raster,
+        destination_grid,
+        resampling=resampling,
+        output_dtype=output_dtype,
+        validity_coverage_threshold=validity_coverage_threshold,
+        categorical=categorical,
+        allow_unsafe=allow_unsafe,
+    )
+    assert isinstance(result, Raster)
+    return result

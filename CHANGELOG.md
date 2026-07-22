@@ -11,7 +11,7 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   evaluates the expression graph per output window, reading bounded source
   windows with an LRU source-window cache and writing results block-by-block.
   Peak working memory depends on active sources, graph complexity, window
-  size, and synchronous window output—not total raster area. Coordinate
+  size, and synchronous window output---not total raster area. Coordinate
   rasters are generated only for the requested window. Repeated source windows within a
   task are reused from the cache. Dataset handles and caches have explicit
   bounds and close after success and failure. Existing atomic overwrite
@@ -36,6 +36,51 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   whole-raster materialization is intended. The temporal example now makes
   that boundary explicit.
   Verification: 1088 passed, 17 skipped (ordinary CPU suite).
+- **Map-algebra 0.3 critical-path slice 2: halo-aware terrain execution and
+  explicit cross-grid resampling.**  ``ma.slope()``, ``ma.aspect()``, and
+  ``ma.hillshade()`` accept ``Raster`` or ``RasterExpression`` operands.
+  Expression nodes carry a one-pixel halo; ``ma.write()`` expands each output
+  window by one pixel per terrain node, evaluates through the existing
+  scientific terrain kernels, and crops back to the exact output window.
+  Cumulative halo propagation, destination-window-to-source-window mapping, and
+  exact nearest-neighbour sampling for ``int64``/``uint64`` payloads are
+  implemented.  ``ma.resample_to()`` creates explicit cross-grid nodes with
+  categorical-vs-continuous safety rules (interpolation rejected for
+  categorical data; ``mode`` rejected for continuous data; Boolean
+  interpolation requires ``allow_unsafe=True``), safe output-dtype checks,
+  rejection of continuous interpolation into integer output unless explicitly
+  overridden, default nearest-neighbour categorical validity, optional
+  validity-coverage thresholds, and GDAL-free nearest resampling that preserves
+  64-bit integers beyond float precision. Categorical inference uses the source
+  dtype, independent of the requested output dtype. ``ma.align()`` is the eager
+  ``Raster`` adapter and supports source-preserving, explicit, or disabled
+  output-nodata metadata. Implicit resampling is never inserted by other
+  operations. Registry metadata for all four new
+  operation IDs is enriched with parameter descriptions, dtype/unit/validity
+  rules, cost classes, and examples.  Public functions, tests, documentation,
+  and registry claims are verified end-to-end.
+  New private module:
+  - ``_spatial.py``: terrain/resample expression construction, conservative
+    destination-to-source window mapping, exact
+    nearest-neighbour resampling, and eager evaluators.
+  Added 110 public terrain and resampling tests covering eager/expression
+  parity, windowed write parity, slope degrees/percent/scale, aspect flat-cell
+  invalidity, hillshade azimuth/altitude/scale/z-factor, compute-edges, invalid
+  cells across window boundaries, numeric nodata collisions, dtypes/units,
+  structured parameter errors, canonical identity changes, resampling onto
+  finer/coarser/shifted/rotated/differing-CRS grids, partial/no coverage,
+  explicit validity masks, default nearest validity, coverage-threshold
+  stability, exact int64/uint64 nearest payloads, categorical safety
+  rejection, explicit overrides, no implicit resampling in binary operations,
+  registry filtering, file-backed claim audits, Boolean categorical mode,
+  zero-threshold coverage, output-nodata handling, and dtype-safety rules.
+  Key limitations still deferred: general focal kernel window execution,
+  footprint-derived asymmetric halos, local fusion, completed-window
+  journal/resume, cancellation/progress hooks, global/zonal/distance bounded
+  execution, region adapters, temporal spatial-window/time-batch mapping, and
+  an exact extreme-``int64``/``uint64`` declared GeoTIFF nodata contract beyond
+  Rasterio/GDAL representability. Verification: 1223 passed, 17 skipped
+  (ordinary CPU suite); 765 map-algebra tests passed.
 - Completed the remaining small and medium Phase I map-algebra inventory:
   exact-value and half-open-range reclassification, digitization, one-hot
   class rasters, min/max normalization, standardization, and lazy row,
