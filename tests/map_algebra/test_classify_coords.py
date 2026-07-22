@@ -517,7 +517,22 @@ class TestOperationRegistry:
         assert desc["id"] == "local.add"
         assert desc["category"] == "local"
         assert desc["version"] == 2
-        assert [item["name"] for item in desc["parameters"]] == ["overflow"]
+        assert [item["name"] for item in desc["parameters"]] == [
+            "overflow", "numeric_errors",
+        ]
+
+    def test_describe_numeric_power_and_cast_policies(self):
+        power_desc = describe_operation("local.power")
+        assert power_desc["version"] == 2
+        assert [item["name"] for item in power_desc["parameters"]] == [
+            "overflow", "numeric_errors",
+        ]
+
+        cast_desc = describe_operation("local.cast")
+        assert cast_desc["version"] == 2
+        assert [item["name"] for item in cast_desc["parameters"]] == [
+            "casting", "overflow",
+        ]
 
     def test_list_operations(self):
         ops = list_operations()

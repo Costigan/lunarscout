@@ -6,6 +6,23 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra numeric consistency, part 2.** Completed exact checked integer
+  power using bounded repeated squaring, with ``raise``, exact ``promote``, and
+  explicit ``wrap`` overflow policies and numeric-domain handling for negative
+  integer exponents. Extended value-level cast safety with
+  ``overflow="raise"`` by default and integer-to-integer ``"wrap"``; checks
+  handle mixed signed/unsigned 64-bit boundaries and floating-to-integer limits
+  without FP64 conversion of integer payloads. Extended
+  ``numeric_errors="invalid"|"keep"|"raise"`` consistently across applicable
+  pointwise arithmetic, math, angle, hypot, and rounding kernels. Policies are
+  carried through eager, expression, windowed, registry, and canonical
+  identity paths. Added complete supported-dtype pair matrices for ordinary
+  addition inference and representable unsafe casts, plus exact ``uint64``,
+  FP32 overflow, scalar-left power, cast-boundary, registry, and multi-window
+  parity coverage. CPU/reference support for FP64 and 64-bit integers remains
+  intentionally separate from future GPU hot paths. Verification: 1584
+  passed, 17 skipped in the ordinary CPU suite; 1126 map-algebra tests passed.
+
 - **Map-algebra numeric consistency, part 1.** Recorded consumer-grade GPU
   precision policy: inferred FP32 calculations remain FP32, and FP64 is used
   only when an input or documented result/accumulator contract requires it.
@@ -22,8 +39,8 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   logarithm, arcsine/arccosine, and square operations, with structured
   ``map_algebra_numeric_error`` failures and eager/expression/window parity.
   Numeric policies are recorded in expression identity and operation-registry
-  metadata. Integer power, the cast overflow policy, and the exhaustive dtype
-  pair matrix remain explicitly partial.
+  metadata. Integer power, cast overflow, and broader dtype matrices were left
+  for part 2.
   The accelerator contract also records that FP64 and software-emulated
   ``int64``/``uint64`` are CPU correctness/interchange capabilities rather
   than CUDA hot-path dependencies; future GPU planning must reject or

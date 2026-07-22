@@ -9,6 +9,7 @@ from ..raster import Raster
 from ._dtypes import (
     OverflowPolicy,
     checked_integer_operation,
+    checked_integer_power,
     normalize_overflow,
     result_dtype,
 )
@@ -106,7 +107,16 @@ def _dispatch_binary_raster_raster(
         (raster_a.dtype, raster_b.dtype), operation=operation, overflow=overflow,
     )
     base_valid = intersect_validity(raster_a.valid, raster_b.valid)
-    if target_dtype.kind in "iu" and operation in _CHECKED_INTEGER_OPERATIONS:
+    power_domain = None
+    if target_dtype.kind in "iu" and operation == "power":
+        result_values, power_domain = checked_integer_power(
+            raster_a.values,
+            raster_b.values,
+            target_dtype,
+            overflow=overflow,
+            check_mask=base_valid,
+        )
+    elif target_dtype.kind in "iu" and operation in _CHECKED_INTEGER_OPERATIONS:
         result_values = checked_integer_operation(
             raster_a.values, raster_b.values, target_dtype, kernel,
             operation=operation, overflow=overflow, check_mask=base_valid,
@@ -122,7 +132,11 @@ def _dispatch_binary_raster_raster(
         result_valid,
         operation=operation,
         policy=numeric_errors,
-        domain_errors=_domain_errors(operation, result_values.shape, raster_b.values),
+        domain_errors=(
+            power_domain
+            if power_domain is not None
+            else _domain_errors(operation, result_values.shape, raster_b.values)
+        ),
     )
     return Raster(
         values=result_values,
@@ -151,7 +165,29 @@ def _dispatch_binary_raster_scalar(
         (raster_a.dtype,), operation=operation, scalars=(scalar,), overflow=overflow,
         scalar_left=scalar_left,
     )
-    if target_dtype.kind in "iu" and operation in _CHECKED_INTEGER_OPERATIONS:
+    power_domain = None
+    if target_dtype.kind in "iu" and operation == "power":
+        if scalar_left:
+            scalar_dtype = (
+                scalar.dtype
+                if isinstance(scalar, np.generic)
+                else np.min_scalar_type(scalar)
+            )
+            base = np.broadcast_to(
+                np.asarray(scalar, dtype=scalar_dtype), raster_a.shape,
+            )
+            exponent: np.ndarray[Any, Any] | int | np.integer = raster_a.values
+        else:
+            base = raster_a.values
+            exponent = scalar  # type: ignore[assignment]
+        result_values, power_domain = checked_integer_power(
+            base,
+            exponent,
+            target_dtype,
+            overflow=overflow,
+            check_mask=raster_a.valid,
+        )
+    elif target_dtype.kind in "iu" and operation in _CHECKED_INTEGER_OPERATIONS:
         left = (
             np.broadcast_to(np.asarray(scalar), raster_a.shape)
             if scalar_left else raster_a.values
@@ -172,9 +208,13 @@ def _dispatch_binary_raster_scalar(
         raster_a.valid,
         operation=operation,
         policy=numeric_errors,
-        domain_errors=_domain_errors(
-            operation, result_values.shape,
-            raster_a.values if scalar_left else scalar,
+        domain_errors=(
+            power_domain
+            if power_domain is not None
+            else _domain_errors(
+                operation, result_values.shape,
+                raster_a.values if scalar_left else scalar,
+            )
         ),
     )
     return Raster(

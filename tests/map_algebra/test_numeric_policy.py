@@ -14,6 +14,7 @@ from lunarscout.map_algebra import (
     log,
     multiply,
     negative,
+    power,
     raster,
     sqrt,
     subtract,
@@ -281,7 +282,7 @@ def test_invalid_numeric_policy_is_structured(call, code):
 def test_expression_rejects_policy_not_in_public_signature():
     source = _raster(np.array([[1.0]], dtype=np.float32)).expression()
     with pytest.raises(TypeError):
-        add(source, 1, numeric_errors="keep")
+        add(source, 1, output_units="metres")
 
 
 def test_invalid_cast_dtype_is_structured():
@@ -289,3 +290,216 @@ def test_invalid_cast_dtype_is_structured():
     with pytest.raises(MapAlgebraDTypeError) as error:
         cast(source, "not-a-dtype")
     assert error.value.code == "map_algebra_unsupported_dtype"
+
+
+def test_integer_power_detects_overflow_without_floating_intermediate():
+    source = _raster(np.array([[12]], dtype=np.int8))
+    with pytest.raises(MapAlgebraDTypeError) as error:
+        power(source, 2)
+    assert error.value.code == "map_algebra_overflow"
+    assert error.value.details["operation"] == "power"
+
+
+def test_integer_power_promotes_exactly_with_expression_parity():
+    source = _raster(np.array([[-12, 12]], dtype=np.int8))
+    eager = power(source, 2, overflow="promote")
+    expression = power(source.expression(), 2, overflow="promote")
+    assert eager.dtype == np.dtype(np.int16)
+    assert expression.dtype == np.dtype(np.int16)
+    np.testing.assert_array_equal(eager.values, np.array([[144, 144]], dtype=np.int16))
+    np.testing.assert_array_equal(compute(expression).values, eager.values)
+
+
+def test_integer_power_scalar_left_and_raster_exponent_have_expression_parity():
+    exponent = _raster(np.array([[0, 3, 7]], dtype=np.uint8))
+    eager = power(2, exponent)
+    expression = power(2, exponent.expression())
+    np.testing.assert_array_equal(
+        eager.values, np.array([[1, 8, 128]], dtype=np.uint8),
+    )
+    np.testing.assert_array_equal(compute(expression).values, eager.values)
+
+
+def test_uint64_power_one_preserves_value_beyond_float_exact_range():
+    value = 2**63 + 123
+    result = power(_raster(np.array([[value]], dtype=np.uint64)), 1)
+    assert result.dtype == np.dtype(np.uint64)
+    assert int(result.values[0, 0]) == value
+
+
+def test_integer_power_wrap_is_explicit():
+    source = _raster(np.array([[16]], dtype=np.uint8))
+    result = power(source, 2, overflow="wrap")
+    assert result.dtype == np.dtype(np.uint8)
+    assert int(result.values[0, 0]) == 0
+
+
+@pytest.mark.parametrize(
+    ("policy", "valid"),
+    [("invalid", False), ("keep", True)],
+)
+def test_negative_integer_exponent_numeric_policy(policy, valid):
+    source = _raster(np.array([[2]], dtype=np.int16))
+    result = power(source, -1, numeric_errors=policy)
+    assert bool(result.valid[0, 0]) is valid
+    assert int(result.values[0, 0]) == 1
+
+
+def test_negative_integer_exponent_raise_is_structured():
+    source = _raster(np.array([[2]], dtype=np.int16))
+    with pytest.raises(MapAlgebraOperationError) as error:
+        power(source, -1, numeric_errors="raise")
+    assert error.value.code == "map_algebra_numeric_error"
+    assert error.value.details["operation"] == "power"
+
+
+def test_power_overflow_at_invalid_pixel_is_ignored():
+    source = _raster(
+        np.array([[100, 2]], dtype=np.int8),
+        valid=np.array([[False, True]], dtype=np.bool_),
+    )
+    result = power(source, 2)
+    np.testing.assert_array_equal(result.valid, np.array([[False, True]]))
+    assert int(result.values[0, 1]) == 4
+
+
+def test_cast_overflow_raise_is_value_aware():
+    source = _raster(np.array([[127.9, 128.0]], dtype=np.float64))
+    valid_first = _raster(
+        source.values,
+        valid=np.array([[True, False]], dtype=np.bool_),
+    )
+    result = cast(valid_first, "int8", casting="unsafe")
+    assert int(result.values[0, 0]) == 127
+    with pytest.raises(MapAlgebraDTypeError) as error:
+        cast(source, "int8", casting="unsafe")
+    assert error.value.code == "map_algebra_cast_overflow"
+
+
+def test_cast_integer_wrap_is_explicit_and_expression_identified():
+    source = _raster(np.array([[256]], dtype=np.int16))
+    eager = cast(source, "uint8", casting="unsafe", overflow="wrap")
+    expression = cast(
+        source.expression(), "uint8", casting="unsafe", overflow="wrap",
+    )
+    assert int(eager.values[0, 0]) == 0
+    assert int(compute(expression).values[0, 0]) == 0
+    assert expression._params_dict["overflow"] == "wrap"
+
+
+def test_cast_wrap_rejects_noninteger_source():
+    source = _raster(np.array([[1.0]], dtype=np.float32))
+    with pytest.raises(MapAlgebraDTypeError) as error:
+        cast(source, "int8", casting="unsafe", overflow="wrap")
+    assert error.value.code == "map_algebra_invalid_cast_overflow"
+
+
+def test_uint64_to_int64_cast_overflow_is_exact():
+    source = _raster(np.array([[2**63 - 1, 2**63]], dtype=np.uint64))
+    with pytest.raises(MapAlgebraDTypeError) as error:
+        cast(source, "int64", casting="unsafe")
+    assert error.value.code == "map_algebra_cast_overflow"
+    assert error.value.details["affected_values"] == 1
+
+
+def test_boolean_cast_overflow_checks_valid_source_range():
+    source = _raster(np.array([[-1, 0, 1, 2]], dtype=np.int8))
+    with pytest.raises(MapAlgebraDTypeError) as error:
+        cast(source, "bool", casting="unsafe")
+    assert error.value.code == "map_algebra_cast_overflow"
+    assert error.value.details["affected_values"] == 2
+
+    representable = _raster(np.array([[0, 1]], dtype=np.int8))
+    result = cast(representable, "bool", casting="unsafe")
+    np.testing.assert_array_equal(result.values, np.array([[False, True]]))
+
+
+def test_float64_to_uint64_uses_exact_representable_boundary():
+    too_large = _raster(np.array([[float(2**64)]], dtype=np.float64))
+    with pytest.raises(MapAlgebraDTypeError) as error:
+        cast(too_large, "uint64", casting="unsafe")
+    assert error.value.code == "map_algebra_cast_overflow"
+
+    largest_float_below = np.nextafter(np.float64(2**64), np.float64(-np.inf))
+    result = cast(
+        _raster(np.array([[largest_float_below]], dtype=np.float64)),
+        "uint64",
+        casting="unsafe",
+    )
+    assert int(result.values[0, 0]) == int(largest_float_below)
+
+
+@pytest.mark.parametrize(
+    ("policy", "expected_valid"),
+    [("invalid", False), ("keep", True)],
+)
+def test_float32_arithmetic_overflow_uses_numeric_error_policy(
+    policy, expected_valid,
+):
+    source = _raster(np.array([[np.finfo(np.float32).max]], dtype=np.float32))
+    result = multiply(source, np.float32(2), numeric_errors=policy)
+    assert result.dtype == np.dtype(np.float32)
+    assert np.isinf(result.values[0, 0])
+    assert bool(result.valid[0, 0]) is expected_valid
+
+
+def test_float32_arithmetic_overflow_raise_is_structured():
+    source = _raster(np.array([[np.finfo(np.float32).max]], dtype=np.float32))
+    with pytest.raises(MapAlgebraOperationError) as error:
+        multiply(source, np.float32(2), numeric_errors="raise")
+    assert error.value.code == "map_algebra_numeric_error"
+    assert error.value.details == {
+        "operation": "multiply", "affected_pixels": 1,
+    }
+
+
+def test_power_and_cast_have_windowed_eager_parity(tmp_path):
+    import rasterio
+
+    source = _raster(
+        np.array([[12, -12, 2], [3, 4, 5]], dtype=np.int8),
+        valid=np.array([[True, False, True], [True, True, True]], dtype=np.bool_),
+    )
+    expression = cast(
+        power(source.expression(), 2, overflow="promote"),
+        "uint8",
+        casting="unsafe",
+        overflow="wrap",
+    )
+    eager = compute(expression)
+    output = write(
+        tmp_path / "power-cast.tif", expression,
+        window_width=2, window_height=1, invalid_value=0,
+    )
+    with rasterio.open(output) as dataset:
+        written = dataset.read(1)
+        np.testing.assert_array_equal(written[eager.valid], eager.values[eager.valid])
+        assert written[0, 1] == 0
+        np.testing.assert_array_equal(dataset.read_masks(1) > 0, eager.valid)
+        assert dataset.dtypes[0] == "uint8"
+
+
+_SUPPORTED_DTYPES = (
+    np.bool_, np.int8, np.uint8, np.int16, np.uint16, np.int32, np.uint32,
+    np.int64, np.uint64, np.float32, np.float64,
+)
+
+
+@pytest.mark.parametrize("left_dtype", _SUPPORTED_DTYPES)
+@pytest.mark.parametrize("right_dtype", _SUPPORTED_DTYPES)
+def test_add_dtype_pair_matrix_matches_shared_numpy2_rule(left_dtype, right_dtype):
+    left = _raster(np.array([[0]], dtype=left_dtype))
+    right = _raster(np.array([[0]], dtype=right_dtype))
+    result = add(left, right)
+    assert result.dtype == np.dtype(np.result_type(left_dtype, right_dtype))
+
+
+@pytest.mark.parametrize("source_dtype", _SUPPORTED_DTYPES)
+@pytest.mark.parametrize("target_dtype", _SUPPORTED_DTYPES)
+def test_unsafe_cast_pair_matrix_for_representable_values(source_dtype, target_dtype):
+    source = _raster(np.array([[0, 1]], dtype=source_dtype))
+    result = cast(source, target_dtype, casting="unsafe")
+    assert result.dtype == np.dtype(target_dtype)
+    np.testing.assert_array_equal(
+        result.values, np.array([[0, 1]], dtype=target_dtype),
+    )

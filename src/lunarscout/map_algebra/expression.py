@@ -133,17 +133,24 @@ def _eval_binary(node: RasterExpression, operands: list[Any]) -> Raster:
     overflow = node._params_dict.get("overflow", "raise")
     output_units = node._params_dict.get("output_units")
     if node._operation_id == "local.add":
-        return _ma.add(a, b, overflow=overflow)
+        return _ma.add(
+            a, b, overflow=overflow, numeric_errors=numeric_errors,
+        )
     elif node._operation_id == "local.subtract":
-        return _ma.subtract(a, b, overflow=overflow)
+        return _ma.subtract(
+            a, b, overflow=overflow, numeric_errors=numeric_errors,
+        )
     elif node._operation_id == "local.multiply":
-        return _ma.multiply(a, b, output_units=output_units, overflow=overflow)
+        return _ma.multiply(
+            a, b, output_units=output_units, overflow=overflow,
+            numeric_errors=numeric_errors,
+        )
     elif node._operation_id == "local.divide":
         return _ma.divide(a, b, output_units=output_units, numeric_errors=numeric_errors)
     elif node._operation_id == "local.minimum":
-        return _ma.minimum(a, b)
+        return _ma.minimum(a, b, numeric_errors=numeric_errors)
     elif node._operation_id == "local.maximum":
-        return _ma.maximum(a, b)
+        return _ma.maximum(a, b, numeric_errors=numeric_errors)
     elif node._operation_id == "local.less":
         return _ma.less(a, b)
     elif node._operation_id == "local.less_equal":
@@ -167,11 +174,13 @@ def _eval_binary(node: RasterExpression, operands: list[Any]) -> Raster:
     elif node._operation_id == "local.remainder":
         return _ma.remainder(a, b, overflow=overflow, numeric_errors=numeric_errors)
     elif node._operation_id == "local.power":
-        return _ma.power(a, b)
+        return _ma.power(
+            a, b, overflow=overflow, numeric_errors=numeric_errors,
+        )
     elif node._operation_id == "local.hypot":
-        return _ma.hypot(a, b)
+        return _ma.hypot(a, b, numeric_errors=numeric_errors)
     elif node._operation_id == "local.arctan2":
-        return _ma.arctan2(a, b)
+        return _ma.arctan2(a, b, numeric_errors=numeric_errors)
     raise MapAlgebraExpressionError(
         f"Unsupported binary op: {node._operation_id}",
         code="map_algebra_expression_eval_failed",
@@ -186,9 +195,13 @@ def _eval_unary(node: RasterExpression, operands: list[Any]) -> Raster:
     numeric_errors = node._params_dict.get("numeric_errors", "invalid")
     overflow = node._params_dict.get("overflow", "raise")
     if op_id == "local.negative":
-        return _ma.negative(a, overflow=overflow)
+        return _ma.negative(
+            a, overflow=overflow, numeric_errors=numeric_errors,
+        )
     elif op_id == "local.absolute":
-        return _ma.absolute(a, overflow=overflow)
+        return _ma.absolute(
+            a, overflow=overflow, numeric_errors=numeric_errors,
+        )
     elif op_id == "local.sqrt":
         return _ma.sqrt(a, numeric_errors=numeric_errors)
     elif op_id == "local.square":
@@ -200,31 +213,35 @@ def _eval_unary(node: RasterExpression, operands: list[Any]) -> Raster:
     elif op_id == "local.log10":
         return _ma.log10(a, numeric_errors=numeric_errors)
     elif op_id == "local.sin":
-        return _ma.sin(a)
+        return _ma.sin(a, numeric_errors=numeric_errors)
     elif op_id == "local.cos":
-        return _ma.cos(a)
+        return _ma.cos(a, numeric_errors=numeric_errors)
     elif op_id == "local.tan":
-        return _ma.tan(a)
+        return _ma.tan(a, numeric_errors=numeric_errors)
     elif op_id == "local.arcsin":
         return _ma.arcsin(a, numeric_errors=numeric_errors)
     elif op_id == "local.arccos":
         return _ma.arccos(a, numeric_errors=numeric_errors)
     elif op_id == "local.arctan":
-        return _ma.arctan(a)
+        return _ma.arctan(a, numeric_errors=numeric_errors)
     elif op_id == "local.logical_not":
         return _ma.logical_not(a)
     elif op_id == "local.floor":
-        return _ma.floor(a)
+        return _ma.floor(a, numeric_errors=numeric_errors)
     elif op_id == "local.ceil":
-        return _ma.ceil(a)
+        return _ma.ceil(a, numeric_errors=numeric_errors)
     elif op_id == "local.trunc":
-        return _ma.trunc(a)
+        return _ma.trunc(a, numeric_errors=numeric_errors)
     elif op_id == "local.round":
-        return _ma.round_half_even(a, ndigits=node._params_dict.get("ndigits", 0))
+        return _ma.round_half_even(
+            a,
+            ndigits=node._params_dict.get("ndigits", 0),
+            numeric_errors=numeric_errors,
+        )
     elif op_id == "local.degrees":
-        return _ma.degrees(a)
+        return _ma.degrees(a, numeric_errors=numeric_errors)
     elif op_id == "local.radians":
-        return _ma.radians(a)
+        return _ma.radians(a, numeric_errors=numeric_errors)
     raise MapAlgebraExpressionError(
         f"Unsupported unary op: {op_id}",
         code="map_algebra_expression_eval_failed",
@@ -260,6 +277,7 @@ def _eval_special(node: RasterExpression, operands: list[Any]) -> Raster:
         return _ma.cast(
             operands[0], operands[1],
             casting=node._params_dict.get("casting", "safe"),
+            overflow=node._params_dict.get("overflow", "raise"),
         )
     elif op_id == "local.set_invalid":
         return _ma.set_invalid(operands[0], operands[1])

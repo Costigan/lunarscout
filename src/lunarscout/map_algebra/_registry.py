@@ -67,11 +67,18 @@ def _spec(
 
 
 _LOCAL_BINARY_PARAMETERS: dict[str, tuple[tuple[str, str], ...]] = {
-    "add": (("overflow", "Integer overflow policy: raise, wrap, or promote."),),
-    "subtract": (("overflow", "Integer overflow policy: raise, wrap, or promote."),),
+    "add": (
+        ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+        ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
+    ),
+    "subtract": (
+        ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+        ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
+    ),
     "multiply": (
         ("output_units", "Required output units for two unit-bearing rasters."),
         ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+        ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
     ),
     "divide": (
         ("output_units", "Required output units for two unit-bearing rasters."),
@@ -85,18 +92,36 @@ _LOCAL_BINARY_PARAMETERS: dict[str, tuple[tuple[str, str], ...]] = {
         ("overflow", "Integer overflow policy: raise, wrap, or promote."),
         ("numeric_errors", "Division-by-zero policy: invalid, keep, or raise."),
     ),
+    "power": (
+        ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+        ("numeric_errors", "Non-finite/negative-integer-exponent policy."),
+    ),
+    **{
+        name: (("numeric_errors", "Non-finite policy: invalid, keep, or raise."),)
+        for name in ("minimum", "maximum", "hypot", "arctan2")
+    },
 }
 
 _LOCAL_UNARY_PARAMETERS: dict[str, tuple[tuple[str, str], ...]] = {
-    "negative": (("overflow", "Integer overflow policy: raise, wrap, or promote."),),
-    "absolute": (("overflow", "Integer overflow policy: raise, wrap, or promote."),),
+    "negative": (
+        ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+        ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
+    ),
+    "absolute": (
+        ("overflow", "Integer overflow policy: raise, wrap, or promote."),
+        ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
+    ),
     "square": (
         ("overflow", "Integer overflow policy: raise, wrap, or promote."),
         ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
     ),
     **{
         name: (("numeric_errors", "Non-finite/domain policy: invalid, keep, or raise."),)
-        for name in ("sqrt", "exp", "log", "log10", "arcsin", "arccos")
+        for name in (
+            "sqrt", "exp", "log", "log10", "sin", "cos", "tan",
+            "arcsin", "arccos", "arctan", "floor", "ceil", "trunc",
+            "degrees", "radians",
+        )
     },
 }
 
@@ -157,13 +182,25 @@ _SPECS = (
     ),
     _spec("local.where", 3, "local", "Select between branches by a Boolean condition.", file_backed_available=True),
     _spec("local.round", 1, "local", "Round half to even.",
-          parameters=(("ndigits", "Number of decimal digits."),), file_backed_available=True),
+          version=2,
+          parameters=(
+              ("ndigits", "Number of decimal digits."),
+              ("numeric_errors", "Non-finite policy: invalid, keep, or raise."),
+          ), file_backed_available=True),
     _spec("local.isclose", 2, "local", "Compare corresponding cells within tolerances.",
           parameters=(("rtol", "Relative tolerance."), ("atol", "Absolute tolerance."),
                       ("equal_nan", "Whether NaN values compare equal.")), file_backed_available=True),
     _spec("local.coalesce", None, "local", "Select the first valid operand.", file_backed_available=True),
     _spec("local.clip", 1, "local", "Clip values to an interval.", file_backed_available=True),
-    _spec("local.cast", 1, "local", "Cast values to a requested dtype.", file_backed_available=True),
+    _spec(
+        "local.cast", 1, "local", "Cast values to a requested dtype.",
+        version=2,
+        parameters=(
+            ("casting", "NumPy type-level rule: safe, same_kind, or unsafe."),
+            ("overflow", "Value overflow policy: raise or integer wrap."),
+        ),
+        file_backed_available=True,
+    ),
     _spec("local.set_invalid", 2, "local", "Invalidate cells selected by a mask.", file_backed_available=True),
     _spec("local.fill_invalid", 2, "local", "Fill and validate invalid cells.", file_backed_available=True),
     _spec("local.reclassify_values", 1, "classification", "Map exact input values to classes.",

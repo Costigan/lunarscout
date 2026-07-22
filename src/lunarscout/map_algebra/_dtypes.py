@@ -8,6 +8,7 @@ from ..errors import MapAlgebraDTypeError
 
 OverflowPolicy = Literal["raise", "wrap", "promote"]
 CastingPolicy = Literal["safe", "same_kind", "unsafe"]
+CastOverflowPolicy = Literal["raise", "wrap"]
 
 _COMPARISON_OPERATIONS = frozenset({
     "equal", "not_equal", "less", "less_equal", "greater", "greater_equal",
@@ -20,7 +21,7 @@ _FLOAT_UNARY_OPERATIONS = frozenset({
 _FLOAT_BINARY_OPERATIONS = frozenset({"arctan2", "hypot"})
 _CHECKED_INTEGER_OPERATIONS = frozenset({
     "add", "subtract", "multiply", "floor_divide", "remainder", "negative",
-    "absolute", "square",
+    "absolute", "square", "power",
 })
 _SUPPORTED_DTYPES = frozenset(
     np.dtype(dtype)
@@ -54,6 +55,16 @@ def normalize_overflow(value: str) -> OverflowPolicy:
         raise MapAlgebraDTypeError(
             "overflow must be 'raise', 'wrap', or 'promote'.",
             code="map_algebra_invalid_overflow",
+            details={"overflow": value},
+        )
+    return value  # type: ignore[return-value]
+
+
+def normalize_cast_overflow(value: str) -> CastOverflowPolicy:
+    if value not in {"raise", "wrap"}:
+        raise MapAlgebraDTypeError(
+            "cast overflow must be 'raise' or 'wrap'.",
+            code="map_algebra_invalid_cast_overflow",
             details={"overflow": value},
         )
     return value  # type: ignore[return-value]
@@ -178,11 +189,47 @@ def _operation_bounds(bounds: list[tuple[int, int]], operation: str) -> tuple[in
         if a0 >= 0 and b0 >= 0:
             return 0, max(0, magnitude - 1)
         return -max(0, magnitude - 1), max(0, magnitude - 1)
+    if operation == "power":
+        if b0 < 0:
+            raise MapAlgebraDTypeError(
+                "overflow='promote' cannot infer an integer dtype for negative exponents.",
+                code="map_algebra_no_exact_promotion",
+                details={"operation": operation, "minimum_exponent": str(b0)},
+            )
+        cap = 2**64
+        magnitude = _bounded_integer_power(max(abs(a0), abs(a1)), b1, cap)
+        if b0 == b1:
+            if b0 == 0:
+                return 1, 1
+            if b0 % 2 == 0 or a0 >= 0:
+                return 0, magnitude
+            return -magnitude, magnitude
+        can_be_odd = b0 <= b1 and (b0 % 2 == 1 or b0 < b1)
+        return (-magnitude if a0 < 0 and can_be_odd else 0), magnitude
     raise MapAlgebraDTypeError(
         f"overflow='promote' is not supported for '{operation}'.",
         code="map_algebra_unsupported_overflow_promotion",
         details={"operation": operation},
     )
+
+
+def _bounded_integer_power(base: int, exponent: int, cap: int) -> int:
+    """Return ``base**exponent`` capped at ``cap + 1`` without huge integers."""
+    result = 1
+    factor = base
+    remaining = exponent
+    while remaining:
+        if remaining & 1:
+            if factor and result > cap // factor:
+                return cap + 1
+            result *= factor
+        remaining >>= 1
+        if remaining:
+            if factor and factor > cap // factor:
+                factor = cap + 1
+            else:
+                factor *= factor
+    return result
 
 
 def _promoted_integer_dtype(
@@ -360,7 +407,11 @@ def checked_integer_operation(
             raise MapAlgebraDTypeError(
                 "Integer operation overflow detected.",
                 code="map_algebra_overflow",
-                details={"result_dtype": str(target), "operation": operation, "overflow_policy": overflow},
+                details={
+                    "result_dtype": str(target),
+                    "operation": operation,
+                    "overflow_policy": overflow,
+                },
             )
         with np.errstate(all="ignore"):
             return np.asarray(op_func(a) if b is None else op_func(a, b), dtype=target)
@@ -374,20 +425,225 @@ def checked_integer_operation(
         ) from exc
 
 
+def checked_integer_power(
+    values_base: np.ndarray[Any, Any],
+    values_exponent: np.ndarray[Any, Any] | int | np.integer,
+    result_dtype_value: np.dtype[Any],
+    *,
+    overflow: OverflowPolicy = "raise",
+    check_mask: np.ndarray[Any, np.dtype[np.bool_]] | None = None,
+) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, np.dtype[np.bool_]]]:
+    """Calculate integer powers exactly with bounded repeated squaring.
+
+    The kernel never widens to FP64 or a 64-bit integer dtype solely for
+    checking; execution uses the inferred target dtype. Python scalar
+    exponents use their smallest exact NumPy integer dtype, while explicit
+    NumPy scalar/array dtypes are preserved.
+    """
+    overflow = normalize_overflow(overflow)
+    target = np.dtype(result_dtype_value)
+    if target.kind not in "iu":
+        raise MapAlgebraDTypeError(
+            "Checked integer power requires an integer result dtype.",
+            code="map_algebra_invalid_checked_dtype",
+            details={"result_dtype": str(target)},
+        )
+
+    if isinstance(values_exponent, (int, np.integer)):
+        exponent_dtype = (
+            values_exponent.dtype
+            if isinstance(values_exponent, np.integer)
+            else np.min_scalar_type(values_exponent)
+        )
+        exponent = np.asarray(values_exponent, dtype=exponent_dtype)
+    else:
+        exponent = np.asarray(values_exponent)
+    if exponent.dtype.kind not in "iu":
+        raise MapAlgebraDTypeError(
+            "Integer power requires an integer exponent.",
+            code="map_algebra_invalid_power_exponent",
+            details={"exponent_dtype": str(exponent.dtype)},
+        )
+
+    shape = np.broadcast_shapes(values_base.shape, exponent.shape)
+    base = np.broadcast_to(values_base, shape)
+    exponent = np.broadcast_to(exponent, shape)
+    valid = (
+        np.ones(shape, dtype=np.bool_)
+        if check_mask is None
+        else np.broadcast_to(check_mask, shape)
+    )
+    domain_errors = (
+        exponent < 0
+        if exponent.dtype.kind == "i"
+        else np.zeros(shape, dtype=np.bool_)
+    )
+    active_valid = valid & ~domain_errors
+    _require_values_representable(base, target, active_valid)
+    encoded_base = base.astype(target, casting="unsafe", copy=False)
+
+    result = np.ones(shape, dtype=target)
+    factor = np.array(encoded_base, copy=True)
+    remaining = np.where(active_valid, exponent, 0).copy()
+    while np.any(remaining != 0):
+        odd = active_valid & ((remaining & 1) != 0)
+        if np.any(odd):
+            overflow_pixels = _overflow_mask(result, factor, target, "multiply") & odd
+            if overflow != "wrap" and np.any(overflow_pixels):
+                raise MapAlgebraDTypeError(
+                    "Integer power overflow detected.",
+                    code="map_algebra_overflow",
+                    details={
+                        "result_dtype": str(target),
+                        "operation": "power",
+                        "overflow_policy": overflow,
+                    },
+                )
+            with np.errstate(all="ignore"):
+                result[odd] = (result[odd] * factor[odd]).astype(target, copy=False)
+
+        remaining = remaining // 2
+        needs_factor = active_valid & (remaining != 0)
+        if np.any(needs_factor):
+            overflow_pixels = (
+                _overflow_mask(factor, factor, target, "multiply") & needs_factor
+            )
+            if overflow != "wrap" and np.any(overflow_pixels):
+                raise MapAlgebraDTypeError(
+                    "Integer power overflow detected.",
+                    code="map_algebra_overflow",
+                    details={
+                        "result_dtype": str(target),
+                        "operation": "power",
+                        "overflow_policy": overflow,
+                    },
+                )
+            with np.errstate(all="ignore"):
+                factor[needs_factor] = (
+                    factor[needs_factor] * factor[needs_factor]
+                ).astype(target, copy=False)
+    return result, domain_errors
+
+
+def _integer_cast_out_of_range(
+    values: np.ndarray[Any, Any],
+    target_dtype: np.dtype[Any],
+) -> np.ndarray[Any, np.dtype[np.bool_]]:
+    if values.dtype.kind == "b":
+        source_min, source_max = 0, 1
+    else:
+        source_min, source_max = _dtype_bounds(values.dtype)
+    target_min, target_max = _dtype_bounds(target_dtype)
+    bad = np.zeros(values.shape, dtype=np.bool_)
+    if target_min > source_min:
+        if target_min > source_max:
+            bad |= True
+        else:
+            bad |= values < values.dtype.type(target_min)
+    if target_max < source_max:
+        if target_max < source_min:
+            bad |= True
+        else:
+            bad |= values > values.dtype.type(target_max)
+    return bad
+
+
+def _floating_cast_out_of_integer_range(
+    values: np.ndarray[Any, Any],
+    target_dtype: np.dtype[Any],
+) -> np.ndarray[Any, np.dtype[np.bool_]]:
+    target_min, target_max = _dtype_bounds(target_dtype)
+    source_type = values.dtype.type
+    lower = source_type(target_min)
+    upper = source_type(target_max)
+    if np.isfinite(lower) and int(lower) < target_min:
+        lower = np.nextafter(lower, source_type(np.inf), dtype=values.dtype)
+    if np.isfinite(upper) and int(upper) > target_max:
+        upper = np.nextafter(upper, source_type(-np.inf), dtype=values.dtype)
+    truncated = np.trunc(values)
+    return ~np.isfinite(truncated) | (truncated < lower) | (truncated > upper)
+
+
 def cast_values(
     values: np.ndarray[Any, Any],
     target_dtype: np.dtype[Any],
     *,
     casting: CastingPolicy = "safe",
+    overflow: CastOverflowPolicy = "raise",
+    valid: np.ndarray[Any, np.dtype[np.bool_]] | None = None,
 ) -> np.ndarray[Any, Any]:
+    overflow = normalize_cast_overflow(overflow)
     if casting not in {"safe", "same_kind", "unsafe"}:
         raise MapAlgebraDTypeError(
             f"Unknown casting policy: {casting}",
             code="map_algebra_invalid_casting",
             details={"casting": casting},
         )
+    target_dtype = normalize_dtype(target_dtype, operation="cast")
+    checked = values if valid is None else values[valid]
+    if overflow == "wrap" and not (
+        values.dtype.kind in "iu" and target_dtype.kind in "iu"
+    ):
+        raise MapAlgebraDTypeError(
+            "cast overflow='wrap' is supported only for integer-to-integer casts.",
+            code="map_algebra_invalid_cast_overflow",
+            details={
+                "source_dtype": str(values.dtype),
+                "target_dtype": str(target_dtype),
+                "overflow": overflow,
+            },
+        )
+    if overflow == "raise" and checked.size:
+        if target_dtype.kind == "b":
+            bad = (checked < 0) | (checked > 1)
+            if values.dtype.kind == "f":
+                bad |= ~np.isfinite(checked)
+            if np.any(bad):
+                raise MapAlgebraDTypeError(
+                    "Cast would overflow the Boolean destination range.",
+                    code="map_algebra_cast_overflow",
+                    details={
+                        "source_dtype": str(values.dtype),
+                        "target_dtype": str(target_dtype),
+                        "affected_values": int(np.count_nonzero(bad)),
+                    },
+                )
+        elif target_dtype.kind in "iu":
+            if values.dtype.kind == "f":
+                bad = _floating_cast_out_of_integer_range(
+                    checked, target_dtype,
+                )
+            else:
+                bad = _integer_cast_out_of_range(checked, target_dtype)
+            if np.any(bad):
+                raise MapAlgebraDTypeError(
+                    "Cast would overflow the requested integer dtype.",
+                    code="map_algebra_cast_overflow",
+                    details={
+                        "source_dtype": str(values.dtype),
+                        "target_dtype": str(target_dtype),
+                        "affected_values": int(np.count_nonzero(bad)),
+                    },
+                )
+        elif target_dtype.kind == "f":
+            with np.errstate(all="ignore"):
+                checked_result = checked.astype(target_dtype, casting="unsafe")
+            bad = np.isfinite(checked) & ~np.isfinite(checked_result)
+            if np.any(bad):
+                raise MapAlgebraDTypeError(
+                    "Cast would overflow the requested floating dtype.",
+                    code="map_algebra_cast_overflow",
+                    details={
+                        "source_dtype": str(values.dtype),
+                        "target_dtype": str(target_dtype),
+                        "affected_values": int(np.count_nonzero(bad)),
+                    },
+                )
     try:
-        return values.astype(target_dtype, casting=casting, copy=casting != "unsafe")
+        with np.errstate(all="ignore"):
+            return values.astype(
+                target_dtype, casting=casting, copy=casting != "unsafe",
+            )
     except (TypeError, ValueError, OverflowError) as exc:
         raise MapAlgebraDTypeError(
             f"Cannot cast {values.dtype} to {target_dtype} with casting='{casting}'.",

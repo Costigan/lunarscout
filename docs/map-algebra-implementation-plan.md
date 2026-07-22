@@ -15,7 +15,7 @@ real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (large-raster execution separated and deferred)
+Last updated: 2026-07-22 (numeric consistency part 2)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -430,11 +430,12 @@ Use these defaults consistently in eager and file-backed execution:
   invalid only where no operand is valid.
 - [x] ``fill_invalid(raster, value)`` makes filled pixels valid; ``set_invalid``
   changes validity without relying on a payload.
-- [ ] Division by zero, invalid logarithm/square-root domains, and newly
+- [x] Division by zero, invalid logarithm/square-root domains, and newly
   generated NaN/inf follow a public `numeric_errors=` option with values
   `"invalid"` (default), `"keep"`, and `"raise"`.
-  **PARTIAL:** invalid-domain handling exists, but this public three-policy
-  option is not consistently exposed.
+  Pointwise arithmetic and math operations that can generate these conditions
+  expose the common policy. Comparisons, Boolean/selection, classification,
+  and normalization reducers retain their dedicated validity contracts.
 - [x] File outputs always fill invalid cells deterministically before writing
   and write the GDAL mask. Validate that the chosen fill/nodata is exactly
   representable by the output dtype.
@@ -480,28 +481,26 @@ stored.
   integers. A planner must reject or explicitly route required 64-bit work to
   CPU unless a separately benchmarked kernel establishes an acceptable
   contract; successful CUDA compilation alone is not evidence of suitability.
-- [ ] Detect signed and unsigned integer overflow entirely in the integer
+- [x] Detect signed and unsigned integer overflow entirely in the integer
   domain. In particular, never convert ``int64`` or ``uint64`` values to
   ``float64`` to decide representability: values beyond ``2**53`` must remain
   exact. Promotion selects an exact supported integer dtype when one exists;
   otherwise raise a structured error rather than silently using an inexact
-  floating dtype. **PARTIAL:** the covered add/subtract/multiply/floor-divide/
-  remainder/negate/absolute/square kernels now satisfy this contract in eager,
-  expression, and windowed execution; integer power remains incomplete.
+  floating dtype. Add/subtract/multiply/floor-divide/remainder/power and unary
+  negate/absolute/square satisfy this contract in eager, expression, and
+  windowed execution. Integer power uses bounded repeated squaring.
 - [x] Integer reductions use an accumulator dtype that prevents ordinary small
   raster overflow; document exact sum/count/mean/std output rules.
   *(accumulator_dtype() uses int64 for signed integers, uint64 for unsigned
   integers, preserves float32, and uses float64 for float64.)*
-- [ ] Integer arithmetic does not silently saturate. ``overflow="wrap"`` follows
+- [x] Integer arithmetic does not silently saturate. ``overflow="wrap"`` follows
   NumPy, ``overflow="raise"`` is the public default for checked eager integer
   operations, and ``overflow="promote"`` promotes to a safe supported dtype.
-  **PARTIAL:** exact integer-domain checks and exact promotion are implemented
-  for add, subtract, multiply, floor divide, remainder, negate, absolute, and
-  square in eager and expression execution. Integer power still needs the same
-  contract.
-- [ ] ``cast()`` supports ``casting="safe"``, ``"same_kind"``, and ``"unsafe"`` and an
-  explicit overflow policy. **PARTIAL:** the three casting modes and structured
-  failures exist; a separate cast overflow policy is not yet public.
+  Exact integer-domain checks and exact promotion cover add, subtract,
+  multiply, floor divide, remainder, power, negate, absolute, and square.
+- [x] ``cast()`` supports ``casting="safe"``, ``"same_kind"``, and ``"unsafe"`` and an
+  explicit overflow policy. The default value-level policy raises on overflow;
+  explicit wrapping is restricted to integer-to-integer casts.
 - [x] Boolean GeoTIFF output requires an explicit integer encoding, defaulting
   to ``uint8`` values 0 and 1 with a separate validity mask.
   *(write() auto-converts bool dtype to uint8.)*
@@ -982,13 +981,11 @@ Implement and unit-test private helpers with single responsibilities:
   calculates halo on all four sides.
   **PARTIAL:** focal validation exists, but halo calculation is not centralized
   for a window planner.
-- [ ] `_normalize_numeric_errors`, `_normalize_overflow`,
+- [x] `_normalize_numeric_errors`, `_normalize_overflow`,
   `_normalize_edge_mode`, and `_normalize_valid_neighbor_policy` return typed
   literals and stable error codes.
-  **PARTIAL:** numeric-error and overflow normalization now use typed literals
-  and stable structured codes for the covered core operations; edge/neighbor
-  policies are also normalized. Integer power and cast overflow coverage remain
-  incomplete.
+  Numeric-error, arithmetic-overflow, cast-overflow, edge, and neighbor
+  policies use typed literals and stable structured codes.
 - [ ] `_validate_output_encoding(dtype, nodata, invalid_value)` shares GeoTIFF
   representability checks rather than duplicating them.
   **PARTIAL:** exact-fill validation exists, but output encoding remains split
@@ -1013,12 +1010,11 @@ Implement and unit-test private helpers with single responsibilities:
   already computed for that output window leave no unresolved invalid pixels.
   Failure to prove that condition always falls back to reading all operands;
   do not add general SSA-style validity proof to the `0.2` planner.
-- [ ] `_apply_numeric_domain(valid, values, policy, operation)` handles new
+- [x] `_apply_numeric_domain(valid, values, policy, operation)` handles new
   non-finite/domain errors consistently.
-  **PARTIAL:** the common helper now implements invalid/keep/structured-raise
-  consistently for division, floor division, remainder, sqrt, exp, log/log10,
-  arcsin/arccos, and square. Remaining numeric operations have not all exposed
-  the public policy.
+  The common helper implements invalid/keep/structured-raise consistently for
+  applicable pointwise arithmetic and math operations. Selection,
+  classification, and normalization reducers retain dedicated contracts.
 - [ ] `_fill_invalid_exact(values, valid, fill, dtype)` validates exact
   representation and never mutates an input array.
   **PARTIAL:** equivalent validation exists in multiple paths rather than this
@@ -1037,13 +1033,13 @@ Implement and unit-test private helpers with single responsibilities:
   sole dtype-inference entry point.
 - [ ] `_accumulator_dtype(operation, source_dtype)` defines streaming
   accumulator precision.
-- [ ] `_checked_integer_kernel(...)` detects overflow without allocating
+- [x] `_checked_integer_kernel(...)` detects overflow without allocating
   unbounded temporary arrays and without converting integer operands or
   results to floating point. Checks must be expressible as bounded native
-  integer comparisons suitable for later CPU and CUDA kernels. **PARTIAL:**
-  native integer checks cover add/subtract/multiply/floor-divide/remainder and
-  unary negate/absolute/square; integer power remains. Exact 64-bit cases are
-  CPU reference/correctness paths and must not become a CUDA hot-path
+  integer comparisons suitable for later CPU kernels and bounded accelerator
+  implementations. Native integer checks cover add/subtract/multiply/
+  floor-divide/remainder/power and unary negate/absolute/square. Exact 64-bit
+  cases are CPU reference/correctness paths and must not become a CUDA hot-path
   dependency.
 - [ ] `_cast_values_and_fill(...)` applies casting and output encoding in a
   deterministic order.
@@ -1053,9 +1049,11 @@ Implement and unit-test private helpers with single responsibilities:
   unless their documented contract explicitly promotes them.
 
 **PARTIAL:** centralized dtype, accumulator, checked-integer, and cast helpers
-exist, but they are not yet the sole path and the full pairwise dtype matrix is
-not proven. Focused exact ``int64``/``uint64`` boundaries beyond ``2**53`` and
-FP32-preservation tests now exist.
+exist, but they are not yet the sole path and the full operation-by-dtype
+matrix is not proven. Complete supported-dtype pair matrices now cover ordinary
+addition inference and representable unsafe casts; focused boundary tests cover
+exact ``int64``/``uint64`` values beyond ``2**53``, power, cast overflow, and
+FP32 preservation.
 
 ### 4.4 Operation registry
 
@@ -1306,15 +1304,16 @@ Acceptance evidence:
   core math inventory.
 - [ ] Implement reclassification and stack combination.
   **PARTIAL:** reclassification, digitization, and one-hot operations are
-  implemented; pairwise min/max and stack combination are not.
+  implemented, as are pairwise min/max; stack combination is not.
 - [ ] Add property-based-style randomized tests using deterministic seeds;
   compare valid cells with direct NumPy reference calculations.
   **PARTIAL:** deterministic analytic coverage is extensive; the requested
   randomized matrix is incomplete.
 - [ ] Test every invalidity, dtype, overflow, unit, scalar, and grid branch.
   **PARTIAL:** major branches and focused exact ``int64``/``uint64`` values
-  beyond ``2**53`` are covered, but the exhaustive Section 7 dtype-pair and
-  policy matrix remains open.
+  beyond ``2**53`` are covered. Supported-dtype pair matrices cover addition
+  inference and representable unsafe casts, but the exhaustive Section 7
+  operation/policy cross-product remains open.
 - [ ] Convert the landing-site screening example to a new additional example,
   retaining the old array-oriented example as compatibility evidence.
   **PARTIAL:** the additional map-algebra screening example exists; explicit

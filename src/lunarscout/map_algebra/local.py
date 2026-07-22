@@ -7,7 +7,12 @@ import numpy as np
 
 from ..errors import MapAlgebraDTypeError, MapAlgebraError
 from ..raster import Raster, _validate_nodata_representable
-from ._dtypes import OverflowPolicy, cast_values, normalize_dtype
+from ._dtypes import (
+    CastOverflowPolicy,
+    OverflowPolicy,
+    cast_values,
+    normalize_dtype,
+)
 from ._validity import NumericErrorsPolicy
 from ._eager import (
     _dispatch_binary_raster_raster,
@@ -100,36 +105,59 @@ def _infer_output_georef_single(raster: Raster) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def add(a: Raster | int | float, b: Raster | int | float, *, overflow: OverflowPolicy = "raise") -> Raster:
+def add(
+    a: Raster | int | float,
+    b: Raster | int | float,
+    *,
+    overflow: OverflowPolicy = "raise",
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         require_matching_units(units_a=a.units, units_b=b.units)
-        return _dispatch_binary_raster_raster(a, b, _add, operation="add", output_units=a.units, overflow=overflow)
+        return _dispatch_binary_raster_raster(
+            a, b, _add, operation="add", output_units=a.units,
+            overflow=overflow, numeric_errors=numeric_errors,
+        )
     if isinstance(a, Raster) and _is_scalar(b):
         return _dispatch_binary_raster_scalar(
             a, _normalize_scalar(b, argument="b"), _add,
-            operation="add", overflow=overflow,
+            operation="add", overflow=overflow, numeric_errors=numeric_errors,
         )
     if _is_scalar(a) and isinstance(b, Raster):
         return _dispatch_binary_raster_scalar(
             b, _normalize_scalar(a, argument="a"), _add,
-            operation="add", overflow=overflow,
+            operation="add", overflow=overflow, numeric_errors=numeric_errors,
         )
     raise MapAlgebraError("add() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
-def subtract(a: Raster | int | float, b: Raster | int | float, *, overflow: OverflowPolicy = "raise") -> Raster:
+def subtract(
+    a: Raster | int | float,
+    b: Raster | int | float,
+    *,
+    overflow: OverflowPolicy = "raise",
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         require_matching_units(units_a=a.units, units_b=b.units)
-        return _dispatch_binary_raster_raster(a, b, _subtract, operation="subtract", output_units=a.units, overflow=overflow)
+        return _dispatch_binary_raster_raster(
+            a, b, _subtract, operation="subtract", output_units=a.units,
+            overflow=overflow, numeric_errors=numeric_errors,
+        )
     if isinstance(a, Raster) and _is_scalar(b):
-        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _subtract, operation="subtract", overflow=overflow)
+        return _dispatch_binary_raster_scalar(
+            a, _normalize_scalar(b, argument="b"), _subtract,
+            operation="subtract", overflow=overflow,
+            numeric_errors=numeric_errors,
+        )
     if _is_scalar(a) and isinstance(b, Raster):
         return _dispatch_binary_raster_scalar(
             b, _normalize_scalar(a, argument="a"),
             _subtract,
-            operation="subtract", overflow=overflow, scalar_left=True,
+            operation="subtract", overflow=overflow,
+            numeric_errors=numeric_errors, scalar_left=True,
         )
     raise MapAlgebraError("subtract() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
@@ -140,15 +168,27 @@ def multiply(
     *,
     output_units: str | None = None,
     overflow: OverflowPolicy = "raise",
+    numeric_errors: NumericErrorsPolicy = "invalid",
 ) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         units = multiply_units(units_a=a.units, units_b=b.units, output_units=output_units)
-        return _dispatch_binary_raster_raster(a, b, _multiply, operation="multiply", output_units=units, overflow=overflow)
+        return _dispatch_binary_raster_raster(
+            a, b, _multiply, operation="multiply", output_units=units,
+            overflow=overflow, numeric_errors=numeric_errors,
+        )
     if isinstance(a, Raster) and _is_scalar(b):
-        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _multiply, operation="multiply", overflow=overflow)
+        return _dispatch_binary_raster_scalar(
+            a, _normalize_scalar(b, argument="b"), _multiply,
+            operation="multiply", overflow=overflow,
+            numeric_errors=numeric_errors,
+        )
     if _is_scalar(a) and isinstance(b, Raster):
-        return _dispatch_binary_raster_scalar(b, _normalize_scalar(a, argument="a"), _multiply, operation="multiply", overflow=overflow)
+        return _dispatch_binary_raster_scalar(
+            b, _normalize_scalar(a, argument="a"), _multiply,
+            operation="multiply", overflow=overflow,
+            numeric_errors=numeric_errors,
+        )
     raise MapAlgebraError("multiply() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
@@ -218,58 +258,115 @@ def remainder(
     raise MapAlgebraError("remainder() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
-def power(base: Raster | int | float, exponent: Raster | int | float) -> Raster:
+def power(
+    base: Raster | int | float,
+    exponent: Raster | int | float,
+    *,
+    overflow: OverflowPolicy = "raise",
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
     if isinstance(base, Raster) and isinstance(exponent, Raster):
         _require_common_grid([base, exponent])
-        return _dispatch_binary_raster_raster(base, exponent, _power, operation="power")
+        return _dispatch_binary_raster_raster(
+            base, exponent, _power, operation="power",
+            overflow=overflow, numeric_errors=numeric_errors,
+        )
     if isinstance(base, Raster) and _is_scalar(exponent):
-        return _dispatch_binary_raster_scalar(base, _normalize_scalar(exponent, argument="exponent"), _power, operation="power")
+        return _dispatch_binary_raster_scalar(
+            base, _normalize_scalar(exponent, argument="exponent"), _power,
+            operation="power", overflow=overflow, numeric_errors=numeric_errors,
+        )
     if _is_scalar(base) and isinstance(exponent, Raster):
         return _dispatch_binary_raster_scalar(
             exponent, _normalize_scalar(base, argument="base"),
             _power,
-            operation="power", scalar_left=True,
+            operation="power", overflow=overflow, numeric_errors=numeric_errors,
+            scalar_left=True,
         )
     raise MapAlgebraError("power() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
-def negative(a: Raster, *, overflow: OverflowPolicy = "raise") -> Raster:
-    return _dispatch_unary(a, _negate, operation="negative", overflow=overflow)
+def negative(
+    a: Raster,
+    *,
+    overflow: OverflowPolicy = "raise",
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
+    return _dispatch_unary(
+        a, _negate, operation="negative", overflow=overflow,
+        numeric_errors=numeric_errors,
+    )
 
 
 def positive(a: Raster) -> Raster:
     return a
 
 
-def absolute(a: Raster, *, overflow: OverflowPolicy = "raise") -> Raster:
-    return _dispatch_unary(a, _absolute, operation="absolute", overflow=overflow)
+def absolute(
+    a: Raster,
+    *,
+    overflow: OverflowPolicy = "raise",
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
+    return _dispatch_unary(
+        a, _absolute, operation="absolute", overflow=overflow,
+        numeric_errors=numeric_errors,
+    )
 
 # ---------------------------------------------------------------------------
 # Pairwise
 # ---------------------------------------------------------------------------
 
 
-def minimum(a: Raster | int | float, b: Raster | int | float) -> Raster:
+def minimum(
+    a: Raster | int | float,
+    b: Raster | int | float,
+    *,
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         require_matching_units(units_a=a.units, units_b=b.units)
-        return _dispatch_binary_raster_raster(a, b, _minimum, operation="minimum", output_units=a.units)
+        return _dispatch_binary_raster_raster(
+            a, b, _minimum, operation="minimum", output_units=a.units,
+            numeric_errors=numeric_errors,
+        )
     if isinstance(a, Raster) and _is_scalar(b):
-        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _minimum, operation="minimum")
+        return _dispatch_binary_raster_scalar(
+            a, _normalize_scalar(b, argument="b"), _minimum,
+            operation="minimum", numeric_errors=numeric_errors,
+        )
     if _is_scalar(a) and isinstance(b, Raster):
-        return _dispatch_binary_raster_scalar(b, _normalize_scalar(a, argument="a"), _minimum, operation="minimum")
+        return _dispatch_binary_raster_scalar(
+            b, _normalize_scalar(a, argument="a"), _minimum,
+            operation="minimum", numeric_errors=numeric_errors,
+        )
     raise MapAlgebraError("minimum() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
-def maximum(a: Raster | int | float, b: Raster | int | float) -> Raster:
+def maximum(
+    a: Raster | int | float,
+    b: Raster | int | float,
+    *,
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
     if isinstance(a, Raster) and isinstance(b, Raster):
         _require_common_grid([a, b])
         require_matching_units(units_a=a.units, units_b=b.units)
-        return _dispatch_binary_raster_raster(a, b, _maximum, operation="maximum", output_units=a.units)
+        return _dispatch_binary_raster_raster(
+            a, b, _maximum, operation="maximum", output_units=a.units,
+            numeric_errors=numeric_errors,
+        )
     if isinstance(a, Raster) and _is_scalar(b):
-        return _dispatch_binary_raster_scalar(a, _normalize_scalar(b, argument="b"), _maximum, operation="maximum")
+        return _dispatch_binary_raster_scalar(
+            a, _normalize_scalar(b, argument="b"), _maximum,
+            operation="maximum", numeric_errors=numeric_errors,
+        )
     if _is_scalar(a) and isinstance(b, Raster):
-        return _dispatch_binary_raster_scalar(b, _normalize_scalar(a, argument="a"), _maximum, operation="maximum")
+        return _dispatch_binary_raster_scalar(
+            b, _normalize_scalar(a, argument="a"), _maximum,
+            operation="maximum", numeric_errors=numeric_errors,
+        )
     raise MapAlgebraError("maximum() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 # ---------------------------------------------------------------------------
@@ -599,9 +696,16 @@ def cast(
     dtype: np.dtype[Any] | str,
     *,
     casting: str = "safe",
+    overflow: CastOverflowPolicy = "raise",
 ) -> Raster:
     target_dtype = normalize_dtype(dtype, operation="cast")
-    result_values = cast_values(raster.values, target_dtype, casting=casting)  # type: ignore[arg-type]
+    result_values = cast_values(
+        raster.values,
+        target_dtype,
+        casting=casting,  # type: ignore[arg-type]
+        overflow=overflow,
+        valid=raster.valid,
+    )
     return Raster(
         values=result_values, georef=raster.georef,
         valid=raster.valid, units=raster.units, name=raster.name,
@@ -910,33 +1014,60 @@ def log10(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Rast
     return _dispatch_unary(a, _log10, operation="log10", numeric_errors=numeric_errors)
 
 
-def sin(a: Raster) -> Raster:
+def sin(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
     angle_unit = require_angle_units(a.units, argument="a")
     if angle_unit == "degrees":
-        a_rad = _dispatch_unary(a, _radians, operation="to_radians", keep_units=False)
-        result = _dispatch_unary(a_rad, _sin, operation="sin", keep_units=False)
+        a_rad = _dispatch_unary(
+            a, _radians, operation="to_radians", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
+        result = _dispatch_unary(
+            a_rad, _sin, operation="sin", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
     else:
-        result = _dispatch_unary(a, _sin, operation="sin", keep_units=False)
+        result = _dispatch_unary(
+            a, _sin, operation="sin", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
     return result
 
 
-def cos(a: Raster) -> Raster:
+def cos(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
     angle_unit = require_angle_units(a.units, argument="a")
     if angle_unit == "degrees":
-        a_rad = _dispatch_unary(a, _radians, operation="to_radians", keep_units=False)
-        result = _dispatch_unary(a_rad, _cos, operation="cos", keep_units=False)
+        a_rad = _dispatch_unary(
+            a, _radians, operation="to_radians", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
+        result = _dispatch_unary(
+            a_rad, _cos, operation="cos", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
     else:
-        result = _dispatch_unary(a, _cos, operation="cos", keep_units=False)
+        result = _dispatch_unary(
+            a, _cos, operation="cos", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
     return result
 
 
-def tan(a: Raster) -> Raster:
+def tan(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
     angle_unit = require_angle_units(a.units, argument="a")
     if angle_unit == "degrees":
-        a_rad = _dispatch_unary(a, _radians, operation="to_radians", keep_units=False)
-        result = _dispatch_unary(a_rad, _tan, operation="tan", keep_units=False)
+        a_rad = _dispatch_unary(
+            a, _radians, operation="to_radians", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
+        result = _dispatch_unary(
+            a_rad, _tan, operation="tan", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
     else:
-        result = _dispatch_unary(a, _tan, operation="tan", keep_units=False)
+        result = _dispatch_unary(
+            a, _tan, operation="tan", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
     return result
 
 
@@ -948,44 +1079,85 @@ def arccos(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Ras
     return _dispatch_unary(a, _arccos, operation="arccos", output_units="radians", keep_units=False, numeric_errors=numeric_errors)
 
 
-def arctan(a: Raster) -> Raster:
-    return _dispatch_unary(a, _arctan, operation="arctan", output_units="radians", keep_units=False)
+def arctan(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
+    return _dispatch_unary(
+        a, _arctan, operation="arctan", output_units="radians",
+        keep_units=False, numeric_errors=numeric_errors,
+    )
 
 
-def arctan2(a: Raster, b: Raster) -> Raster:
+def arctan2(
+    a: Raster,
+    b: Raster,
+    *,
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
     _require_common_grid([a, b])
-    return _dispatch_binary_raster_raster(a, b, _arctan2, operation="arctan2", output_units="radians")
+    return _dispatch_binary_raster_raster(
+        a, b, _arctan2, operation="arctan2", output_units="radians",
+        numeric_errors=numeric_errors,
+    )
 
 
-def degrees(a: Raster) -> Raster:
-    return _dispatch_unary(a, _degrees, operation="degrees", output_units="degrees", keep_units=False)
+def degrees(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
+    return _dispatch_unary(
+        a, _degrees, operation="degrees", output_units="degrees",
+        keep_units=False, numeric_errors=numeric_errors,
+    )
 
 
-def radians(a: Raster) -> Raster:
-    return _dispatch_unary(a, _radians, operation="radians", output_units="radians", keep_units=False)
+def radians(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
+    return _dispatch_unary(
+        a, _radians, operation="radians", output_units="radians",
+        keep_units=False, numeric_errors=numeric_errors,
+    )
 
 
-def hypot(a: Raster, b: Raster) -> Raster:
+def hypot(
+    a: Raster,
+    b: Raster,
+    *,
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
     _require_common_grid([a, b])
-    return _dispatch_binary_raster_raster(a, b, _hypot, operation="hypot")
+    return _dispatch_binary_raster_raster(
+        a, b, _hypot, operation="hypot", numeric_errors=numeric_errors,
+    )
 
 
-def round_half_even(a: Raster, ndigits: int = 0) -> Raster:
+def round_half_even(
+    a: Raster,
+    ndigits: int = 0,
+    *,
+    numeric_errors: NumericErrorsPolicy = "invalid",
+) -> Raster:
     if ndigits == 0:
-        return _dispatch_unary(a, _round_half_even, operation="round")
+        return _dispatch_unary(
+            a, _round_half_even, operation="round",
+            numeric_errors=numeric_errors,
+        )
     factor = 10.0**ndigits
-    scaled = _dispatch_binary_raster_scalar(a, factor, lambda arr, s: arr * s, operation="round_scale")
-    rounded = _dispatch_unary(scaled, _round_half_even, operation="round")
-    return _dispatch_binary_raster_scalar(rounded, 1.0 / factor, lambda arr, s: arr * s, operation="round_unscale")
+    scaled = _dispatch_binary_raster_scalar(
+        a, factor, lambda arr, s: arr * s, operation="round_scale",
+        numeric_errors=numeric_errors,
+    )
+    rounded = _dispatch_unary(
+        scaled, _round_half_even, operation="round",
+        numeric_errors=numeric_errors,
+    )
+    return _dispatch_binary_raster_scalar(
+        rounded, 1.0 / factor, lambda arr, s: arr * s,
+        operation="round_unscale", numeric_errors=numeric_errors,
+    )
 
 
-def floor(a: Raster) -> Raster:
-    return _dispatch_unary(a, _floor, operation="floor")
+def floor(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
+    return _dispatch_unary(a, _floor, operation="floor", numeric_errors=numeric_errors)
 
 
-def ceil(a: Raster) -> Raster:
-    return _dispatch_unary(a, _ceil, operation="ceil")
+def ceil(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
+    return _dispatch_unary(a, _ceil, operation="ceil", numeric_errors=numeric_errors)
 
 
-def trunc(a: Raster) -> Raster:
-    return _dispatch_unary(a, _trunc, operation="trunc")
+def trunc(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
+    return _dispatch_unary(a, _trunc, operation="trunc", numeric_errors=numeric_errors)

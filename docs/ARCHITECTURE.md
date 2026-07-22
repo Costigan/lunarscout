@@ -863,6 +863,22 @@ an inexact floating dtype. These rules apply equally to eager, windowed, and
 future CUDA kernels; on CUDA, a required 64-bit exact operation makes the node
 ineligible for the normal GPU fast path.
 
+Integer power follows the same contract through bounded repeated squaring and
+per-multiply integer boundary checks; it does not call a floating-point power
+kernel to decide overflow. Cast safety has two independent layers: NumPy's
+type-level ``casting`` rule, and a value-level ``overflow`` rule. The default
+value rule rejects valid values outside the destination range using exact
+signed/unsigned comparisons and source-dtype floating boundaries. Explicit
+wrapping is limited to integer-to-integer casts. Invalid payloads do not cause
+overflow failures because their encoded value is not scientific data.
+
+The common numeric-domain helper implements ``invalid``, ``keep``, and
+structured ``raise`` behavior for pointwise arithmetic and math kernels.
+Policies are expression parameters, so they participate in canonical
+scientific and restart identity and are replayed unchanged by eager and
+windowed execution. No helper introduces FP64 or 64-bit integer arithmetic
+solely to perform these checks.
+
 ### 20.3 Execution architecture
 
 Execution has two strategies on one operation specification:

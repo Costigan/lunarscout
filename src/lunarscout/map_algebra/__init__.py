@@ -211,15 +211,24 @@ trunc = _wrap_unary(trunc, "local.trunc")
 _round_eager = round
 
 
-def round(a: Any, ndigits: int = 0) -> Any:
+def round(
+    a: Any,
+    ndigits: int = 0,
+    *,
+    numeric_errors: Literal["invalid", "keep", "raise"] = "invalid",
+) -> Any:
     if not isinstance(a, RasterExpression):
-        return _round_eager(a, ndigits)
+        return _round_eager(a, ndigits, numeric_errors=numeric_errors)
     if not isinstance(ndigits, int) or isinstance(ndigits, bool):
         raise TypeError("ndigits must be an integer.")
     from ._model import _make_expr_node
+    from ._validity import normalize_numeric_errors
     return _make_expr_node(
         "local.round", (a,), grid=a.grid, dtype=a.dtype, units=a.units,
-        params={"ndigits": ndigits},
+        params={
+            "ndigits": ndigits,
+            "numeric_errors": normalize_numeric_errors(numeric_errors),
+        },
     )
 
 
@@ -446,13 +455,20 @@ def clip(raster: Any, *, lower: Any = None, upper: Any = None) -> Any:
     )
 
 
-def cast(raster: Any, dtype: Any, *, casting: str = "safe") -> Any:
+def cast(
+    raster: Any,
+    dtype: Any,
+    *,
+    casting: str = "safe",
+    overflow: Literal["raise", "wrap"] = "raise",
+) -> Any:
     if not isinstance(raster, RasterExpression):
-        return _cast_eager(raster, dtype, casting=casting)
+        return _cast_eager(raster, dtype, casting=casting, overflow=overflow)
     from ._model import _make_expr_node
     from ..errors import MapAlgebraDTypeError
-    from ._dtypes import normalize_dtype
+    from ._dtypes import normalize_cast_overflow, normalize_dtype
     target_dtype = normalize_dtype(dtype, operation="cast")
+    overflow = normalize_cast_overflow(overflow)
     if casting not in {"safe", "same_kind", "unsafe"}:
         raise MapAlgebraDTypeError(
             f"Unknown casting policy: {casting}",
@@ -467,7 +483,8 @@ def cast(raster: Any, dtype: Any, *, casting: str = "safe") -> Any:
         )
     return _make_expr_node(
         "local.cast", (raster, target_dtype), grid=raster.grid,
-        dtype=target_dtype, units=raster.units, params={"casting": casting},
+        dtype=target_dtype, units=raster.units,
+        params={"casting": casting, "overflow": overflow},
     )
 
 

@@ -1429,8 +1429,12 @@ dtypes are rejected.
 - True division returns at least `float32`; `float64` if an operand is
   `float64` or safe scalar inference requires it.
 - Integer overflow uses `overflow="raise"` by default; `"promote"` widens to
-  a safe dtype, and `"wrap"` follows NumPy.
-- `ma.cast()` supports `casting="safe"`, `"same_kind"`, and `"unsafe"`.
+  a safe exact integer dtype, and `"wrap"` follows NumPy. This includes
+  integer power.
+- `ma.cast()` supports NumPy's type-level `casting="safe"`, `"same_kind"`,
+  and `"unsafe"` rules. Independently, `overflow="raise"` (the default)
+  rejects valid values outside the destination range. Integer-to-integer
+  casts may request `overflow="wrap"`; wrapping floating values is rejected.
 
 `float32` calculations remain in FP32; Lunarscout does not introduce FP64
 intermediates merely to check overflow or numeric domains. FP64 is used only
@@ -1446,17 +1450,25 @@ required 64-bit work to CPU unless a separately benchmarked kernel justifies
 otherwise.
 
 Checked integer addition, subtraction, multiplication, floor division,
-remainder, negation, absolute value, and squaring perform exact integer-domain
-boundary checks. In particular, `int64` and `uint64` values beyond `2**53` are
-not converted to floating point. `overflow="promote"` chooses an exact wider
-integer dtype when one exists and otherwise raises a structured error.
+remainder, power, negation, absolute value, and squaring perform exact
+integer-domain boundary checks. Integer power uses bounded repeated squaring;
+it does not use a floating-point intermediate. In particular, `int64` and
+`uint64` values beyond `2**53` are not converted to floating point.
+`overflow="promote"` chooses an exact wider integer dtype when one exists and
+otherwise raises a structured error. A negative exponent with an integer
+result is a numeric-domain error; under `numeric_errors="invalid"` its payload
+is unspecified and its validity is false.
 
-`ma.divide`, `ma.floor_divide`, `ma.remainder`, `ma.sqrt`, `ma.exp`, `ma.log`,
-`ma.log10`, `ma.arcsin`, `ma.arccos`, and `ma.square` expose numeric-domain
-handling where applicable. `numeric_errors="invalid"` (the default) invalidates
-new non-finite/domain-error pixels, `"keep"` preserves their input validity,
-and `"raise"` raises `MapAlgebraOperationError` with code
-`map_algebra_numeric_error`. Existing invalid pixels do not cause `"raise"`.
+Pointwise arithmetic and math operations that can produce non-finite or
+domain-error results expose `numeric_errors="invalid"|"keep"|"raise"`. This
+includes arithmetic and power, minimum/maximum, roots and exponentials,
+logarithms, trigonometry and angle conversion, hypot, rounding, and
+floor/ceil/truncation. `"invalid"` (the default) invalidates affected pixels,
+`"keep"` preserves their input validity, and `"raise"` raises
+`MapAlgebraOperationError` with code `map_algebra_numeric_error`. Existing
+invalid pixels do not cause `"raise"`. Comparisons, Boolean/selection
+operations, classification, and normalization reducers keep their dedicated
+validity contracts rather than accepting this option.
 
 ### Unit Rules
 
