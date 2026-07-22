@@ -1,22 +1,21 @@
-# Broad Map-Algebra API Implementation Plan
+# Core Map-Algebra API Implementation Plan
 
 Status: The eager ``0.2`` map-algebra surface, expression construction and
 materialization, bounded zero-halo local/coordinate writes, halo-aware
 terrain execution, explicit cross-grid resampling, documentation, examples,
 writer progress/cancellation, compact durable restart journaling, and local
-release-artifact checks are implemented. Registry metadata,
-identity separation, planner limits, per-operation reference
-documentation, and empirical resource/performance evidence remain partial.
-General focal statistics/convolution/morphology window execution, local
-fusion, global/zonal/distance bounded
-execution, region adapters, and temporal spatial-window/time-batch mapping
-remain deferred. TestPyPI publication is skipped by project decision; there
-are no external users for a useful candidate cycle, and publishing will
-resume at a later milestone intended for real PyPI.
+release-artifact checks are implemented. Registry metadata, identity
+separation, numeric-policy centralization, eager API gaps, structured-error
+normalization, per-operation reference documentation, and adversarial test
+coverage remain partial. All further work whose primary purpose is processing
+maps too large for memory is deferred by project decision and moved to
+`docs/map-algebra-large-raster-plan.md`. TestPyPI publication is skipped by
+project decision; publishing will resume at a later milestone intended for
+real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (writer lifecycle, compact restart journal, and fault-injection repair)
+Last updated: 2026-07-22 (large-raster execution separated and deferred)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -31,8 +30,8 @@ Unchecked items are annotated where their state is not simply "not started":
 
 - **PARTIAL** means a useful subset exists, but the complete checkbox claim is
   not supported by implementation and evidence.
-- **DEFERRED TO 0.3** means the item is intentionally outside the current
-  milestone, normally because it depends on bounded spatial window execution.
+- **DEFERRED -- LARGE-RASTER PLAN** means the item is intentionally moved to
+  `docs/map-algebra-large-raster-plan.md` and is not on the current schedule.
 - **SKIPPED BY DECISION** means the work will not be performed for this
   milestone and is not a release blocker.
 - **NOT APPLICABLE** means the conditional requirement was reviewed but no
@@ -47,42 +46,35 @@ is not counted as partial merely because adjacent functionality exists.
 | State | Scope |
 | --- | --- |
 | Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic output; halo-aware terrain and explicit cross-grid resampling ``write`` execution; writer progress/cancellation and compact checkpoint resume; public terrain/resample wrappers with categorical safety and validity policies; user guide, architecture, examples, and the ordinary CPU suite. |
-| Partial | Planner limits and memory estimates; operation catalog metadata and coverage; analyst-facing ``explain`` and dry-run ``plan`` detail; distinct scientific/restart/execution-cache identities and golden fixtures; numeric-policy and dtype centralization; general focal expression execution; exhaustive API tables, test matrix, and empirical benchmarks. |
-| Deferred to 0.3 | General focal statistics/convolution/morphology window execution; footprint-derived asymmetric halos; local fusion; region adapters; bounded global/zonal/distance execution; temporal spatial-window/time-batch mapping; and resource-scaling evidence. |
+| Partial | Operation catalog metadata and coverage; analyst-facing ``explain`` detail; canonical identity golden fixtures; numeric-policy and dtype centralization; eager stack helpers and region adapters; structured-error normalization; exhaustive API tables; and adversarial/boundary tests. |
+| Deferred -- large-raster plan | All further bounded/windowed execution work: general halos and focal kernels, local fusion, cross-window region reconciliation, streaming global/zonal reducers, bounded distance fields, temporal spatial-window/time-batch mapping, concurrency controls, and empirical resource scaling. Current completed bounded capabilities remain supported. |
 | Skipped by decision | TestPyPI publication for ``0.2.0rc1``. Local artifact construction, inspection, and isolated installation remain completed evidence. |
 
 ### Next implementation sequence
 
-The next major milestone is not four independent operation additions. Bounded
-spatial execution is the critical path:
+The active, non-large-raster sequence is:
 
-1. **COMPLETED:** implement defensive graph planning, streaming window
-   enumeration, bounded source caching, and zero-halo local/coordinate
-   execution. Local fusion and empirical peak-memory measurement remain open.
-2. **COMPLETED:** add halo-aware terrain nodes with whole-array
-   parity; add explicit cross-grid ``resample_to`` planning and execution;
-   add public wrappers, safety rules, registry enrichment, documentation,
-   and examples.
-3. make writer progress, cancellation, journaling, and restart operate on those
-   windows (completed in this slice);
-4. add general focal statistics/convolution/morphology window execution with
-   footprint-derived asymmetric halos;
-5. add region adapters, including cross-window region reconciliation where
-   bounded execution requires it; and
-6. close bounded global/zonal/distance and temporal-mapping gaps, then collect
-   the resource and performance evidence in Sections 7 and 8.
+1. centralize numeric policy, dtype inference, validity helpers, and structured
+   error translation across eager and expression construction paths;
+2. complete eager/public API gaps such as stack combinations, region adapters,
+   `min_valid_count`, and the reviewed temporal reducer inventory;
+3. complete canonical identity fixtures, registry coverage, generated operation
+   descriptions, `explain()`, and public API reference tables;
+4. close adversarial and boundary-test gaps and reconcile examples and release
+   documentation to the implemented surface.
 
-The registry metadata audit, identity separation, API tables, missing eager
-stack helpers, and error-normalization gaps are independent partial work. They
-may be completed before or alongside the remaining ``0.3`` planner, but they do
-not replace it.
+The completed bounded writer remains maintained. Any expansion of bounded
+operation coverage follows `docs/map-algebra-large-raster-plan.md` only after
+that plan is explicitly resumed.
 
 ## 1. Outcome and boundaries
 
-The outcome is an array-oriented map-algebra API that is pleasant in notebooks
-and also safe for regional rasters that must be processed window by window. It
-must preserve Lunarscout's existing rules for explicit grids, validity, bounded
-resources, lazy optional capabilities, structured errors, and durable output.
+The outcome is a scientifically consistent array-oriented map-algebra API that
+is pleasant in notebooks. It preserves the bounded file-backed subset already
+implemented, but further regional-scale execution expansion is governed by the
+separate deferred large-raster plan. The core API must preserve Lunarscout's
+rules for explicit grids, validity, lazy optional capabilities, structured
+errors, and durable output.
 
 Map algebra treats rasters as spatially registered fields and combines them
 with a small number of operation families:
@@ -113,8 +105,8 @@ The primary lunar mission workflows are:
 - computing clearance and proximity fields around hazards or resources;
 - summarizing values by candidate region or another explicitly supplied zone
   raster; and
-- reducing large rasters or temporal products without loading an entire region
-  or time cube unnecessarily.
+- reducing rasters or temporal products with explicit eager memory behavior;
+  future bounded regional/time-batch execution is deferred separately.
 
 The implementation must not assume that terrestrial datasets or terrestrial
 semantics are available. In particular:
@@ -660,13 +652,15 @@ materializes an expression; and `ma.write()` evaluates it in bounded windows.
 
 Neighborhood size is odd and positive. Support rectangular windows and an
 explicit binary footprint. File-backed execution must read the required halo
-and crop to the destination window.
+and crop to the destination window; that future execution work is deferred to
+`docs/map-algebra-large-raster-plan.md`.
 
 - [ ] `focal_sum`, `focal_mean`, `focal_min`, `focal_max`, `focal_range`,
   `focal_std`, `focal_count`, `focal_median`, and selected percentiles.
   **PARTIAL:** the listed statistics except selected focal percentiles are
   implemented for eager ``Raster`` inputs. Expression construction exists,
-  but expression execution and window parity are deferred to ``0.3``.
+  but bounded expression execution and window parity are deferred to the
+  large-raster plan. Selected eager focal percentiles remain core work.
 - [ ] `convolve(kernel, *, normalize=False)` with finite two-dimensional
   numeric kernels only; no arbitrary callback kernels in file mode.
   **PARTIAL:** eager convolution and validation exist; file-backed execution
@@ -674,7 +668,7 @@ and crop to the destination window.
 - [ ] `dilate`, `erode`, `opening`, `closing`, and `majority` for Boolean or
   explicitly classified inputs.
   **PARTIAL:** eager Boolean morphology exists; executable expression nodes do
-  not.
+  not. Bounded execution is deferred to the large-raster plan.
 - [ ] Edge modes: `invalid` (default), `constant`, `nearest`, `reflect`, and
   `wrap`; document that `wrap` is mathematical and usually inappropriate for
   regional lunar rasters. **PARTIAL:** all modes are implemented eagerly, but
@@ -684,7 +678,8 @@ and crop to the destination window.
   **PARTIAL:** the three policies and expression parameters exist, but
   ``min_valid_count`` is not implemented and bounded execution is deferred.
 - [ ] Integrate existing region cleanup behavior with shared morphology
-  helpers without changing current public results. **DEFERRED TO 0.3.**
+  helpers without changing current public results. This eager/shared-helper
+  cleanup remains core work.
 - [x] Register `slope`, `aspect`, and `hillshade` as map-algebra operations.
   Eager `Raster` calls delegate to the existing scientific implementations.
   Expression calls create nodes with a one-pixel source halo and window kernels
@@ -702,11 +697,12 @@ and crop to the destination window.
 
 - [ ] Provide `label_regions`, `region_sizes`, `filter_regions_by_size`, and
   `find_borders` adapters accepting and returning `Raster` while preserving the
-  existing array APIs. **DEFERRED TO 0.3.** The eager adapter slice can precede
-  the planner; bounded labeling/filtering additionally requires cross-window
-  region reconciliation.
+  existing array APIs. The eager adapter slice remains core work; bounded
+  labeling/filtering and cross-window reconciliation are deferred to the
+  large-raster plan.
 - [ ] Add configurable four- or eight-neighbor connectivity in the new API;
-  preserve eight-neighbor defaults for existing APIs. **DEFERRED TO 0.3.**
+  preserve eight-neighbor defaults for existing APIs. Eager connectivity
+  remains core work; bounded reconciliation is deferred.
 - [x] `zonal_stats(values, zones, *, statistics, zone_nodata=...)` returns a
   table-like `ZonalStatistics` value independent of pandas, conceptually:
 
@@ -732,8 +728,8 @@ and crop to the destination window.
   immutable ``to_records()`` rows exist and preserve large IDs, but the result
   itself does not implement row iteration.
 - [ ] Keep mergeable streaming accumulator state private and separate from the
-  finalized `ZonalStatistics` result. **DEFERRED TO 0.3:** only eager
-  whole-raster accumulation exists.
+  finalized `ZonalStatistics` result. **DEFERRED -- LARGE-RASTER PLAN:** only
+  eager whole-raster accumulation exists.
 - [x] Required statistics: count, valid count, invalid count, sum, mean, min,
   max, range, standard deviation, variance, median, and requested percentiles.
 - [x] `zonal_raster(values, zones, statistic=...)` broadcasts one statistic
@@ -746,7 +742,7 @@ and crop to the destination window.
 - [ ] Implement bounded accumulation for count/sum/min/max/mean/variance.
   Median and percentile may use an explicit exact in-memory mode or documented
   approximate streaming mode; never silently switch algorithms.
-  **DEFERRED TO 0.3.**
+  **DEFERRED -- LARGE-RASTER PLAN.**
 - [x] Provide CSV/JSON-friendly conversion without requiring pandas.
 
 ### 3.5 Global reductions
@@ -756,7 +752,7 @@ and crop to the destination window.
   precision.
 - [ ] `histogram(raster, *, bins, range=None)` supports explicit edges and
   bounded streaming. **PARTIAL:** explicit edges work eagerly; bounded
-  streaming is deferred to ``0.3``.
+  streaming is deferred to the large-raster plan.
 - [x] `unique_counts(raster, *, max_unique=...)` fails predictably when a
   safety bound is exceeded.
 - [x] `percentile(raster, q, *, method="exact"|"approximate", ...)` makes
@@ -803,8 +799,8 @@ introducing route policy.
 - [ ] For file-backed Euclidean distance, select and document a genuinely
   bounded exact algorithm or explicitly label a tiled approximation and its
   error bound. Do not run `scipy.ndimage.distance_transform_edt` on a silently
-  materialized regional raster. **DEFERRED TO 0.3:** no file-backed distance
-  operation is advertised for ``0.2``.
+  materialized regional raster. **DEFERRED -- LARGE-RASTER PLAN:** no
+  file-backed distance operation is advertised.
 - [x] Keep accumulated-cost distance, allocation, backlink rasters, and
   least-cost routes out of `0.2`; those cross into the path-planning design.
 
@@ -859,17 +855,17 @@ both a common spatial grid and compatible time coordinates.
   `Raster` or `RasterExpression` while retaining bounded accumulator state for
   the current output window.
   **PARTIAL:** node classification exists; general bounded spatial-window/time-
-  batch execution still uses eager in-memory materialization.
+  batch execution is deferred to the large-raster plan.
 - [ ] Choose time-batch size from an explicit memory budget and record it in
   the execution plan. A series with thousands of layers must not imply one
   resident array or one open dataset per timestamp.
   **PARTIAL:** series handles are opened and closed per execution, but the
-  memory budget is not recorded in plan output.
+  memory-budget scheduler is deferred to the large-raster plan.
 - [ ] Reuse bounded dataset caches and the existing streaming reducer
   infrastructure. State whether execution is layer-major or spatial-window
   major for each source/output layout and report the expected read pattern in
   `ma.plan()`. **PARTIAL:** streaming reducers are reused; the plan does not
-  report the read pattern.
+  report the read pattern. Further scheduling work is deferred.
 - [ ] Reuse existing mean/min/max/std semantics and add count, sum, variance,
   percentile, `any`, `all`, threshold duration, and exceedance count only with
   documented sample, interval, nodata, and all-invalid behavior.
@@ -882,12 +878,13 @@ both a common spatial grid and compatible time coordinates.
   complete mean GeoTIFF. **PARTIAL:** reductions are composable expressions,
   but the bounded spatial writer rejects temporal nodes. Callers must
   explicitly ``compute()`` the reduction before writing until
-  temporal-to-spatial window planning exists.
+  the large-raster plan is resumed.
 - [ ] File-backed temporal mapping initially writes the existing timestamped
   GeoTIFF-series format through `TemporalGeoTiffSeriesWriter`. Generic
   multi-band BigTIFF expression output is deferred until its mask, timestamp,
   band-count, and resume contracts are reviewed.
-  **DEFERRED TO 0.3:** series-format expression mapping is not integrated.
+  **DEFERRED -- LARGE-RASTER PLAN:** series-format expression mapping is not
+  integrated.
 - [ ] `compute()` is the only operation that may explicitly materialize a
   complete temporal result. Preflight its estimated bytes and require an
   explicit override above a documented safety threshold.
@@ -1063,6 +1060,11 @@ OperationSpec(
 
 ### 4.5 Expression planner
 
+Completed planner behavior below remains supported. Unchecked work specifically
+about window selection, fusion, general halos, or resource scaling is
+**DEFERRED -- LARGE-RASTER PLAN**; validation limits and `explain()` quality
+remain core work.
+
 - [x] Topologically validate the graph and detect cycles defensively.
 - [ ] Enforce documented limits on graph nodes, depth, source count,
   normalized-parameter bytes, footprint dimensions, and requested output
@@ -1078,8 +1080,8 @@ OperationSpec(
   footprint halos are deferred.
 - [ ] Fuse consecutive local operations into one window task to avoid
   unnecessary full-window writes; correctness comes before aggressive fusion.
-  **PARTIAL:** the execution graph is processed per-window with no intermediate
-  materialization; explicit fusion grouping across consecutive nodes is deferred.
+  **DEFERRED -- LARGE-RASTER PLAN:** the execution graph is processed per-window
+  with no full-raster intermediate materialization; explicit fusion is absent.
 - [x] Do not fuse across global reductions, resampling, distance transforms, or
   operations with incompatible halos.
   *(unsupported operations are rejected during planning.)*
@@ -1091,11 +1093,11 @@ OperationSpec(
 - [ ] Select window sizes from output block geometry with a conservative
   default of 128 by 128; record the choice in progress metadata but not
   scientific identity.
-  **PARTIAL:** dimensions are configurable with a 128-by-128 default, but are
-  not yet selected from actual output block geometry.
+  **DEFERRED -- LARGE-RASTER PLAN:** dimensions are configurable with a
+  128-by-128 default, but are not selected from block geometry.
 - [ ] Calculate halos in source pixel coordinates and crop exactly once.
-  **PARTIAL:** one-pixel terrain halos are implemented and crop exactly once;
-  general focal footprint-derived asymmetric halos remain deferred.
+  **DEFERRED -- LARGE-RASTER PLAN:** one-pixel terrain halos are implemented and
+  crop exactly once; general footprint-derived asymmetric halos are absent.
 - [x] Emit a readable plan description for diagnostics and tests.
   *(``plan()`` now reports window layout, source count, estimated per-window
   memory, and other planner metadata.)*
@@ -1107,6 +1109,9 @@ OperationSpec(
   registry metadata.
 
 ### 4.6 File-backed sources and output
+
+This section records the completed and supported bounded subset. Expansion to
+additional operation families is owned by the deferred large-raster plan.
 
 - [x] `ma.source(path, *, band=1, units=None, identity="stat"|"sha256")` reads
   metadata only and returns an expression without retaining an open dataset.
@@ -1164,7 +1169,7 @@ OperationSpec(
   within documented tolerance to eager results.
   **PARTIAL:** local, coordinate, terrain, and reviewed resampling operations
   have validated windowed execution; general focal/global/zonal/distance and
-  temporal windowed execution remains deferred.
+  temporal windowed execution is **DEFERRED -- LARGE-RASTER PLAN**.
 - [x] Use Numba CPU only where benchmarks show a useful improvement and cache
   behavior is acceptable in installed wheels.
   **NOT APPLICABLE:** no Numba map-algebra kernels were selected.
@@ -1290,15 +1295,19 @@ Acceptance evidence:
 - [x] Implement expression operator overloads and stable JSON identity.
 - [ ] Implement canonical typed serialization plus distinct scientific,
   restart, and execution-cache identities with golden fixtures.
-  *(scientific identity via SHA-256 implemented; restart/cache identities deferred)*
+  **PARTIAL:** scientific and restart identities are implemented; an execution-
+  cache identity and golden compatibility fixtures remain incomplete.
 - [ ] Implement ``describe()``, ``ma.explain()``, ``ma.plan()``, and
   machine-readable operation introspection without executing kernels or
   writing files.
   **PARTIAL:** these read-only interfaces and a basic planner-backed resource
   description exist; operation metadata and explanation coverage remain
   incomplete.
-- [x] Implement the planner, window enumeration, local fusion, source cache,
-  cancellation checks, and progress events.
+- [x] Implement the planner, window enumeration, source cache, cancellation
+  checks, and progress events.
+- [ ] Fuse compatible consecutive local operations.
+  **DEFERRED -- LARGE-RASTER PLAN:** current nodes execute within bounded
+  window tasks but are not explicitly fused into a single kernel/pass.
 - [x] Implement window kernels for every Phase B local operation.
   *(all local binary, unary, and special operations dispatch through
   ``_windowed.py``; parity tested against eager results.)*
@@ -1313,7 +1322,7 @@ Acceptance evidence:
   empirical peak-memory measurement.
 
 The remaining Phase C fusion and resource measurement work is
-**DEFERRED TO 0.3**.
+**DEFERRED -- LARGE-RASTER PLAN**.
 
 Acceptance evidence:
 
@@ -1343,7 +1352,8 @@ Acceptance evidence:
   cancellation, and journal incompatibility.
 - [ ] Add cancellation/resume tests and concurrent-output conflict tests.
   **PARTIAL:** cancellation/resume is covered; concurrent writers targeting the
-  same output remain unsupported and do not yet have a locking contract.
+  same output remain unsupported. A locking contract is deferred to the
+  large-raster plan.
 - [x] Confirm failed overwrite preserves the previous complete output.
 
 Acceptance evidence:
@@ -1367,11 +1377,12 @@ Acceptance evidence:
 - [ ] Compare eager and tiled halo results across internal window boundaries
   for general focal statistics and morphology.
   *(terrain operations have validated seamless tiled execution; general focal
-  remains deferred.)*
+  execution is deferred to the large-raster plan.)*
 - [ ] Test rotated/anisotropic grids and document which focal operations are
   pixel-neighborhood rather than physical-radius operations.
   **PARTIAL:** eager grid cases are covered; the complete documentation and
-  tiled evidence are deferred to ``0.3``.
+  eager scientific contract remains core work, while tiled evidence is
+  deferred to the large-raster plan.
 - [ ] Benchmark SciPy, NumPy sliding windows, and Numba candidates before
   choosing optimized kernels. *(SciPy selected as baseline; NumPy sliding
   windows and Numba candidates not yet benchmarked)*
@@ -1381,7 +1392,7 @@ Acceptance evidence:
 - [ ] No seams occur at tile boundaries, and edge/invalid behavior matches an
   independent whole-array reference.
   **PARTIAL:** terrain nodes have seamless tiled parity; general focal and
-  morphology nodes do not yet have tiled execution.
+  morphology tiled execution is deferred to the large-raster plan.
 
 ### Phase F: Global and zonal reductions
 
@@ -1397,14 +1408,14 @@ Acceptance evidence:
 - [x] Test zone-ID types (int, uint64, bool), empty zones, all-invalid zones,
   and zonal percentiles (p25, p75, p90).
 - [ ] Test window-order independence where floating-point tolerances allow it.
-  **DEFERRED TO 0.3.**
+  **DEFERRED -- LARGE-RASTER PLAN.**
 
 Acceptance evidence:
 
 - [ ] Streaming and eager results agree within a stated tolerance without
   memory proportional to raster area, except explicitly selected exact
   percentile modes.
-  **DEFERRED TO 0.3.**
+  **DEFERRED -- LARGE-RASTER PLAN.**
 
 ### Phase G: Distance fields
 
@@ -1416,20 +1427,21 @@ Acceptance evidence:
   2-pass for taxicab/chessboard) and independent analytic test cases.
 - [x] Implement eager distance fields: ``distance_to()`` and
   ``signed_distance()``.
-- [ ] Evaluate exact bounded file-backed algorithms. *(deferred to
-  future windowed-execution work)*
+- [ ] Evaluate exact bounded file-backed algorithms.
+  **DEFERRED -- LARGE-RASTER PLAN.**
 - [x] Add physical-distance tests for square, anisotropic, rotated, and skewed
   projected grids, including a non-metre projected CRS.
 - [x] Add explicit rejection for geographic CRS (via pyproj ``is_geographic``
   check) and for taxicab/chessboard with physical units.
-- [ ] Benchmark representative hazard masks. **DEFERRED TO 0.3.**
+- [ ] Benchmark representative hazard masks.
+  **DEFERRED -- LARGE-RASTER PLAN.**
 
 Acceptance evidence:
 
 - [ ] Results match SciPy or analytic references where their assumptions match,
   and memory/temporary-disk bounds are recorded.
   **PARTIAL:** eager correctness matches references; bounded-memory and
-  temporary-disk evidence are deferred to ``0.3``.
+  temporary-disk evidence are deferred to the large-raster plan.
 
 ### Phase H: Temporal adapters
 
@@ -1440,7 +1452,7 @@ Acceptance evidence:
 - [ ] Implement `ma.temporal_source()` and bounded spatial-window/time-batch
   mapping over `TemporalGeoTiffSeries`.
   **PARTIAL:** the source and streaming reducers exist; general layer-wise
-  spatial-window/time-batch mapping does not.
+  spatial-window/time-batch mapping is deferred to the large-raster plan.
 - [x] Add time-coordinate equality and explicit alignment validation.
 - [x] Make approved temporal reducers produce composable spatial expressions
   using existing streaming accumulators where semantics match.
@@ -1452,7 +1464,8 @@ Acceptance evidence:
   scalar-left ops, grid rejection, time contract, reducer semantics,
   file-backed execution, and `compute()` integration; 3,000-layer streaming
   not yet exercised. The 3,000-layer case is in-memory; file-backed stress
-  coverage currently uses 200 layers.)*
+  coverage currently uses 200 layers. Further scaling evidence is deferred to
+  the large-raster plan.)*
 - [x] Ensure no temporal helper constructs a full file-backed cube unless the
   caller explicitly requests materialization.
 
@@ -1476,11 +1489,12 @@ Acceptance evidence:
   identity distinctions and complete explanation/planning examples are not
   published.
 - [ ] Add runnable examples for terrain-lighting screening, weighted scoring,
-  hazard clearance, focal cleanup, zonal candidate summaries, large file-backed
-  expressions, and temporal threshold summaries.
+  hazard clearance, focal cleanup, zonal candidate summaries, and temporal
+  threshold summaries. Large file-backed examples are owned by the deferred
+  large-raster plan.
   **PARTIAL:** screening, focal cleanup, and temporal examples exist;
-  weighted scoring, zonal candidate summary, hazard clearance, and genuinely
-  bounded large-file examples remain incomplete or deferred.
+  weighted scoring, zonal candidate summary, and hazard clearance remain
+  incomplete in the core plan.
 - [x] Use synthetic lunar grids and downloadable lunar products where needed;
   no example may depend on an unmentioned Earth dataset.
 - [ ] Include a QGIS inspection example proving valid zero values remain visible
@@ -1490,9 +1504,11 @@ Acceptance evidence:
 - [ ] Add an "assistant proposes, human reviews, library validates" example in
   which an expression is explained and dry-run before execution. Keep tool
   authorization in the example application, not Lunarscout.
-  **DEFERRED TO 0.3** until planner output is decision-useful.
-- [ ] Record CPU correctness and bounded-memory benchmarks.
-  **DEFERRED TO 0.3:** Section 8 remains unfrozen.
+  **PARTIAL:** read-only planning exists, but explanation and example quality
+  remain core work.
+- [ ] Record CPU correctness benchmarks for the eager/core surface.
+  **PARTIAL:** correctness tests exist; a concise retained benchmark record is
+  absent. Bounded-memory benchmarks are deferred to the large-raster plan.
 - [x] Build wheel and sdist, inspect contents, run Twine checks, and test the
   installed artifacts without the checkout on `PYTHONPATH`.
 - [x] Run the complete ordinary CPU suite with:
@@ -1514,14 +1530,14 @@ Acceptance evidence:
 
 ## 7. Test matrix
 
-Every operation family must cover the following relevant dimensions. Use
-small analytic arrays for semantics and larger generated rasters for execution
-and memory behavior.
+Every operation family must cover the following relevant dimensions. Use small
+analytic arrays for core semantics. Large generated rasters, window-order
+matrices, cancellation/resume matrices, and memory-scaling evidence are owned
+by the deferred large-raster plan.
 
 **PARTIAL:** eager tests cover much of this matrix, but no row is checked until
-the accepted operations cover its full relevant cross-product. Window,
-identity, cancellation/resume, and resource-limit dimensions are principally
-**DEFERRED TO 0.3**.
+the accepted core operations cover its relevant cross-product. Identity remains
+core work; large-raster execution and resource dimensions are deferred.
 
 - [ ] Dtypes: bool, signed/unsigned integers at supported widths, float32, and
   float64.
@@ -1558,65 +1574,15 @@ identity, cancellation/resume, and resource-limit dimensions are principally
 
 ## 8. Performance and resource requirements
 
-Absolute pixels-per-second requirements would be misleading before reference
-hardware, storage, compression, dtype, mask density, and expression complexity
-are fixed. Performance acceptance therefore uses a checked-in benchmark
-definition, a recorded same-machine baseline, relative regression gates, and
-hard resource-scaling requirements. Freeze the baseline table before accepting
-optimized Phase C or later kernels; do not move its targets merely to make a
-regression pass.
+All large-raster performance, memory-scaling, cache/queue bound, and
+file-backed throughput requirements have moved to
+`docs/map-algebra-large-raster-plan.md` and are **DEFERRED by project
+decision**. Existing ordinary correctness tests do not constitute empirical
+resource-scaling evidence.
 
-This section is **DEFERRED TO 0.3** because its resource claims require the
-bounded spatial planner. Existing eager correctness tests are not evidence of
-bounded memory or file-backed throughput.
-
-- [ ] Define benchmark classes for: one-source local arithmetic, three-source
-  Boolean overlay, a five-node fused local expression, 3x3 and 31x31 focal
-  operations, global reduction, sparse/dense zonal reduction, sparse/dense
-  distance seeds, one temporal layer-wise expression, and one temporal
-  reduction over approximately 3,000 layers.
-- [ ] For every benchmark record grid dimensions, dtype, valid fraction,
-  compression, block size, source/output storage, cold/warm state, backend,
-  worker count, dependency versions, CPU/GPU, RAM, and storage device.
-- [ ] Report planning, source open/read, JIT/compile, host-device transfer,
-  kernel, synchronization, mask, reduction, compression, journal, close, and
-  publication time where applicable rather than only wall-clock total.
-- [ ] Record median and dispersion over at least five warm runs after one
-  untimed warm-up for short operations. Long regional benchmarks may use three
-  runs with the reason recorded.
-- [ ] On the same reference environment, fail performance review for an
-  unexplained warm median regression greater than 15 percent or peak-memory
-  regression greater than 10 percent against the accepted baseline.
-- [ ] Accept a more complex optimized kernel only when it improves the target
-  workload by at least 20 percent in warm elapsed time, or provides a separately
-  documented material memory/I/O benefit, without violating correctness.
-- [ ] Measure simple local file-backed expressions against a tiled
-  read-and-write copy baseline. Record the ratio and explain compute overhead;
-  set operation-specific target ratios after the first reference
-  implementation rather than inventing hardware-independent throughput.
-- [ ] Establish eager-size guidance in documentation rather than guessing from
-  available RAM automatically.
-- [ ] File-backed local/focal execution peak memory must be expressible as
-  `O(active_sources * window_with_halo + active_intermediates * window)`.
-- [ ] Verify bounded-memory behavior at three increasing raster dimensions.
-  With window and concurrency settings held constant, peak resident memory may
-  not grow by more than 10 percent plus measurement noise when raster area
-  increases by at least 16 times; temporary/output disk may scale with area.
-- [ ] Dataset-handle caches, window caches, queues, worker counts, and temporary
-  files have explicit configurable upper bounds.
-- [ ] Default worker counts must not multiply memory beyond the documented
-  bound.
-- [ ] Global/zonal reducers use bounded accumulator state, except explicitly
-  requested exact algorithms whose memory cost is preflighted and documented.
-- [ ] Progress reports planning, reading/calculation, reduction passes, writing,
-  and publication with completed/total bounded work units.
-- [ ] Cancellation is checked between source reads, kernels, reduction merges,
-  output writes, journal flushes, and publication.
-- [ ] Benchmarks include a representative lunar DEM and masks but do not make
-  correctness depend on private mission data.
-- [ ] Store benchmark commands, machine-readable results, and a short
-  interpretation under `scripts/` and `docs/`; do not encode one developer's
-  absolute throughput as a universal hardware promise.
+Core-plan performance work is limited to avoiding obvious eager regressions and
+documenting notebook-size guidance where evidence already exists. No new
+large-raster benchmark gate is required while the separate plan is deferred.
 
 ## 9. Documentation required for each public operation
 
@@ -1647,6 +1613,10 @@ contract below is not yet present or linked to registry metadata.
 Keep these visible so an implementation agent does not expand scope while
 trying to make an example convenient:
 
+- [x] No further large-raster execution expansion in the active core plan.
+  Windowed focal kernels, cross-window reconciliation, streaming reducers,
+  bounded distance/temporal execution, fusion, and scaling evidence are tracked
+  only in `docs/map-algebra-large-raster-plan.md` and are deferred by decision.
 - [x] No automatic reprojection or grid selection during algebra.
 - [x] No sentinel `GeoReference` or coordinate-free `Raster`; use NumPy for
   non-spatial arrays.
@@ -1681,23 +1651,22 @@ checked:
   distance inventory with consistent grids, validity, dtype, and units.
   **PARTIAL:** the implemented eager subset is well tested, but the full
   accepted inventory and every policy branch are not complete.
-- [ ] The accepted file-backed inventory executes with bounded memory and
-  durable, resumable, atomic output.
-  **DEFERRED TO 0.3:** atomic output exists; bounded execution and resumability
-  do not.
-- [ ] Eager and file-backed implementations agree against independent
-  references.
-  **DEFERRED TO 0.3.**
+- [x] The currently advertised file-backed inventory executes with bounded
+  windows and durable, resumable, atomic output. Expansion of that inventory is
+  not a core-plan acceptance gate and is deferred to the large-raster plan.
+- [x] The currently advertised eager/file-backed overlap has parity evidence
+  for local, coordinate, terrain, and reviewed resampling operations. Future
+  operation families are deferred to the large-raster plan.
 - [x] Dataset masks survive read, calculation, and write without conflating
   valid zero with invalid data.
 - [x] Lunar projected, anisotropic, and rotated grid cases pass; unsafe
   Earth-specific or body-ambiguous assumptions are absent or rejected.
 - [x] Existing terrain, temporal, region, horizon, lighting, and scenario APIs
   remain compatible and their tests pass.
-- [ ] Documentation and runnable examples cover both notebook-sized and
-  mission-region workflows.
-  **PARTIAL:** notebook/eager examples exist; a genuinely bounded large
-  file-backed mission-region workflow does not.
+- [ ] Documentation and runnable examples cover the accepted notebook-sized
+  core workflows.
+  **PARTIAL:** family-level and several runnable examples exist, but the
+  operation reference and the core examples listed in Phase I remain incomplete.
 - [ ] Operation discovery, expression explanation, dry-run planning, canonical
   provenance, and repair-oriented structured errors are sufficient for a
   future assisting model to propose an auditable calculation without granting

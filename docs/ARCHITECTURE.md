@@ -974,6 +974,11 @@ expression nodes from any combination of eager and lazy operands.
 
 ### 20.7 Modules
 
+Further map-algebra work whose primary purpose is processing rasters too large
+for memory is deferred by project decision. The implemented bounded subset
+remains supported; its status and the deferred expansion are tracked in
+`map-algebra-large-raster-plan.md`.
+
 ```text
 src/lunarscout/
   raster.py                      # public eager Raster value

@@ -6,6 +6,18 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra planning split.** Further work whose primary purpose is
+  processing maps too large for memory is deferred by project decision and
+  moved from the core implementation plan into
+  ``docs/map-algebra-large-raster-plan.md``. The new plan records the completed
+  planner, bounded local/coordinate/terrain/resampling execution, durable writer
+  lifecycle, and read-only diagnostics, plus the deferred halo/focal,
+  cross-window region, streaming global/zonal, bounded distance, temporal
+  batching, concurrency, and empirical resource-scaling work. Existing bounded
+  capabilities remain supported. The active core plan now focuses on numeric
+  and validity consistency, eager API gaps, identity/registry completeness,
+  structured errors, documentation, and adversarial tests.
+
 - **Map-algebra 0.3 critical-path slice 3: writer lifecycle control.**
   ``ma.write()`` now accepts optional ``progress_callback`` (reports completed
   windows, total windows, and current window index after each successfully

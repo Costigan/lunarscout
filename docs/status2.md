@@ -114,14 +114,16 @@ The exact broader totals above are recorded after the final verification run.
 - A process/power crash between the two final TIFF/manifest renames is not a
   transactional multi-file commit; normal raised exceptions are rolled back.
 - General focal statistics/convolution/morphology window kernels and arbitrary
-  footprint-derived halos remain deferred.
+  footprint-derived halos remain deferred under
+  `docs/map-algebra-large-raster-plan.md`.
 - Local fusion, region adapters, bounded global/zonal/distance execution,
   temporal spatial-window/time-batch mapping, and empirical resource-scaling
-  evidence remain deferred.
+  evidence are now separated and deferred under that plan. Eager region
+  adapters remain active core work.
 - TestPyPI publication remains intentionally skipped by project decision.
 
 ## Next Dependency-Ordered Task
 
-Implement general focal statistics, convolution, and morphology window
-execution with footprint-derived asymmetric halos, preserving eager/windowed
-parity and the lifecycle guarantees above.
+The previously recommended focal-window slice is superseded by the decision to
+defer large-raster expansion. The next active core task is to centralize numeric
+policy, dtype inference, validity helpers, and structured error translation.

@@ -1349,6 +1349,11 @@ The API has two modes with visibly different entry points:
    temporal nodes fail during planning rather than silently materializing the
    complete raster.
 
+Further large-raster execution coverage is deferred by project decision. Its
+completed foundations and remaining tiled, streaming, reconciliation, temporal,
+and resource-scaling work are tracked in
+`docs/map-algebra-large-raster-plan.md`.
+
 Never pass a file path to an eager operation. Use `ma.read()` to read a
 GeoTIFF as an in-memory `Raster`, or `ma.source()` to defer reading.
 
