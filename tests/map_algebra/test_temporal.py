@@ -22,6 +22,7 @@ from lunarscout.map_algebra._temporal_model import (
 from lunarscout.map_algebra import (
     compute,
     compute_temporal,
+    describe_operation,
     temporal_source,
     temporal_mean,
     temporal_min,
@@ -637,7 +638,7 @@ class TestTemporalReductions:
         tr = _make_temporal_raster(num_layers=3)
         result = temporal_sum(tr)
         assert isinstance(result, _Raster)
-        assert result.dtype == np.dtype(np.float64)
+        assert result.dtype == np.dtype(np.float32)
 
     def test_reduction_on_eager_temporal_raster_count(self):
         tr = _make_temporal_raster(num_layers=3)
@@ -1295,7 +1296,72 @@ class TestReducerSemantics:
         tr = _make_temporal_raster(num_layers=3, dtype=np.dtype(np.int16))
         eager = temporal_sum(tr)
         expression = temporal_sum(tr.expression())
-        assert eager.dtype == expression.dtype == np.dtype(np.float64)
+        assert eager.dtype == expression.dtype == np.dtype(np.int64)
+
+    @pytest.mark.parametrize("reducer", [temporal_mean, temporal_std, temporal_sum])
+    def test_float32_reducers_stay_float32_in_eager_and_expression(self, reducer):
+        tr = _make_temporal_raster(num_layers=7, dtype=np.dtype(np.float32))
+        eager = reducer(tr)
+        deferred = reducer(tr.expression())
+        computed = compute(deferred)
+
+        assert eager.dtype == deferred.dtype == computed.dtype == np.dtype(np.float32)
+        np.testing.assert_allclose(computed.values, eager.values, rtol=2e-6, atol=2e-6)
+        np.testing.assert_array_equal(computed.valid, eager.valid)
+
+    @pytest.mark.parametrize("reducer", [temporal_mean, temporal_std, temporal_sum])
+    def test_float64_reducers_remain_float64(self, reducer):
+        tr = _make_temporal_raster(num_layers=4, dtype=np.dtype(np.float64))
+        eager = reducer(tr)
+        computed = compute(reducer(tr.expression()))
+        assert eager.dtype == computed.dtype == np.dtype(np.float64)
+        np.testing.assert_allclose(computed.values, eager.values)
+
+    def test_unsigned_sum_is_exact_beyond_float64_integer_range(self):
+        georef = _make_georef(width=2, height=1)
+        values = np.array(
+            [
+                [[2**53 + 1, 2**63]],
+                [[2, 3]],
+                [[4, 5]],
+            ],
+            dtype=np.uint64,
+        )
+        tr = TemporalRaster(
+            values=values,
+            times=_make_times(3),
+            georef=georef,
+            valid=np.ones_like(values, dtype=np.bool_),
+        )
+        expected = np.array([[2**53 + 7, 2**63 + 8]], dtype=np.uint64)
+
+        eager = temporal_sum(tr)
+        deferred = temporal_sum(tr.expression())
+        computed = compute(deferred)
+
+        assert eager.dtype == deferred.dtype == computed.dtype == np.dtype(np.uint64)
+        np.testing.assert_array_equal(eager.values, expected)
+        np.testing.assert_array_equal(computed.values, expected)
+
+    def test_integer_mean_and_std_use_cpu_float64_correctness_path(self):
+        tr = _make_temporal_raster(num_layers=4, dtype=np.dtype(np.int32))
+        for reducer in (temporal_mean, temporal_std):
+            eager = reducer(tr)
+            computed = compute(reducer(tr.expression()))
+            assert eager.dtype == computed.dtype == np.dtype(np.float64)
+            np.testing.assert_allclose(computed.values, eager.values)
+
+    def test_reducer_registry_metadata_matches_public_contract(self):
+        for operation in ("temporal.mean", "temporal.std", "temporal.sum"):
+            description = describe_operation(operation)
+            assert description["arity"] == 1
+            assert description["version"] == 2
+            assert description["output_dtype_rule"] == "accumulator_dtype(source_dtype)"
+        std_parameters = {
+            parameter["name"]
+            for parameter in describe_operation("temporal.std")["parameters"]
+        }
+        assert std_parameters == {"ddof"}
 
     def test_mean_preserves_units(self):
         tr = _make_temporal_raster(num_layers=4)
@@ -1346,6 +1412,7 @@ class TestFileBackedSourceExecution:
         reduced = temporal_mean(expr)
         result = ma_compute(reduced)
         assert isinstance(result, _Raster)
+        assert reduced.dtype == result.dtype == np.dtype(np.float32)
         np.testing.assert_array_almost_equal(result.values, np.ones((8, 10), dtype=np.float32))
 
         series.close()

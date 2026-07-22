@@ -1996,9 +1996,18 @@ Reductions are evaluated eagerly when applied directly to a `TemporalRaster`
 (returning `Raster`), or deferred when applied to a `TemporalRasterExpression`
 (returning `RasterExpression`). Supported reductions: `ma.temporal_mean`,
 `ma.temporal_min`, `ma.temporal_max`, `ma.temporal_std` (with `ddof`),
-`ma.temporal_sum`, `ma.temporal_count`. Reducer output dtypes use `float64`
-accumulators for mean, std, and floating sum; `int64` for integer sum and
-count; and the source dtype for min and max. `temporal_count` has no units.
+`ma.temporal_sum`, `ma.temporal_count`. Reducer accumulator and output dtypes
+are source-sensitive. A `float32` mean, standard deviation, or sum stays in
+FP32; a `float64` source stays in FP64. Signed and unsigned integer sums use
+`int64` and `uint64`, respectively, so integer payloads are not routed through
+FP64 (Boolean sums use `int64`). Integer mean and standard deviation use the
+CPU/interchange FP64 correctness path because their fractional results can
+otherwise collapse adjacent large integers. Count uses `int64`; min and max
+preserve the source dtype. Fixed-width integer sums retain normal NumPy
+overflow behavior if the mathematical total exceeds the accumulator range.
+These dtype choices do not imply CUDA execution: 64-bit integer and FP64
+reducers are CPU correctness paths under Lunarscout's consumer-GPU policy.
+`temporal_count` has no units.
 The bounded spatial writer does not yet execute temporal reduction nodes;
 materialize them explicitly with `ma.compute()` before writing.
 

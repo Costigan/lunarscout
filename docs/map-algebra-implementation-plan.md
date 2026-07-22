@@ -15,7 +15,7 @@ real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (unit-bearing power contract)
+Last updated: 2026-07-22 (temporal accumulator consistency)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -538,8 +538,12 @@ stored.
   windowed execution. Integer power uses bounded repeated squaring.
 - [x] Integer reductions use an accumulator dtype that prevents ordinary small
   raster overflow; document exact sum/count/mean/std output rules.
-  *(accumulator_dtype() uses int64 for signed integers, uint64 for unsigned
-  integers, preserves float32, and uses float64 for float64.)*
+  *(`accumulator_dtype()` is enforced by eager and layer-streamed temporal
+  reducers: sums use int64 for signed and Boolean inputs and uint64 for
+  unsigned inputs; FP32 mean/std/sum remain FP32; FP64 remains FP64; integer
+  mean/std use the CPU/interchange FP64 correctness path; count uses int64;
+  and min/max preserve the source dtype. Fixed-width sum overflow retains
+  NumPy behavior beyond the accumulator range.)*
 - [x] Integer arithmetic does not silently saturate. ``overflow="wrap"`` follows
   NumPy, ``overflow="raise"`` is the public default for checked eager integer
   operations, and ``overflow="promote"`` promotes to a safe supported dtype.
@@ -1083,7 +1087,9 @@ Implement and unit-test private helpers with single responsibilities:
 - [ ] `_result_dtype(operation, operand_dtypes, scalars, parameters)` is the
   sole dtype-inference entry point.
 - [ ] `_accumulator_dtype(operation, source_dtype)` defines streaming
-  accumulator precision.
+  accumulator precision. **PARTIAL:** the shared rule is authoritative for
+  eager and layer-streamed temporal reducers; focal accumulator paths have not
+  yet been reconciled.
 - [x] `_checked_integer_kernel(...)` detects overflow without allocating
   unbounded temporary arrays and without converting integer operands or
   results to floating point. Checks must be expressible as bounded native
@@ -1121,8 +1127,11 @@ performs ordinary FP32 and Boolean/8/16-bit work in FP32; explicit FP64
 statistics, out-of-FP32-range statistics, FP64 sources, and 32/64-bit integer
 sources select the documented CPU/interchange FP64 path. Int32 remains there
 until a native-32-bit centering algorithm proves large-adjacent-integer
-correctness. Focal and temporal accumulator paths remain to be reconciled and
-are not claimed complete.
+correctness. Temporal mean/std/sum now use the shared accumulator rule in both
+eager and layer-streamed execution, preserve FP32, and sum signed/unsigned
+integers through exact fixed-width CPU accumulators without an FP64
+intermediary. Focal accumulator paths remain to be reconciled and are not
+claimed complete.
 
 Unit-bearing power now uses one shared unit helper across eager and expression
 construction. The declared derived unit is replayed by compute/windowed

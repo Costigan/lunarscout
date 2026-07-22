@@ -863,6 +863,18 @@ an inexact floating dtype. These rules apply equally to eager, windowed, and
 future CUDA kernels; on CUDA, a required 64-bit exact operation makes the node
 ineligible for the normal GPU fast path.
 
+Temporal reduction construction and execution share one accumulator-dtype
+rule. FP32 mean, standard deviation, and sum use FP32 storage and arithmetic;
+FP64 sources use FP64. Signed and unsigned integer sums use fixed-width
+``int64`` and ``uint64`` CPU accumulators (Boolean sums use ``int64``), never
+an FP64 intermediary. Integer mean and standard deviation deliberately use
+the CPU/interchange FP64 correctness path, while count is ``int64`` and
+min/max preserve the source dtype. Eager in-memory and layer-streamed
+expression execution enforce the same rule. Fixed-width sums are not arbitrary
+precision and retain NumPy overflow behavior beyond their accumulator range.
+None of the 64-bit contracts makes a reducer eligible for a future CUDA hot
+path; accelerator planning must apply the routing rule above.
+
 Integer power follows the same contract through bounded repeated squaring and
 per-multiply integer boundary checks; it does not call a floating-point power
 kernel to decide overflow. Cast safety has two independent layers: NumPy's

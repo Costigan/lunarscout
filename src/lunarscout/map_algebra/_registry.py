@@ -420,7 +420,24 @@ _SPECS = (
     _spec("distance.to", 1, "distance", "Calculate distance to Boolean seed cells.", cost_class="global"),
     _spec("distance.signed", 1, "distance", "Calculate a signed distance field.", cost_class="global"),
     *(
-        _spec(f"temporal.{name}", 1, "temporal", f"Apply temporal {name}.", cost_class="temporal")
+        _spec(
+            f"temporal.{name}",
+            1,
+            "temporal",
+            f"Apply temporal {name}.",
+            version=2 if name in {"mean", "std", "sum"} else 1,
+            parameters=(
+                (("ddof", "Non-negative finite delta degrees of freedom."),)
+                if name == "std" else ()
+            ),
+            output_dtype_rule=(
+                "accumulator_dtype(source_dtype)"
+                if name in {"mean", "std", "sum", "count"}
+                else "source dtype"
+            ),
+            output_units_rule="None" if name == "count" else "source units",
+            cost_class="temporal",
+        )
         for name in ("mean", "min", "max", "std", "sum", "count")
     ),
     _spec("temporal.source", 0, "source", "Read a file-backed temporal series.", cost_class="temporal"),

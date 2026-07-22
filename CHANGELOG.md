@@ -6,6 +6,22 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra numeric consistency, part 8: temporal accumulators.** Made the
+  shared accumulator-dtype policy authoritative for eager and layer-streamed
+  temporal reductions. FP32 mean, standard deviation, and sum now execute and
+  return FP32 instead of being unconditionally promoted to FP64; FP64 sources
+  remain FP64. Signed, unsigned, and Boolean sums use `int64`, `uint64`, and
+  `int64` CPU accumulators respectively, preserving exact `uint64` values
+  beyond `2**53` instead of routing integer payloads through FP64. Integer
+  mean/std retain the documented CPU/interchange FP64 correctness path, count
+  remains `int64`, and min/max preserve source dtype. Eager, in-memory
+  expression, and file-backed expression behavior now share the contract.
+  Bumped `temporal.mean`, `temporal.std`, and `temporal.sum` to semantic
+  version 2 and aligned registry metadata, user guidance, architecture, and
+  the implementation plan. Verification: 1739 passed, 17 skipped in the
+  ordinary CPU suite; 1277 map-algebra tests passed; 141 focused temporal
+  tests passed; fresh-process public API and import-side-effect audit passed.
+
 - **Map-algebra numeric consistency, part 7: unit-bearing power.** Added the
   public `output_units` contract to `ma.power`. A unit-bearing raster base now
   requires a scalar exponent; exponent one preserves source units, while every

@@ -238,13 +238,37 @@ def accumulator_dtype(
     *,
     operation: str,
 ) -> np.dtype[Any]:
-    if np.issubdtype(source_dtype, np.unsignedinteger):
-        return np.dtype(np.uint64)
-    if np.issubdtype(source_dtype, np.signedinteger):
+    """Return the enforced accumulator/output dtype for a reduction.
+
+    FP32 reductions stay in FP32.  Integer sums use exact fixed-width CPU
+    accumulators; integer mean/std use FP64 because their fractional results
+    cannot in general be represented without losing adjacent large values.
+    """
+    source = normalize_dtype(source_dtype, operation=operation)
+    reduction = operation.removeprefix("temporal.")
+
+    if reduction in {"min", "max"}:
+        return source
+    if reduction == "count":
         return np.dtype(np.int64)
-    if source_dtype == np.dtype(np.float32):
-        return np.dtype(np.float32)
-    return np.dtype(np.float64)
+    if reduction == "sum":
+        if np.issubdtype(source, np.unsignedinteger):
+            return np.dtype(np.uint64)
+        if np.issubdtype(source, np.signedinteger) or source == np.dtype(np.bool_):
+            return np.dtype(np.int64)
+        if source == np.dtype(np.float32):
+            return np.dtype(np.float32)
+        return np.dtype(np.float64)
+    if reduction in {"mean", "std"}:
+        if source == np.dtype(np.float32):
+            return np.dtype(np.float32)
+        return np.dtype(np.float64)
+
+    raise MapAlgebraDTypeError(
+        f"Unsupported accumulator operation '{operation}'.",
+        code="map_algebra_unknown_accumulator_operation",
+        details={"operation": operation, "source_dtype": source.name},
+    )
 
 
 def _dtype_bounds(dtype: np.dtype[Any]) -> tuple[int, int]:

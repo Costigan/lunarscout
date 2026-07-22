@@ -133,13 +133,32 @@ def temporal_count(expr: TemporalRasterExpression | TemporalRaster) -> RasterExp
 def _eager_temporal_reduce(tr: TemporalRaster, operation: str, **opts: Any) -> Raster:
     valid_3d = tr.valid
     values = tr.values
+    output_dtype = _reduction_output_dtype(f"temporal.{operation}", values.dtype)
+    assert output_dtype is not None
 
-    if operation == "mean":
-        if not np.any(valid_3d):
-            result = np.full(tr.spatial_shape, np.nan, dtype=np.float64)
+    if operation in {"mean", "std"}:
+        count = np.zeros(tr.spatial_shape, dtype=np.int64)
+        mean = np.zeros(tr.spatial_shape, dtype=output_dtype)
+        m2 = np.zeros(tr.spatial_shape, dtype=output_dtype)
+        for layer_values, layer_valid in zip(values, valid_3d, strict=True):
+            previous = count[layer_valid].astype(output_dtype, copy=False)
+            samples = layer_values[layer_valid].astype(output_dtype, copy=False)
+            delta = samples - mean[layer_valid]
+            new_count = previous + output_dtype.type(1)
+            mean[layer_valid] += delta / new_count
+            if operation == "std":
+                m2[layer_valid] += delta * (samples - mean[layer_valid])
+            count[layer_valid] += 1
+
+        if operation == "mean":
+            result = mean
         else:
-            masked = np.ma.array(values.astype(np.float64), mask=~valid_3d)
-            result = np.asarray(masked.mean(axis=0))
+            ddof = opts.get("ddof", 0)
+            result = np.zeros(tr.spatial_shape, dtype=output_dtype)
+            result_valid = count > ddof
+            denominator = count.astype(output_dtype, copy=False) - output_dtype.type(ddof)
+            np.divide(m2, denominator, out=result, where=result_valid)
+            np.sqrt(result, out=result)
     elif operation == "min":
         cond = valid_3d
         if np.issubdtype(values.dtype, np.bool_):
@@ -162,17 +181,10 @@ def _eager_temporal_reduce(tr: TemporalRaster, operation: str, **opts: Any) -> R
         result = np.max(np.where(cond, values, neutral), axis=0).astype(
             values.dtype, copy=False,
         )
-    elif operation == "std":
-        ddof = opts.get("ddof", 0)
-        if not np.any(valid_3d):
-            result = np.full(tr.spatial_shape, np.nan, dtype=np.float64)
-        else:
-            masked = np.ma.array(values.astype(np.float64), mask=~valid_3d)
-            result = np.asarray(masked.std(axis=0, ddof=ddof))
     elif operation == "sum":
         cond = valid_3d
         result = np.sum(
-            np.where(cond, values, 0), axis=0, dtype=np.float64,
+            np.where(cond, values, 0), axis=0, dtype=output_dtype,
         )
     elif operation == "count":
         result = np.sum(valid_3d, axis=0, dtype=np.int64)
@@ -220,10 +232,18 @@ def _reduce_temporal_expression(
         )
 
     shape = (grid.height, grid.width)
+    source_dtype = expression.dtype
+    if source_dtype is None:  # pragma: no cover - grid-bearing nodes infer dtype
+        raise MapAlgebraExpressionError(
+            "Cannot reduce a temporal expression with no dtype.",
+            code="temporal_no_dtype",
+        )
+    output_dtype = _reduction_output_dtype(f"temporal.{operation}", source_dtype)
+    assert output_dtype is not None
     count = np.zeros(shape, dtype=np.int64)
     aggregate: np.ndarray | None = None
-    mean = np.zeros(shape, dtype=np.float64)
-    m2 = np.zeros(shape, dtype=np.float64)
+    mean = np.zeros(shape, dtype=output_dtype)
+    m2 = np.zeros(shape, dtype=output_dtype)
 
     for layer in _iter_temporal_layers(expression):
         valid = layer.valid
@@ -233,13 +253,13 @@ def _reduce_temporal_expression(
             continue
         if operation == "sum":
             if aggregate is None:
-                aggregate = np.zeros(shape, dtype=np.float64)
-            aggregate[valid] += values[valid].astype(np.float64, copy=False)
+                aggregate = np.zeros(shape, dtype=output_dtype)
+            aggregate[valid] += values[valid].astype(output_dtype, copy=False)
         elif operation in {"mean", "std"}:
-            previous = count[valid].astype(np.float64, copy=False)
-            samples = values[valid].astype(np.float64, copy=False)
+            previous = count[valid].astype(output_dtype, copy=False)
+            samples = values[valid].astype(output_dtype, copy=False)
             delta = samples - mean[valid]
-            new_count = previous + 1.0
+            new_count = previous + output_dtype.type(1)
             mean[valid] += delta / new_count
             if operation == "std":
                 m2[valid] += delta * (samples - mean[valid])
@@ -266,9 +286,10 @@ def _reduce_temporal_expression(
         output_valid = count > 0
         units = expression.units
     elif operation == "std":
-        output = np.zeros(shape, dtype=np.float64)
+        output = np.zeros(shape, dtype=output_dtype)
         output_valid = count > ddof
-        np.divide(m2, count - ddof, out=output, where=output_valid)
+        denominator = count.astype(output_dtype, copy=False) - output_dtype.type(ddof)
+        np.divide(m2, denominator, out=output, where=output_valid)
         np.sqrt(output, out=output)
         units = expression.units
     else:

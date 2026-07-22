@@ -715,16 +715,14 @@ def _temporal_reduction_node(op_id: str, expr: TemporalRasterExpression, **param
 def _reduction_output_dtype(op_id: str, source_dtype: np.dtype[Any] | None) -> np.dtype[Any] | None:
     if source_dtype is None:
         return None
-    sd = np.dtype(source_dtype)
-    if op_id in ("temporal.mean", "temporal.std"):
-        return np.dtype(np.float64)
-    if op_id == "temporal.sum":
-        return np.dtype(np.float64)
-    if op_id == "temporal.count":
-        return np.dtype(np.int64)
-    if op_id in ("temporal.min", "temporal.max"):
-        return sd
-    return sd
+    from ._dtypes import accumulator_dtype
+
+    if op_id in {
+        "temporal.mean", "temporal.min", "temporal.max",
+        "temporal.std", "temporal.sum", "temporal.count",
+    }:
+        return accumulator_dtype(np.dtype(source_dtype), operation=op_id)
+    return np.dtype(source_dtype)
 
 
 def _reduction_output_units(op_id: str, source_units: str | None) -> str | None:
