@@ -107,6 +107,38 @@ Ordinary tests remain CPU-only. Real CUDA tests must be explicitly gated with
 Do not treat sandbox GPU visibility failures as evidence that the host lacks a
 GPU.
 
+## Completion Discipline
+
+When a request contains an inventory, checklist, implementation plan, review
+findings, or grouped set of items, treat every item as a separate acceptance
+criterion. Before reporting completion:
+
+1. Re-read the original request and reconcile every item against the final
+   diff. State any item that remains deferred, partial, or unsupported; never
+   silently omit it or describe scaffolding as implementation.
+2. Trace each new public capability end to end: public import, argument
+   validation, eager and expression dispatch where promised, execution,
+   serialization or registry metadata where applicable, documentation, and
+   tests. A helper or descriptor that production code never calls is not a
+   completed feature.
+3. Test behavior through the public API in a fresh process. Do not rely only on
+   direct private-function tests or test-order side effects such as a registry
+   populated by earlier tests.
+4. Add focused tests for the meaningful failure and boundary cases named by
+   the plan, especially invalid inputs, all-invalid rasters, exact integer
+   limits (including ``uint64``), non-finite values, unit metadata, non-metre
+   and rotated grids, eager/expression parity, and deterministic identity.
+5. Run focused tests while developing, then the complete ordinary CPU suite
+   before declaring the work finished. Also run ``git diff --check`` and
+   inspect ``git status --short`` so untracked files and unintended changes are
+   included in the review.
+6. Update checkboxes, changelog claims, test counts, and documentation only to
+   the level supported by the implementation and verification evidence.
+
+Passing tests are necessary but not sufficient. If the tests do not exercise
+the requested public integration, add the missing coverage rather than using
+the green suite as evidence that the inventory is complete.
+
 ## Examples and Scripts
 
 Executable examples live in `examples/`. Utility and local validation scripts

@@ -1,12 +1,17 @@
 # Broad Map-Algebra API Implementation Plan
 
-Status: Phases A–H implemented with documented deferrals; Phase I documentation
-and examples implemented but API reference tables, operation catalog, QGIS
-example, and benchmarks are deferred; TestPyPI publication of 0.2.0rc1 pending.
+Status: The eager ``0.2`` map-algebra surface, expression construction and
+eager materialization, temporal streaming reducers, documentation, examples,
+and local release-artifact checks are implemented. Bounded spatial expression
+execution and the APIs that depend on it are deferred to ``0.3``. Registry
+metadata, identity separation, per-operation reference documentation, and
+resource/performance evidence remain partial. TestPyPI publication is skipped
+by project decision; there are no external users for a useful candidate cycle,
+and publishing will resume at a later milestone intended for real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-21
+Last updated: 2026-07-21 (rigorous reconciliation after Phase I review)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -16,6 +21,51 @@ plans. `docs/ARCHITECTURE.md`, `docs/USER_GUIDE.md`, `docs/PLAN1.md`, and
 
 A checked item means implementation and the stated verification evidence both
 exist. Draft code alone is not sufficient.
+
+Unchecked items are annotated where their state is not simply "not started":
+
+- **PARTIAL** means a useful subset exists, but the complete checkbox claim is
+  not supported by implementation and evidence.
+- **DEFERRED TO 0.3** means the item is intentionally outside the current
+  milestone, normally because it depends on bounded spatial window execution.
+- **SKIPPED BY DECISION** means the work will not be performed for this
+  milestone and is not a release blocker.
+- **NOT APPLICABLE** means the conditional requirement was reviewed but no
+  matching implementation exists in this milestone.
+
+A plain unchecked item under a section-level annotation inherits that section's
+state. Any other plain unchecked item is not started or remains unresolved; it
+is not counted as partial merely because adjacent functionality exists.
+
+### Reconciled milestone summary
+
+| State | Scope |
+| --- | --- |
+| Completed | Public value types and adapters; eager local/classification/normalization operations; expression construction and eager ``compute``; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, global, zonal, and distance operations; temporal adapters and streaming reductions; atomic whole-raster output; user guide, examples, local wheel/sdist checks, and the ordinary CPU suite. |
+| Partial | Operation catalog metadata and coverage; analyst-facing ``explain`` and dry-run ``plan`` detail; distinct scientific/restart/execution-cache identities and golden fixtures; numeric-policy and dtype centralization; focal expression execution; durable restart; exhaustive API tables, test matrix, and benchmarks. |
+| Deferred to 0.3 | Spatial planner, window enumeration, local fusion and source cache; bounded local/focal/coordinate kernels; terrain expression nodes; ``resample_to``; map-algebra region adapters; bounded global/zonal/distance execution; per-window journal/resume and resource-scaling evidence. |
+| Skipped by decision | TestPyPI publication for ``0.2.0rc1``. Local artifact construction, inspection, and isolated installation remain completed evidence. |
+
+### Next implementation sequence
+
+The next major milestone is not four independent operation additions. Bounded
+spatial execution is the critical path:
+
+1. finish the planner, window enumeration, local fusion, bounded source cache,
+   and windowed local/coordinate execution;
+2. make writer progress, cancellation, journaling, and restart operate on those
+   windows;
+3. add halo-aware focal and terrain nodes with whole-array parity;
+4. add explicit cross-grid ``resample_to`` planning and execution;
+5. add region adapters, including cross-window region reconciliation where
+   bounded execution requires it; and
+6. close bounded global/zonal/distance and temporal-mapping gaps, then collect
+   the resource and performance evidence in Sections 7 and 8.
+
+The registry metadata audit, identity separation, API tables, missing eager
+stack helpers, and error-normalization gaps are independent partial work. They
+may be completed before or alongside the ``0.3`` planner, but they do not
+replace it.
 
 ## 1. Outcome and boundaries
 
@@ -59,19 +109,19 @@ The primary lunar mission workflows are:
 The implementation must not assume that terrestrial datasets or terrestrial
 semantics are available. In particular:
 
-- [ ] Require every raster input explicitly; do not download or silently
+- [x] Require every raster input explicitly; do not download or silently
   consult Earth basemaps, SRTM, land cover, roads, coastlines, hydrology, a
   geoid, magnetic models, or weather datasets.
-- [ ] Treat "Earth visibility" as a lunar celestial-geometry product, not as an
+- [x] Treat "Earth visibility" as a lunar celestial-geometry product, not as an
   Earth-surface raster dependency.
-- [ ] Do not assume WGS84, mean sea level, north-up grids, square pixels, or an
+- [x] Do not assume WGS84, mean sea level, north-up grids, square pixels, or an
   Earth radius.
-- [ ] Use the input CRS and affine transform. Reject operations whose requested
+- [x] Use the input CRS and affine transform. Reject operations whose requested
   physical interpretation cannot be derived safely from them.
-- [ ] Keep generic numerical operations planetary-neutral. Put operations that
+- [x] Keep generic numerical operations planetary-neutral. Put operations that
   require a lunar datum, radius, gravity, or other body model in a clearly
   named terrain or lunar-science API with explicit parameters.
-- [ ] Do not fold mission policy into scientific operations. Thresholds,
+- [x] Do not fold mission policy into scientific operations. Thresholds,
   weights, invalid-area treatment, and suitability rules must be caller inputs.
 
 This release does not include route finding, battery simulation, thermal
@@ -303,7 +353,7 @@ sources[]
   versioned helper.
 - [x] Reject parameters that cannot be represented canonically rather than
   falling back to `repr()` or pickle.
-- [ ] Make parsing untrusted expression JSON explicitly out of scope for
+- [x] Make parsing untrusted expression JSON explicitly out of scope for
   `0.2`; serialization is for inspection, provenance, and identity of graphs
   constructed through the Python API.
 
@@ -321,18 +371,22 @@ Use three identities because they answer different questions:
   relevant tuning. It answers "may compiled or tuned execution artifacts be
   reused?"
 
-- [x] Keep Numba/CUDA JIT artifacts and device properties out of scientific
+- [ ] Keep Numba/CUDA JIT artifacts and device properties out of scientific
   and restart identities; bind them only to execution-cache identity.
-  *(scientific identity hashes only operation graph, operands, and sorted
-  params; restart and execution-cache identities not yet distinct.)*
+  **PARTIAL:** scientific identity correctly excludes them, but restart and
+  execution-cache identities are not yet distinct.
 - [ ] A non-semantic implementation refactor must not change scientific or
   restart identity. A change that can alter scientific values or validity must
   bump the operation semantic version; a change to staged-storage
   compatibility must bump the storage/restart version; an implementation-only
   kernel change must invalidate execution-cache identity as needed.
+  **PARTIAL:** operation semantic versions exist, but restart and
+  execution-cache identities are not independently versioned.
 - [ ] Version identity algorithms independently and add golden canonical-JSON
   and digest fixtures so accidental changes are detected during review.
-- [ ] Provide `expression.describe()` and `expression.to_canonical_json()`;
+  **PARTIAL:** canonical JSON and scientific digests exist; independent
+  identity versions and golden fixtures do not.
+- [x] Provide `expression.describe()` and `expression.to_canonical_json()`;
   `describe()` is concise and human-oriented, while canonical JSON is complete
   and machine-oriented.
 
@@ -340,17 +394,20 @@ Use three identities because they answer different questions:
 
 - [x] Every non-scalar raster operand in an operation must use the same grid by
   ``require_same_grid()``. Never accept shape equality as compatibility.
-- [x] Never align implicitly. Users must call eager ``ma.align()`` or expression
+- [ ] Never align implicitly. Users must call eager ``ma.align()`` or expression
   ``ma.resample_to()`` explicitly.
+  **PARTIAL:** implicit alignment is rejected, but these map-algebra adapters
+  are deferred to ``0.3``; the existing root alignment API remains available.
 - [x] Scalars may broadcast over a raster. A length-one or one-dimensional
   array is not a scalar and is rejected.
 - [x] A raster operation needs at least one raster operand so its output grid is
   unambiguous.
 - [x] Preserve rotated and anisotropic affine transforms for local operations.
   *(local ops are pixel-by-pixel; output GeoReference inherits from input.)*
-- [x] Neighborhood and distance operations must calculate halo and physical
+- [ ] Neighborhood and distance operations must calculate halo and physical
   spacing from both affine basis vectors, not merely ``abs(pixel_size_x)``.
-  *(distance uses both vectors; focal halos use pixel-based windows.)*
+  **PARTIAL:** distance uses both vectors; focal operations are defined in
+  pixel neighborhoods and no physical-radius/window-halo planner exists.
 
 ### 2.6 Validity rules
 
@@ -376,7 +433,9 @@ Use these defaults consistently in eager and file-backed execution:
 - [ ] Division by zero, invalid logarithm/square-root domains, and newly
   generated NaN/inf follow a public `numeric_errors=` option with values
   `"invalid"` (default), `"keep"`, and `"raise"`.
-- [ ] File outputs always fill invalid cells deterministically before writing
+  **PARTIAL:** invalid-domain handling exists, but this public three-policy
+  option is not consistently exposed.
+- [x] File outputs always fill invalid cells deterministically before writing
   and write the GDAL mask. Validate that the chosen fill/nodata is exactly
   representable by the output dtype.
 
@@ -399,8 +458,9 @@ stored.
 
 ### 2.7 Dtype rules
 
-- [x] Centralize dtype inference in one helper used by eager and expression
-  modes. *(result_dtype() in _dtypes.py used as sole entry point.)*
+- [ ] Centralize dtype inference in one helper used by eager and expression
+  modes. **PARTIAL:** ``result_dtype()`` is shared broadly, but not yet proven
+  to be the sole path for every operation and scalar boundary.
 - [x] Use documented NumPy 2.x promotion (``np.result_type``) for ordinary
   arithmetic, minimum/maximum, and ``where``, with explicit exceptions below.
 - [x] Comparisons and Boolean operations return ``bool`` in memory.
@@ -432,6 +492,8 @@ dependency until actual lunar workflows justify one.
   ``output_units``; scalar multiplication/division preserves raster units.
 - [ ] Powers require a dimensionless scalar exponent and explicit output units
   for a unit-bearing raster unless exponent is one.
+  **PARTIAL:** scalar exponent validation exists; explicit unit-bearing power
+  output-unit handling is incomplete.
 - [x] Trigonometric operations require ``degrees`` or ``radians``; inverse
   trigonometric operations declare their output angle unit.
 - [x] ``clip``, reclassification, reductions, and comparisons document whether
@@ -449,42 +511,60 @@ deterministic API rather than special "AI" behavior.
 - [ ] Provide machine-readable operation metadata from the sealed registry:
   identifier, summary, operand kinds, parameters with types/defaults/ranges,
   units, output dtype rule, validity rule, execution modes, cost class, and
-  examples.
+  examples. **PARTIAL:** the sealed catalog exposes identifiers and basic rule
+  summaries, but parameter types/defaults/ranges, canonical examples, and some
+  execution-support claims are incomplete.
 - [ ] Provide `ma.describe_operation(id)` and `ma.list_operations(...)` using
   the same metadata that drives validation and documentation, so descriptions
-  cannot silently diverge from code.
-- [x] Provide `ma.explain(expression)` with an ordered plain-language account
+  cannot silently diverge from code. **PARTIAL:** both discovery APIs are
+  public and expression-node construction consults the registry, but
+  documentation/signature validation is not generated from it.
+- [ ] Provide `ma.explain(expression)` with an ordered plain-language account
   of sources, explicit alignments, thresholds, units, validity choices,
   reductions, output encoding, and scientific algorithm versions.
+  **PARTIAL:** a deterministic node-oriented explanation exists, but it does
+  not yet cover all listed scientific choices or semantic versions.
 - [x] State that `explain()` is an audit aid, not evidence that thresholds or
   policy choices are scientifically appropriate. Human or application review
   remains required.
-- [x] Provide `ma.plan(expression, *, output=None)` as a read-only dry run. It
+- [ ] Provide `ma.plan(expression, *, output=None)` as a read-only dry run. It
   validates the graph and reports output grid/dtype/units, source identities,
   passes, halos, estimated peak memory, temporary disk, output size, backend
   availability, and unsupported nodes without calculating or writing pixels.
+  **PARTIAL:** the current read-only summary reports graph/source counts and
+  basic output metadata, but there is no spatial planner and therefore no
+  passes, memory/disk estimates, backend availability, or unsupported-node
+  analysis.
 - [ ] Make threshold inclusivity, angle units, connectivity, edge behavior,
   invalid policy, resampling, and approximate algorithms explicit parameters
   rather than context-dependent defaults where a silent choice could change a
   mission conclusion.
+  **PARTIAL:** implemented families expose most relevant choices; connectivity,
+  resampling, and some numeric/approximation policies remain absent.
 - [x] Return structured errors with stable codes and repair-oriented details
   such as acceptable values, differing grid fields, and the operation/argument
   that failed. Do not include speculative instructions in the library error.
 - [ ] Record canonical expression JSON, an analyst-facing explanation, source
   identities, library version, and output contract in durable provenance so a
-  human can audit what an assisting model proposed.
+  human can audit what an assisting model proposed. **PARTIAL:** whole-raster
+  manifests record scientific identity and a small output contract, not the
+  complete provenance bundle.
 - [ ] Provide deterministic `repr`/description ordering and compact examples
   that avoid aliases. Equivalent supported expressions should normalize to the
-  same scientific identity where semantics truly match.
+  same scientific identity where semantics truly match. **PARTIAL:** canonical
+  node ordering and basic identity stability are tested; equivalence
+  normalization and golden examples are not.
 - [ ] Add adversarial tests for plausible model mistakes: omitted parentheses
   around comparisons, Python `and`/`or`, shape-only matches, degrees versus
   radians, fraction versus encoded byte values, implicit Earth/WGS84
   assumptions, unsafe nodata zero, and accidental eager materialization.
-- [ ] Keep approval, filesystem allowlists, external job submission, and tool
+  **PARTIAL:** truth testing, grid mismatch, unit, validity, and geographic
+  distance mistakes are covered; the complete adversarial set is not.
+- [x] Keep approval, filesystem allowlists, external job submission, and tool
   authorization in the calling application. Lunarscout validates and explains
   calculations but does not decide that an assistant is authorized to execute
   them.
-- [ ] Do not accept generated JSON or text as executable input in `0.2`. A
+- [x] Do not accept generated JSON or text as executable input in `0.2`. A
   future governed parser must have a separately reviewed schema, size/depth
   limits, source policy, and security model.
 
@@ -499,10 +579,10 @@ Support both functions and appropriate `Raster`/`RasterExpression` operators:
 
 - [x] Arithmetic: ``add``, ``subtract``, ``multiply``, ``divide``, ``floor_divide``,
   ``remainder``, ``power``, ``negative``, ``positive``, ``absolute``.
-- [x] Pairwise/stack combination: ``minimum``, ``maximum``, ``sum_layers``,
+- [ ] Pairwise/stack combination: ``minimum``, ``maximum``, ``sum_layers``,
   ``mean_layers``, ``min_layers``, ``max_layers``.
-  *(minimum and maximum implemented; sum_layers/mean_layers/min_layers/
-  max_layers composite stack operations deferred.)*
+  **PARTIAL:** ``minimum`` and ``maximum`` are implemented;
+  ``sum_layers``/``mean_layers``/``min_layers``/``max_layers`` are deferred.
 - [x] Comparisons: ``equal``, ``not_equal``, ``less``, ``less_equal``, ``greater``,
   ``greater_equal``, ``isclose``.
 - [x] Boolean: ``logical_not``, ``logical_and``, ``logical_or``, ``logical_xor``;
@@ -565,6 +645,8 @@ materializes an expression; and `ma.write()` evaluates it in bounded windows.
   `latitude(grid, anchor="center")`, using the grid's own geodetic CRS.
 - [ ] Generate coordinate windows lazily in file mode; do not allocate two
   full coordinate rasters merely to process one output window.
+  **DEFERRED TO 0.3:** coordinate nodes are lazy at construction but eager at
+  materialization until the spatial window executor exists.
 - [x] Clearly label longitude/latitude units and axis order.
 - [x] Do not provide an implicit WGS84 transform.
 
@@ -576,26 +658,37 @@ and crop to the destination window.
 
 - [ ] `focal_sum`, `focal_mean`, `focal_min`, `focal_max`, `focal_range`,
   `focal_std`, `focal_count`, `focal_median`, and selected percentiles.
+  **PARTIAL:** the listed statistics except selected focal percentiles are
+  implemented for eager ``Raster`` inputs. Expression construction exists,
+  but expression execution and window parity are deferred to ``0.3``.
 - [ ] `convolve(kernel, *, normalize=False)` with finite two-dimensional
   numeric kernels only; no arbitrary callback kernels in file mode.
+  **PARTIAL:** eager convolution and validation exist; file-backed execution
+  does not.
 - [ ] `dilate`, `erode`, `opening`, `closing`, and `majority` for Boolean or
   explicitly classified inputs.
+  **PARTIAL:** eager Boolean morphology exists; executable expression nodes do
+  not.
 - [ ] Edge modes: `invalid` (default), `constant`, `nearest`, `reflect`, and
   `wrap`; document that `wrap` is mathematical and usually inappropriate for
-  regional lunar rasters.
+  regional lunar rasters. **PARTIAL:** all modes are implemented eagerly, but
+  the documented caution and file-backed parity evidence are incomplete.
 - [ ] Valid-neighbor policy: `require_all`, `ignore_invalid` with
   `min_valid_count`, or `propagate_center`. Record it in expression identity.
+  **PARTIAL:** the three policies and expression parameters exist, but
+  ``min_valid_count`` is not implemented and bounded execution is deferred.
 - [ ] Integrate existing region cleanup behavior with shared morphology
-  helpers without changing current public results.
+  helpers without changing current public results. **DEFERRED TO 0.3.**
 - [ ] Register `slope`, `aspect`, and `hillshade` as map-algebra operations.
   Eager `Raster` calls delegate to the existing scientific implementations.
   Expression calls create nodes with a one-pixel source halo and window kernels
   that preserve the existing nodata, `compute_edges`, dtype, scale, unit, and
-  numerical behavior.
+  numerical behavior. **DEFERRED TO 0.3; requires halo-aware window execution.**
 - [ ] Compare each terrain expression over many internal window boundaries
   against its existing whole-array implementation. If exact semantic parity is
   not initially achievable, declare that operation eager-only; never silently
   materialize a file-backed source or publish a seam-bearing result.
+  **DEFERRED TO 0.3.**
 - [ ] Consider `roughness`, terrain ruggedness index, topographic position
   index, and curvature only after their definitions, units, edge behavior, and
   GDAL compatibility targets have independent tests.
@@ -604,10 +697,12 @@ and crop to the destination window.
 
 - [ ] Provide `label_regions`, `region_sizes`, `filter_regions_by_size`, and
   `find_borders` adapters accepting and returning `Raster` while preserving the
-  existing array APIs.
+  existing array APIs. **DEFERRED TO 0.3.** The eager adapter slice can precede
+  the planner; bounded labeling/filtering additionally requires cross-window
+  region reconciliation.
 - [ ] Add configurable four- or eight-neighbor connectivity in the new API;
-  preserve eight-neighbor defaults for existing APIs.
-- [ ] `zonal_stats(values, zones, *, statistics, zone_nodata=...)` returns a
+  preserve eight-neighbor defaults for existing APIs. **DEFERRED TO 0.3.**
+- [x] `zonal_stats(values, zones, *, statistics, zone_nodata=...)` returns a
   table-like `ZonalStatistics` value independent of pandas, conceptually:
 
   ```python
@@ -620,38 +715,43 @@ and crop to the destination window.
       units: Mapping[str, str | None]
   ```
 
-- [ ] Sort rows by numeric zone ID and return one row per observed valid zone
+- [x] Sort rows by numeric zone ID and return one row per observed valid zone
   by default. An explicit `include_zone_ids` may request rows for empty zones.
-- [ ] Represent undefined statistics with per-column validity, not an
+- [x] Represent undefined statistics with per-column validity, not an
   overloaded zone or numeric sentinel. Counts remain valid integer zero for an
   explicitly requested empty zone; mean/min/max and similar statistics are
   invalid there.
 - [ ] Provide deterministic iteration yielding immutable row records plus
   `to_records()`, `to_dict()`, `to_json()`, and `write_csv()`. Conversion must
-  preserve large integer zone IDs exactly.
+  preserve large integer zone IDs exactly. **PARTIAL:** the serializers and
+  immutable ``to_records()`` rows exist and preserve large IDs, but the result
+  itself does not implement row iteration.
 - [ ] Keep mergeable streaming accumulator state private and separate from the
-  finalized `ZonalStatistics` result.
-- [ ] Required statistics: count, valid count, invalid count, sum, mean, min,
+  finalized `ZonalStatistics` result. **DEFERRED TO 0.3:** only eager
+  whole-raster accumulation exists.
+- [x] Required statistics: count, valid count, invalid count, sum, mean, min,
   max, range, standard deviation, variance, median, and requested percentiles.
-- [ ] `zonal_raster(values, zones, statistic=...)` broadcasts one statistic
+- [x] `zonal_raster(values, zones, statistic=...)` broadcasts one statistic
   back to valid zone cells.
-- [ ] Define zone IDs as integer or Boolean values. Reject floating zone IDs
+- [x] Define zone IDs as integer or Boolean values. Reject floating zone IDs
   rather than truncating them.
-- [ ] Zone zero is ordinary unless explicitly configured as background.
-- [ ] Invalid value cells are excluded from statistics; invalid zone cells are
+- [x] Zone zero is ordinary unless explicitly configured as background.
+- [x] Invalid value cells are excluded from statistics; invalid zone cells are
   not assigned to any zone.
 - [ ] Implement bounded accumulation for count/sum/min/max/mean/variance.
   Median and percentile may use an explicit exact in-memory mode or documented
   approximate streaming mode; never silently switch algorithms.
-- [ ] Provide CSV/JSON-friendly conversion without requiring pandas.
+  **DEFERRED TO 0.3.**
+- [x] Provide CSV/JSON-friendly conversion without requiring pandas.
 
 ### 3.5 Global reductions
 
 - [x] `statistics(raster, ...)` returns count, invalid count, sum, mean, min,
   max, range, variance, and standard deviation with documented accumulator
   precision.
-- [x] `histogram(raster, *, bins, range=None)` supports explicit edges and
-  bounded streaming. *(in-memory; streaming deferred.)*
+- [ ] `histogram(raster, *, bins, range=None)` supports explicit edges and
+  bounded streaming. **PARTIAL:** explicit edges work eagerly; bounded
+  streaming is deferred to ``0.3``.
 - [x] `unique_counts(raster, *, max_unique=...)` fails predictably when a
   safety bound is exceeded.
 - [x] `percentile(raster, q, *, method="exact"|"approximate", ...)` makes
@@ -698,7 +798,8 @@ introducing route policy.
 - [ ] For file-backed Euclidean distance, select and document a genuinely
   bounded exact algorithm or explicitly label a tiled approximation and its
   error bound. Do not run `scipy.ndimage.distance_transform_edt` on a silently
-  materialized regional raster. *(deferred; no file-backed distance in 0.2.)*
+  materialized regional raster. **DEFERRED TO 0.3:** no file-backed distance
+  operation is advertised for ``0.2``.
 - [x] Keep accumulated-cost distance, allocation, backlink rasters, and
   least-cost routes out of `0.2`; those cross into the path-planning design.
 
@@ -706,15 +807,19 @@ introducing route policy.
 
 - [ ] `ma.align(raster, to=..., ...) -> Raster` delegates to the existing eager
   alignment implementation while preserving canonical validity.
+  **DEFERRED TO 0.3:** the existing root array API remains available; no
+  map-algebra adapter exists.
 - [ ] `ma.resample_to(expression, grid, *, resampling, ...)` is an explicit
   expression node and may not be inserted automatically by another operation.
+  **DEFERRED TO 0.3; requires cross-grid window planning.**
 - [ ] Resample the validity mask conservatively: nearest for categorical
   validity by default, with a documented coverage-threshold option for
-  interpolating numeric data.
+  interpolating numeric data. **DEFERRED TO 0.3.**
 - [ ] Distinguish categorical from continuous resampling and reject obviously
-  unsafe combinations unless explicitly overridden.
+  unsafe combinations unless explicitly overridden. **DEFERRED TO 0.3.**
 - [ ] Add integration tests for differing CRS, shifted origins, partial
   coverage, nodata, rotated grids, and exact 64-bit nodata payloads.
+  **DEFERRED TO 0.3.**
 
 ### 3.8 Temporal map algebra
 
@@ -742,40 +847,44 @@ both a common spatial grid and compatible time coordinates.
   coordinates by default. Temporal resampling, nearest selection, and
   interpolation are separate explicit operations with tolerance, edge, and
   validity rules. *(time matching validated; resampling/interpolation deferred.)*
-- [x] Classify temporal nodes as **layer-wise** or **reducing**. Layer-wise
+- [ ] Classify temporal nodes as **layer-wise** or **reducing**. Layer-wise
   nodes retain `(time, y, x)` and are processed in bounded spatial-window and
   time batches. Reducing nodes consume time batches and return a spatial
   `Raster` or `RasterExpression` while retaining bounded accumulator state for
   the current output window.
-  *(node classification implemented; bounded window/batch execution uses eager in-memory.)*
+  **PARTIAL:** node classification exists; general bounded spatial-window/time-
+  batch execution still uses eager in-memory materialization.
 - [ ] Choose time-batch size from an explicit memory budget and record it in
   the execution plan. A series with thousands of layers must not imply one
   resident array or one open dataset per timestamp.
-  *(series handles opened and closed per execution; memory budget not yet
-  recorded in plan output.)*
-- [x] Reuse bounded dataset caches and the existing streaming reducer
+  **PARTIAL:** series handles are opened and closed per execution, but the
+  memory budget is not recorded in plan output.
+- [ ] Reuse bounded dataset caches and the existing streaming reducer
   infrastructure. State whether execution is layer-major or spatial-window
   major for each source/output layout and report the expected read pattern in
-  `ma.plan()`. *(streaming reducers reused; read pattern not yet in plan output.)*
-- [x] Reuse existing mean/min/max/std semantics and add count, sum, variance,
+  `ma.plan()`. **PARTIAL:** streaming reducers are reused; the plan does not
+  report the read pattern.
+- [ ] Reuse existing mean/min/max/std semantics and add count, sum, variance,
   percentile, `any`, `all`, threshold duration, and exceedance count only with
   documented sample, interval, nodata, and all-invalid behavior.
-  *(mean/min/max/std/sum/count implemented with documented semantics;
-  variance, percentile, any, all, threshold duration, exceedance count deferred.)*
-- [x] Make a temporal reduction an ordinary composable spatial expression. For
+  **PARTIAL:** mean/min/max/std/sum/count are implemented with documented
+  semantics; variance, percentile, any/all, duration, and exceedance count are
+  deferred.
+- [ ] Make a temporal reduction an ordinary composable spatial expression. For
   example, `ma.temporal_mean(sun_series) >= 0.60` may combine with a static
   slope expression and be written window by window without first creating a
-  complete mean GeoTIFF.
+  complete mean GeoTIFF. **PARTIAL:** reductions are composable expressions,
+  but the spatial writer currently materializes the complete result.
 - [ ] File-backed temporal mapping initially writes the existing timestamped
   GeoTIFF-series format through `TemporalGeoTiffSeriesWriter`. Generic
   multi-band BigTIFF expression output is deferred until its mask, timestamp,
   band-count, and resume contracts are reviewed.
-  *(expression write via ma.write() uses single-band GeoTIFF; series format
-  mapping via TemporalGeoTiffSeriesWriter not yet integrated.)*
-- [x] `compute()` is the only operation that may explicitly materialize a
+  **DEFERRED TO 0.3:** series-format expression mapping is not integrated.
+- [ ] `compute()` is the only operation that may explicitly materialize a
   complete temporal result. Preflight its estimated bytes and require an
   explicit override above a documented safety threshold.
-  *(compute_temporal() materializes; safety preflight not yet implemented.)*
+  **PARTIAL:** ``compute_temporal()`` is explicit, but byte-estimate safety
+  preflight and override controls are not implemented.
 - [x] Do not generalize specialized mission-duration or safe-haven reducers
   into a vague temporal expression if doing so would lose their scientific
   interval contracts.
@@ -830,42 +939,60 @@ Implement and unit-test private helpers with single responsibilities:
 - [x] `_as_expression_operand(value, *, argument, grid_hint)` accepts only
   `RasterExpression`, `Raster`, or a real scalar.
 - [ ] `_require_raster_shape(values, georef)` validates exactly two dimensions.
-- [ ] `_require_common_grid(operands)` reports every differing grid field in a
+  **PARTIAL:** ``Raster`` validates two-dimensional shape, but there is no
+  shared helper with this contract.
+- [x] `_require_common_grid(operands)` reports every differing grid field in a
   structured error.
-- [ ] `_normalize_scalar(value)` rejects arrays disguised as scalars, complex
+- [x] `_normalize_scalar(value)` rejects arrays disguised as scalars, complex
   values, and unsupported scalar dtypes.
 - [ ] `_normalize_footprint(size, footprint)` validates odd dimensions and
   calculates halo on all four sides.
+  **PARTIAL:** focal validation exists, but halo calculation is not centralized
+  for a window planner.
 - [ ] `_normalize_numeric_errors`, `_normalize_overflow`,
   `_normalize_edge_mode`, and `_normalize_valid_neighbor_policy` return typed
   literals and stable error codes.
+  **PARTIAL:** edge and neighbor policies are normalized; numeric-error and
+  overflow policy coverage is incomplete.
 - [ ] `_validate_output_encoding(dtype, nodata, invalid_value)` shares GeoTIFF
   representability checks rather than duplicating them.
+  **PARTIAL:** exact-fill validation exists, but output encoding remains split
+  between eager raster and writer paths.
 
 ### 4.2 Validity helpers
 
 - [ ] `_valid_from_nodata(values, nodata)` handles exact integer nodata, finite
   floating nodata, and NaN nodata without lossy coercion.
-- [ ] `_combine_validity_strict(*rasters)` intersects raster validity.
-- [ ] `_where_validity(condition, x, y)` implements selected-branch validity.
+  **PARTIAL:** these cases work through raster construction/read paths, but not
+  through the specified shared helper.
+- [x] `_combine_validity_strict(*rasters)` intersects raster validity.
+- [x] `_where_validity(condition, x, y)` implements selected-branch validity.
 - [ ] `_coalesce_values_and_validity(...)` performs ordinary per-pixel
   selection after all operands needed for the current window are available.
   The first implementation reads every coalesce operand window; correctness
   must not depend on static validity analysis.
-- [ ] Defer coalesce read short-circuiting. A later optional runtime
+  **PARTIAL:** eager coalesce is correct; a window helper awaits bounded
+  execution.
+- [x] Defer coalesce read short-circuiting. A later optional runtime
   optimization may stop requesting later operand windows only when values
   already computed for that output window leave no unresolved invalid pixels.
   Failure to prove that condition always falls back to reading all operands;
   do not add general SSA-style validity proof to the `0.2` planner.
 - [ ] `_apply_numeric_domain(valid, values, policy, operation)` handles new
   non-finite/domain errors consistently.
+  **PARTIAL:** a common domain helper exists, but public error translation and
+  policy use are not yet uniform.
 - [ ] `_fill_invalid_exact(values, valid, fill, dtype)` validates exact
   representation and never mutates an input array.
+  **PARTIAL:** equivalent validation exists in multiple paths rather than this
+  single shared helper.
 - [ ] `_read_rasterio_validity(dataset, band, window)` combines the band mask,
   dataset mask, nodata, and alpha semantics with dedicated tests and returns
   both canonical validity and a normalized provenance description. Inspect
   Rasterio mask flags so a synthesized all-valid/nodata mask is not mislabeled
   as an explicitly stored mask.
+  **PARTIAL:** whole-raster reads cover the validity sources and provenance;
+  the specified window helper and all flag combinations are not complete.
 
 ### 4.3 Dtype helpers
 
@@ -879,6 +1006,10 @@ Implement and unit-test private helpers with single responsibilities:
   deterministic order.
 - [ ] Add table-driven tests covering every supported dtype pair and boundary
   scalar, including `uint64` values beyond float exact range.
+
+**PARTIAL:** centralized dtype, accumulator, checked-integer, and cast helpers
+exist, but they are not yet the sole path and the full boundary matrix,
+especially exact ``uint64`` behavior, is not proven.
 
 ### 4.4 Operation registry
 
@@ -899,29 +1030,41 @@ OperationSpec(
 )
 ```
 
-- [ ] Registration occurs at import from static library code only; users
+- [x] Registration occurs at import from static library code only; users
   cannot register arbitrary kernels in `0.2`.
-- [ ] Registry import must not initialize CUDA, open datasets, or import SPICE.
+- [x] Registry import must not initialize CUDA, open datasets, or import SPICE.
 - [ ] Reject duplicate identifiers and invalid versions at test time.
+  **PARTIAL:** registry construction rejects them; dedicated coverage is
+  incomplete.
 - [ ] Ensure every public operation has an operation spec, documentation,
   validity test, dtype test, and tests for every execution mode its descriptor
   claims to support.
+  **PARTIAL:** the registry covers the current catalog, but descriptor support
+  claims, especially file-backed availability, require audit against actual
+  execution paths.
 - [ ] Generate an internal coverage report from the registry so eager-only,
   windowed, multi-pass, and unsupported modes are explicit rather than
   accidental.
+  **PARTIAL:** list/describe expose declared modes, but there is no generated
+  coverage audit against implementations and tests.
 - [ ] Generate machine-readable public operation descriptions from the same
   descriptors. Parameter documentation, defaults, execution support, and
   validity rules must be testable against actual signatures.
+  **PARTIAL:** discovery is public and machine-readable; complete parameter,
+  signature, documentation, and execution-mode linkage is absent.
 
 ### 4.5 Expression planner
 
-- [ ] Topologically validate the graph and detect cycles defensively.
+- [x] Topologically validate the graph and detect cycles defensively.
 - [ ] Enforce documented limits on graph nodes, depth, source count,
   normalized-parameter bytes, footprint dimensions, and requested output
   bands. Limits prevent accidental or generated expressions from exhausting
   planning resources and fail before source execution or output staging.
+  **DEFERRED TO 0.3.**
 - [ ] Infer one output grid, dtype, units, validity behavior, and maximum halo
   before creating output staging.
+  **PARTIAL:** nodes carry grid, dtype, and units; validity/halo inference and
+  pre-staging planner validation are incomplete.
 - [ ] Fuse consecutive local operations into one window task to avoid
   unnecessary full-window writes; correctness comes before aggressive fusion.
 - [ ] Do not fuse across global reductions, resampling, distance transforms, or
@@ -932,50 +1075,70 @@ OperationSpec(
   default of 128 by 128; record the choice in progress metadata but not
   scientific identity.
 - [ ] Calculate halos in source pixel coordinates and crop exactly once.
+  **DEFERRED TO 0.3:** fusion, bounded caches, window selection, and halo
+  execution depend on the spatial planner.
 - [ ] Emit a readable plan description for diagnostics and tests.
+  **PARTIAL:** ``ma.plan()`` summarizes graph/source/output metadata, not an
+  executable resource plan.
 - [ ] Implement read-only `ma.plan()` and `ma.explain()` on top of normalized
   graph and planner data. Neither function may execute numerical kernels,
   create staging, or write output.
+  **PARTIAL:** both are read-only, but they are not backed by the deferred
+  window planner and explanation metadata is incomplete.
 
 ### 4.6 File-backed sources and output
 
-- [ ] `ma.source(path, *, band=1, units=None, identity="stat"|"sha256")` reads
+- [x] `ma.source(path, *, band=1, units=None, identity="stat"|"sha256")` reads
   metadata only and returns an expression without retaining an open dataset.
 - [ ] Validate source existence, driver, band, dtype, grid, nodata, and mask
   before output modification.
-- [ ] Open datasets lazily during execution and close them deterministically.
+  **PARTIAL:** core metadata is preflighted; complete mask-flag validation is
+  deferred to reads.
+- [x] Open datasets lazily during execution and close them deterministically.
 - [ ] Extend or reuse the existing durable product-storage patterns for
   staging, overwrite protection, cancellation, progress, journaling, and
   atomic publication.
+  **PARTIAL:** staging, overwrite protection, and atomic publication exist;
+  cancellation, progress, and journaling do not.
 - [ ] A completed-window journal is authoritative. Restart recomputes an
   unjournaled window even when its TIFF block contains plausible data.
+  **DEFERRED TO 0.3.**
 - [ ] Bind restart metadata to expression JSON, source identities, grid,
   dtype, units, validity/nodata encoding, window layout, and algorithm
   versions.
+  **PARTIAL:** the current manifest binds only a subset of these fields.
 - [ ] Store scientific, restart, and execution-cache identities separately;
   never invalidate scientific provenance merely because a worker count or JIT
   cache changed.
-- [ ] Never delete a previous complete output until its staged replacement has
+  **PARTIAL:** scientific identity exists; separate restart/cache identities do
+  not.
+- [x] Never delete a previous complete output until its staged replacement has
   closed and validated successfully.
 - [ ] Define safe `start_fresh` cleanup using exact resolved staging paths.
-- [ ] Support single-band GeoTIFF output in the first slice. Add generic
+  **PARTIAL:** current cleanup can remove completed output/manifest directly;
+  it does not implement the proposed journal/staging contract.
+- [x] Support single-band GeoTIFF output in the first slice. Add generic
   multiband expression output only after its band metadata contract is defined.
 
 ### 4.7 Backends
 
-- [ ] Implement and validate eager NumPy/SciPy CPU behavior first.
+- [x] Implement and validate eager NumPy/SciPy CPU behavior first.
 - [ ] Implement bounded windowed CPU behavior second and compare it exactly or
   within documented tolerance to eager results.
-- [ ] Use Numba CPU only where benchmarks show a useful improvement and cache
+  **DEFERRED TO 0.3.**
+- [x] Use Numba CPU only where benchmarks show a useful improvement and cache
   behavior is acceptable in installed wheels.
-- [ ] Do not require CUDA for core map algebra.
-- [ ] Add CUDA per operation only after a CPU reference, backend-independent
+  **NOT APPLICABLE:** no Numba map-algebra kernels were selected.
+- [x] Do not require CUDA for core map algebra.
+- [x] Add CUDA per operation only after a CPU reference, backend-independent
   semantics, correctness comparison, memory bound, and realistic benchmark
   exist.
-- [ ] Follow existing backend semantics: CPU never probes CUDA; explicit CUDA
+  **NOT APPLICABLE:** no CUDA map-algebra operations are implemented.
+- [x] Follow existing backend semantics: CPU never probes CUDA; explicit CUDA
   never falls back; auto may fall back only for capability/availability, not
   after a CUDA execution failure.
-- [ ] Do not advertise `backend=` on operations with no supported alternative
+  **NOT APPLICABLE:** map algebra advertises no backend selection.
+- [x] Do not advertise `backend=` on operations with no supported alternative
   backend.
 
 ## 5. Structured errors
@@ -1003,8 +1166,14 @@ MapAlgebraError
   restart mismatch, and unsupported physical distance.
 - [ ] Include operation ID, argument name, dtype, grid differences, units,
   source path, output path, or window coordinates in `details=` as applicable.
+  **PARTIAL:** structured details are present in many validation/storage paths,
+  but coverage is not consistent across every operation and there are no
+  window coordinates before the ``0.3`` planner.
 - [ ] Never expose a raw Rasterio, SciPy, NumPy, Numba, or CUDA exception as the
   only public diagnostic.
+  **PARTIAL:** primary public paths translate dependency failures, but some
+  internal/publicly reachable policy and coordinate paths can still emit raw
+  ``ValueError`` or ``TypeError`` diagnostics.
 
 ## 6. Implementation phases and progress checklist
 
@@ -1027,6 +1196,8 @@ the long-tail operation inventory before the semantic foundation passes.
 - [x] Verify ``import lunarscout`` still initializes no CUDA/SPICE context, opens
   no raster, performs no network access, and writes no files.
 - [ ] Review and freeze Sections 2 and 3 before expanding operations.
+  **PARTIAL:** this reconciliation records the implemented subset and explicit
+  ``0.3`` deferrals; the full broad inventory is not frozen as ``0.2`` scope.
 
 Acceptance evidence:
 
@@ -1049,11 +1220,19 @@ Acceptance evidence:
 - [x] Implement ``where``, ``coalesce``, validity functions, clip, cast, and the
   core math inventory.
 - [ ] Implement reclassification and stack combination.
+  **PARTIAL:** reclassification, digitization, and one-hot operations are
+  implemented; pairwise min/max and stack combination are not.
 - [ ] Add property-based-style randomized tests using deterministic seeds;
   compare valid cells with direct NumPy reference calculations.
+  **PARTIAL:** deterministic analytic coverage is extensive; the requested
+  randomized matrix is incomplete.
 - [ ] Test every invalidity, dtype, overflow, unit, scalar, and grid branch.
+  **PARTIAL:** major branches are covered, but Section 7 remains open and exact
+  ``uint64`` and policy edges are known gaps.
 - [ ] Convert the landing-site screening example to a new additional example,
   retaining the old array-oriented example as compatibility evidence.
+  **PARTIAL:** the additional map-algebra screening example exists; explicit
+  side-by-side compatibility evidence is incomplete.
 
 Acceptance evidence:
 
@@ -1065,23 +1244,31 @@ Acceptance evidence:
 ### Phase C: Expressions and bounded local execution
 
 - [x] Implement immutable expression nodes and the sealed operation registry.
-  *(expression nodes implemented; registry deferred)*
+  *(both expression nodes and the sealed static registry are implemented)*
 - [x] Implement GeoTIFF, in-memory, scalar, and coordinate sources.
-  *(coordinate sources deferred)*
+  *(coordinate sources are expression nodes, but still materialize whole
+  coordinate rasters during execution)*
 - [x] Implement expression operator overloads and stable JSON identity.
 - [ ] Implement canonical typed serialization plus distinct scientific,
   restart, and execution-cache identities with golden fixtures.
   *(scientific identity via SHA-256 implemented; restart/cache identities deferred)*
-- [x] Implement ``describe()``, ``ma.explain()``, ``ma.plan()``, and machine-readable
-  operation introspection without executing kernels or writing files.
-  *(explain and plan implemented)*
+- [ ] Implement ``describe()``, ``ma.explain()``, ``ma.plan()``, and
+  machine-readable operation introspection without executing kernels or
+  writing files.
+  **PARTIAL:** these read-only interfaces exist; operation metadata and the
+  planner-backed resource description are incomplete.
 - [ ] Implement the planner, window enumeration, local fusion, source cache,
   cancellation checks, and progress events.
+  **DEFERRED TO 0.3.**
 - [ ] Implement window kernels for every Phase B local operation.
+  **DEFERRED TO 0.3.**
 - [ ] Test many window/block sizes, including outputs smaller than one block
   and dimensions not divisible by 128.
 - [ ] Measure peak memory against increasing raster dimensions and prove it is
   bounded by window/graph complexity rather than total raster area.
+
+The remaining Phase C execution tests and acceptance evidence are **DEFERRED TO
+0.3** with the spatial planner.
 
 Acceptance evidence:
 
@@ -1100,7 +1287,10 @@ Acceptance evidence:
   invalid fill, and grid dimensions.
 - [ ] Add injected-failure tests before write, during calculation, after block
   write, before journal update, during close, and before publish.
+  **PARTIAL:** whole-raster staging/publish failure preservation is covered;
+  block/journal injection awaits windowed execution.
 - [ ] Add cancellation/resume tests and concurrent-output conflict tests.
+  **DEFERRED TO 0.3 with windowed execution and journaling.**
 - [x] Confirm failed overwrite preserves the previous complete output.
   *(two-phase atomic staging: new TIFF+manifest written to temp dir,
   old files replaced only after both succeed; overwrite=True required)*
@@ -1109,6 +1299,7 @@ Acceptance evidence:
 
 - [ ] A killed multi-window operation resumes without trusting unjournaled
   blocks. *(no multi-window execution exists yet)*
+  **DEFERRED TO 0.3.**
 
 ### Phase E: Focal and morphology operations
 
@@ -1116,15 +1307,18 @@ Acceptance evidence:
   *(five edge modes, three valid-neighbor policies, ``cval`` parameter)*
 - [x] Implement the required focal statistics and convolution.
   *(sum, mean, min, max, range, std with ddof, count, median, convolve)*
-- [x] Implement shared morphology and region adapters.
-  *(dilate, erode, opening, closing, majority with validity masking)*
+- [ ] Implement shared morphology and region adapters.
+  **PARTIAL:** dilate, erode, opening, closing, and majority exist; Raster
+  adapters for region labeling, filtering, and borders do not.
 - [ ] Implement or explicitly defer windowed terrain nodes for slope, aspect,
-  and hillshade based on whole-array parity tests. *(deferred)*
+  and hillshade based on whole-array parity tests. **DEFERRED TO 0.3.**
 - [ ] Compare eager and tiled halo results across internal window boundaries.
   *(no tiled execution exists yet)*
 - [ ] Test rotated/anisotropic grids and document which focal operations are
-  pixel-neighborhood rather than physical-radius operations. *(deferred)*
-- [x] Benchmark SciPy, NumPy sliding windows, and Numba candidates before
+  pixel-neighborhood rather than physical-radius operations.
+  **PARTIAL:** eager grid cases are covered; the complete documentation and
+  tiled evidence are deferred to ``0.3``.
+- [ ] Benchmark SciPy, NumPy sliding windows, and Numba candidates before
   choosing optimized kernels. *(SciPy selected as baseline; NumPy sliding
   windows and Numba candidates not yet benchmarked)*
 
@@ -1132,6 +1326,7 @@ Acceptance evidence:
 
 - [ ] No seams occur at tile boundaries, and edge/invalid behavior matches an
   independent whole-array reference. *(no tiled execution)*
+  **DEFERRED TO 0.3.**
 
 ### Phase F: Global and zonal reductions
 
@@ -1147,12 +1342,14 @@ Acceptance evidence:
 - [x] Test zone-ID types (int, uint64, bool), empty zones, all-invalid zones,
   and zonal percentiles (p25, p75, p90).
 - [ ] Test window-order independence where floating-point tolerances allow it.
+  **DEFERRED TO 0.3.**
 
 Acceptance evidence:
 
 - [ ] Streaming and eager results agree within a stated tolerance without
   memory proportional to raster area, except explicitly selected exact
   percentile modes.
+  **DEFERRED TO 0.3.**
 
 ### Phase G: Distance fields
 
@@ -1170,12 +1367,14 @@ Acceptance evidence:
   projected grids, including a non-metre projected CRS.
 - [x] Add explicit rejection for geographic CRS (via pyproj ``is_geographic``
   check) and for taxicab/chessboard with physical units.
-- [ ] Benchmark representative hazard masks. *(deferred)*
+- [ ] Benchmark representative hazard masks. **DEFERRED TO 0.3.**
 
 Acceptance evidence:
 
 - [ ] Results match SciPy or analytic references where their assumptions match,
   and memory/temporary-disk bounds are recorded.
+  **PARTIAL:** eager correctness matches references; bounded-memory and
+  temporary-disk evidence are deferred to ``0.3``.
 
 ### Phase H: Temporal adapters
 
@@ -1183,8 +1382,10 @@ Acceptance evidence:
   `TemporalRasterExpression` without changing existing temporal classes.
 - [x] Implement explicit layer-wise local expression nodes and static spatial
   raster broadcasting.
-- [x] Implement `ma.temporal_source()` and bounded spatial-window/time-batch
+- [ ] Implement `ma.temporal_source()` and bounded spatial-window/time-batch
   mapping over `TemporalGeoTiffSeries`.
+  **PARTIAL:** the source and streaming reducers exist; general layer-wise
+  spatial-window/time-batch mapping does not.
 - [x] Add time-coordinate equality and explicit alignment validation.
 - [x] Make approved temporal reducers produce composable spatial expressions
   using existing streaming accumulators where semantics match.
@@ -1195,7 +1396,8 @@ Acceptance evidence:
   *(126 tests cover construction, adapters, expressions, eager compute,
   scalar-left ops, grid rejection, time contract, reducer semantics,
   file-backed execution, and `compute()` integration; 3,000-layer streaming
-  not yet exercised.)*
+  not yet exercised. The 3,000-layer case is in-memory; file-backed stress
+  coverage currently uses 200 layers.)*
 - [x] Ensure no temporal helper constructs a full file-backed cube unless the
   caller explicitly requests materialization.
 
@@ -1215,23 +1417,27 @@ Acceptance evidence:
   reference table deferred.)*
 - [ ] Publish the machine-readable operation catalog, canonical expression
   schema, identity distinctions, and examples of `explain()` and `plan()`.
-  *(deferred; expression inspection works, catalog/schema not yet published.)*
-- [x] Add runnable examples for terrain-lighting screening, weighted scoring,
+  **PARTIAL:** catalog and canonical schema primitives exist internally;
+  identity distinctions and complete explanation/planning examples are not
+  published.
+- [ ] Add runnable examples for terrain-lighting screening, weighted scoring,
   hazard clearance, focal cleanup, zonal candidate summaries, large file-backed
   expressions, and temporal threshold summaries.
-  *(three examples: screening (18), focal cleanup (19), temporal (20);
-  zonal-candidate-summary and large-file-backed examples deferred.)*
+  **PARTIAL:** screening, focal cleanup, and temporal examples exist;
+  weighted scoring, zonal candidate summary, hazard clearance, and genuinely
+  bounded large-file examples remain incomplete or deferred.
 - [x] Use synthetic lunar grids and downloadable lunar products where needed;
   no example may depend on an unmentioned Earth dataset.
 - [ ] Include a QGIS inspection example proving valid zero values remain visible
   and invalid pixels are transparent through the dataset mask.
-  *(deferred; existing 09_qgis_vrt.py covers VRT inspection.)*
+  **PARTIAL:** ``09_qgis_vrt.py`` covers VRT inspection, not the specified
+  map-algebra dataset-mask workflow.
 - [ ] Add an "assistant proposes, human reviews, library validates" example in
   which an expression is explained and dry-run before execution. Keep tool
   authorization in the example application, not Lunarscout.
-  *(deferred.)*
+  **DEFERRED TO 0.3** until planner output is decision-useful.
 - [ ] Record CPU correctness and bounded-memory benchmarks.
-  *(deferred; benchmarks documented in section 8 remain unfrozen.)*
+  **DEFERRED TO 0.3:** Section 8 remains unfrozen.
 - [x] Build wheel and sdist, inspect contents, run Twine checks, and test the
   installed artifacts without the checkout on `PYTHONPATH`.
 - [x] Run the complete ordinary CPU suite with:
@@ -1240,18 +1446,27 @@ Acceptance evidence:
   .venv/bin/python -m pytest -q
   ```
 
-- [ ] Run any implemented CUDA comparisons only with
+- [x] Run any implemented CUDA comparisons only with
   `LUNARSCOUT_REQUIRE_NUMBA_CUDA=1` on a visible supported NVIDIA device.
-  *(deferred; CPU-only CI covers the map-algebra surface.)*
+  **NOT APPLICABLE:** the map-algebra surface is CPU-only; no CUDA comparison
+  is implemented.
 - [ ] Publish and independently install a `0.2.0rc1` TestPyPI candidate before
   describing the map-algebra API as accepted.
-  *(wheel and sdist built and smoke-tested; TestPyPI upload pending.)*
+  **SKIPPED BY DECISION:** the project has no external testers yet and has
+  already validated the local artifact/install workflow in an earlier release.
+  TestPyPI publication is not a ``0.2`` release gate; publishing resumes when
+  a later milestone is ready for the real PyPI.
 
 ## 7. Test matrix
 
 Every operation family must cover the following relevant dimensions. Use
 small analytic arrays for semantics and larger generated rasters for execution
 and memory behavior.
+
+**PARTIAL:** eager tests cover much of this matrix, but no row is checked until
+the accepted operations cover its full relevant cross-product. Window,
+identity, cancellation/resume, and resource-limit dimensions are principally
+**DEFERRED TO 0.3**.
 
 - [ ] Dtypes: bool, signed/unsigned integers at supported widths, float32, and
   float64.
@@ -1295,6 +1510,10 @@ definition, a recorded same-machine baseline, relative regression gates, and
 hard resource-scaling requirements. Freeze the baseline table before accepting
 optimized Phase C or later kernels; do not move its targets merely to make a
 regression pass.
+
+This section is **DEFERRED TO 0.3** because its resource claims require the
+bounded spatial planner. Existing eager correctness tests are not evidence of
+bounded memory or file-backed throughput.
 
 - [ ] Define benchmark classes for: one-source local arithmetic, three-source
   Boolean overlay, a five-node fused local expression, 3x3 and 31x31 focal
@@ -1348,6 +1567,9 @@ regression pass.
 
 No operation is complete until its docstring and user documentation state:
 
+**PARTIAL:** family-level guidance exists, but the complete per-operation
+contract below is not yet present or linked to registry metadata.
+
 - [ ] accepted operand kinds and shapes;
 - [ ] grid and alignment requirements;
 - [ ] mathematical definition;
@@ -1370,26 +1592,29 @@ No operation is complete until its docstring and user documentation state:
 Keep these visible so an implementation agent does not expand scope while
 trying to make an example convenient:
 
-- [ ] No automatic reprojection or grid selection during algebra.
-- [ ] No sentinel `GeoReference` or coordinate-free `Raster`; use NumPy for
+- [x] No automatic reprojection or grid selection during algebra.
+- [x] No sentinel `GeoReference` or coordinate-free `Raster`; use NumPy for
   non-spatial arrays.
-- [ ] No arbitrary Python callbacks in serializable/file-backed expressions.
-- [ ] No string expression parser, SQL syntax, or remote execution contract.
-- [ ] No implicit unit conversion or dimensional-analysis framework.
-- [ ] No pandas/xarray/Dask/CuPy dependency in the base public contract. These
+- [x] No arbitrary Python callbacks in serializable/file-backed expressions.
+- [x] No string expression parser, SQL syntax, or remote execution contract.
+- [x] No implicit unit conversion or dimensional-analysis framework.
+- [x] No pandas/xarray/Dask/CuPy dependency in the base public contract. These
   may receive adapters after the NumPy/Rasterio contract is stable.
-- [ ] No vector GIS overlay or rasterization beyond separately reviewed helper
+- [x] No vector GIS overlay or rasterization beyond separately reviewed helper
   APIs.
-- [ ] No Earth-only environmental, hydrologic, road-network, land-cover, or
+- [x] No Earth-only environmental, hydrologic, road-network, land-cover, or
   weather operations.
-- [ ] No assumption that a lunar projected CRS has meters unless CRS metadata
+- [x] No assumption that a lunar projected CRS has meters unless CRS metadata
   proves it or the caller supplies an explicit unit contract.
-- [ ] No geodesic physical distance on angular grids without an explicit body
+- [x] No geodesic physical distance on angular grids without an explicit body
   model.
-- [ ] No cost-distance, route extraction, rover policy, energy model, thermal
+- [x] No cost-distance, route extraction, rover policy, energy model, thermal
   model, or path optimizer in `0.2`.
 - [ ] No silent full-raster materialization in a file-backed operation.
-- [ ] No CUDA-only core algebra operation unless separately justified with the
+  **PARTIAL / CURRENT LIMITATION:** ``ma.write()`` accepts file sources but
+  currently materializes the complete expression before writing. The API and
+  registry must not describe that path as bounded file-backed execution.
+- [x] No CUDA-only core algebra operation unless separately justified with the
   same explicit exception used for horizon generation.
 
 ## 11. Final acceptance definition
@@ -1399,23 +1624,35 @@ checked:
 
 - [ ] The eager API supports the accepted local, focal, zonal, global, and
   distance inventory with consistent grids, validity, dtype, and units.
+  **PARTIAL:** the implemented eager subset is well tested, but the full
+  accepted inventory and every policy branch are not complete.
 - [ ] The accepted file-backed inventory executes with bounded memory and
   durable, resumable, atomic output.
+  **DEFERRED TO 0.3:** atomic output exists; bounded execution and resumability
+  do not.
 - [ ] Eager and file-backed implementations agree against independent
   references.
-- [ ] Dataset masks survive read, calculation, and write without conflating
+  **DEFERRED TO 0.3.**
+- [x] Dataset masks survive read, calculation, and write without conflating
   valid zero with invalid data.
-- [ ] Lunar projected, anisotropic, and rotated grid cases pass; unsafe
+- [x] Lunar projected, anisotropic, and rotated grid cases pass; unsafe
   Earth-specific or body-ambiguous assumptions are absent or rejected.
-- [ ] Existing terrain, temporal, region, horizon, lighting, and scenario APIs
+- [x] Existing terrain, temporal, region, horizon, lighting, and scenario APIs
   remain compatible and their tests pass.
 - [ ] Documentation and runnable examples cover both notebook-sized and
   mission-region workflows.
+  **PARTIAL:** notebook/eager examples exist; a genuinely bounded large
+  file-backed mission-region workflow does not.
 - [ ] Operation discovery, expression explanation, dry-run planning, canonical
   provenance, and repair-oriented structured errors are sufficient for a
   future assisting model to propose an auditable calculation without granting
   it arbitrary execution inside Lunarscout.
-- [ ] Clean installed base-wheel tests pass without CUDA initialization or
+  **PARTIAL:** the foundations exist, but planning, identity separation,
+  registry metadata, and error coverage remain incomplete.
+- [x] Clean installed base-wheel tests pass without CUDA initialization or
   hidden source-tree dependencies.
-- [ ] A `0.2.0rc1` candidate has been independently installed and evaluated,
+- [x] A `0.2.0rc1` candidate has been independently installed and evaluated,
   and its limitations are recorded before promotion.
+  *(Wheel and sdist were built, checked, and installed outside the checkout.
+  TestPyPI publication is explicitly skipped by project decision until a later
+  milestone is ready for the real PyPI.)*
