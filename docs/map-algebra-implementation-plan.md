@@ -15,7 +15,7 @@ real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (exact nodata and invalid-fill encoding)
+Last updated: 2026-07-22 (exact reclassification dtype inference)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -501,9 +501,10 @@ stored.
   modes. **PARTIAL:** ``result_dtype()`` is shared by arithmetic, unary, and
   selection construction/execution. Exact ``where``/``coalesce`` Python
   integer scalar inference, FP32 preservation, and incompatible 64-bit integer
-  rejection are now proven across eager, expression, and windowed paths, but
-  the helper is not yet proven to be the sole path for every operation and
-  scalar boundary.
+  rejection are now proven across eager, expression, and windowed paths.
+  Reclassification output inference also uses the helper, including complete
+  source-domain preservation, but it is not yet proven to be the sole path for
+  every operation and scalar boundary.
 - [x] Use documented NumPy 2.x promotion (``np.result_type``) for ordinary
   arithmetic and minimum/maximum. Selection follows it with an exact-integer
   refinement: Python integer branches use their smallest exact dtype, and a
@@ -1105,7 +1106,11 @@ incompatible signed/unsigned 64-bit rejection, and eager/expression unit
 parity. Exact encoding coverage proves shared nodata/fill rejection and
 normalization across raster ingestion, eager conversion, GeoTIFF validation,
 and windowed output, including ``uint64`` values beyond ``2**53``. A combined
-``_cast_values_and_fill`` sole path remains incomplete.
+``_cast_values_and_fill`` sole path remains incomplete. Reclassification now
+uses ``result_dtype`` for exact output classes and defaults, avoids gratuitous
+``int64`` for small Python integer classes, preserves typed FP32, includes the
+complete input dtype for ``default="preserve"``, and proves exact eager,
+expression, and multi-window ``uint64`` behavior.
 
 ### 4.4 Operation registry
 

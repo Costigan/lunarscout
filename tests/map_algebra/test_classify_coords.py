@@ -24,7 +24,7 @@ from lunarscout.map_algebra import (
     list_operations,
     compute,
 )
-from lunarscout.errors import MapAlgebraError
+from lunarscout.errors import MapAlgebraDTypeError, MapAlgebraError
 from lunarscout.map_algebra._validation import _as_raster_operand, _as_expression_operand
 from lunarscout.map_algebra._model import RasterExpression
 
@@ -94,7 +94,67 @@ class TestReclassifyValues:
         valid = np.ones((2, 2), dtype=np.bool_)
         raster = Raster(values=values, georef=georef, valid=valid)
         result = reclassify_values(raster, {1: 10, 2: 20, 3: 30, 4: 40})
-        assert result.dtype == np.dtype(np.int64)
+        assert result.dtype == np.dtype(np.uint8)
+
+    @pytest.mark.parametrize("as_expression", [False, True])
+    def test_python_uint64_output_is_exact(self, as_expression):
+        georef = _make_georef(width=2, height=1)
+        raster = Raster(
+            values=np.array([[1, 2]], dtype=np.uint8), georef=georef,
+            valid=np.ones((1, 2), dtype=np.bool_),
+        )
+        expected = 2**63 + 17
+        operand = raster.expression() if as_expression else raster
+        classified = reclassify_values(
+            operand, {1: expected}, default=0,
+        )
+        result = compute(classified) if as_expression else classified
+        assert result.dtype == np.dtype(np.uint64)
+        assert int(result.values[0, 0]) == expected
+
+    @pytest.mark.parametrize("as_expression", [False, True])
+    def test_incompatible_signed_uint64_outputs_raise(self, as_expression):
+        raster = _make_raster(
+            values=np.array([[1, 2]], dtype=np.uint8),
+            georef=_make_georef(width=2, height=1),
+        )
+        operand = raster.expression() if as_expression else raster
+        with pytest.raises(MapAlgebraDTypeError) as error:
+            reclassify_values(
+                operand, {1: -1, 2: 2**63 + 1}, default="invalidate",
+            )
+        assert error.value.code == "map_algebra_no_exact_promotion"
+
+    def test_typed_float32_outputs_remain_float32(self):
+        raster = _make_raster(
+            values=np.array([[1, 2]], dtype=np.uint8),
+            georef=_make_georef(width=2, height=1),
+        )
+        eager = reclassify_values(
+            raster, {1: np.float32(0.25)}, default=np.float32(0.5),
+        )
+        expression = reclassify_values(
+            raster.expression(),
+            {1: np.float32(0.25)},
+            default=np.float32(0.5),
+        )
+        assert eager.dtype == expression.dtype == np.dtype(np.float32)
+        np.testing.assert_array_equal(compute(expression).values, eager.values)
+
+    @pytest.mark.parametrize(
+        ("class_value", "expected_dtype"),
+        [(0.5, np.float32), (0.1, np.float64)],
+    )
+    def test_python_float_uses_smallest_exact_supported_dtype(
+        self, class_value, expected_dtype,
+    ):
+        raster = _make_raster(
+            values=np.array([[1]], dtype=np.uint8),
+            georef=_make_georef(width=1, height=1),
+        )
+        eager = reclassify_values(raster, {1: class_value})
+        expression = reclassify_values(raster.expression(), {1: class_value})
+        assert eager.dtype == expression.dtype == np.dtype(expected_dtype)
 
     def test_uint64_output_is_exact(self):
         georef = _make_georef(width=1, height=1)
@@ -115,6 +175,20 @@ class TestReclassifyValues:
         result = reclassify_values(raster, {1: 10}, default="preserve")
         np.testing.assert_array_equal(result.values, [[10, 2]])
         assert np.all(result.valid)
+
+    def test_preserve_includes_complete_source_dtype(self):
+        georef = _make_georef(width=2, height=1)
+        raster = Raster(
+            values=np.array([[1, -300]], dtype=np.int16), georef=georef,
+            valid=np.ones((1, 2), dtype=np.bool_),
+        )
+        eager = reclassify_values(raster, {1: 10}, default="preserve")
+        expression = reclassify_values(
+            raster.expression(), {1: 10}, default="preserve",
+        )
+        assert eager.dtype == expression.dtype == np.dtype(np.int16)
+        np.testing.assert_array_equal(eager.values, [[10, -300]])
+        np.testing.assert_array_equal(compute(expression).values, eager.values)
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +230,21 @@ class TestReclassifyRanges:
         assert not result.valid[0, 0]
         assert not result.valid[0, 2]
         assert result.valid[0, 1]
+
+    @pytest.mark.parametrize("as_expression", [False, True])
+    def test_exact_uint64_output_dtype(self, as_expression):
+        raster = _make_raster(
+            values=np.array([[0, 5]], dtype=np.uint8),
+            georef=_make_georef(width=2, height=1),
+        )
+        expected = 2**63 + 33
+        operand = raster.expression() if as_expression else raster
+        classified = reclassify_ranges(
+            operand, [(0, 1, expected)], default=0,
+        )
+        result = compute(classified) if as_expression else classified
+        assert result.dtype == np.dtype(np.uint64)
+        assert int(result.values[0, 0]) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -512,6 +601,16 @@ class TestRasterExpressionDescribe:
 # ---------------------------------------------------------------------------
 
 class TestOperationRegistry:
+    @pytest.mark.parametrize(
+        "operation_id",
+        ["local.reclassify_values", "local.reclassify_ranges"],
+    )
+    def test_reclassification_exact_dtype_contract(self, operation_id):
+        description = describe_operation(operation_id)
+        assert description["version"] == 2
+        assert "smallest supported dtype" in description["output_dtype_rule"]
+        assert "source dtype" in description["output_dtype_rule"]
+
     def test_describe_builtin(self):
         desc = describe_operation("local.add")
         assert desc["id"] == "local.add"

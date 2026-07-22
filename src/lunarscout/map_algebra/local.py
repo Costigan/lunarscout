@@ -827,11 +827,13 @@ def reclassify_values(
             details={"default": default},
         )
     output_values = list(mapping.values())
-    if default == "preserve":
-        output_values.append(raster.values.flat[0] if raster.values.size else np.int8(0))
-    elif not isinstance(default, str):
+    if not isinstance(default, str):
         output_values.append(default)
-    target_dtype = _classification_dtype(output_values, fallback=raster.dtype)
+    target_dtype = _classification_dtype(
+        output_values,
+        fallback=raster.dtype,
+        preserve=default == "preserve",
+    )
     result = (
         raster.values.astype(target_dtype, copy=True)
         if default == "preserve"
@@ -879,11 +881,13 @@ def reclassify_ranges(
                 details={"index": index, "lower": lower, "upper": upper},
             )
     output_values = [new_val for _, _, new_val in normalized_ranges]
-    if default == "preserve":
-        output_values.append(raster.values.flat[0] if raster.values.size else np.int8(0))
-    elif not isinstance(default, str):
+    if not isinstance(default, str):
         output_values.append(default)
-    target_dtype = _classification_dtype(output_values, fallback=raster.dtype)
+    target_dtype = _classification_dtype(
+        output_values,
+        fallback=raster.dtype,
+        preserve=default == "preserve",
+    )
     result = (
         raster.values.astype(target_dtype, copy=True)
         if default == "preserve"
@@ -956,29 +960,20 @@ def one_hot(
     )
 
 
-def _classification_dtype(values: Sequence[Any], *, fallback: np.dtype[Any]) -> np.dtype[Any]:
+def _classification_dtype(
+    values: Sequence[Any],
+    *,
+    fallback: np.dtype[Any],
+    preserve: bool = False,
+) -> np.dtype[Any]:
+    """Infer an exact reclassification output through the shared dtype path."""
     if not values:
         return fallback
-    dtypes: list[np.dtype[Any]] = []
-    for value in values:
-        if isinstance(value, np.generic):
-            dtypes.append(value.dtype)
-        elif isinstance(value, bool):
-            dtypes.append(np.dtype(np.bool_))
-        elif isinstance(value, int) and -(2**63) <= value <= 2**63 - 1:
-            dtypes.append(np.dtype(np.int64))
-        elif isinstance(value, float):
-            dtypes.append(np.dtype(np.float64))
-        else:
-            dtypes.append(np.min_scalar_type(value))
-    dtype = np.result_type(*dtypes)
-    if dtype.kind not in "biuf":
-        raise MapAlgebraDTypeError(
-            "Reclassification outputs must fit a supported numeric dtype.",
-            code="map_algebra_unsupported_dtype",
-            details={"dtype": str(dtype)},
-        )
-    return dtype
+    return result_dtype(
+        (np.dtype(fallback),) if preserve else (),
+        operation="reclassify",
+        scalars=tuple(values),
+    )
 
 
 def _require_eager_raster(value: Any) -> Raster:

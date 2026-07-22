@@ -6,6 +6,23 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra numeric consistency, part 5: exact reclassification.** Routed
+  eager and expression `reclassify_values`/`reclassify_ranges` output inference
+  through the shared exact dtype engine. Small Python integer classes now use
+  the smallest supported common dtype instead of forcing `int64`; typed FP32
+  classes and exactly FP32-representable Python floats remain FP32; exact
+  Python `uint64` values beyond `2**53` remain integers; and incompatible
+  signed/unsigned 64-bit output sets raise
+  `map_algebra_no_exact_promotion` rather than passing through FP64.
+  `default="preserve"` now includes the complete source dtype in inference
+  instead of sampling one payload value. Eager, expression, compute, and
+  multi-window GeoTIFF execution share the contract. Bumped both
+  reclassification semantic versions to 2 and aligned registry metadata,
+  docstrings, user guidance, architecture, and the implementation plan.
+  Verification: 1697 passed, 17 skipped in the ordinary CPU suite; 1235
+  map-algebra tests passed; 483 focused numeric/classification/window tests
+  passed; fresh-process public API and import-side-effect audit passed.
+
 - **Map-algebra numeric consistency, part 4: exact nodata and invalid-fill
   encoding.** Centralized exact encoding validation across raster ingestion,
   `Raster.filled()`, eager `fill_invalid`, `to_existing`, GeoTIFF metadata, and

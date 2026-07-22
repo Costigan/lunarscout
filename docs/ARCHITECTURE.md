@@ -883,6 +883,17 @@ matching units, which are preserved by every execution mode. Their operation
 semantic versions are 2 because these rules change scientific dtype, value,
 unit, and identity behavior from the earlier implementation.
 
+Reclassification uses this exact-output path as well. Mapping outputs, range
+outputs, and numeric defaults participate as exact scalars, so small Python
+integer classes no longer force `int64`; typed FP32 and exactly
+FP32-representable Python-float classes remain FP32; and large incompatible
+signed/unsigned integer sets raise instead of promoting to FP64. A Python
+float that does not round-trip exactly through FP32 retains FP64. A
+`default="preserve"` operation includes the source dtype itself in inference;
+it never samples one current payload as a proxy for the source domain. Eager
+construction, expression construction, compute, and supported window execution
+therefore agree. Both reclassification operation semantic versions are 2.
+
 Nodata and invalid-fill encoding is likewise centralized, but remains separate
 from scientific payload promotion. `_validate_nodata_representable` requires a
 finite encoding to round-trip exactly through its destination dtype, permits

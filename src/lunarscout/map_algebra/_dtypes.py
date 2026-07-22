@@ -23,7 +23,7 @@ _CHECKED_INTEGER_OPERATIONS = frozenset({
     "add", "subtract", "multiply", "floor_divide", "remainder", "negative",
     "absolute", "square", "power",
 })
-_SELECTION_OPERATIONS = frozenset({"where", "coalesce"})
+_EXACT_OUTPUT_OPERATIONS = frozenset({"where", "coalesce", "reclassify"})
 _SUPPORTED_DTYPES = frozenset(
     np.dtype(dtype)
     for dtype in (
@@ -87,9 +87,9 @@ def result_dtype(
     """
     overflow = normalize_overflow(overflow)
     scalar_inputs: tuple[Any, ...]
-    if operation in _SELECTION_OPERATIONS:
+    if operation in _EXACT_OUTPUT_OPERATIONS:
         scalar_inputs = tuple(
-            _selection_scalar_input(scalar, operation=operation)
+            _exact_output_scalar_input(scalar, operation=operation)
             for scalar in scalars
             if scalar is not None
         )
@@ -112,7 +112,7 @@ def result_dtype(
 
     if operation in _COMPARISON_OPERATIONS:
         return np.dtype(np.bool_)
-    if operation in _SELECTION_OPERATIONS:
+    if operation in _EXACT_OUTPUT_OPERATIONS:
         selection_input_dtypes = (
             *operand_dtypes,
             *(
@@ -125,7 +125,7 @@ def result_dtype(
         ):
             if inferred.kind not in "biu":
                 raise MapAlgebraDTypeError(
-                    "No supported integer dtype can represent every selected value.",
+                    "No supported integer dtype can represent every possible output value.",
                     code="map_algebra_no_exact_promotion",
                     details={
                         "operation": operation,
@@ -150,18 +150,19 @@ def result_dtype(
     return normalize_dtype(inferred, operation=operation)
 
 
-def _selection_scalar_input(
+def _exact_output_scalar_input(
     value: int | float | bool,
     *,
     operation: str,
 ) -> Any:
-    """Return a selection input that cannot silently truncate an integer.
+    """Return an exact-output input that cannot silently truncate an integer.
 
     NumPy 2 treats Python scalars as weakly typed.  That is useful for an
     ordinary FP32 scalar such as ``-1.0``, but it lets ``where(uint8, 300)``
-    retain uint8 and wrap the selected scalar. Selection is not arithmetic:
-    Python integers must be representable by the inferred output dtype, so
-    they participate through their smallest exact dtype.
+    retain uint8 and wrap the selected scalar. Selection and classification
+    outputs are not arithmetic: Python integers must be representable by the
+    inferred output dtype, so they participate through their smallest exact
+    dtype.
     Python floats retain NumPy's FP32 weak-scalar behavior when their magnitude
     is representable; larger finite values force FP64.
     """
@@ -172,6 +173,11 @@ def _selection_scalar_input(
     if isinstance(value, int):
         return normalize_dtype(np.min_scalar_type(value), operation=operation)
     if isinstance(value, float):
+        if operation == "reclassify" and np.isfinite(value):
+            with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+                encoded = np.float32(value)
+            if np.isfinite(encoded) and float(encoded) == value:
+                return np.dtype(np.float32)
         if np.isfinite(value) and abs(value) > float(np.finfo(np.float32).max):
             return np.dtype(np.float64)
         return value

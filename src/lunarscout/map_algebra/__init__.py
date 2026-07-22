@@ -648,10 +648,9 @@ def _classification_expression_dtype(
     if raster.dtype is None:
         return None
     fallback = raster.dtype
-    values = list(output_values)
-    if preserve:
-        values.append(np.zeros((), dtype=fallback)[()])
-    return _classification_dtype(values, fallback=fallback)
+    return _classification_dtype(
+        output_values, fallback=fallback, preserve=preserve,
+    )
 
 
 def reclassify_values(
@@ -660,6 +659,11 @@ def reclassify_values(
     *,
     default: Any = "invalidate",
 ) -> Any:
+    """Map exact input values with an exact common output dtype.
+
+    ``default="preserve"`` includes the complete source dtype domain when
+    inferring the result, rather than inspecting one payload value.
+    """
     if isinstance(raster, RasterExpression):
         from ._model import _make_expr_node
 
@@ -687,6 +691,11 @@ def reclassify_ranges(
     *,
     default: Any = "invalidate",
 ) -> Any:
+    """Map half-open ranges with an exact common output dtype.
+
+    ``default="preserve"`` includes the complete source dtype domain when
+    inferring the result, rather than inspecting one payload value.
+    """
     if isinstance(raster, RasterExpression):
         from ._model import _make_expr_node
 

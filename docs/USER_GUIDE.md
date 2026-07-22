@@ -1654,6 +1654,14 @@ assigns ordered bin numbers, and `ma.one_hot` returns one Boolean raster per
 caller-supplied class. Reclassification's `default` may be a value,
 `"preserve"`, or `"invalidate"` (the default). Input validity is always
 preserved; unmatched valid cells follow the selected default behavior.
+Reclassification output values use the same exact dtype engine as selection:
+Python integers choose the smallest supported common dtype, exactly
+FP32-representable Python floats and typed `float32` class values remain FP32,
+and incompatible signed/unsigned 64-bit outputs raise instead of using FP64.
+A Python float that cannot be represented exactly in FP32 remains FP64. With
+`default="preserve"`, inference includes the complete source dtype domain, not
+merely values present in the current raster. The eager, expression, and
+supported windowed-write paths use the same rule.
 
 **Normalization:** `ma.normalize_minmax` and `ma.standardize` use only valid
 cells when statistics are omitted. Supplying the minimum/maximum or mean/

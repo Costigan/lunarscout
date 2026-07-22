@@ -624,6 +624,22 @@ class TestWindowedSemanticCoverage:
             window_width=3, window_height=64,
         )
 
+    def test_reclassification_exact_uint64_window_parity(self, tmp_path):
+        import lunarscout.map_algebra as ma
+
+        values = (np.arange(301 * 5, dtype=np.uint16) % 3).astype(np.uint8)
+        values = values.reshape(301, 5)
+        path = _write_tiff(tmp_path, "classify-uint8.tif", values, dtype="uint8")
+        expected = 2**63 + 41
+        expression = ma.reclassify_values(
+            source(path), {1: expected}, default=0,
+        )
+        assert expression.dtype == np.dtype(np.uint64)
+        _assert_windowed_matches_compute(
+            expression, tmp_path / "classify-uint64-out.tif",
+            window_width=3, window_height=64,
+        )
+
     @pytest.mark.parametrize("operation", ["ranges", "digitize", "one_hot", "standardize"])
     def test_remaining_classification_and_normalization_parity(self, tmp_path, operation):
         import lunarscout.map_algebra as ma
