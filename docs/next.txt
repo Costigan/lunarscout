@@ -1,0 +1,196 @@
+After reconciling the three documents with the current implementation and examples/, most
+proposed examples can be started now. The remaining map-algebra work should be narrowed to
+correctness and public contracts that the examples directly depend on.
+
+## Required before expanding the examples
+
+1. Reconcile the plan with the implemented API
+
+   Do one focused inventory pass and update inaccurate status claims. In particular:
+    - Weighted scoring already exists in 18_map_algebra_screening.py.
+    - Focal cleanup and basic distance fields already exist in 19_map_algebra_focal.py.
+    - Temporal reduction/composition already exists in 20_map_algebra_temporal.py.
+    - Terrain, resampling, and bounded writes already exist in
+      21_map_algebra_terrain_resample.py.
+
+    - Unit-bearing power and several “remaining eager gaps” appear to be implemented.
+    - Clearly mark all large-raster focal, regional, distance, zonal, and temporal execution as
+      deferred.
+
+   This prevents unnecessary implementation work based on stale checkboxes.
+
+2. Fix correctness inconsistencies in operations the examples will use
+
+   Limit this audit to the example-facing eager surface:
+    - dtype inference and promotion;
+    - integer overflow behavior, especially unsigned and uint64;
+    - invalid fill and nodata representability;
+    - numeric-error handling for division, logarithms, square roots, and casts;
+    - accumulator behavior in focal/global/zonal reductions;
+    - unit propagation and validation.
+
+   Full internal centralization is desirable, but only observable inconsistencies need to block
+   examples.
+
+3. Audit registry claims for the supported example surface
+
+   Make describe_operation() and list_operations() accurately report:
+    - eager versus file-backed availability;
+    - parameters and defaults;
+    - dtype, unit, and validity behavior;
+    - connectivity, edge, resampling, distance, and approximation choices.
+
+   Registry completeness for operations not used or advertised by the examples can wait.
+
+4. Make explain() and plan() adequate for the review-before-run example
+
+   They need to expose the scientifically meaningful choices actually used in that workflow:
+    - source paths and identities;
+    - thresholds and inclusivity;
+    - units;
+    - validity behavior;
+    - explicit alignment/resampling;
+    - output grid, dtype, and encoding;
+    - supported execution mode and window plan.
+
+   They do not need a general cost model, backend analysis, local fusion report, or temporary-
+   disk estimator.
+
+5. Add focused public-API tests for those contracts
+
+   Test through import lunarscout as ls in a fresh process, covering:
+    - valid zero versus invalid pixels through GeoTIFF round trips;
+    - grid and unit mismatch;
+    - exact integer limits, including uint64;
+    - non-finite and all-invalid inputs;
+    - eager/expression parity for operations used in examples;
+    - QGIS-oriented Boolean encoding and dataset masks;
+    - explain() and plan() being read-only;
+    - unsupported file-backed operations failing during planning, before output creation.
+
+   This is the last implementation gate before treating the example-facing API as stable.
+
+## Example work to start immediately afterward
+
+6. Expand the introductory eager examples
+
+   Add or split out:
+    - raster/local-algebra basics;
+    - validity, where, and coalesce;
+    - grids and explicit alignment;
+    - units, dtypes, overflow, and numerical policies.
+
+   These cover ideas 18–21 and require no additional operation families.
+
+7. Turn screening into the main weighted-suitability example
+
+   Expand current example 18 with:
+    - explicit illustrative thresholds and weights;
+    - classification or normalization;
+    - counts after each hard constraint;
+    - hazard exclusion;
+    - final where(candidate, score, ma.invalid);
+    - optional plots and useful textual output.
+
+8. Separate focal, region, and hazard-clearance lessons
+
+   The current focal example combines several concepts too quickly. Prefer distinct examples
+   for:
+    - focal statistics and validity policies;
+    - morphology and connected-region cleanup;
+    - distance-to-hazard and clearance thresholds.
+
+9. Add zonal and global-summary examples
+
+   Demonstrate:
+    - sorted zonal records;
+    - count and validity columns;
+    - CSV/JSON output;
+    - zonal_raster;
+    - global statistics, histogram, unique counts, and percentiles.
+
+10. Strengthen temporal and terrain examples
+
+Expand the existing scripts with:
+
+- temporal threshold counts and explicit sample semantics;
+- invalid-sample behavior and exact UTC matching;
+- terrain gaps, anisotropic grids, halo behavior, and screening composition.
+
+Avoid promising temporal duration or generalized file-backed temporal mapping unless those APIs
+are deliberately added later.
+
+11. Add expression inspection and supported file-backed writing
+
+Demonstrate source(), canonical identity, explain(), plan(), compute(), and bounded write()
+using only the currently supported local, coordinate, terrain, and reviewed resampling nodes.
+
+12. Finish the portfolio with integration examples
+
+Add:
+
+- end-to-end candidate exploration;
+- QGIS output inspection proving valid zero remains visible while invalid pixels are
+  transparent;
+
+- review-before-run with an explicit --run gate.
+
+Update examples/README.md and the user-guide example index as each lands.
+
+## Work that can be deferred
+
+- All of docs/map-algebra-large-raster-plan.md.
+- Windowed focal and morphology execution.
+- Cross-window connected-region reconciliation.
+- Streaming global and zonal reductions.
+- Bounded distance fields.
+- General temporal spatial-window/time-batch mapping.
+- Local-operation fusion and concurrency controls.
+- Empirical large-raster memory and disk scaling.
+- Separate execution-cache identity.
+- Exhaustive per-operation reference tables.
+- Fully generated documentation from registry metadata.
+- Complete adversarial cross-product testing for every operation.
+- Focal percentiles or additional terrain indices unless an example specifically needs them.
+- Approximate percentiles beyond the currently supported contract.
+- Eager performance benchmarking.
+- TestPyPI publication.
+- Jupyter and marimo copies of the scripts.
+
+The practical cutoff is after items 1–5. Once those are complete, further implementation should
+be driven by a concrete example that cannot be written cleanly with the public API—not by
+unchecked items elsewhere in the original broad plan.
+
+
+
+Implemented, documented, verified, and committed the requested work.
+
+Commits:
+
+- fd7d741 — Fix map algebra eager numeric consistency
+- 54dd111 — Complete map algebra review surface
+
+Highlights:
+
+- Audited registry parameters and execution-mode claims against the public API.
+- Added concrete dtype, unit, validity, defaults, and scientific-choice metadata.
+- Expanded ma.explain() with deterministic nodes, source identities, thresholds, versions,
+  validity, halos, and output encoding.
+
+- Expanded ma.plan() with JSON-serializable grid/output contracts, destination preflight,
+  backend availability, passes, memory, temporary storage, and unsupported-node reporting.
+
+- Added structured source validation for identity mode, band, and units.
+- Updated CHANGELOG.md, docs/USER_GUIDE.md, and the docs/map-algebra-implementation-plan.md.
+- Added fresh-process and public integration coverage.
+
+Verification:
+
+- Full CPU suite: 1823 passed, 17 skipped
+- Focused suite: 582 passed
+- git diff --check: passed
+- Working tree contains only the unrelated untracked docs/todo.txt, which was left untouched.
+
+The minimum map-algebra implementation needed for expanding examples/ is now complete. Larger
+generated-reference, provenance, planner-scaling, and additional-operation work remains
+explicitly deferred in the plan.

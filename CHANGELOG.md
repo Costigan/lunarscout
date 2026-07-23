@@ -6,6 +6,31 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Interactive notebook curriculum.** Added six curated Jupyter notebooks in
+  ``examples/notebooks/`` consolidating the command-line example scripts into
+  coherent analytical stories with inline plots, prose, validity side-by-side
+  rendering, and ``Try this`` exercises. The notebooks are committed without
+  outputs and kept clean by ``nbstripout`` git filter, CI verification, and
+  the generator script. Added notebook route references to all Part headers in
+  ``docs/TUTORIAL.md`` alongside the existing command-line route.
+
+  | Notebook                              | Draws from examples | Purpose                                    |
+  | ------------------------------------- | ------------------- | ------------------------------------------ |
+  | ``01_raster_foundations.ipynb``       | 01--04              | GeoTIFFs, terrain, regions, grids, alignment |
+  | ``02_temporal_workflows.ipynb``       | 05--10              | Cubes, file-backed series, streaming reducers, screening |
+  | ``03_celestial_geometry.ipynb``       | 11--13              | Sun/Earth geometry, horizons, plots, synthetic lightmap |
+  | ``04_map_algebra_foundations.ipynb``  | 18--21              | Raster values, validity, alignment, units, numerical policy |
+  | ``05_suitability_and_neighborhoods.ipynb`` | 22, 25         | Weighted suitability, focal cleanup, morphology, distance |
+  | ``06_lazy_and_temporal_algebra.ipynb`` | 27, 31             | Expressions, explain/plan, bounded writes, temporal reduction |
+
+  All six notebooks execute error-free in a fresh kernel via ``nbclient``;
+  five CPU notebooks are re-executable cell-by-cell with ``overwrite=True``
+  on every file-producing call. Added ``nbstripout`` git filter to
+  ``.gitattributes``, a CI ``nbstripout --verify`` gate, and developer
+  setup instructions in ``CONTRIBUTING.md`` and ``examples/notebooks/README.md``.
+  Verification: all six notebooks pass ``nbclient`` execution; 1833 passed,
+  17 skipped in the ordinary CPU suite.
+
 - **Stable introductory map-algebra surface and examples.** Added focused
   fresh-process public tests for valid zero versus invalid GeoTIFF pixels,
   QGIS-compatible Boolean encoding and dataset masks, grid/unit mismatches,

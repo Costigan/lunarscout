@@ -19,6 +19,26 @@ the source tree as the import target.  If you prefer not to install, set
 export PYTHONPATH="$PWD/src"
 ```
 
+### Notebook output filter
+
+Repository notebooks are committed without outputs.  Activate the git filter
+so outputs are stripped automatically on `git add`:
+
+```bash
+.venv/bin/pip install nbstripout
+.venv/bin/nbstripout --install
+```
+
+CI verifies this with `nbstripout --verify examples/notebooks/*.ipynb`.
+
+### Running the notebook generator
+
+```bash
+.venv/bin/python scripts/generate_notebooks.py
+```
+
+This produces output-free notebooks in `examples/notebooks/`.
+
 ## Running tests
 
 ### CPU test suite (no GPU required)

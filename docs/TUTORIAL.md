@@ -2,15 +2,17 @@
 
 Lunarscout is a notebook-first Python library for lunar terrain, raster,
 temporal, horizon, lighting, visibility, and landed-mission analysis. This
-tutorial explains why the library is designed the way it is and then uses the
-repository's example programs as a guided tour of its public API.
+tutorial explains why the library is designed the way it is and then routes you
+to the interactive notebook course or the command-line example scripts.
 
 This document is a learning path, not an exhaustive API reference. Use the
 [User Guide](USER_GUIDE.md) when you need exact parameter contracts, file
 formats, numeric and validity rules, restart behavior, error codes, or the
 current maturity of a feature. Use the
 [examples index](../examples/README.md) for a compact requirements table and
-command summary.
+command summary. Use the
+[notebooks index](../examples/notebooks/README.md) for interactive notebook
+descriptions and requirements.
 
 ## Why Lunarscout Exists
 
@@ -136,34 +138,65 @@ conceptual section at a time.
 
 ## Choose a Learning Route
 
-You do not have to run every example in numeric order.
+Lunarscout offers two paths through the same material.  They teach the same
+operations and concepts, so you can switch between them at any point.
 
-| Goal                                                                   | Recommended examples |
-| ---------------------------------------------------------------------- | -------------------- |
-| Learn raster, terrain, region, alignment, and time-series fundamentals | 01–10                |
-| Learn Sun/Earth geometry, horizons, and production lighting products   | 11–17                |
-| Learn eager and expression-based map algebra                           | 18–22, 25, 27, 31    |
+### Command-line route
+
+Run individual `.py` scripts that print statistics, write GeoTIFFs, and
+save plots to disk:
+
+```bash
+.venv/bin/python examples/01_geotiff_and_coordinates.py
+```
+
+### Interactive notebook route
+
+Explore the analytical stories below in a Jupyter notebook with inline
+plots, prose, and exercises:
+
+```bash
+.venv/bin/jupyter notebook examples/notebooks/
+```
+
+### Paired routes
+
+| Command-line route                     | Interactive notebook route                     |
+| -------------------------------------- | ---------------------------------------------- |
+| 01–04 scripts                          | `01_raster_foundations.ipynb`                  |
+| 05–10 scripts                          | `02_temporal_workflows.ipynb`                  |
+| 11–13 scripts                          | `03_celestial_geometry.ipynb`                  |
+| 18–21 scripts                          | `04_map_algebra_foundations.ipynb`             |
+| 22, 25 scripts                         | `05_suitability_and_neighborhoods.ipynb`       |
+| 27, 31 scripts                         | `06_lazy_and_temporal_algebra.ipynb`           |
+
+Examples 15–17 remain primarily command-line scripts.  They are production
+templates involving real data, long runtimes, SPICE, or CUDA.  A production
+notebook is planned for inspecting existing results and configuring jobs,
+but it should not run an expensive operation by default.
+
+### Requirements
+
+| Domain                 | Additional requirement                                                        |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| 01–10, 18–22, 25, 27, 31 / notebooks 01, 02, 04, 05, 06 | None beyond the normal CPU installation; inputs are synthetic        |
+| 11 / notebook 03        | Network access on first use to obtain and cache SPICE kernels                 |
+| 12 / notebook 03        | Synthetic horizon bundle download, SPICE geometry, and Matplotlib             |
+| 13 / notebook 03        | Synthetic horizon bundle download; explicit vectors avoid SPICE loading       |
+| 15                      | A real scenario with `dem.tif` and `horizons/`; long production calculation   |
+| 16                      | User DEMs, the CUDA installation profile, and a compatible NVIDIA GPU         |
+| 17                      | A real scenario with `dem.tif` and `horizons/`; SPICE; CPU or CUDA            |
 
 The numbering reserves space for the broader example portfolio, so some
 numbers are intentionally absent. There is currently no example 14, 23, 24,
 26, or 28–30.
 
-The requirements also change as you progress:
-
-| Examples                 | Additional requirement                                                      |
-| ------------------------ | --------------------------------------------------------------------------- |
-| 01–10, 18–22, 25, 27, 31 | None beyond the normal CPU installation; inputs are synthetic               |
-| 11                       | Network access on first use to obtain and cache SPICE kernels               |
-| 12                       | Synthetic horizon bundle download, SPICE geometry, and Matplotlib           |
-| 13                       | Synthetic horizon bundle download; explicit vectors avoid SPICE loading     |
-| 15                       | A real scenario with `dem.tif` and `horizons/`; long production calculation |
-| 16                       | User DEMs, the CUDA installation profile, and a compatible NVIDIA GPU       |
-| 17                       | A real scenario with `dem.tif` and `horizons/`; SPICE; CPU or CUDA          |
-
 ## How the Example Directory Is Organized
 
 The numbered `.py` files are the supported command-line learning sequence.
 [The examples README](../examples/README.md) is its compact index.
+The interactive [notebooks](../examples/notebooks/) combine related scripts
+into coherent analytical stories with inline plots and exercises.
 
 Several other files support that sequence:
 
@@ -182,6 +215,8 @@ Several other files support that sequence:
   the same concepts.
 
 ## Part 1: Raster and Spatial Foundations
+
+> **Interactive notebook:** `01_raster_foundations.ipynb`
 
 The first four examples use the package-root API:
 
@@ -308,6 +343,8 @@ integer-interpolation combinations unless the caller explicitly accepts them.
 
 ## Part 2: Time as a First-Class Coordinate
 
+> **Interactive notebook:** `02_temporal_workflows.ipynb`
+
 Temporal arrays use UTC coordinates and the in-memory shape
 `(time, y, x)`. The next four examples show the progression from a small cube
 to a streamed file-backed series.
@@ -387,6 +424,8 @@ pattern: keep domain names stable while making materialization explicit.
 
 ## Part 3: GIS Inspection and a First Workflow
 
+> **Interactive notebook:** `02_temporal_workflows.ipynb` (screening section)
+
 ### Example 09: Inspect a temporal VRT in QGIS
 
 Run:
@@ -432,6 +471,8 @@ Again, the thresholds are illustrative. Lunarscout supplies calculation and
 validation mechanisms; it does not decide that a site is safe or suitable.
 
 ## Part 4: Sun, Earth, Horizons, and Lighting
+
+> **Interactive notebook:** `03_celestial_geometry.ipynb`
 
 Examples 11–17 move from small deterministic raster work toward celestial
 geometry and production products. Read the requirements before running them.
@@ -584,6 +625,10 @@ intervals in the script before treating any duration as mission policy.
 
 Map algebra is normally imported through the package root:
 
+> **Interactive notebooks:** `04_map_algebra_foundations.ipynb`,
+> `05_suitability_and_neighborhoods.ipynb`,
+> `06_lazy_and_temporal_algebra.ipynb`
+
 ```python
 import lunarscout as ls
 
@@ -707,6 +752,9 @@ also protect exact `int64` and `uint64` boundaries without routing integers
 through floating point.
 
 ## Part 6: Composing Map-Algebra Workflows
+
+> **Interactive notebooks:** `05_suitability_and_neighborhoods.ipynb`,
+> `06_lazy_and_temporal_algebra.ipynb`
 
 ### Example 22: Weighted suitability
 

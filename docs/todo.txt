@@ -1,0 +1,51 @@
+The worker agent failed on every attempt with the configuration error
+unknown input item type: "agent_message" and made no changes.
+
+The core map-algebra plan is roughly 70% checked: 267 of 380 checkboxes are complete. The
+remaining 113 substantially overstate the actual implementation work because many repeat the
+same gaps in phase, test-matrix, documentation, and final-acceptance sections; others are
+explicitly deferred or skipped.
+
+Excluding the deferred large-raster plan, I estimate about 8–12 bounded, reviewable sprints
+remain.
+
+The main workstreams are:
+
+1. Numeric consistency: finish focal range/median/convolution, then audit remaining global/
+   zonal reduction and dtype-policy paths.
+
+2. Public errors and defensive validation: normalize raw dependency failures, complete planner
+   limits, and add temporal materialization preflight.
+
+3. Identity and provenance: separate scientific, restart, and execution-cache identities and
+   add golden compatibility fixtures.
+
+4. Registry audit: align every public signature, parameter, dtype/unit/validity rule, semantic
+   version, and execution claim.
+
+5. Discovery and diagnostics: make describe_operation(), explain(), and plan() complete and
+   registry-driven.
+
+6. Remaining eager gaps: selected focal percentiles, shared morphology cleanup, deterministic
+   zonal iteration, and reviewed extreme-nodata behavior.
+
+7. Adversarial testing: close the cross-product gaps for dtypes, validity, grids, units,
+   identity, storage, and fresh-process behavior.
+
+8. Documentation/examples: per-operation reference contracts, missing zonal/hazard/QGIS/human-
+   review examples, and a retained eager CPU benchmark.
+
+Only three top-level final-acceptance gates remain open:
+
+- complete and consistently governed eager inventory;
+- complete notebook-sized documentation/examples;
+- sufficient registry, identity, explanation, planning, and structured-error coverage.
+
+The separate docs/map-algebra-large-raster-plan.md remains explicitly deferred. Resuming it
+would add seven larger phases: general halos, focal windows, connected-region reconciliation,
+global/zonal streaming, bounded distance fields, temporal batching, and resource evidence. That
+is likely at least as much work as the remaining core plan, possibly more.
+
+One reconciliation issue remains in the plan itself: some “remaining” examples, such as unit-
+bearing power, are already complete. A focused plan-cleanup pass would produce a more
+trustworthy remaining inventory before scheduling the next sprint.
