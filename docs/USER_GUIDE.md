@@ -1854,10 +1854,37 @@ ma.list_operations(execution_mode="file_backed")
 
 The catalog cannot be extended by user callbacks in `0.2`.
 
-`ma.plan(expression)` also reports total windows, journal/progress/cancellation
-capability flags, the actually resumable execution stages, and the default
-write journal identity with its enforced inputs. Planning is read-only: it does
-not execute kernels or create restart artifacts.
+Each catalog record is JSON-serializable and includes the public parameter
+types, required/default values, enumerated choices where applicable, scientific
+dtype/unit/validity rules, and distinct eager, expression-compute, direct
+windowed-write, composed-windowed-write, and temporal-streaming claims. The
+claims intentionally distinguish an operation that has its own window kernel
+from one that is supported only as part of a composed expression.
+
+Use the review helpers before committing storage or computation:
+
+```python
+candidate = ma.where(ma.source("illumination.tif", units="fraction") >= 0.6,
+                     1.0, ma.invalid)
+print(ma.explain(candidate))
+dry_run = ma.plan(candidate, output="candidate.tif")
+print(dry_run["scientific_identity"])
+print(dry_run["output_contract"])
+print(dry_run["output_preflight"])
+```
+
+`ma.explain()` derives its ordered nodes, semantic operation versions,
+parameters, source identities, units, validity rules, halos, and write encoding
+from the expression and operation registry. It is an audit aid, not scientific
+approval of the selected thresholds or weights.
+
+`ma.plan(expression, output=...)` returns JSON-serializable normalized graph,
+source, grid, output-contract, backend, pass, halo, window, peak-memory,
+temporary-storage, and journal information. The output preflight resolves and
+inspects the destination but does not create its parent or touch an existing
+file. Unsupported windowed operations raise a structured
+`MapAlgebraExpressionError` before any output is staged. Planning is read-only:
+it does not execute kernels or create restart artifacts.
 
 ### Focal Operations
 

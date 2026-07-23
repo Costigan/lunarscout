@@ -10,6 +10,7 @@ from ..raster import Raster
 from ._model import RasterExpression, _next_id, _make_expr_node
 from ._sources import constant, source
 from ._validation import _is_scalar, _normalize_scalar
+from ._registry import get_operation_spec
 
 # ---------------------------------------------------------------------------
 # Compute — delegates to Phase B eager dispatch
@@ -383,60 +384,204 @@ def _eval_focal(node: RasterExpression, operands: list[Any]) -> Raster:
 
 
 # ---------------------------------------------------------------------------
-# Explain
+# Explain and review helpers
 # ---------------------------------------------------------------------------
 
-_OP_DESCRIPTIONS: dict[str, str] = {
-    "source": "read",
-    "constant": "in-memory constant",
-    "local.add": "add", "local.subtract": "subtract",
-    "local.multiply": "multiply", "local.divide": "divide",
-    "local.floor_divide": "floor divide", "local.remainder": "remainder",
-    "local.power": "power",
-    "local.minimum": "minimum", "local.maximum": "maximum",
-    "local.less": "less than", "local.less_equal": "less than or equal to",
-    "local.greater": "greater than", "local.greater_equal": "greater than or equal to",
-    "local.equal": "equal to", "local.not_equal": "not equal to",
-    "local.logical_and": "and", "local.logical_or": "or",
-    "local.logical_xor": "xor", "local.logical_not": "not",
-    "local.negative": "negate", "local.absolute": "absolute value",
-    "local.sqrt": "square root", "local.square": "square",
-    "local.exp": "exponential", "local.log": "natural logarithm",
-    "local.log10": "base-10 logarithm",
-    "local.sin": "sine", "local.cos": "cosine", "local.tan": "tangent",
-    "local.arcsin": "arcsine", "local.arccos": "arccosine", "local.arctan": "arctangent",
-    "local.arctan2": "arctan2", "local.hypot": "hypotenuse",
-    "local.floor": "floor", "local.ceil": "ceil", "local.trunc": "truncate",
-    "local.round": "round",
-    "local.where": "where", "local.coalesce": "coalesce",
-    "local.is_valid": "is valid", "local.is_invalid": "is invalid",
-    "local.clip": "clip", "local.cast": "cast",
-}
+
+_SOURCE_DESCRIPTOR_KEYS = frozenset({
+    "path", "band", "identity_mode", "file_size", "mtime_ns", "sha256",
+    "dtype", "nodata", "width", "height",
+})
+
+
+def _review_value(value: Any, *, limit: int = 220) -> str:
+    if isinstance(value, np.ndarray):
+        rendered = (
+            f"array(shape={value.shape}, dtype={value.dtype}, "
+            f"values={value.tolist()!r})"
+        )
+    else:
+        rendered = repr(value)
+    if len(rendered) > limit:
+        return rendered[: limit - 3] + "..."
+    return rendered
+
+
+def _review_scalar(value: Any) -> dict[str, Any]:
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, float) and not np.isfinite(value):
+        encoded: Any = "nan" if np.isnan(value) else "+infinity" if value > 0 else "-infinity"
+    elif value is None or isinstance(value, (str, int, float, bool)):
+        encoded = value
+    else:
+        encoded = repr(value)
+    return {"type": type(value).__name__, "value": encoded}
+
+
+def _review_json_value(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return _review_json_value(value.item())
+    if isinstance(value, float) and not np.isfinite(value):
+        return "nan" if np.isnan(value) else "+infinity" if value > 0 else "-infinity"
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, np.dtype):
+        return value.name
+    if isinstance(value, np.ndarray):
+        return {
+            "type": "array",
+            "dtype": value.dtype.name,
+            "shape": list(value.shape),
+            "values": _review_json_value(value.tolist()),
+        }
+    if isinstance(value, (tuple, list)):
+        return [_review_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _review_json_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: repr(pair[0]))
+        }
+    return repr(value)
+
+
+def _review_parameters(node: RasterExpression) -> dict[str, Any]:
+    spec = get_operation_spec(node._operation_id).to_dict()
+    actual = dict(node._params_dict)
+    if node._operation_id == "source":
+        actual["identity"] = actual.get("identity_mode", "stat")
+        actual["units"] = node._inferred_units
+    reviewed: dict[str, Any] = {}
+    for parameter in spec["parameters"]:
+        name = parameter["name"]
+        if name in actual:
+            reviewed[name] = _review_json_value(actual[name])
+        elif "default" in parameter:
+            reviewed[name] = parameter["default"]
+    for name, value in actual.items():
+        if name == "_args" or name in _SOURCE_DESCRIPTOR_KEYS or name in reviewed:
+            continue
+        reviewed[name] = _review_json_value(value)
+    if "_args" in actual:
+        reviewed["positional_parameters"] = _review_json_value(actual["_args"])
+    return reviewed
+
+
+def _review_nodes(expression: RasterExpression) -> list[dict[str, Any]]:
+    nodes = expression._all_nodes()
+    canonical_ids = {node._node_id: f"n{index}" for index, node in enumerate(nodes)}
+    reviewed: list[dict[str, Any]] = []
+    for node in nodes:
+        spec = get_operation_spec(node._operation_id).to_dict()
+        operands = [
+            {"node": canonical_ids[operand._node_id]}
+            if isinstance(operand, RasterExpression)
+            else {"scalar": _review_scalar(operand)}
+            for operand in node._operands
+        ]
+        entry: dict[str, Any] = {
+            "node_id": canonical_ids[node._node_id],
+            "operation_id": node._operation_id,
+            "summary": spec["summary"],
+            "semantic_version": spec["version"],
+            "operands": operands,
+            "parameters": _review_parameters(node),
+            "dtype": node._inferred_dtype.name if node._inferred_dtype is not None else None,
+            "units": node._inferred_units,
+            "validity_rule": spec["validity_rule"],
+            "output_dtype_rule": spec["output_dtype_rule"],
+            "output_units_rule": spec["output_units_rule"],
+            "execution_modes": spec["execution_modes"],
+            "halo": node._halo,
+        }
+        if node._operation_id == "source":
+            params = node._params_dict
+            entry["source"] = {
+                key: params[key]
+                for key in (
+                    "path", "band", "identity_mode", "file_size", "mtime_ns", "sha256",
+                )
+                if key in params
+            }
+        reviewed.append(entry)
+    return reviewed
 
 
 def explain(expression: RasterExpression) -> str:
-    nodes = expression._all_nodes()
-    lines: list[str] = [f"RasterExpression with {len(nodes)} node(s):"]
+    if not isinstance(expression, RasterExpression):
+        raise MapAlgebraExpressionError(
+            "explain() requires a RasterExpression.",
+            code="map_algebra_invalid_expression",
+            details={"type": type(expression).__name__},
+        )
+    nodes = _review_nodes(expression)
+    grid = expression._inferred_grid
+    output = (
+        f"{grid.width}x{grid.height} {expression.dtype}"
+        if grid is not None else f"unresolved grid {expression.dtype}"
+    )
+    if expression.units is not None:
+        output += f" [{expression.units}]"
+    storage_dtype = (
+        "uint8" if expression.dtype == np.dtype(np.bool_)
+        else expression.dtype.name if expression.dtype is not None else None
+    )
+    lines: list[str] = [
+        f"Raster expression review ({len(nodes)} nodes)",
+        f"Scientific identity: {expression.scientific_identity()}",
+        f"Output: {output}",
+        "Write encoding: "
+        f"storage dtype={storage_dtype}; invalid pixels use a separate GDAL "
+        "dataset mask (valid zero values remain valid).",
+    ]
     for node in nodes:
-        desc = _OP_DESCRIPTIONS.get(node._operation_id, node._operation_id)
-        line = f"  [{node._node_id}] {desc}"
-        if node._operation_id == "source":
-            line += f" from {node._params_dict.get('path', '?')}"
-        elif node._operation_id == "constant":
-            line += f" ({node._inferred_dtype})"
-        else:
-            op_strs = []
-            for op in node._operands:
-                if isinstance(op, RasterExpression):
-                    op_strs.append(f"[{op._node_id}]")
-                else:
-                    op_strs.append(repr(op))
-            line += f"({', '.join(op_strs)})"
-        if node._inferred_dtype is not None:
-            line += f" -> {node._inferred_dtype.name}"
-        if node._inferred_grid is not None:
-            line += f" @ {node._inferred_grid.width}x{node._inferred_grid.height}"
+        operand_text = ", ".join(
+            (
+                operand["node"]
+                if "node" in operand
+                else _review_value(operand.get("scalar", {}).get("value"))
+            )
+            for operand in node["operands"]
+        )
+        line = (
+            f"  [{node['node_id']}] {node['operation_id']} v{node['semantic_version']}: "
+            f"{node['summary']}"
+        )
+        if operand_text:
+            line += f" Inputs: {operand_text}."
         lines.append(line)
+        if "source" in node:
+            source_info = node["source"]
+            identity_bits = [f"mode={source_info.get('identity_mode', 'stat')}"]
+            if "sha256" in source_info:
+                identity_bits.append(f"sha256={source_info['sha256']}")
+            else:
+                identity_bits.extend(
+                    f"{name}={source_info[name]}"
+                    for name in ("file_size", "mtime_ns") if name in source_info
+                )
+            lines.append(
+                f"      source={source_info.get('path', '?')} "
+                f"band={source_info.get('band', 1)} identity({', '.join(identity_bits)})"
+            )
+        if node["parameters"]:
+            lines.append(
+                "      parameters: "
+                + ", ".join(
+                    f"{name}={_review_value(value)}"
+                    for name, value in node["parameters"].items()
+                )
+            )
+        lines.append(
+            f"      result: dtype={node['dtype']}, units={node['units']!r}; "
+            f"validity={node['validity_rule']}; halo={node['halo']}"
+        )
+    lines.append(
+        "Review note: this explanation is an audit aid; thresholds, weights, "
+        "and other policy choices still require human scientific review."
+    )
     return "\n".join(lines)
 
 
@@ -445,24 +590,24 @@ def explain(expression: RasterExpression) -> str:
 # ---------------------------------------------------------------------------
 
 
-def plan(expression: RasterExpression, *, output: str | None = None) -> dict[str, Any]:
+def plan(
+    expression: RasterExpression,
+    *,
+    output: str | Path | None = None,
+) -> dict[str, Any]:
+    if not isinstance(expression, RasterExpression):
+        raise MapAlgebraExpressionError(
+            "plan() requires a RasterExpression.",
+            code="map_algebra_invalid_expression",
+            details={"type": type(expression).__name__},
+        )
     nodes = expression._all_nodes()
     sources = [n for n in nodes if n._operation_id == "source"]
     constants = [n for n in nodes if n._operation_id == "constant"]
     ops = [n for n in nodes if n._operation_id not in ("source", "constant")]
 
-    source_descs = []
-    for s in sources:
-        source_descs.append({
-            "path": s._params_dict.get("path", ""),
-            "band": s._params_dict.get("band", 1),
-            "grid": f"{s._inferred_grid.width}x{s._inferred_grid.height}" if s._inferred_grid else None,
-            "dtype": str(s._inferred_dtype) if s._inferred_dtype else None,
-        })
-
-    grid_str = None
-    if expression._inferred_grid is not None:
-        grid_str = f"{expression._inferred_grid.width}x{expression._inferred_grid.height}"
+    reviewed_nodes = _review_nodes(expression)
+    source_descs = [node for node in reviewed_nodes if "source" in node]
 
     from ._planner import plan_expression as _plan_expression
 
@@ -476,6 +621,9 @@ def plan(expression: RasterExpression, *, output: str | None = None) -> dict[str
         else 0
     )
     planner_info: dict[str, Any] = {
+        "execution_mode": "bounded_windowed_write",
+        "backend": "cpu",
+        "backend_availability": {"cpu": True, "cuda": False},
         "window_width": ep.window_width,
         "window_height": ep.window_height,
         "n_windows_x": ep.n_windows_x,
@@ -486,6 +634,8 @@ def plan(expression: RasterExpression, *, output: str | None = None) -> dict[str
         "n_operations": ep.n_operations,
         "halos": ep.halos,
         "estimated_peak_bytes": ep.estimated_per_window_bytes,
+        "estimated_temporary_bytes": 0,
+        "unsupported_nodes": [],
         "journal_available": ep.journal_available,
         "supports_progress": ep.supports_progress,
         "supports_cancellation": ep.supports_cancellation,
@@ -499,15 +649,57 @@ def plan(expression: RasterExpression, *, output: str | None = None) -> dict[str
             ep.journal_identity_inputs(expression, planned_dtype, default_fill)
         )
 
+    grid = expression._inferred_grid
+    grid_info = None if grid is None else {
+        "width": grid.width,
+        "height": grid.height,
+        "projection_wkt": grid.projection_wkt,
+        "affine_transform": list(grid.affine_transform),
+        "pixel_size_x": grid.pixel_size_x,
+        "pixel_size_y": grid.pixel_size_y,
+        "nodata_metadata": grid.nodata,
+    }
+    storage_dtype = planned_dtype.name if planned_dtype is not None else None
+    output_contract = {
+        "scientific_dtype": expression.dtype.name if expression.dtype is not None else None,
+        "storage_dtype": storage_dtype,
+        "units": expression.units,
+        "invalid_fill": "nan" if isinstance(default_fill, float) and np.isnan(default_fill) else default_fill,
+        "validity_encoding": "gdal_dataset_mask",
+        "estimated_payload_bytes": (
+            grid.width * grid.height * (planned_dtype.itemsize + 1)
+            if grid is not None and planned_dtype is not None else None
+        ),
+    }
+    output_preflight = None
+    output_path: str | None = None
+    if output is not None:
+        resolved = Path(output).expanduser().resolve()
+        output_path = str(resolved)
+        output_preflight = {
+            "resolved_path": output_path,
+            "exists": resolved.exists(),
+            "parent": str(resolved.parent),
+            "parent_exists": resolved.parent.exists(),
+            "would_replace_existing": resolved.exists(),
+            "created_or_modified": False,
+        }
+
     return {
+        "validated": True,
+        "scientific_identity": expression.scientific_identity(),
+        "canonical_expression_json": expression.to_canonical_json(),
         "node_count": len(nodes),
         "source_count": len(sources),
         "constant_count": len(constants),
         "operation_count": len(ops),
-        "output_grid": grid_str,
+        "output_grid": grid_info,
         "output_dtype": str(expression._inferred_dtype) if expression._inferred_dtype else None,
         "output_units": expression._inferred_units,
         "sources": source_descs,
-        "output_path": output,
+        "operations": reviewed_nodes,
+        "output_contract": output_contract,
+        "output_path": output_path,
+        "output_preflight": output_preflight,
         "planner": planner_info,
     }

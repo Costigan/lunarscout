@@ -712,8 +712,10 @@ class TestOperationRegistry:
         cast_desc = describe_operation("local.cast")
         assert cast_desc["version"] == 2
         assert [item["name"] for item in cast_desc["parameters"]] == [
-            "casting", "overflow",
+            "dtype", "casting", "overflow",
         ]
+        assert cast_desc["parameters"][0]["required"]
+        assert cast_desc["parameters"][1]["default"] == "safe"
 
     def test_list_operations(self):
         ops = list_operations()

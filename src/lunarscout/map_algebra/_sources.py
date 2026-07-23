@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from ..errors import MapAlgebraExpressionError, GeoTiffOpenError
+from ..errors import MapAlgebraExpressionError, MapAlgebraUnitError, GeoTiffOpenError
 from ..georeference import GeoReference
 from ..raster import Raster
 from ._model import RasterExpression, _make_expr_node, _next_id
@@ -86,6 +86,26 @@ def source(
     units: str | None = None,
     identity: Literal["stat", "sha256"] = "stat",
 ) -> RasterExpression:
+    if not isinstance(band, int) or isinstance(band, bool) or band < 1:
+        raise GeoTiffOpenError(
+            "GeoTIFF band must be a positive one-based integer.",
+            code="geotiff_band_out_of_range",
+            details={"band": band},
+        )
+    if identity not in {"stat", "sha256"}:
+        raise MapAlgebraExpressionError(
+            "Source identity must be 'stat' or 'sha256'.",
+            code="map_algebra_invalid_source_identity",
+            details={"identity": identity},
+        )
+    if units is not None:
+        if not isinstance(units, str) or not units.strip():
+            raise MapAlgebraUnitError(
+                "Source units must be a non-empty string or None.",
+                code="map_algebra_invalid_units",
+                details={"units": repr(units)},
+            )
+        units = units.strip()
     path = Path(path).expanduser().resolve()
     georef, dtype, nodata = _read_source_metadata(path, band)
 

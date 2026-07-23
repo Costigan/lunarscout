@@ -174,4 +174,6 @@ def test_stack_registry_metadata(operation_id, parameters):
     # The named helper expands into ordinary file-backed local nodes; no
     # standalone variadic stack node is advertised to the window executor.
     assert description["file_backed_available"] is False
+    assert description["composed_windowed_write_available"] is True
+    assert "composed_windowed_write" in description["execution_modes"]
     assert [item["name"] for item in description["parameters"]] == parameters

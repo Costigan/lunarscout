@@ -607,35 +607,40 @@ deterministic API rather than special "AI" behavior.
   identifier, summary, operand kinds, parameters with types/defaults/ranges,
   units, output dtype rule, validity rule, execution modes, cost class, and
   examples. **PARTIAL:** the sealed catalog exposes identifiers and basic rule
-  summaries, but parameter types/defaults/ranges, canonical examples, and some
-  execution-support claims are incomplete.
+  summaries, public parameter types/defaults and enumerated choices, and
+  audited execution modes. Numeric ranges and canonical examples remain
+  incomplete.
 - [ ] Provide `ma.describe_operation(id)` and `ma.list_operations(...)` using
   the same metadata that drives validation and documentation, so descriptions
   cannot silently diverge from code. **PARTIAL:** both discovery APIs are
-  public and expression-node construction consults the registry, but
-  documentation/signature validation is not generated from it.
-- [ ] Provide `ma.explain(expression)` with an ordered plain-language account
+  public and expression-node construction consults the registry. Public
+  parameter metadata is generated from callable signatures and audited by
+  tests; prose documentation is still maintained separately.
+- [x] Provide `ma.explain(expression)` with an ordered plain-language account
   of sources, explicit alignments, thresholds, units, validity choices,
   reductions, output encoding, and scientific algorithm versions.
-  **PARTIAL:** a deterministic node-oriented explanation exists, but it does
-  not yet cover all listed scientific choices or semantic versions.
+  *(The registry-backed explanation includes stable node ordering, source
+  identity descriptors, scalar operands and parameters, dtype/unit/validity
+  rules, halo, output mask/storage encoding, and semantic versions.)*
 - [x] State that `explain()` is an audit aid, not evidence that thresholds or
   policy choices are scientifically appropriate. Human or application review
   remains required.
-- [ ] Provide `ma.plan(expression, *, output=None)` as a read-only dry run. It
+- [x] Provide `ma.plan(expression, *, output=None)` as a read-only dry run. It
   validates the graph and reports output grid/dtype/units, source identities,
   passes, halos, estimated peak memory, temporary disk, output size, backend
   availability, and unsupported nodes without calculating or writing pixels.
-  **PARTIAL:** the current read-only summary reports graph/source counts and
-  basic output metadata, but there is no spatial planner and therefore no
-  passes, memory/disk estimates, backend availability, or unsupported-node
-  analysis.
+  *(The JSON-serializable report includes canonical identity, reviewed nodes,
+  output grid/contract/preflight, windows, passes, halos, peak-memory and
+  temporary-storage estimates, backend availability, and an empty
+  unsupported-node list after validation. Unsupported operations fail with a
+  structured error naming the operation before output creation.)*
 - [ ] Make threshold inclusivity, angle units, connectivity, edge behavior,
   invalid policy, resampling, and approximate algorithms explicit parameters
   rather than context-dependent defaults where a silent choice could change a
   mission conclusion.
-  **PARTIAL:** implemented families expose most relevant choices; connectivity,
-  resampling, and some numeric/approximation policies remain absent.
+  **PARTIAL:** implemented families expose and catalog the relevant comparison,
+  angle, connectivity, edge, invalid, resampling, and numeric choices. Some
+  approximation policies and numeric parameter ranges remain absent.
 - [x] Return structured errors with stable codes and repair-oriented details
   such as acceptable values, differing grid fields, and the operation/argument
   that failed. Do not include speculative instructions in the library error.
@@ -1186,25 +1191,30 @@ OperationSpec(
 - [x] Registration occurs at import from static library code only; users
   cannot register arbitrary kernels in `0.2`.
 - [x] Registry import must not initialize CUDA, open datasets, or import SPICE.
-- [ ] Reject duplicate identifiers and invalid versions at test time.
-  **PARTIAL:** registry construction rejects them; dedicated coverage is
-  incomplete.
+- [x] Reject duplicate identifiers and invalid versions at test time.
+  *(Registry construction rejects both, with dedicated tests.)*
 - [ ] Ensure every public operation has an operation spec, documentation,
   validity test, dtype test, and tests for every execution mode its descriptor
   claims to support.
-  **PARTIAL:** the registry covers the current catalog, but descriptor support
-  claims, especially file-backed availability, require audit against actual
-  execution paths.
-- [ ] Generate an internal coverage report from the registry so eager-only,
+  **PARTIAL:** the registry covers the current public catalog and public
+  parameters are audited against signatures. Execution claims are separated
+  into eager, expression-compute, direct windowed, composed windowed, and
+  temporal streaming modes and direct window claims are audited against the
+  executor. A complete per-operation documentation and behavioral-test matrix
+  remains unfinished.
+- [x] Generate an internal coverage report from the registry so eager-only,
   windowed, multi-pass, and unsupported modes are explicit rather than
   accidental.
-  **PARTIAL:** list/describe expose declared modes, but there is no generated
-  coverage audit against implementations and tests.
+  *(Machine-readable list/describe output exposes and filters each distinct
+  execution mode; tests audit direct window claims against the executor and
+  public parameter claims against callable signatures.)*
 - [ ] Generate machine-readable public operation descriptions from the same
   descriptors. Parameter documentation, defaults, execution support, and
   validity rules must be testable against actual signatures.
-  **PARTIAL:** discovery is public and machine-readable; complete parameter,
-  signature, documentation, and execution-mode linkage is absent.
+  **PARTIAL:** discovery is public and JSON-serializable; parameter types,
+  defaults, enumerated choices, signatures, scientific rules, and execution
+  modes are linked and tested. Numeric ranges, canonical examples, and
+  generated prose documentation remain incomplete.
 
 ### 4.5 Expression planner
 
@@ -1249,12 +1259,11 @@ remain core work.
 - [x] Emit a readable plan description for diagnostics and tests.
   *(``plan()`` now reports window layout, source count, estimated per-window
   memory, and other planner metadata.)*
-- [ ] Implement read-only `ma.plan()` and `ma.explain()` on top of normalized
+- [x] Implement read-only `ma.plan()` and `ma.explain()` on top of normalized
   graph and planner data. Neither function may execute numerical kernels,
   create staging, or write output.
-  **PARTIAL:** both are read-only and ``plan()`` propagates structured planner
-  failures, but ``explain()`` is not yet generated from normalized planner and
-  registry metadata.
+  *(Both are read-only, use normalized expression/planner and registry data,
+  and propagate structured validation failures before output creation.)*
 
 ### 4.6 File-backed sources and output
 
@@ -1447,12 +1456,13 @@ Acceptance evidence:
   restart, and execution-cache identities with golden fixtures.
   **PARTIAL:** scientific and restart identities are implemented; an execution-
   cache identity and golden compatibility fixtures remain incomplete.
-- [ ] Implement ``describe()``, ``ma.explain()``, ``ma.plan()``, and
+- [x] Implement ``describe()``, ``ma.explain()``, ``ma.plan()``, and
   machine-readable operation introspection without executing kernels or
   writing files.
-  **PARTIAL:** these read-only interfaces and a basic planner-backed resource
-  description exist; operation metadata and explanation coverage remain
-  incomplete.
+  *(These read-only interfaces now use registry, normalized expression, and
+  planner metadata; public signatures, distinct execution claims, scientific
+  choices, identities, output encoding, and preflight behavior have focused
+  public tests.)*
 - [x] Implement the planner, window enumeration, source cache, cancellation
   checks, and progress events.
 - [ ] Fuse compatible consecutive local operations.
@@ -1642,9 +1652,10 @@ Acceptance evidence:
   reference table deferred.)*
 - [ ] Publish the machine-readable operation catalog, canonical expression
   schema, identity distinctions, and examples of `explain()` and `plan()`.
-  **PARTIAL:** catalog and canonical schema primitives exist internally;
-  identity distinctions and complete explanation/planning examples are not
-  published.
+  **PARTIAL:** the public catalog, canonical expression JSON, identity, and
+  explanation/planning usage are documented in the user guide. A standalone
+  generated operation reference and identity-distinction reference remain
+  incomplete.
 - [ ] Add runnable examples for terrain-lighting screening, weighted scoring,
   hazard clearance, focal cleanup, zonal candidate summaries, and temporal
   threshold summaries. Large file-backed examples are owned by the deferred
@@ -1662,8 +1673,8 @@ Acceptance evidence:
 - [ ] Add an "assistant proposes, human reviews, library validates" example in
   which an expression is explained and dry-run before execution. Keep tool
   authorization in the example application, not Lunarscout.
-  **PARTIAL:** read-only planning exists, but explanation and example quality
-  remain core work.
+  **PARTIAL:** registry-backed explanation and complete read-only planning now
+  support the workflow; the runnable example itself remains to be added.
 - [ ] Record CPU correctness benchmarks for the eager/core surface.
   **PARTIAL:** correctness tests exist; a concise retained benchmark record is
   absent. Bounded-memory benchmarks are deferred to the large-raster plan.

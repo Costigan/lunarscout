@@ -6,6 +6,25 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra registry and review surface.** Audited the operation registry
+  against the public example-facing API. Catalog records now derive parameter
+  types, required/default values, and enumerated scientific choices from public
+  signatures; expose distinct eager, expression-compute, direct windowed,
+  composed-windowed, and temporal-streaming modes; and use concrete dtype,
+  unit, and validity rules instead of placeholder claims. `ma.explain()` now
+  gives a deterministic registry-backed review of source identities, scalar
+  thresholds, parameters, semantic operation versions, units, validity, halos,
+  and output mask/storage encoding. `ma.plan(expression, output=...)` now
+  returns a JSON-serializable read-only report containing canonical identity,
+  reviewed nodes, output grid and contract, destination preflight, window/pass
+  resources, backend availability, temporary-storage estimate, and journal
+  details. Source construction now rejects invalid identity modes, bands, and
+  blank units with structured errors before raster access. Updated the user
+  guide, implementation status, and fresh-process public tests. Verification:
+  1823 passed, 17 skipped in the ordinary CPU suite; 582 focused registry,
+  expression, operation, temporal, and planner tests passed; `git diff
+  --check` passed.
+
 - **Map-algebra numeric consistency, part 10: example-facing focal and
   summary precision.** Reconciled the active implementation plan with the
   supported API and existing examples, removing already-completed
