@@ -155,6 +155,7 @@ def _dispatch_binary_raster_scalar(
     operation: str,
     output_name: str | None = None,
     output_units: str | None = None,
+    keep_units: bool = True,
     numeric_errors: NumericErrorsPolicy = "invalid",
     overflow: OverflowPolicy = "raise",
     scalar_left: bool = False,
@@ -221,6 +222,6 @@ def _dispatch_binary_raster_scalar(
         values=result_values,
         georef=raster_a.georef,
         valid=result_valid,
-        units=output_units or raster_a.units,
+        units=(output_units or raster_a.units) if keep_units else output_units,
         name=output_name or raster_a.name,
     )

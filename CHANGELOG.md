@@ -6,6 +6,22 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Stable introductory map-algebra surface and examples.** Added focused
+  fresh-process public tests for valid zero versus invalid GeoTIFF pixels,
+  QGIS-compatible Boolean encoding and dataset masks, grid/unit mismatches,
+  exact ``uint64`` boundaries, non-finite and all-invalid behavior,
+  eager/expression parity, read-only explanation/planning, and rejection of
+  unsupported file-backed operations before output creation. The audit found
+  and fixed eager scalar comparisons and ``isclose`` incorrectly retaining
+  source units; Boolean comparison results are now dimensionless in both eager
+  and expression modes. Added runnable introductory examples 18--21 for local
+  algebra, canonical validity and selection, explicit grid alignment, and
+  numerical policies. Renumbered the existing suitability, focal, terrain, and
+  temporal examples to 22, 25, 27, and 31 to match the example portfolio.
+  Verification: 1833 passed, 17 skipped in the ordinary CPU suite; 114 focused
+  public, local-operation, and numeric-policy tests passed; introductory and
+  renumbered map-algebra examples ran successfully; `git diff --check` passed.
+
 - **Map-algebra registry and review surface.** Audited the operation registry
   against the public example-facing API. Catalog records now derive parameter
   types, required/default values, and enumerated scientific choices from public

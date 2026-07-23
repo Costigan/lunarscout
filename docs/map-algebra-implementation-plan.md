@@ -1662,8 +1662,19 @@ Acceptance evidence:
   large-raster plan.
   **PARTIAL:** terrain-lighting screening, weighted scoring, focal cleanup,
   temporal reduction/composition, and basic hazard-distance output exist in
-  examples 18--21. A dedicated zonal candidate summary and an explicit
-  user-selected hazard-clearance workflow remain incomplete in the core plan.
+  examples 22, 25, 27, and 31. A dedicated zonal candidate summary and an
+  explicit user-selected hazard-clearance workflow remain incomplete in the
+  core plan.
+- [x] Add progressive eager introductions for raster/local algebra; canonical
+  validity, ``where``, and ``coalesce``; grids and explicit alignment; and
+  units, dtypes, overflow, casting, and numerical policies.
+  *(Runnable public-API examples 18--21 use deterministic synthetic lunar
+  rasters and execute in fresh-process tests.)*
+- [x] Gate the example-facing public surface with fresh-process tests for valid
+  zero versus invalid GeoTIFF pixels, Boolean storage and dataset masks, grid
+  and unit mismatch, exact ``uint64`` boundaries, non-finite and all-invalid
+  inputs, eager/expression parity, read-only explanation/planning, and
+  pre-output rejection of unsupported file-backed operations.
 - [x] Use synthetic lunar grids and downloadable lunar products where needed;
   no example may depend on an unmentioned Earth dataset.
 - [ ] Include a QGIS inspection example proving valid zero values remain visible
@@ -1834,8 +1845,9 @@ checked:
   remain compatible and their tests pass.
 - [ ] Documentation and runnable examples cover the accepted notebook-sized
   core workflows.
-  **PARTIAL:** family-level and several runnable examples exist, but the
-  operation reference and the core examples listed in Phase I remain incomplete.
+  **PARTIAL:** the four introductory eager workflows and several analysis
+  examples are runnable and tested, but the generated operation reference and
+  remaining Phase I analysis examples are incomplete.
 - [ ] Operation discovery, expression explanation, dry-run planning, canonical
   provenance, and repair-oriented structured errors are sufficient for a
   future assisting model to propose an auditable calculation without granting

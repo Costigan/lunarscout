@@ -1,4 +1,4 @@
-"""Site screening with map algebra: combine slope and sunlight with explicit validity.
+"""Site suitability with map algebra: combine slope and sunlight with explicit validity.
 
 Inputs: deterministic DEM and file-backed illumination series under --workspace.
 Outputs: screening/candidate.tif, screening/candidate_score.tif.

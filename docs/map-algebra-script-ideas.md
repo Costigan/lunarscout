@@ -1,6 +1,6 @@
 # Map-Algebra Example Ideas
 
-Status: proposed user-facing example portfolio for the broad map-algebra API
+Status: in progress; introductory examples 18--21 are implemented
 
 Related plan: `docs/map-algebra-implementation-plan.md`
 
@@ -85,6 +85,8 @@ implemented.
 
 Suggested file: `examples/18_map_algebra_basics.py`
 
+**Implemented.** The runnable script covers this introductory eager surface.
+
 Introduce `Raster` using a small synthetic slope grid. Print its values,
 validity mask, grid, units, shape, dtype, valid count, and memory size. Show
 non-mutating helpers such as `with_name`, `with_units`, `with_validity`,
@@ -113,6 +115,9 @@ Notebook exploration ideas:
 
 Suggested file: `examples/19_map_algebra_validity.py`
 
+**Implemented.** The runnable script distinguishes canonical validity from
+payload values and includes valid zero cells.
+
 Focus on canonical validity without using a masked array as the internal data
 model. Construct partially valid illumination and Earth-visibility rasters,
 then demonstrate:
@@ -139,6 +144,9 @@ Notebook exploration ideas:
 
 Suggested file: `examples/20_map_algebra_grids.py`
 
+**Implemented.** The runnable script rejects a shape-only match, aligns
+explicitly, and displays index and projected coordinate expressions.
+
 Create two same-shaped rasters that represent different places because one has
 a shifted affine transform. Show `same_grid`, `require_same_grid`, and the
 structured failure produced by direct algebra. Align one raster explicitly and
@@ -158,6 +166,9 @@ Notebook exploration ideas:
 ### 21 - Units, dtypes, and numerical policies
 
 Suggested file: `examples/21_map_algebra_numerics.py`
+
+**Implemented.** The runnable script covers unit rules, overflow, promotion,
+casting, and all three non-finite policies.
 
 Use elevation in metres, slope in degrees, and illumination as a fraction to
 explain Lunarscout's conservative unit rules. Demonstrate matching-unit

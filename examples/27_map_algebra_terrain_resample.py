@@ -1,4 +1,4 @@
-"""Map-algebra terrain, resampling, and windowed write example.
+"""Map-algebra terrain operations, resampling, and windowed write example.
 
 Demonstrates: creating slope and hillshade expressions, explicit resampling
 onto another grid, combining with a local expression, writing in bounded

@@ -28,6 +28,7 @@ from lunarscout.map_algebra import (
     greater_equal,
     hypot,
     invalid,
+    isclose,
     is_invalid,
     is_valid,
     less,
@@ -298,6 +299,15 @@ class TestComparisons:
         b = _make_raster(np.ones((2, 2), dtype=np.float32))
         r = less(a, b)
         assert r.dtype == np.dtype(np.bool_)
+
+    def test_scalar_comparisons_and_isclose_remove_units(self):
+        source = _make_raster(
+            np.ones((2, 2), dtype=np.float32),
+            units="degrees",
+        )
+        assert less_equal(source, 8.0).units is None
+        assert (source <= 8.0).units is None
+        assert isclose(source, 1.0).units is None
 
     def test_comparison_mismatched_units_raises(self):
         a = _make_raster(np.ones((2, 2), dtype=np.float32), units="meters")

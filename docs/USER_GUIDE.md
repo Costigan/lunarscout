@@ -1329,6 +1329,13 @@ fields. It preserves explicit grids, validity masks, dtypes, and units
 through every operation rather than treating map algebra as unqualified
 NumPy arithmetic.
 
+The runnable introduction is split into four small, notebook-friendly scripts:
+`examples/18_map_algebra_basics.py`, `19_map_algebra_validity.py`,
+`20_map_algebra_grids.py`, and `21_map_algebra_numerics.py`. They progress from
+eager local operations through canonical validity, explicit alignment, units,
+dtypes, overflow, casting, and non-finite policy without requiring external
+data, SPICE, or a GPU.
+
 ### Value Types
 
 Two value types carry the spatial and scientific metadata needed to combine

@@ -503,7 +503,9 @@ class Raster:
         elif isinstance(other, (int, float)):
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             from .map_algebra._kernels import _less
-            return _dispatch_binary_raster_scalar(self, other, _less, operation="less")
+            return _dispatch_binary_raster_scalar(
+                self, other, _less, operation="less", keep_units=False,
+            )
         elif _is_temporal_expression(other):
             return other.__gt__(self)  # type: ignore[return-value]
         return NotImplemented
@@ -518,7 +520,10 @@ class Raster:
         elif isinstance(other, (int, float)):
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             from .map_algebra._kernels import _less_equal
-            return _dispatch_binary_raster_scalar(self, other, _less_equal, operation="less_equal")
+            return _dispatch_binary_raster_scalar(
+                self, other, _less_equal,
+                operation="less_equal", keep_units=False,
+            )
         elif _is_temporal_expression(other):
             return other.__ge__(self)  # type: ignore[return-value]
         return NotImplemented
@@ -533,7 +538,9 @@ class Raster:
         elif isinstance(other, (int, float)):
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             from .map_algebra._kernels import _greater
-            return _dispatch_binary_raster_scalar(self, other, _greater, operation="greater")
+            return _dispatch_binary_raster_scalar(
+                self, other, _greater, operation="greater", keep_units=False,
+            )
         elif _is_temporal_expression(other):
             return other.__lt__(self)  # type: ignore[return-value]
         return NotImplemented
@@ -548,7 +555,10 @@ class Raster:
         elif isinstance(other, (int, float)):
             from .map_algebra._eager import _dispatch_binary_raster_scalar
             from .map_algebra._kernels import _greater_equal
-            return _dispatch_binary_raster_scalar(self, other, _greater_equal, operation="greater_equal")
+            return _dispatch_binary_raster_scalar(
+                self, other, _greater_equal,
+                operation="greater_equal", keep_units=False,
+            )
         elif _is_temporal_expression(other):
             return other.__le__(self)  # type: ignore[return-value]
         return NotImplemented

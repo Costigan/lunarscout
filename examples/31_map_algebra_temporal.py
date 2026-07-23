@@ -1,4 +1,4 @@
-"""Temporal map algebra: reduce a time series and compose with spatial constraints.
+"""Temporal map algebra: reduce a time series and compose spatial constraints.
 
 Inputs: deterministic DEM and file-backed illumination series under --workspace.
 Outputs: temporal/mean_sun.tif, temporal/temporal_candidate.tif.

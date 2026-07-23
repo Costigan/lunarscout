@@ -1,4 +1,4 @@
-"""Focal cleanup and distance fields with map algebra.
+"""Focal statistics, cleanup, and distance fields with map algebra.
 
 Inputs: deterministic DEM under --workspace.
 Outputs: focal/smoothed_slope.tif, focal/opened_mask.tif, focal/distance_to_steep.tif.

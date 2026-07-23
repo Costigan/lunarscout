@@ -505,10 +505,12 @@ def _comparison_helper(
     if isinstance(a, Raster) and _is_scalar(b):
         return _dispatch_binary_raster_scalar(
             a, _normalize_scalar(b, argument="b"), kernel, operation=operation,
+            keep_units=False,
         )
     if _is_scalar(a) and isinstance(b, Raster):
         return _dispatch_binary_raster_scalar(
-            b, _normalize_scalar(a, argument="a"), swapped_kernel, operation=operation,
+            b, _normalize_scalar(a, argument="a"), swapped_kernel,
+            operation=operation, keep_units=False,
         )
     raise MapAlgebraError(f"{operation}() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
@@ -557,14 +559,14 @@ def isclose(
         return _dispatch_binary_raster_scalar(
             a, s,
             lambda arr, v: np.isclose(arr, v, rtol=rtol, atol=atol, equal_nan=equal_nan),
-            operation="isclose",
+            operation="isclose", keep_units=False,
         )
     if _is_scalar(a) and isinstance(b, Raster):
         s = _normalize_scalar(a, argument="a")
         return _dispatch_binary_raster_scalar(
             b, s,
             lambda arr, v: np.isclose(v, arr, rtol=rtol, atol=atol, equal_nan=equal_nan),
-            operation="isclose",
+            operation="isclose", keep_units=False,
         )
     raise MapAlgebraError("isclose() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 

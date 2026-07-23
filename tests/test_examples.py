@@ -23,7 +23,7 @@ _DETERMINISTIC_SCRIPTS = [
     "08_streaming_reductions.py",
     "09_qgis_vrt.py",
     "10_landing_site_screening.py",
-    "21_map_algebra_terrain_resample.py",
+    "27_map_algebra_terrain_resample.py",
 ]
 
 

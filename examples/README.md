@@ -31,7 +31,7 @@ common support module at `_example_support.py`.
 
 | Requirement | Examples |
 |-------------|----------|
-| None (fully synthetic) | 01–08, 10–11 |
+| None (fully synthetic) | 01–10, 18–22, 25, 27, 31 |
 | SPICE kernel download (first use) | 11–12, 14–16 |
 | Synthetic horizon data (download on first use from GitHub Releases) | 12–13 |
 | Real scenario with `dem.tif` and `horizons/` | 14–16 |
@@ -57,10 +57,14 @@ common support module at `_example_support.py`.
 | `15_python_psr.py` | PSR generation on a real scenario | Optional (Cuda default) | Real scenario + SPICE |
 | `16_generate_horizons.py` | Resumable CUDA horizon generation from one or more DEMs | **Required** | User-provided DEMs |
 | `17_downstream_products.py` | Lightmap, PSR, Sun/Earth elevation, safe havens, and four mission-duration products | Optional | Real scenario + SPICE |
-| `18_map_algebra_screening.py` | Map-algebra terrain-lighting screening with validity, scoring, and GeoTIFF output | No | Synthetic |
-| `19_map_algebra_focal.py` | Map-algebra focal smoothing, morphology opening, and distance fields | No | Synthetic |
-| `20_map_algebra_temporal.py` | Temporal map algebra: time-series reduction composed with spatial constraints | No | Synthetic |
-| `21_map_algebra_terrain_resample.py` | Terrain expressions, explicit resampling, windowed writes, and canonical validity | No | Synthetic |
+| `18_map_algebra_basics.py` | Eager rasters, metadata, arithmetic, comparisons, Boolean logic, and local operations | No | Synthetic |
+| `19_map_algebra_validity.py` | Canonical validity, valid zero, `where`, `coalesce`, invalidation, and filling | No | Synthetic |
+| `20_map_algebra_grids.py` | Shape-only mismatch rejection, explicit alignment, and coordinate expressions | No | Synthetic |
+| `21_map_algebra_numerics.py` | Units, dtype promotion, overflow, casting, and non-finite policies | No | Synthetic |
+| `22_map_algebra_suitability.py` | Terrain-lighting screening with validity, weighted scoring, and GeoTIFF output | No | Synthetic |
+| `25_map_algebra_focal.py` | Focal smoothing, morphology opening, and distance fields | No | Synthetic |
+| `27_map_algebra_terrain_resample.py` | Terrain expressions, explicit resampling, windowed writes, and canonical validity | No | Synthetic |
+| `31_map_algebra_temporal.py` | Temporal reduction composed with spatial constraints | No | Synthetic |
 
 ## Synthetic horizon data
 
