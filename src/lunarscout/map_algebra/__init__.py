@@ -853,19 +853,37 @@ def _wrap_focal(fn: Any, op_id: str) -> Any:
     def _wrapper(raster: Any, *args: Any, **kwargs: Any) -> Any:
         bound = fn_signature.bind(raster, *args, **kwargs)
         if isinstance(raster, RasterExpression):
-            from .focal import _validate_focal_expression_parameters
+            from .focal import (
+                _output_dtype as _focal_output_dtype,
+                _validate_focal_expression_parameters,
+            )
             from ._model import _make_expr_node
 
             bound.apply_defaults()
             _validate_focal_expression_parameters(dict(bound.arguments))
+            operation = op_id.rsplit(".", 1)[-1]
+            if operation in {
+                "sum", "mean", "min", "max", "range", "std", "count", "median",
+            }:
+                inferred_dtype = (
+                    None if raster.dtype is None
+                    else _focal_output_dtype(raster.dtype, operation)
+                )
+            elif operation == "convolve":
+                inferred_dtype = (
+                    None if raster.dtype is None
+                    else _focal_output_dtype(raster.dtype, "mean")
+                )
+            else:
+                inferred_dtype = raster.dtype
             all_params = dict(kwargs)
             if args:
                 all_params["_args"] = args
             return _make_expr_node(
                 op_id, (raster,),
                 grid=raster.grid,
-                dtype=raster.dtype,
-                units=raster.units,
+                dtype=inferred_dtype,
+                units=None if operation == "count" else raster.units,
                 halo=1,
                 params=all_params,
             )

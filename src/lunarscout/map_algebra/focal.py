@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import warnings
+from fractions import Fraction
+from math import sqrt
 from typing import Any, Literal
 
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 from scipy import ndimage
 
 from ..errors import (
@@ -81,6 +84,20 @@ def _validate_min_valid_count(
     return min_valid_count
 
 
+def _validate_ddof(ddof: Any) -> int:
+    if (
+        not isinstance(ddof, (int, np.integer))
+        or isinstance(ddof, (bool, np.bool_))
+        or ddof < 0
+    ):
+        raise MapAlgebraError(
+            "ddof must be a non-negative integer.",
+            code="map_algebra_invalid_ddof",
+            details={"ddof": repr(ddof)},
+        )
+    return int(ddof)
+
+
 def _validate_footprint(
     size: int | tuple[int, int] | None,
     footprint: np.ndarray | None,
@@ -137,6 +154,8 @@ def _validate_focal_expression_parameters(arguments: dict[str, Any]) -> None:
         valid_neighbor=valid_neighbor,
         footprint_count=footprint_count,
     )
+    if "ddof" in arguments:
+        _validate_ddof(arguments["ddof"])
 
 
 def _validate_convolution_kernel(kernel: Any) -> np.ndarray:
@@ -203,19 +222,166 @@ def _apply_edge_invalid(
         valid[:, -hw:] = False
 
 
-def _output_dtype(raster: Raster, operation: str) -> np.dtype:
-    src = raster.values.dtype
-    if operation in ("sum", "count"):
-        if np.issubdtype(src, np.floating):
-            return np.dtype(np.float64)
-        return np.dtype(np.int64)
-    if operation in ("mean", "std", "range", "median"):
+def _output_dtype(source_dtype: np.dtype[Any], operation: str) -> np.dtype[Any]:
+    src = np.dtype(source_dtype)
+    if operation in {"sum", "mean", "std", "count", "min", "max"}:
+        from ._dtypes import accumulator_dtype
+
+        return accumulator_dtype(src, operation=f"focal.{operation}")
+    if operation in ("range", "median"):
         if src == np.dtype(np.float64):
             return np.dtype(np.float64)
         return np.dtype(np.float32)
     if operation in ("min", "max"):
         return src
     return src
+
+
+def _neighborhood_windows(
+    raster: Raster,
+    footprint: np.ndarray,
+    *,
+    edge: EdgeMode,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return source-precision value windows and active validity windows."""
+    halo = (footprint.shape[0] // 2, footprint.shape[1] // 2)
+    # Constant/invalid padding is canonically invalid in the established focal
+    # contract, so its payload is deliberately zero and never participates.
+    padded, padded_valid, _ = _pad_array(
+        raster.values, raster.valid, halo, edge, cval=0.0,
+    )
+    windows = sliding_window_view(padded, footprint.shape)
+    valid_windows = sliding_window_view(padded_valid, footprint.shape)
+    return windows, valid_windows & footprint
+
+
+def _neighborhood_validity(
+    raster: Raster,
+    footprint: np.ndarray,
+    active: np.ndarray,
+    *,
+    edge: EdgeMode,
+    valid_neighbor: ValidNeighbor,
+    min_valid_count: int | None,
+    ddof: int = -1,
+) -> tuple[np.ndarray, np.ndarray]:
+    count = np.sum(active, axis=(-2, -1), dtype=np.uint32)
+    footprint_count = int(np.count_nonzero(footprint))
+    if valid_neighbor == "ignore_invalid":
+        threshold = 1 if min_valid_count is None else min_valid_count
+        result_valid = count >= threshold
+    elif valid_neighbor == "propagate_center":
+        result_valid = raster.valid.copy()
+    else:
+        result_valid = count == footprint_count
+    if ddof >= 0:
+        result_valid &= count > ddof
+    if edge == "invalid":
+        _apply_edge_invalid(
+            result_valid,
+            (footprint.shape[0] // 2, footprint.shape[1] // 2),
+        )
+    return count, result_valid
+
+
+def _integer_fractional_reduction(
+    windows: np.ndarray,
+    active: np.ndarray,
+    result_valid: np.ndarray,
+    *,
+    operation: Literal["mean", "std"],
+    ddof: int = 0,
+) -> np.ndarray:
+    """Reduce integer neighborhoods without first converting payloads to FP64."""
+    result = np.zeros(windows.shape[:2], dtype=np.float64)
+    for index in np.ndindex(result.shape):
+        if not result_valid[index]:
+            continue
+        values = windows[index][active[index]]
+        count = int(values.size)
+        total = sum(int(value) for value in values)
+        if operation == "mean":
+            result[index] = float(Fraction(total, count))
+            continue
+        sum_squares = sum(int(value) * int(value) for value in values)
+        numerator = count * sum_squares - total * total
+        denominator = count * (count - ddof)
+        result[index] = sqrt(float(Fraction(numerator, denominator)))
+    return result
+
+
+def _focal_reduction(
+    raster: Raster,
+    footprint: np.ndarray,
+    *,
+    operation: Literal["sum", "mean", "std"],
+    edge: EdgeMode,
+    valid_neighbor: ValidNeighbor,
+    min_valid_count: int | None,
+    ddof: int = 0,
+) -> tuple[np.ndarray, np.ndarray]:
+    windows, active = _neighborhood_windows(raster, footprint, edge=edge)
+    _, result_valid = _neighborhood_validity(
+        raster, footprint, active, edge=edge,
+        valid_neighbor=valid_neighbor, min_valid_count=min_valid_count,
+        ddof=ddof if operation == "std" else -1,
+    )
+    output_dtype = _output_dtype(raster.dtype, operation)
+    if operation == "sum":
+        selected = np.where(active, windows, raster.dtype.type(0))
+        return (
+            np.sum(selected, axis=(-2, -1), dtype=output_dtype),
+            result_valid,
+        )
+    if raster.dtype.kind in "biu":
+        return (
+            _integer_fractional_reduction(
+                windows, active, result_valid, operation=operation, ddof=ddof,
+            ),
+            result_valid,
+        )
+    selected = np.where(active, windows, output_dtype.type(0))
+    count = np.sum(active, axis=(-2, -1), dtype=np.uint32)
+    if operation == "mean":
+        total = np.sum(selected, axis=(-2, -1), dtype=output_dtype)
+        result = np.zeros(total.shape, dtype=output_dtype)
+        np.divide(total, count.astype(output_dtype), out=result, where=count > 0)
+        return result, result_valid
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = np.std(
+            windows, axis=(-2, -1), dtype=output_dtype, ddof=ddof,
+            where=active,
+        )
+    return result.astype(output_dtype, copy=False), result_valid
+
+
+def _focal_extreme(
+    raster: Raster,
+    footprint: np.ndarray,
+    *,
+    operation: Literal["min", "max"],
+    edge: EdgeMode,
+    valid_neighbor: ValidNeighbor,
+    min_valid_count: int | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    windows, active = _neighborhood_windows(raster, footprint, edge=edge)
+    _, result_valid = _neighborhood_validity(
+        raster, footprint, active, edge=edge,
+        valid_neighbor=valid_neighbor, min_valid_count=min_valid_count,
+    )
+    if raster.dtype.kind == "f":
+        initial = np.inf if operation == "min" else -np.inf
+    elif raster.dtype.kind in "iu":
+        info = np.iinfo(raster.dtype)
+        initial = info.max if operation == "min" else info.min
+    else:
+        initial = True if operation == "min" else False
+    reducer = np.min if operation == "min" else np.max
+    result = reducer(
+        windows, axis=(-2, -1), where=active, initial=initial,
+    )
+    return result.astype(raster.dtype, copy=False), result_valid
 
 
 # ---------------------------------------------------------------------------
@@ -375,12 +541,8 @@ def focal_sum(
         size, footprint, edge, valid_neighbor, cval,
         min_valid_count=min_valid_count,
     )
-    vals, mask = _focal_special(
-        raster, fp,
-        lambda x, **kw: ndimage.generic_filter(x, np.sum, **kw),
-        edge=e, valid_neighbor=vn,
-        neutral=0.0, cval=cval,
-        output_dtype=_output_dtype(raster, "sum"),
+    vals, mask = _focal_reduction(
+        raster, fp, operation="sum", edge=e, valid_neighbor=vn,
         min_valid_count=minimum,
     )
     return Raster(values=vals, georef=raster.georef, valid=mask,
@@ -401,10 +563,8 @@ def focal_mean(
         size, footprint, edge, valid_neighbor, cval,
         min_valid_count=min_valid_count,
     )
-    vals, mask = _focal_generic(
-        raster, fp, edge=e, valid_neighbor=vn,
-        func=lambda w: np.nanmean(w), neutral=np.nan, cval=cval,
-        output_dtype=_output_dtype(raster, "mean"), op_name="mean",
+    vals, mask = _focal_reduction(
+        raster, fp, operation="mean", edge=e, valid_neighbor=vn,
         min_valid_count=minimum,
     )
     return Raster(values=vals, georef=raster.georef, valid=mask,
@@ -425,11 +585,10 @@ def focal_min(
         size, footprint, edge, valid_neighbor, cval,
         min_valid_count=min_valid_count,
     )
-    vals, mask = _focal_special(raster, fp, ndimage.minimum_filter,
-                                 edge=e, valid_neighbor=vn,
-                                 neutral=np.inf, cval=cval,
-                                 output_dtype=_output_dtype(raster, "min"),
-                                 min_valid_count=minimum)
+    vals, mask = _focal_extreme(
+        raster, fp, operation="min", edge=e, valid_neighbor=vn,
+        min_valid_count=minimum,
+    )
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
 
@@ -448,11 +607,10 @@ def focal_max(
         size, footprint, edge, valid_neighbor, cval,
         min_valid_count=min_valid_count,
     )
-    vals, mask = _focal_special(raster, fp, ndimage.maximum_filter,
-                                 edge=e, valid_neighbor=vn,
-                                 neutral=-np.inf, cval=cval,
-                                 output_dtype=_output_dtype(raster, "max"),
-                                 min_valid_count=minimum)
+    vals, mask = _focal_extreme(
+        raster, fp, operation="max", edge=e, valid_neighbor=vn,
+        min_valid_count=minimum,
+    )
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
 
@@ -475,7 +633,7 @@ def focal_range(
                        min_valid_count=min_valid_count, cval=cval)
     from .local import subtract
     result = subtract(max_r, min_r)
-    dst = _output_dtype(raster, "range")
+    dst = _output_dtype(raster.dtype, "range")
     if result.dtype != dst:
         from .local import cast
         result = cast(result, dst, casting="unsafe")
@@ -497,12 +655,10 @@ def focal_std(
         size, footprint, edge, valid_neighbor, cval,
         min_valid_count=min_valid_count,
     )
-    ddof_val = int(ddof)
-    vals, mask = _focal_generic(
-        raster, fp, edge=e, valid_neighbor=vn,
-        func=lambda w: np.nanstd(w, ddof=ddof_val), neutral=np.nan, cval=cval,
-        output_dtype=_output_dtype(raster, "std"), op_name="std",
-        min_valid_count=minimum,
+    ddof = _validate_ddof(ddof)
+    vals, mask = _focal_reduction(
+        raster, fp, operation="std", edge=e, valid_neighbor=vn,
+        min_valid_count=minimum, ddof=ddof,
     )
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
@@ -526,39 +682,16 @@ def focal_count(
         valid_neighbor=vn,
         footprint_count=int(np.count_nonzero(fp)),
     )
-    vals = raster.values.astype(np.float64, copy=False)
-    vld = raster.valid.copy()
-    padded, padded_mask, crop = _pad_array(vals, vld, halo, e, cval=cval)
-    scipy_mode = _SCIPY_MODE_MAP[e]
-    ftp_count = float(np.sum(fp))
-
-    if vn == "ignore_invalid":
-        count_padded = ndimage.generic_filter(
-            padded_mask.astype(np.float64), np.sum, footprint=fp,
-            mode=scipy_mode, cval=0.0,
-        )
-        result_valid = (
-            np.ones(raster.shape, dtype=np.bool_)
-            if minimum is None
-            else count_padded[crop] >= minimum
-        )
-    elif vn == "propagate_center":
-        count_padded = ndimage.generic_filter(
-            padded_mask.astype(np.float64), np.sum, footprint=fp,
-            mode=scipy_mode, cval=0.0,
-        )
-        result_valid = vld.copy()
-    else:
-        count_padded = ndimage.generic_filter(
-            padded_mask.astype(np.float64), np.sum, footprint=fp,
-            mode=scipy_mode, cval=0.0,
-        )
-        result_valid = np.isclose(count_padded[crop], ftp_count)
-
-    if e == "invalid":
-        _apply_edge_invalid(result_valid, halo)
-
-    final = count_padded[crop].astype(np.int64)
+    _, active = _neighborhood_windows(raster, fp, edge=e)
+    count, result_valid = _neighborhood_validity(
+        raster, fp, active, edge=e, valid_neighbor=vn,
+        min_valid_count=minimum,
+    )
+    if vn == "ignore_invalid" and minimum is None:
+        result_valid = np.ones(raster.shape, dtype=np.bool_)
+        if e == "invalid":
+            _apply_edge_invalid(result_valid, halo)
+    final = count.astype(np.int64)
     return Raster(values=final, georef=raster.georef, valid=result_valid,
                   units=None, name=raster.name)
 
@@ -580,7 +713,7 @@ def focal_median(
     vals, mask = _focal_generic(
         raster, fp, edge=e, valid_neighbor=vn,
         func=lambda w: np.nanmedian(w), neutral=np.nan, cval=cval,
-        output_dtype=_output_dtype(raster, "median"), op_name="median",
+        output_dtype=_output_dtype(raster.dtype, "median"), op_name="median",
         min_valid_count=minimum,
     )
     return Raster(values=vals, georef=raster.georef, valid=mask,
@@ -652,7 +785,7 @@ def convolve(
         _apply_edge_invalid(result_valid, halo)
 
     return Raster(
-        values=result_padded[crop].astype(_output_dtype(raster, "mean")),
+        values=result_padded[crop].astype(_output_dtype(raster.dtype, "mean")),
         georef=raster.georef, valid=result_valid,
         units=raster.units, name=raster.name,
     )

@@ -67,6 +67,13 @@ _TEMPORAL_REDUCTION_OP_IDS = {
     "temporal.std", "temporal.sum", "temporal.count",
 }
 
+_FOCAL_OP_IDS = {
+    "focal.sum", "focal.mean", "focal.min", "focal.max", "focal.range",
+    "focal.std", "focal.count", "focal.median", "focal.convolve",
+    "focal.dilate", "focal.erode", "focal.opening", "focal.closing",
+    "focal.majority",
+}
+
 
 def compute(expression: RasterExpression) -> Raster:
     nodes = expression._all_nodes()
@@ -102,6 +109,8 @@ def compute(expression: RasterExpression) -> Raster:
             result = _eval_special(node, operands)
         elif op_id in _TEMPORAL_REDUCTION_OP_IDS:
             result = _eval_temporal_reduction(node, operands)
+        elif op_id in _FOCAL_OP_IDS:
+            result = _eval_focal(node, operands)
         elif op_id in {"terrain.slope", "terrain.aspect", "terrain.hillshade"}:
             from ._spatial import evaluate_terrain
 
@@ -353,6 +362,24 @@ def _eval_temporal_reduction(node: RasterExpression, operands: list[Any]) -> Ras
         f"Unsupported temporal reduction: {op_id}",
         code="map_algebra_expression_eval_failed",
     )
+
+
+def _eval_focal(node: RasterExpression, operands: list[Any]) -> Raster:
+    from lunarscout import map_algebra as _ma
+
+    name = node._operation_id.rsplit(".", 1)[-1]
+    function_name = "convolve" if name == "convolve" else f"focal_{name}"
+    if name in {"dilate", "erode", "opening", "closing", "majority"}:
+        function_name = name
+    function = getattr(_ma, function_name, None)
+    if function is None:
+        raise MapAlgebraExpressionError(
+            f"Unsupported focal operation: {node._operation_id}",
+            code="map_algebra_expression_eval_failed",
+        )
+    params = dict(node._params_dict)
+    positional = tuple(params.pop("_args", ()))
+    return function(operands[0], *positional, **params)
 
 
 # ---------------------------------------------------------------------------

@@ -245,7 +245,7 @@ def accumulator_dtype(
     cannot in general be represented without losing adjacent large values.
     """
     source = normalize_dtype(source_dtype, operation=operation)
-    reduction = operation.removeprefix("temporal.")
+    reduction = operation.rsplit(".", 1)[-1]
 
     if reduction in {"min", "max"}:
         return source

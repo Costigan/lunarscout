@@ -6,6 +6,28 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra numeric consistency, part 9: eager focal accumulators.** Made
+  the shared accumulator-dtype rule authoritative for eager focal sum, mean,
+  standard deviation, count, minimum, and maximum across public calls,
+  expression inference, and explicit whole-raster `compute()`. FP32
+  sum/mean/std now use FP32 working arrays and return FP32; FP64 remains FP64.
+  Signed, unsigned, and Boolean sums use fixed-width `int64`, `uint64`, and
+  `int64` CPU accumulators without an FP64 intermediary, preserving exact
+  `uint64` values beyond `2**53`; overflow follows documented NumPy wrap
+  behavior. Integer/Boolean mean and standard deviation use exact-integer CPU
+  totals and second moments before returning FP64, so large adjacent values do
+  not collapse before centering. Count uses bounded `uint32` neighborhood
+  state with the existing public `int64` encoding, and min/max preserve exact
+  source-dtype values. Added focal expression dispatch to `compute()`, strict
+  non-negative-integer `ddof` validation and boundary invalidity, registry
+  dtype metadata, fresh-process public coverage, and semantic version 3 for
+  sum/mean/std/min/max/range. Focal range, median, convolution, general
+  windowed halos, and GPU focal execution remain deferred; median/convolution
+  still use double-precision SciPy paths. Verification: 1787 passed, 17 skipped
+  in the ordinary CPU suite; 1325 map-algebra tests passed; 441 focused focal
+  and numeric-policy tests passed; fresh-process public API and import-side-
+  effect audits passed.
+
 - **Map-algebra numeric consistency, part 8: temporal accumulators.** Made the
   shared accumulator-dtype policy authoritative for eager and layer-streamed
   temporal reductions. FP32 mean, standard deviation, and sum now execute and

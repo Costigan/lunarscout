@@ -875,6 +875,26 @@ precision and retain NumPy overflow behavior beyond their accumulator range.
 None of the 64-bit contracts makes a reducer eligible for a future CUDA hot
 path; accelerator planning must apply the routing rule above.
 
+Eager focal sum, mean, standard deviation, count, minimum, and maximum use the
+same accumulator-dtype rule in operation construction and execution. FP32
+sum/mean/std use FP32 working arrays and reductions; FP64 sources remain FP64.
+Signed, unsigned, and Boolean sums use fixed-width `int64`, `uint64`, and
+`int64` CPU accumulators, with NumPy wrap behavior beyond those limits.
+Integer/Boolean mean and standard deviation use exact Python-integer totals and
+second moments before producing the documented FP64 CPU correctness result, so
+adjacent `uint64` samples beyond `2**53` do not collapse before centering.
+Neighborhood validity counts use bounded `uint32` working state and are encoded
+as the public `int64` count result. Minimum/maximum preserve source dtype and
+exact integer payloads. Eager calls, expression inference, and explicit whole-
+raster `compute()` enforce the same rules; no bounded or CUDA focal executor is
+introduced.
+
+Focal range, median, and convolution retain their existing focal-specific
+numeric paths pending a later consistency sprint. Median and convolution still
+use SciPy double-precision working values, and range has not yet adopted the
+shared accumulator/output rule. General focal window halos and GPU eligibility
+remain separately deferred.
+
 Integer power follows the same contract through bounded repeated squaring and
 per-multiply integer boundary checks; it does not call a floating-point power
 kernel to decide overflow. Cast safety has two independent layers: NumPy's

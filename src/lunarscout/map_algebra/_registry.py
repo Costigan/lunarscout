@@ -297,7 +297,13 @@ _SPECS = (
     *(
         _spec(
             f"focal.{name}", 1, "focal", f"Apply focal {name}.",
-            version=2,
+            version=3 if name in {"sum", "mean", "min", "max", "range", "std"} else 2,
+            output_dtype_rule=(
+                "accumulator_dtype(source_dtype)"
+                if name in {"sum", "mean", "min", "max", "std", "count"}
+                else "operation-specific"
+            ),
+            output_units_rule="None" if name == "count" else "source units",
             parameters=(
                 ("size", "Odd scalar or rectangular neighborhood dimensions."),
                 ("footprint", "Explicit odd two-dimensional Boolean footprint."),

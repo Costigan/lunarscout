@@ -15,7 +15,7 @@ real PyPI.
 
 Target: `0.2.0rc1`
 
-Last updated: 2026-07-22 (temporal accumulator consistency)
+Last updated: 2026-07-22 (eager focal accumulator consistency)
 
 This plan defines a broad, reusable map-algebra surface for Lunarscout. It is
 intended to be detailed enough for an implementation agent to work through one
@@ -45,8 +45,8 @@ is not counted as partial merely because adjacent functionality exists.
 
 | State | Scope |
 | --- | --- |
-| Completed | Public value types and adapters; eager local/classification/normalization and stack operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, connected-region adapters, global, zonal, and distance operations; temporal adapters and approved streaming reductions; atomic output; halo-aware terrain and explicit cross-grid resampling ``write`` execution; writer progress/cancellation and compact checkpoint resume; public terrain/resample wrappers with categorical safety and validity policies; user guide, architecture, examples, and the ordinary CPU suite. |
-| Partial | Operation catalog metadata and coverage; analyst-facing ``explain`` detail; canonical identity golden fixtures; numeric-policy and dtype centralization; structured-error normalization; exhaustive API tables; and adversarial/boundary tests. |
+| Completed | Public value types and adapters; eager local/classification/normalization and stack operations; expression construction and eager ``compute``; bounded zero-halo local and coordinate ``write`` execution; coordinate expression sources; canonical typed JSON and scientific identity; eager focal/morphology, connected-region adapters, global, zonal, and distance operations; temporal adapters and approved streaming reductions; source-sensitive eager focal sum/mean/std/count/min/max precision; atomic output; halo-aware terrain and explicit cross-grid resampling ``write`` execution; writer progress/cancellation and compact checkpoint resume; public terrain/resample wrappers with categorical safety and validity policies; user guide, architecture, examples, and the ordinary CPU suite. |
+| Partial | Operation catalog metadata and coverage; analyst-facing ``explain`` detail; canonical identity golden fixtures; numeric-policy and dtype centralization (including focal range/median/convolution); structured-error normalization; exhaustive API tables; and adversarial/boundary tests. |
 | Deferred -- large-raster plan | All further bounded/windowed execution work: general halos and focal kernels, local fusion, cross-window region reconciliation, streaming global/zonal reducers, bounded distance fields, temporal spatial-window/time-batch mapping, concurrency controls, and empirical resource scaling. Current completed bounded capabilities remain supported. |
 | Skipped by decision | TestPyPI publication for ``0.2.0rc1``. Local artifact construction, inspection, and isolated installation remain completed evidence. |
 
@@ -542,8 +542,10 @@ stored.
   reducers: sums use int64 for signed and Boolean inputs and uint64 for
   unsigned inputs; FP32 mean/std/sum remain FP32; FP64 remains FP64; integer
   mean/std use the CPU/interchange FP64 correctness path; count uses int64;
-  and min/max preserve the source dtype. Fixed-width sum overflow retains
-  NumPy behavior beyond the accumulator range.)*
+  and min/max preserve the source dtype. The same rule is enforced for eager
+  focal sum/mean/std/count/min/max construction and execution; focal integer
+  mean/std use exact-integer CPU moments before their FP64 result. Fixed-width
+  sum overflow retains NumPy behavior beyond the accumulator range.)*
 - [x] Integer arithmetic does not silently saturate. ``overflow="wrap"`` follows
   NumPy, ``overflow="raise"`` is the public default for checked eager integer
   operations, and ``overflow="promote"`` promotes to a safe supported dtype.
@@ -1088,8 +1090,10 @@ Implement and unit-test private helpers with single responsibilities:
   sole dtype-inference entry point.
 - [ ] `_accumulator_dtype(operation, source_dtype)` defines streaming
   accumulator precision. **PARTIAL:** the shared rule is authoritative for
-  eager and layer-streamed temporal reducers; focal accumulator paths have not
-  yet been reconciled.
+  eager and layer-streamed temporal reducers and for eager focal
+  sum/mean/std/count/min/max construction and execution. Focal range, median,
+  and convolution retain operation-specific numeric paths, and the helper is
+  not yet the sole accumulator entry point for every reduction family.
 - [x] `_checked_integer_kernel(...)` detects overflow without allocating
   unbounded temporary arrays and without converting integer operands or
   results to floating point. Checks must be expressible as bounded native
@@ -1130,8 +1134,12 @@ until a native-32-bit centering algorithm proves large-adjacent-integer
 correctness. Temporal mean/std/sum now use the shared accumulator rule in both
 eager and layer-streamed execution, preserve FP32, and sum signed/unsigned
 integers through exact fixed-width CPU accumulators without an FP64
-intermediary. Focal accumulator paths remain to be reconciled and are not
-claimed complete.
+intermediary. Eager focal sum/mean/std/count/min/max now share that construction
+and execution rule as well: FP32 stays FP32; fixed-width integer sums never use
+FP64; integer mean/std use exact-integer CPU moments; count uses bounded native-
+width working state with an int64 public result; and min/max preserve exact
+source values. Focal range, median, and convolution remain unreconciled, so the
+general accumulator-centralization checkbox remains partial.
 
 Unit-bearing power now uses one shared unit helper across eager and expression
 construction. The declared derived unit is replayed by compute/windowed
@@ -1493,6 +1501,11 @@ Acceptance evidence:
   *(five edge modes, three valid-neighbor policies, ``cval`` parameter)*
 - [x] Implement the required focal statistics and convolution.
   *(sum, mean, min, max, range, std with ddof, count, median, convolve)*
+- [x] Reconcile eager focal sum/mean/std/count/min/max accumulator and output
+  dtypes across public calls, expression inference, and whole-raster
+  ``compute()``. FP32 work remains FP32; exact integer sums and large-adjacent
+  integer mean/std use documented CPU correctness paths. Range, median, and
+  convolution remain a later numeric-policy slice.
 - [x] Implement shared morphology and region adapters.
   Dilate, erode, opening, closing, and majority exist; eager Boolean-Raster
   adapters delegate region labeling, filtering, sizing, and borders to the

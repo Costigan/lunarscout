@@ -1877,6 +1877,33 @@ neighbor, while `focal_count` and convolution retain a meaningful valid zero.
 `ma.focal_max`, `ma.focal_range`, `ma.focal_std` (with `ddof`),
 `ma.focal_count`, `ma.focal_median`.
 
+Eager focal sum, mean, standard deviation, count, minimum, and maximum use the
+same source-sensitive reduction dtype rule during eager execution, expression
+construction, and explicit whole-raster `compute()`. FP32 sum/mean/std work and
+return in FP32; FP64 remains FP64. Signed, unsigned, and Boolean sums use
+fixed-width `int64`, `uint64`, and `int64` CPU accumulators respectively, so
+integer payloads are never routed through FP64 and `uint64` values beyond
+`2**53` remain exact until the documented fixed-width accumulator wraps.
+Integer and Boolean mean/std use exact-integer CPU totals and second moments
+with a `float64` result, preventing large adjacent integer samples from
+collapsing before centering. Count uses a bounded native-width neighborhood
+counter and exposes the established `int64` result; that encoding is not a
+future CUDA arithmetic requirement. Minimum and maximum preserve source dtype
+and exact integer values.
+
+`focal_std` requires a non-negative integer `ddof`; a neighborhood is invalid
+when its valid count is less than or equal to `ddof`. Fixed-width integer sum
+overflow follows NumPy wrap semantics rather than saturating or silently
+promoting. Units are preserved by value reductions and cleared by
+`focal_count`. Constant edge padding retains the existing validity contract:
+padded cells are invalid and `cval` is not reduced as a valid neighbor.
+
+The eager numeric contracts for `focal_range`, `focal_median`, and
+`convolve` remain scheduled for a later numeric-consistency sprint. Median and
+convolution still use SciPy paths with double-precision working values; range
+retains its existing focal-specific result rule. No claim of FP32 working
+precision or exact large-integer behavior is made for those three operations.
+
 **Convolution:** `ma.convolve(kernel, *, normalize=False)` with finite 2-D
 numeric kernels.
 
@@ -1889,8 +1916,9 @@ opened = ma.opening(mask, size=3)
 ```
 
 Focal kernels are eager-only in `0.2`. Expression construction records focal
-parameters for inspection and identity, but bounded focal execution remains in
-the deferred large-raster plan.
+parameters, inferred dtype, and semantic version for inspection and identity;
+`compute()` may explicitly materialize the complete expression. Bounded focal
+execution, arbitrary halo scheduling, and GPU focal kernels remain deferred.
 
 ### Zonal Operations
 
