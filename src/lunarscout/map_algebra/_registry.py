@@ -297,7 +297,11 @@ _SPECS = (
     *(
         _spec(
             f"focal.{name}", 1, "focal", f"Apply focal {name}.",
-            version=3 if name in {"sum", "mean", "min", "max", "range", "std"} else 2,
+            version=(
+                4 if name == "range"
+                else 3 if name in {"sum", "mean", "min", "max", "std", "median"}
+                else 2
+            ),
             output_dtype_rule=(
                 "accumulator_dtype(source_dtype)"
                 if name in {"sum", "mean", "min", "max", "std", "count"}
@@ -328,7 +332,7 @@ _SPECS = (
     ),
     _spec(
         "focal.convolve", 2, "focal", "Apply a finite convolution kernel.",
-        version=2,
+        version=3,
         parameters=(
             ("normalize", "Normalize by the sum of absolute kernel weights."),
             ("edge", "Edge mode: invalid, constant, nearest, reflect, or wrap."),
@@ -375,9 +379,20 @@ _SPECS = (
           output_dtype_rule="source or explicit", output_units_rule="preserve source",
           validity_rule="nearest-neighbour categorical validity by default; coverage threshold optional",
           examples=("resample_to(src, dst_grid)", "resample_to(src, dst_grid, resampling='bilinear')")),
-    _spec("global.statistics", 1, "global", "Calculate global descriptive statistics.", cost_class="global"),
-    _spec("global.histogram", 1, "global", "Calculate a global histogram.", cost_class="global"),
-    _spec("global.percentile", 1, "global", "Calculate global percentiles.", cost_class="global"),
+    _spec("global.statistics", 1, "global", "Calculate global descriptive statistics.",
+          version=2, output_dtype_rule="exact integer sum/extrema/range; fractional moments are float64",
+          cost_class="global"),
+    _spec("global.histogram", 1, "global", "Calculate a global histogram.",
+          version=2, parameters=(
+              ("bins", "Bin count or explicit monotonically increasing edges."),
+              ("range", "Optional lower and upper histogram range."),
+          ), cost_class="global"),
+    _spec("global.percentile", 1, "global", "Calculate global percentiles.",
+          version=2, parameters=(
+              ("q", "Finite percentile or percentiles from 0 through 100."),
+              ("method", "Exact linear interpolation or approximate nearest selection."),
+          ), output_dtype_rule="observed integer selections preserve source dtype; interpolated results are float64",
+          cost_class="global"),
     _spec("global.unique_counts", 1, "global", "Count unique valid values.", cost_class="global"),
     *(
         _spec(
@@ -421,8 +436,12 @@ _SPECS = (
         validity_rule="preserve canonical input validity",
         cost_class="global",
     ),
-    _spec("zonal.stats", 2, "zonal", "Calculate statistics grouped by zone.", cost_class="global"),
-    _spec("zonal.raster", 2, "zonal", "Broadcast a zonal statistic to zone cells.", cost_class="global"),
+    _spec("zonal.stats", 2, "zonal", "Calculate statistics grouped by zone.",
+          version=2, output_dtype_rule="counts int64; integer sums/extrema/ranges remain integer; fractional statistics float64",
+          cost_class="global"),
+    _spec("zonal.raster", 2, "zonal", "Broadcast a zonal statistic to zone cells.",
+          version=2, output_dtype_rule="selected zonal statistic dtype",
+          cost_class="global"),
     _spec("distance.to", 1, "distance", "Calculate distance to Boolean seed cells.", cost_class="global"),
     _spec("distance.signed", 1, "distance", "Calculate a signed distance field.", cost_class="global"),
     *(

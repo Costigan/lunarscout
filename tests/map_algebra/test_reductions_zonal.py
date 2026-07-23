@@ -67,6 +67,17 @@ class TestStatistics:
         assert d["count"] == 4
         assert "mean" in d
 
+    def test_uint64_extrema_range_and_spread_remain_distinct(self):
+        base = 2**63
+        r = _make(np.array([[base, base + 2, base + 4]], dtype=np.uint64))
+        result = statistics(r)
+        assert result.sum == 3 * base + 6
+        assert result.min_val == base
+        assert result.max_val == base + 4
+        assert result.range_val == 4
+        assert result.variance > 0.0
+        assert result.std > 0.0
+
 
 class TestHistogram:
     def test_default_bins(self):
@@ -84,6 +95,23 @@ class TestHistogram:
         counts, edges = histogram(r)
         assert len(counts) == 0
 
+    def test_uint64_uses_explicit_integer_edges_without_precision_loss(self):
+        base = 2**63
+        r = _make(np.array([[base, base + 2, base + 4]], dtype=np.uint64))
+        edges = np.array(
+            [base - 1, base + 1, base + 3, base + 5], dtype=np.uint64,
+        )
+        counts, returned_edges = histogram(r, bins=edges)
+        np.testing.assert_array_equal(counts, np.ones(3, dtype=np.int64))
+        np.testing.assert_array_equal(returned_edges, edges)
+
+    def test_uint64_rejects_inexact_automatic_edges(self):
+        base = 2**63
+        r = _make(np.array([[base, base + 2, base + 4]], dtype=np.uint64))
+        with pytest.raises(MapAlgebraError) as error:
+            histogram(r, bins=3)
+        assert error.value.code == "map_algebra_inexact_histogram_edges"
+
 
 class TestPercentile:
     def test_median(self):
@@ -100,6 +128,19 @@ class TestPercentile:
         r = _make(np.ones((2, 2), dtype=np.float32), valid=np.zeros((2, 2), dtype=np.bool_))
         with pytest.raises(MapAlgebraError):
             percentile(r, 50)
+
+    def test_uint64_observed_percentile_is_exact(self):
+        value = 2**63 + 3
+        r = _make(np.array([[value - 2, value, value + 2]], dtype=np.uint64))
+        result = percentile(r, 50)
+        assert isinstance(result, np.uint64)
+        assert int(result) == value
+
+    def test_invalid_method_is_structured(self):
+        r = _make(np.array([[1.0]], dtype=np.float32))
+        with pytest.raises(MapAlgebraError) as error:
+            percentile(r, 50, method="bogus")  # type: ignore[arg-type]
+        assert error.value.code == "map_algebra_invalid_percentile_method"
 
 
 class TestUniqueCounts:
@@ -151,6 +192,18 @@ class TestZonalStats:
         zones = _make(np.ones((2, 2), dtype=np.int32), valid=np.zeros((2, 2), dtype=np.bool_))
         zs = zonal_stats(vals, zones, statistics=["mean"])
         assert len(zs.zone_ids) == 0
+
+    def test_empty_zones_preserve_declared_integer_statistic_dtypes(self):
+        vals = _make(np.ones((2, 2), dtype=np.uint64))
+        zones = _make(
+            np.ones((2, 2), dtype=np.uint32),
+            valid=np.zeros((2, 2), dtype=np.bool_),
+        )
+        zs = zonal_stats(vals, zones, statistics=["count", "min", "range"])
+        assert zs.zone_ids.dtype == np.dtype(np.uint32)
+        assert zs.values["count"].dtype == np.dtype(np.int64)
+        assert zs.values["min"].dtype == np.dtype(np.uint64)
+        assert zs.values["range"].dtype == np.dtype(np.uint64)
 
     def test_default_stats(self):
         vals = _make(np.array([[1.0, 2.0]], dtype=np.float32))
@@ -252,6 +305,32 @@ class TestZonalStats:
         zs = zonal_stats(vals, zones, statistics=["count"])
         assert zs.values["count"].dtype == np.int64
 
+    def test_count_units_are_dimensionless(self):
+        vals = _make(np.ones((2, 2), dtype=np.float32)).with_units("metres")
+        zones = _make(np.ones((2, 2), dtype=np.int32))
+        zs = zonal_stats(vals, zones, statistics=["count", "mean"])
+        assert zs.units == {"count": None, "mean": "metres"}
+
+    def test_uint64_value_extrema_and_spread_remain_distinct(self):
+        base = 2**63
+        vals = _make(np.array([[base, base + 2, base + 4]], dtype=np.uint64))
+        zones = _make(np.ones((1, 3), dtype=np.uint8))
+        zs = zonal_stats(
+            vals,
+            zones,
+            statistics=["sum", "min", "max", "range", "variance", "std"],
+        )
+        assert zs.values["sum"].dtype == np.dtype(np.uint64)
+        assert int(zs.values["sum"][0]) == (3 * base + 6) % 2**64
+        assert int(zs.values["min"][0]) == base
+        assert int(zs.values["max"][0]) == base + 4
+        assert int(zs.values["range"][0]) == 4
+        assert zs.values["variance"][0] > 0.0
+        assert zs.values["std"][0] > 0.0
+        record = zs.to_records()[0]
+        assert record["min"] == base
+        assert record["max"] == base + 4
+
 
 class TestZonalRaster:
     def test_basic(self):
@@ -260,3 +339,12 @@ class TestZonalRaster:
         result = zonal_raster(vals, zones, statistic="mean")
         assert result.values[0, 0] == 1.5
         assert result.values[1, 1] == 3.5
+
+    def test_integer_statistic_preserves_dtype_and_units(self):
+        base = 2**63
+        vals = _make(np.array([[base, base + 2]], dtype=np.uint64)).with_units("counts")
+        zones = _make(np.ones((1, 2), dtype=np.uint8))
+        result = zonal_raster(vals, zones, statistic="min")
+        assert result.dtype == np.dtype(np.uint64)
+        assert int(result.values[0, 0]) == base
+        assert result.units == "counts"

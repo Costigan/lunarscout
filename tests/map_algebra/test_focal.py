@@ -327,6 +327,28 @@ class TestFocalMedian:
         result = focal_median(r, size=3, valid_neighbor="ignore_invalid", edge="nearest")
         assert result.values[1, 1] == 5.0
 
+    def test_large_adjacent_uint64_median_is_not_reduced_in_float32(self):
+        base = 2**63
+        values = np.array([[base, base + 2, base + 4]], dtype=np.uint64)
+        result = focal_median(_make(values), size=3, edge="nearest")
+        assert result.dtype == np.dtype(np.float64)
+        assert result.values[0, 1] == float(base + 2)
+
+
+class TestFocalRange:
+    def test_full_int8_range_does_not_overflow_source_dtype(self):
+        values = np.array([[-128, 0, 127]], dtype=np.int8)
+        result = focal_range(_make(values), size=3, edge="nearest")
+        assert result.dtype == np.dtype(np.float32)
+        assert result.values[0, 1] == np.float32(255.0)
+
+    def test_adjacent_uint64_range_is_calculated_before_float_conversion(self):
+        base = 2**63
+        values = np.array([[base, base + 2, base + 4]], dtype=np.uint64)
+        result = focal_range(_make(values), size=3, edge="nearest")
+        assert result.dtype == np.dtype(np.float64)
+        assert result.values[0, 1] == 4.0
+
 
 class TestEdgeModes:
     def test_invalid_edges_false(self):
@@ -435,6 +457,15 @@ class TestConvolution:
         result = convolve(r, kernel, edge="nearest")
         assert abs(result.values[2, 2] - 1.0) < 1e-5
 
+    def test_float32_source_preserves_float32_result(self):
+        kernel = np.ones((3, 3), dtype=np.float64) / 9.0
+        result = convolve(
+            _make(np.ones((5, 5), dtype=np.float32)),
+            kernel,
+            edge="nearest",
+        )
+        assert result.dtype == np.dtype(np.float32)
+
     def test_normalize(self):
         kernel = np.ones((3, 3), dtype=np.float64)
         r = _make(np.ones((5, 5), dtype=np.float32))
@@ -525,13 +556,13 @@ class TestMinValidCountValidation:
             assert description["arity"] == 1
             assert description["version"] == 3
             assert description["output_dtype_rule"] == "accumulator_dtype(source_dtype)"
-        assert describe_operation("focal.range")["version"] == 3
+        assert describe_operation("focal.range")["version"] == 4
         count = describe_operation("focal.count")
         assert count["version"] == 2
         assert count["output_dtype_rule"] == "accumulator_dtype(source_dtype)"
         assert count["output_units_rule"] == "None"
-        assert describe_operation("focal.median")["version"] == 2
-        assert describe_operation("focal.convolve")["version"] == 2
+        assert describe_operation("focal.median")["version"] == 3
+        assert describe_operation("focal.convolve")["version"] == 3
 
 
 class TestMorphology:
@@ -630,6 +661,8 @@ class TestExpressionDispatch:
             (focal_sum, np.uint16, np.uint64),
             (focal_mean, np.int16, np.float64),
             (focal_std, np.uint16, np.float64),
+            (focal_range, np.int32, np.float64),
+            (focal_median, np.uint64, np.float64),
             (focal_count, np.bool_, np.int64),
         ],
     )

@@ -229,7 +229,9 @@ def _output_dtype(source_dtype: np.dtype[Any], operation: str) -> np.dtype[Any]:
 
         return accumulator_dtype(src, operation=f"focal.{operation}")
     if operation in ("range", "median"):
-        if src == np.dtype(np.float64):
+        if src == np.dtype(np.float64) or (
+            src.kind in "iu" and src.itemsize >= 4
+        ):
             return np.dtype(np.float64)
         return np.dtype(np.float32)
     if operation in ("min", "max"):
@@ -625,19 +627,38 @@ def focal_range(
     min_valid_count: int | None = None,
     cval: float = 0.0,
 ) -> Raster:
-    min_r = focal_min(raster, size=size, footprint=footprint, edge=edge,
-                       valid_neighbor=valid_neighbor,
-                       min_valid_count=min_valid_count, cval=cval)
-    max_r = focal_max(raster, size=size, footprint=footprint, edge=edge,
-                       valid_neighbor=valid_neighbor,
-                       min_valid_count=min_valid_count, cval=cval)
-    from .local import subtract
-    result = subtract(max_r, min_r)
+    min_r = focal_min(
+        raster, size=size, footprint=footprint, edge=edge,
+        valid_neighbor=valid_neighbor, min_valid_count=min_valid_count,
+        cval=cval,
+    )
+    max_r = focal_max(
+        raster, size=size, footprint=footprint, edge=edge,
+        valid_neighbor=valid_neighbor, min_valid_count=min_valid_count,
+        cval=cval,
+    )
     dst = _output_dtype(raster.dtype, "range")
-    if result.dtype != dst:
-        from .local import cast
-        result = cast(result, dst, casting="unsafe")
-    return result
+    if raster.dtype.kind in "biu":
+        # Subtract in Python's exact integer domain.  Subtracting extrema in
+        # the source dtype can overflow (for example int8: 127 - -128), while
+        # converting uint64 extrema to float first can erase a small range.
+        values = np.fromiter(
+            (
+                int(high) - int(low)
+                for high, low in zip(max_r.values.flat, min_r.values.flat)
+            ),
+            dtype=dst,
+            count=raster.values.size,
+        ).reshape(raster.shape)
+    else:
+        values = np.subtract(max_r.values, min_r.values, dtype=dst)
+    return Raster(
+        values=values,
+        georef=raster.georef,
+        valid=min_r.valid & max_r.valid,
+        units=raster.units,
+        name=raster.name,
+    )
 
 
 def focal_std(
@@ -710,12 +731,29 @@ def focal_median(
         size, footprint, edge, valid_neighbor, cval,
         min_valid_count=min_valid_count,
     )
-    vals, mask = _focal_generic(
-        raster, fp, edge=e, valid_neighbor=vn,
-        func=lambda w: np.nanmedian(w), neutral=np.nan, cval=cval,
-        output_dtype=_output_dtype(raster.dtype, "median"), op_name="median",
+    windows, active = _neighborhood_windows(raster, fp, edge=e)
+    _, mask = _neighborhood_validity(
+        raster, fp, active, edge=e, valid_neighbor=vn,
         min_valid_count=minimum,
     )
+    output_dtype = _output_dtype(raster.dtype, "median")
+    vals = np.zeros(raster.shape, dtype=output_dtype)
+    for index in np.ndindex(raster.shape):
+        if not mask[index]:
+            continue
+        selected = windows[index][active[index]]
+        if selected.size == 0:
+            continue
+        if raster.dtype.kind in "biu":
+            ordered = sorted(int(value) for value in selected)
+            middle = len(ordered) // 2
+            if len(ordered) % 2:
+                value = float(ordered[middle])
+            else:
+                value = float(Fraction(ordered[middle - 1] + ordered[middle], 2))
+            vals[index] = value
+        else:
+            vals[index] = np.median(selected)
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
 
@@ -751,7 +789,8 @@ def convolve(
 
     fp = np.ones(kernel.shape, dtype=np.bool_)
     halo = (kernel.shape[0] // 2, kernel.shape[1] // 2)
-    vals = raster.values.astype(np.float64, copy=False)
+    output_dtype = _output_dtype(raster.dtype, "mean")
+    vals = raster.values.astype(output_dtype, copy=False)
     vld = raster.valid.copy()
     padded, padded_mask, crop = _pad_array(vals, vld, halo, e, cval=cval)
     scipy_mode = _SCIPY_MODE_MAP[e]
@@ -761,7 +800,11 @@ def convolve(
     else:
         padded[~padded_mask] = 0.0
 
-    result_padded = ndimage.convolve(padded, kernel, mode=scipy_mode, cval=cval)
+    execution_kernel = kernel.astype(output_dtype, copy=False)
+    result_padded = ndimage.convolve(
+        padded, execution_kernel, output=output_dtype,
+        mode=scipy_mode, cval=cval,
+    )
 
     if vn == "require_all":
         mask_count = ndimage.convolve(
@@ -785,7 +828,7 @@ def convolve(
         _apply_edge_invalid(result_valid, halo)
 
     return Raster(
-        values=result_padded[crop].astype(_output_dtype(raster.dtype, "mean")),
+        values=result_padded[crop],
         georef=raster.georef, valid=result_valid,
         units=raster.units, name=raster.name,
     )

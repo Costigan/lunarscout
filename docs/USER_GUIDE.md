@@ -1939,6 +1939,12 @@ from statistics; invalid zone cells are not assigned to any zone.
 `ma.zonal_raster(values, zones, statistic="mean")` broadcasts one statistic
 back to valid zone cells.
 
+Count columns are dimensionless `int64` values. Integer sums, extrema, and
+ranges remain integer-valued, including `uint64` inputs beyond the exact FP64
+range; means, variances, standard deviations, medians, and interpolated
+percentiles are `float64`. Broadcasting preserves the selected statistic's
+dtype and units.
+
 ### Global Reductions
 
 Global reductions collapse a complete raster to statistics or summaries:
@@ -1953,7 +1959,12 @@ counts = ma.unique_counts(raster, max_unique=1_000)
 `ma.statistics()` returns count, invalid count, sum, mean, min, max, range,
 variance, and standard deviation. `ma.unique_counts()` fails predictably when
 a safety bound is exceeded. `ma.percentile()` supports `"exact"` (linear)
-and `"approximate"` (nearest) methods.
+and `"approximate"` (nearest) methods. Integer statistics calculate sums,
+extrema, ranges, and centered moments before floating conversion. An integer
+percentile that selects an observed sample preserves its integer dtype;
+interpolated results are `float64`. Histograms of integers beyond `2**53`
+require explicit integer bin edges so distinct values cannot collapse into
+the same floating edge.
 
 ### Distance Fields
 

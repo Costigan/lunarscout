@@ -4,6 +4,8 @@ import csv
 import json
 import types
 from dataclasses import dataclass
+from fractions import Fraction
+from math import sqrt
 from typing import Any, Literal, Sequence
 
 import numpy as np
@@ -44,8 +46,13 @@ class ZonalStatistics:
         return {
             "zone_ids": [int(z) for z in self.zone_ids],
             "columns": list(self.columns),
-            "values": {k: [int(x) if k in _INTEGER_STATS else float(x) for x in v]
-                        for k, v in self.values.items()},
+            "values": {
+                key: [
+                    int(value) if values.dtype.kind in "biu" else float(value)
+                    for value in values
+                ]
+                for key, values in self.values.items()
+            },
             "valid": {k: v.tolist() for k, v in self.valid.items()},
             "units": {k: v for k, v in self.units.items()},
         }
@@ -60,7 +67,9 @@ class ZonalStatistics:
             for col in self.columns:
                 if self.valid[col][i]:
                     v = self.values[col][i]
-                    rec[col] = int(v) if col in _INTEGER_STATS else float(v)
+                    rec[col] = (
+                        int(v) if self.values[col].dtype.kind in "biu" else float(v)
+                    )
                 else:
                     rec[col] = None
             records.append(rec)
@@ -105,13 +114,27 @@ def _compute_count_stat(
     return out_vals, out_valid
 
 
+def _value_stat_dtype(stat: StatisticName, source_dtype: np.dtype[Any]) -> np.dtype[Any]:
+    if stat == "sum" and source_dtype.kind in "biu":
+        return np.dtype(np.uint64 if source_dtype.kind == "u" else np.int64)
+    if stat in {"min", "max"}:
+        return source_dtype
+    if stat == "range" and source_dtype.kind in "biu":
+        if source_dtype.kind == "b":
+            return np.dtype(np.uint8)
+        return np.dtype(f"uint{source_dtype.itemsize * 8}")
+    return np.dtype(np.float64)
+
+
 def _compute_value_stat(
     stat: StatisticName,
     flat_values: np.ndarray,
     value_indices: list[np.ndarray],
     n_zones: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    out_vals = np.zeros(n_zones, dtype=np.float64)
+    source_dtype = flat_values.dtype
+    output_dtype = _value_stat_dtype(stat, source_dtype)
+    out_vals = np.zeros(n_zones, dtype=output_dtype)
     out_valid = np.ones(n_zones, dtype=np.bool_)
 
     for i, idx in enumerate(value_indices):
@@ -119,29 +142,67 @@ def _compute_value_stat(
         if n == 0:
             out_valid[i] = False
             continue
-        fd = flat_values[idx].astype(np.float64, copy=False)
+        data = flat_values[idx]
+        if data.dtype.kind in "biu":
+            exact = sorted(int(value) for value in data)
+            total = sum(exact)
+            if stat == "sum":
+                out_vals[i] = np.sum(data, dtype=output_dtype)
+            elif stat == "mean":
+                out_vals[i] = float(Fraction(total, n))
+            elif stat == "min":
+                out_vals[i] = exact[0]
+            elif stat == "max":
+                out_vals[i] = exact[-1]
+            elif stat == "range":
+                out_vals[i] = exact[-1] - exact[0]
+            elif stat in {"std", "variance"}:
+                sum_squares = sum(value * value for value in exact)
+                variance = Fraction(n * sum_squares - total * total, n * n)
+                out_vals[i] = sqrt(float(variance)) if stat == "std" else float(variance)
+            elif stat == "median":
+                middle = n // 2
+                value = (
+                    Fraction(exact[middle - 1] + exact[middle], 2)
+                    if n % 2 == 0 else Fraction(exact[middle])
+                )
+                out_vals[i] = float(value)
+            elif stat in {"p25", "p75", "p90"}:
+                quantile = {"p25": 25, "p75": 75, "p90": 90}[stat]
+                rank = Fraction(quantile * (n - 1), 100)
+                lower = rank.numerator // rank.denominator
+                upper = -(-rank.numerator // rank.denominator)
+                if lower == upper:
+                    value = Fraction(exact[lower])
+                else:
+                    weight = rank - lower
+                    value = exact[lower] * (1 - weight) + exact[upper] * weight
+                out_vals[i] = float(value)
+            continue
+
+        fd = data.astype(np.float64, copy=False)
         if stat == "sum":
-            out_vals[i] = float(np.sum(fd))
+            out_vals[i] = np.sum(fd)
         elif stat == "mean":
-            out_vals[i] = float(np.mean(fd))
+            out_vals[i] = np.mean(fd)
         elif stat == "min":
-            out_vals[i] = float(np.min(fd))
+            out_vals[i] = np.min(fd)
         elif stat == "max":
-            out_vals[i] = float(np.max(fd))
+            out_vals[i] = np.max(fd)
         elif stat == "range":
-            out_vals[i] = float(np.max(fd) - np.min(fd))
+            out_vals[i] = np.max(fd) - np.min(fd)
         elif stat == "std":
-            out_vals[i] = float(np.std(fd, ddof=0))
+            out_vals[i] = np.std(fd, ddof=0)
         elif stat == "variance":
-            out_vals[i] = float(np.var(fd, ddof=0))
+            out_vals[i] = np.var(fd, ddof=0)
         elif stat == "median":
-            out_vals[i] = float(np.median(fd))
+            out_vals[i] = np.median(fd)
         elif stat == "p25":
-            out_vals[i] = float(np.percentile(fd, 25, method="linear"))
+            out_vals[i] = np.percentile(fd, 25, method="linear")
         elif stat == "p75":
-            out_vals[i] = float(np.percentile(fd, 75, method="linear"))
+            out_vals[i] = np.percentile(fd, 75, method="linear")
         elif stat == "p90":
-            out_vals[i] = float(np.percentile(fd, 90, method="linear"))
+            out_vals[i] = np.percentile(fd, 90, method="linear")
     return out_vals, out_valid
 
 
@@ -201,11 +262,21 @@ def zonal_stats(
 
     if n_zones == 0:
         return ZonalStatistics(
-            zone_ids=np.array([], dtype=np.int64),
+            zone_ids=np.array([], dtype=zones.dtype),
             columns=tuple(requested),
-            values={s: np.array([], dtype=np.int64 if s in _INTEGER_STATS else np.float64) for s in requested},
+            values={
+                statistic: np.array(
+                    [],
+                    dtype=(
+                        np.dtype(np.int64)
+                        if statistic in _INTEGER_STATS
+                        else _value_stat_dtype(statistic, values.dtype)
+                    ),
+                )
+                for statistic in requested
+            },
             valid={s: np.array([], dtype=np.bool_) for s in requested},
-            units={s: values.units for s in requested},
+            units={s: None if s in _INTEGER_STATS else values.units for s in requested},
         )
 
     zone_indices: list[np.ndarray] = []
@@ -230,7 +301,7 @@ def zonal_stats(
             vals, vld = _compute_value_stat(stat, flat_values, zone_indices, n_zones)
             result_values[stat] = vals
             result_valid[stat] = vld
-        result_units[stat] = values.units
+        result_units[stat] = None if stat in _INTEGER_STATS else values.units
 
     zone_ids.flags.writeable = False
     for arr in result_values.values():
@@ -260,7 +331,7 @@ def zonal_raster(
         )
 
     zs = zonal_stats(values, zones, statistics=[statistic])
-    out_values = np.zeros(values.shape, dtype=np.float64)
+    out_values = np.zeros(values.shape, dtype=zs.values[statistic].dtype)
     out_valid = np.zeros(values.shape, dtype=np.bool_)
 
     flat_zones = zones.values.ravel()
@@ -277,6 +348,6 @@ def zonal_raster(
         values=out_values,
         georef=values.georef,
         valid=out_valid,
-        units=values.units,
+        units=zs.units[statistic],
         name=values.name,
     )

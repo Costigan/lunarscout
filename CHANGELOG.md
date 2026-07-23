@@ -6,6 +6,25 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Map-algebra numeric consistency, part 10: example-facing focal and
+  summary precision.** Reconciled the active implementation plan with the
+  supported API and existing examples, removing already-completed
+  unit-bearing power, morphology, region-adapter, zonal-record, and weighted-
+  scoring work from the remaining inventory. Focal range now subtracts
+  integer extrema without source-dtype overflow or premature FP64 conversion;
+  focal median orders integer samples before conversion and selects FP64 for
+  32/64-bit integer inputs; convolution preserves its inferred FP32 path.
+  Global and zonal integer summaries calculate sums, extrema, ranges, and
+  centered moments without first converting values to FP64, preserving
+  distinctions between adjacent `uint64` values beyond `2**53`. Zonal result
+  dtypes, units, immutable records, and raster broadcasts now agree, count
+  units are dimensionless, observed integer percentiles remain exact, and
+  large-integer histograms require explicit integer edges instead of silently
+  collapsing floating edges. Updated operation semantic versions, registry
+  result rules, user guidance, and boundary tests. Verification: 1802 passed,
+  17 skipped in the ordinary CPU suite; 153 focused focal/global/zonal tests
+  passed; examples 18--21 ran successfully; `git diff --check` passed.
+
 - **Map-algebra numeric consistency, part 9: eager focal accumulators.** Made
   the shared accumulator-dtype rule authoritative for eager focal sum, mean,
   standard deviation, count, minimum, and maximum across public calls,
