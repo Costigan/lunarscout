@@ -31,6 +31,22 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   Verification: all six notebooks pass ``nbclient`` execution; 1833 passed,
   17 skipped in the ordinary CPU suite.
 
+- **Synthetic DEM overhaul and notebook 03 refinement.** Replaced the
+  sinusoidal roughness and broad ridge in the synthetic horizon DEM with 200
+  randomly placed small craters (radius 2--10 px, depth 1--3 m) using new
+  ``_add_crater()`` and ``_add_cone()`` helpers in
+  ``scripts/generate_synthetic_horizon_data.py``.  The baseline is now 0 m
+  (was 100 m) and the centre cone was narrowed.  Regenerated the DEM and
+  four horizon tiles, refreshed the local cache, and updated
+  ``synthetic_horizon_manifest.json`` hashes.
+
+  Updated notebook ``03_celestial_geometry.ipynb``: display all four
+  lightmap bands in a 2×2 subplot grid; added a 5-m contour map with proper
+  nodata masking and Y-axis correction (``ax.invert_yaxis()``); added a 3D
+  surface plot of the DEM; azimuth now increments by 10° per time step; and
+  documented the sign convention for Sun elevation at the south pole in the
+  Moon-ME Z-up frame.  Generator script kept in sync.
+
 - **Stable introductory map-algebra surface and examples.** Added focused
   fresh-process public tests for valid zero versus invalid GeoTIFF pixels,
   QGIS-compatible Boolean encoding and dataset masks, grid/unit mismatches,

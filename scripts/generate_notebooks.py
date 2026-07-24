@@ -722,13 +722,19 @@ if scenario is not None:
     lightmap_path = output / "analysis" / "synthetic_lightmap.tif"
     lightmap_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Hard-coded Sun vectors for reproducibility (km, Moon-ME).
+    # Sun at \u22123\u00b0 elevation at the south pole (that is +3\u00b0 in a
+    # Z-up frame such as Moon-ME).
+    import math
+
+    elev = math.radians(-3)
     sun_distance_km = 147_010_225.48
+    sun_xy = sun_distance_km * math.cos(elev)
+    sun_z = sun_distance_km * math.sin(elev)
     sun_vecs = np.array([
-        [sun_distance_km, 0.0, 0.0],
-        [sun_distance_km, 0.0, 0.0],
-        [sun_distance_km, 0.0, 0.0],
-        [sun_distance_km, 0.0, 0.0],
+        [sun_xy * math.cos(math.radians(a)),
+         sun_xy * math.sin(math.radians(a)),
+         sun_z]
+        for a in range(0, 40, 10)
     ], dtype=np.float64)
 
     ls.generate_lightmap(
@@ -756,6 +762,65 @@ if scenario is not None:
 **Try this:** vary the Sun vector direction to simulate different
 illumination geometries.  The lightmap encodes visible solar fraction as
 `uint8` (0 = fully obscured, 255 = fully visible).
+"""),
+        md("""\
+---
+## 5. Display the Lightmap and DEM
+
+Display all four lightmap bands as subplots, then show a contour map of
+the underlying DEM.
+"""),
+        code("""\
+if scenario is not None:
+    dem, _ = ls.read_geotiff(str(output / "dem.tif"))
+    valid = dem != -9999.0
+
+    fig, ax = plt.subplots()
+    vmin = np.floor(dem[valid].min())
+    vmax = np.ceil(dem[valid].max())
+    levels = np.arange(vmin, vmax + 5, 5)
+    cs = ax.contour(dem, levels=levels, colors="black", linewidths=0.5)
+    cs2 = ax.contourf(dem, levels=levels, cmap="terrain", alpha=0.9)
+    plt.colorbar(cs2, ax=ax, label="elevation (m)")
+    ax.clabel(cs, inline=True, fontsize=7, fmt="%d")
+    ax.invert_yaxis()  # match imshow origin='upper'
+    ax.set_title("Synthetic DEM -- 5 m Contours")
+    fig.tight_layout()
+    plt.show()
+"""),
+        code("""\
+if scenario is not None:
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    dem, _ = ls.read_geotiff(str(output / "dem.tif"))
+    valid = dem != -9999.0
+    dem_masked = np.where(valid, dem, np.nan)
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection="3d")
+    x = np.arange(dem_masked.shape[1])
+    y = np.arange(dem_masked.shape[0])
+    X, Y = np.meshgrid(x, y)
+    ax.plot_surface(X, Y, dem_masked, cmap="terrain",
+                    linewidth=0, antialiased=True)
+    ax.invert_yaxis()
+    ax.set_title("Synthetic DEM -- 3D Surface")
+    ax.set_xlabel("x (pixels)")
+    ax.set_ylabel("y (pixels)")
+    ax.set_zlabel("elevation (m)")
+    plt.show()
+"""),
+        code("""\
+if scenario is not None:
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    for b, ax in enumerate(axes.flat):
+        arr, _ = ls.read_geotiff(lightmap_path, band=b + 1)
+        im = ax.imshow(arr, cmap="gray", vmin=0, vmax=255, interpolation="none")
+        plt.colorbar(im, ax=ax, shrink=0.85, label="solar fraction")
+        ax.set_title(f"Lightmap -- Band {b + 1}")
+    fig.suptitle("Synthetic Lightmap -- All Bands")
+    fig.tight_layout()
+    plt.show()
 """),
     ]
     return n

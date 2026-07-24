@@ -5,10 +5,10 @@
   "download_url": "https://github.com/Costigan/lunarscout/releases/download/synthetic-horizon-data-v1/synthetic-horizon-data-v1.tar.gz",
   "asset_sha256": "cfe88ba526f5cf4a7d58fa3a01c24f4b10a982d9ef057ca63c3276eb490136d8",
   "files": {
-    "dem.tif": "4be810ed73708f08257f2debadcba24acc67a17f5f11cc6577f6ec8027b8b561",
-    "horizons/00000/horizon_00000_00000_000.cbin": "689114c2ee5d76890e3f729772588ad4929584217f93e799cd01b461de29a1e9",
-    "horizons/00000/horizon_00000_00128_000.cbin": "f0f4649abefe20c403bb94f902c5539fb75d18fb8fa8857f88662e972ecdb477",
-    "horizons/00128/horizon_00128_00000_000.cbin": "89de0d62c0df5da72ab2b612e80e1569e1c93e4053de130a3f386302fafc695f",
-    "horizons/00128/horizon_00128_00128_000.cbin": "cf86a6e1824bdaf58a574be62a654a03b7eeaab99cc804ae1861b0752224a99b"
+    "dem.tif": "3552870effe09b0b3832cc636b5977f4480037b6e6e6297e9d8b0d8a77df5100",
+    "horizons/00000/horizon_00000_00000_000.cbin": "4368bf9b30b3ff2bc82beea4d3ba393c4decc10422c3c915abee538c6fc83ca5",
+    "horizons/00000/horizon_00000_00128_000.cbin": "730b07583c53cab0340dc5c90e11b41912906eff2c7d5c0ed457aa220d656d48",
+    "horizons/00128/horizon_00128_00000_000.cbin": "40c7d1fe25bbccd77848b6115f5464173ecfcbf9c567b91bb65a649a789c69cb",
+    "horizons/00128/horizon_00128_00128_000.cbin": "ad61151527f5651cae7ecbb2ce75c004299c678e310cd3eee05e909cfc90819b"
   }
 }

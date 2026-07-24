@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate the synthetic 256×256 DEM and its horizon tiles.
 
-Creates a south-polar stereographic DEM with a bowl, ridges, and a plateau.
-Then generates four 128×128 compressed horizon tiles.  Requires a GPU.
+Creates a south-polar stereographic DEM with a bowl, cone, bump, and many
+small craters.  Generates four 128×128 compressed horizon tiles.  Requires a GPU.
 
 Output: dem.tif and horizons/ under the output directory.
 """
@@ -43,51 +43,49 @@ ORIGIN_Y = 1280.0
 OBSERVER_HEIGHT_M = 0.0
 
 
+def _add_crater(dem, rows, cols, cy, cx, radius, depth, rng=None):
+    """Subtract a crater depression (Gaussian dip or parabolic bowl)."""
+    dist = np.sqrt((rows - cy) ** 2 + (cols - cx) ** 2)
+    if rng is not None and rng.uniform() < 0.5:
+        profile = np.exp(-0.5 * (dist / (radius * 0.5)) ** 2)
+    else:
+        profile = np.maximum(0.0, 1.0 - dist / radius) ** 2
+    dem -= depth * profile
+
+
+def _add_cone(dem, rows, cols, cy, cx, radius, height):
+    """Add a parabolic peak."""
+    dist = np.sqrt((rows - cy) ** 2 + (cols - cx) ** 2)
+    profile = np.maximum(0.0, 1.0 - dist / radius) ** 2
+    dem += height * profile
+
+
 def build_synthetic_dem() -> np.ndarray:
     rows, cols = np.indices((HEIGHT, WIDTH), dtype=np.float64)
 
-    # Centre coordinates in pixels
-    cy, cx = HEIGHT / 2, WIDTH / 2
+    dem = np.zeros((HEIGHT, WIDTH), dtype=np.float64)
 
-    # Base flat terrain
-    dem = np.full((HEIGHT, WIDTH), 100.0, dtype=np.float64)
-
-    # Bowl (crater) in the upper-left quadrant
+    # Bowl (large crater) in the upper-left quadrant -- Gaussian dip
     dist_bowl = np.sqrt((rows - 48) ** 2 + (cols - 48) ** 2)
-    bowl_depth = 40.0 * np.exp(-0.5 * (dist_bowl / 30.0) ** 2)
-    dem -= bowl_depth
-
-    # Ridge running diagonally through the centre
-    ridge_dist = np.abs(
-        (rows - cy) * np.cos(np.radians(35))
-        + (cols - cx) * np.sin(np.radians(35))
-    )
-    ridge_height = 30.0 * np.exp(-0.5 * (ridge_dist / 15.0) ** 2)
-    # Taper the ridge near edges
-    edge_taper = np.exp(
-        -0.5 * ((rows - cy) ** 2 + (cols - cx) ** 2) / (HEIGHT * 0.6) ** 2
-    )
-    dem += ridge_height * edge_taper
+    dem -= 40.0 * np.exp(-0.5 * (dist_bowl / 30.0) ** 2)
 
     # Cone/peak in lower-right quadrant
-    dist_cone = np.sqrt((rows - 180) ** 2 + (cols - 190) ** 2)
-    cone_height = 50.0 * np.maximum(0.0, 1.0 - dist_cone / 35.0) ** 2
-    dem += cone_height
+    _add_cone(dem, rows, cols, cy=180, cx=190, radius=15, height=50)
 
     # Small bump near top-right
-    dist_bump = np.sqrt((rows - 40) ** 2 + (cols - 200) ** 2)
-    bump_height = 25.0 * np.exp(-0.5 * (dist_bump / 20.0) ** 2)
-    dem += bump_height
+    _add_cone(dem, rows, cols, cy=40, cx=200, radius=20, height=25)
 
-    # Medium-frequency roughness
-    roughness = (
-        4.0 * np.sin(rows * 0.15) * np.cos(cols * 0.12)
-        + 3.0 * np.cos(rows * 0.09) * np.sin(cols * 0.11)
-        + 2.0 * np.sin((rows + cols) * 0.07)
-    )
-    dem += roughness
+    # Scattered small craters for realistic lightmap shadows
+    rng = np.random.Generator(np.random.PCG64(seed=42))
+    margin = 7
+    for _ in range(200):
+        cy_c = rng.uniform(margin, HEIGHT - margin)
+        cx_c = rng.uniform(margin, WIDTH - margin)
+        radius = rng.uniform(2.0, 10.0)
+        depth = rng.uniform(1.0, 3.0)
+        _add_crater(dem, rows, cols, cy=cy_c, cx=cx_c,
+                    radius=radius, depth=depth, rng=rng)
 
-    # Set nodata in one corner pixel for mask exercise
     dem[0, 0] = -9999.0
 
     return dem.astype(np.float32)
