@@ -179,6 +179,8 @@ def inspect_sdist(path: Path) -> dict[str, object]:
             continue
         if relative.parts[:2] == ("src", "lunarscout.egg-info"):
             continue
+        if relative.parts[0] == "examples":
+            continue
         raise ValueError(f"unexpected source-distribution path: {name}")
 
     required = {

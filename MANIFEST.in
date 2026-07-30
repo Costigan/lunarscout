@@ -3,5 +3,6 @@ include README.md
 include pyproject.toml
 recursive-include src/lunarscout *.py *.toml
 prune tests
+graft examples
 global-exclude *.py[cod]
 global-exclude __pycache__
