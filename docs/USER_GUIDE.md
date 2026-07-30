@@ -1,7 +1,5 @@
 # Lunarscout User Guide
 
-Status: Draft user guide for the standalone `lunarscout` library.
-
 This guide is the first place to read when learning what Lunarscout is, how to
 install it, how to use its current Python API, and which parts of the
 implementation are mature. Some sections are intentionally short because the
@@ -194,14 +192,6 @@ For development tools:
 ```bash
 .venv/bin/python -m pip install -e '.[dev]'
 ```
-
-### GDAL Requirement
-
-Lunarscout uses the GDAL Python bindings supplied by the supported runtime
-environment. GDAL is not listed as a normal PyPI dependency because the Python
-package must match the installed GDAL library.
-
-TODO: Document supported GDAL installation paths for common platforms.
 
 ### Compute Backends
 
@@ -1225,8 +1215,6 @@ Start with:
 
 Then continue through terrain, regions, alignment, temporal cubes,
 file-backed series, streaming reductions, and lighting examples as needed.
-
-TODO: Add a recommended learning path once the example set is finalized.
 
 ## Implementation Maturity
 

@@ -1,0 +1,30 @@
+The build script handles building and validation but never uploads. Here are the steps:
+
+1. Prerequisites
+Install build tools into the project venv:
+.venv/bin/python -m pip install -e '.[dev]'
+Create ~/.pypirc (or use environment variables):
+[pypi]
+username = __token__
+password = pypi-xxxxxxxx
+
+[testpypi]
+username = __token__
+password = pypi-xxxxxxxx
+
+2. Tag the release
+git tag -a v0.1.0rc3 -m "v0.1.0rc3"
+git push origin v0.1.0rc3
+
+3. Build artifacts
+.venv/bin/python scripts/build_release_artifacts.py /tmp/lunarscout-release --upload-target testpypi
+The script copies a clean snapshot, builds sdist + wheel, runs twine check, validates archive contents, and writes release-artifacts.json to the output directory. It requires a clean working tree and an output directory outside the repo.
+
+4. Upload to TestPyPI first
+.venv/bin/python -m twine upload --repository testpypi /tmp/lunarscout-release/*.tar.gz /tmp/lunarscout-release/*.whl
+Verify the install works:
+python -m pip install --index-url https://test.pypi.org/simple/ lunarscout
+
+5. Upload to PyPI
+.venv/bin/python scripts/build_release_artifacts.py /tmp/lunarscout-release
+.venv/bin/python -m twine upload /tmp/lunarscout-release/*.tar.gz /tmp/lunarscout-release/*.whl
