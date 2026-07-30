@@ -1,27 +1,26 @@
 # Lunarscout
 
-Lunarscout is a standalone, notebook-first Python library for lunar terrain,
-horizon, lighting, visibility, and landed-mission analysis.
+Lunarscout is a standalone Python library for finding lunar landing
+sites using illumination history, slope/roughness, horizons, viewsheds
+and proximity to permanent shadow.  Some lighting-related functions
+require CUDA.
 
-Executable capability examples are indexed in
-[`examples/README.md`](examples/README.md).
+For high-volume lighting calculations, lunarscount uses CUDA to
+generate files containing 128x128 pixel tiles of horizons.  These are
+then used to efficiently generate lightmaps and understand the paths
+of the Sun and Earth relative to the local horizon.
 
-The Python/Numba production implementation generates CUDA horizon tiles and
-CPU/CUDA lightmaps, permanent-shadow maps, Sun/Earth terrain-relative
-elevation, safe havens, and four landed mission-duration products. It also
-provides GeoTIFF I/O, georeferencing, terrain operations, connected-region
-analysis, explicit grid alignment, filesystem-safe scenario paths, UTC-aware
-temporal arrays, and file-backed timestamped GeoTIFF series.
+Numerous examples are available.  See [`examples/README.md`](examples/README.md).
 
 ## Installation
 
-Install the release candidate from the configured package index:
+Install lunarscount from the configured package index:
 
 ```bash
 python -m pip install lunarscout
 ```
 
-On a supported NVIDIA system, install the CUDA execution profile instead:
+On a system supporting CUDA, install the CUDA execution profile instead:
 
 ```bash
 python -m pip install "lunarscout[cuda]"
