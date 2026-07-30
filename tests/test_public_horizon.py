@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import sys
 
 import numpy as np
@@ -83,13 +84,23 @@ def test_public_horizon_facade_reports_cuda_and_returns_directory(
     assert actual == output
     assert len(calls[0][0]) == 2
     assert calls[0][1] == output
+    assert calls[0][2]["dem_paths"] == (primary, outer)
     assert calls[0][2]["observer_height_m"] == 1.5
     assert calls[0][2]["compress"] is False
     assert calls[0][2]["overwrite"] is True
     assert fractions == pytest.approx([0.1, 0.15, 0.1585, 1.0])
     assert events[0].backend == "cuda"
     assert (events[-1].tile_y, events[-1].tile_x) == (0, 128)
-    assert "horizons: using cuda backend" in capsys.readouterr().out
+    verbose_output = capsys.readouterr().out.splitlines()
+    assert verbose_output[0] == "horizons: using cuda backend"
+    progress_lines = verbose_output[1:]
+    assert len({line.index("|") for line in progress_lines}) == 1
+    assert progress_lines[0].endswith("--.-- s/patch | ETA -------------------")
+    assert re.search(
+        r"process_patches\s+1/100\s+\|\s+\d+\.\d{2} s/patch \| "
+        r"ETA \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$",
+        progress_lines[2],
+    )
 
 
 def test_public_horizon_cuda_failure_is_structured_and_writes_nothing(

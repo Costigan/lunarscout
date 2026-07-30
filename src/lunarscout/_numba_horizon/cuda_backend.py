@@ -132,6 +132,27 @@ def _build_kernels(cuda):
         return float32(top + ty * (bottom - top))
 
     @cuda.jit
+    def pyramid_downsample_kernel(source, destination):
+        column, row = cuda.grid(2)
+        if column >= destination.shape[1] or row >= destination.shape[0]:
+            return
+        maximum = float32(-32000.0)
+        source_column = column * 4
+        source_row = row * 4
+        for dy in range(4):
+            for dx in range(4):
+                sample_column = source_column + dx
+                sample_row = source_row + dy
+                if (
+                    sample_column < source.shape[1]
+                    and sample_row < source.shape[0]
+                ):
+                    value = source[sample_row, sample_column]
+                    if valid_elevation(value) and value > maximum:
+                        maximum = value
+        destination[row, column] = maximum
+
+    @cuda.jit
     def mapping_kernel(output, pixel_count, azimuth_count):
         pixel, azimuth = cuda.grid(2)
         if pixel >= pixel_count or azimuth >= azimuth_count:
@@ -838,11 +859,10 @@ def _build_kernels(cuda):
                         else minimum_step
                     )
                     advance = float32(max(advance, floor))
-                    boundary_advance = float32(
-                        distance_to_exit + float32(0.000001)
-                        if distance_to_exit > float32(0.0) else fallback
-                    )
-                    advance = float32(min(advance, boundary_advance))
+                    # The production C# kernel advances by the adaptive step
+                    # directly here.  Do not constrain it to the current
+                    # level-0 cell exit: distant outer-DEM rays intentionally
+                    # cross multiple pixels under the angular error budget.
                     s = float32(s + advance)
                     break
                 level -= 1
@@ -1115,6 +1135,7 @@ def _build_kernels(cuda):
 
     return (
         mapping_kernel, helper_kernel, fixed_step_kernel, adaptive_kernel,
+        pyramid_downsample_kernel,
         hierarchy_kernel, subpatch_interpolation_kernel, subpatch_hierarchy_kernel,
     )
 
@@ -1160,7 +1181,8 @@ class CudaSession:
             _KERNELS = _build_kernels(cuda)
         (
             self._mapping_kernel, self._helper_kernel, self._fixed_step_kernel,
-            self._adaptive_kernel, self._hierarchy_kernel,
+            self._adaptive_kernel, self._pyramid_downsample_kernel,
+            self._hierarchy_kernel,
             self._subpatch_interpolation_kernel,
             self._subpatch_hierarchy_kernel,
         ) = _KERNELS
@@ -1234,6 +1256,29 @@ class CudaSession:
             self._production_pyramids = host_pyramids
             self._production_device_pyramids = device_pyramids
             return device_pyramids
+
+    def build_max_pyramid(self, dem):
+        """Build the production factor-four max pyramid on this CUDA device."""
+        from .pyramid import _level_layout, _pyramid_arrays
+
+        levels, mip_count = _level_layout(dem)
+        source = self._cuda.to_device(dem.elevation_m)
+        mips = np.empty(mip_count, dtype=np.float32)
+        threads = (16, 16)
+        for level in range(1, len(levels)):
+            _, offset, width, height = levels[level]
+            destination = self._cuda.device_array((height, width), dtype=np.float32)
+            blocks = (
+                (int(width) + threads[0] - 1) // threads[0],
+                (int(height) + threads[1] - 1) // threads[1],
+            )
+            self._pyramid_downsample_kernel[blocks, threads](source, destination)
+            destination.copy_to_host(
+                mips[offset : offset + width * height].reshape(height, width)
+            )
+            source = destination
+        self._cuda.synchronize()
+        return _pyramid_arrays(dem, mips, levels)
 
     def index_mapping(self, pixel_count: int, azimuth_count: int) -> np.ndarray:
         if pixel_count <= 0 or azimuth_count <= 0:

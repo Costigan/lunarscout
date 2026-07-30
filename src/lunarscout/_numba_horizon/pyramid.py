@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import uuid
 
 import numpy as np
 
@@ -44,6 +46,33 @@ def load_max_pyramid_cache(dem: DemGrid, path: str | Path) -> PyramidArrays:
             f"pyramid cache has {mips.size} float32 values; expected {expected_count}"
         )
     return _pyramid_arrays(dem, np.ascontiguousarray(mips), levels)
+
+
+def pyramid_cache_path(dem_path: str | Path) -> Path:
+    """Return the C#-compatible sibling cache path for a DEM."""
+    return Path(dem_path).with_suffix(".pyr.bin")
+
+
+def write_max_pyramid_cache(
+    pyramid: PyramidArrays, path: str | Path
+) -> Path:
+    """Atomically publish a little-endian float32 mip payload."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with temporary.open("wb") as stream:
+            np.asarray(pyramid.mips, dtype="<f4").tofile(stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    except BaseException:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    return target
 
 
 def _pyramid_arrays(

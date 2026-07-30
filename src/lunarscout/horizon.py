@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from datetime import datetime, timedelta
 from numbers import Real
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 import numpy as np
@@ -52,7 +54,23 @@ class _HorizonProgressAdapter:
         self.progress_callback = progress_callback
         self.progress_event_callback = progress_event_callback
         self._last_fraction: float | None = None
+        self._process_started_at: float | None = None
         self.callback_error: BaseException | None = None
+
+    def _timing_status(self, event: ProgressEvent) -> str:
+        if event.stage == "process_patches" and self._process_started_at is None:
+            self._process_started_at = time.monotonic()
+        if self._process_started_at is None or event.completed <= 0:
+            return "    --.-- s/patch | ETA -------------------"
+        seconds_per_patch = (time.monotonic() - self._process_started_at) / event.completed
+        remaining = max(0, event.total - event.completed)
+        completion = datetime.now().astimezone() + timedelta(
+            seconds=seconds_per_patch * remaining
+        )
+        return (
+            f"{seconds_per_patch:8.2f} s/patch | "
+            f"ETA {completion:%Y-%m-%d %H:%M:%S}"
+        )
 
     def __call__(self, private_event: Any) -> None:
         stage = str(private_event.stage)
@@ -95,7 +113,9 @@ class _HorizonProgressAdapter:
             if event.stage == "prepare_patches":
                 print("horizons: using cuda backend", file=sys.stdout, flush=True)
             print(
-                f"horizons: {event.stage} {event.completed}/{event.total}",
+                f"horizons: {event.stage:<16} "
+                f"{event.completed:6d}/{event.total:<6d} | "
+                f"{self._timing_status(event)}",
                 file=sys.stdout,
                 flush=True,
             )
@@ -118,6 +138,7 @@ def _run_horizon_pipeline(
     dems: Sequence[Any],
     output_directory: Path,
     *,
+    dem_paths: Sequence[Path],
     observer_height_m: float,
     compress: bool,
     overwrite: bool,
@@ -138,10 +159,24 @@ def _run_horizon_pipeline(
         build_subpatch_segments_numba,
     )
     from ._numba_horizon.pipeline import enumerate_patches, run_bounded_pipeline
-    from ._numba_horizon.pyramid import build_max_pyramid
+    from ._numba_horizon.pyramid import (
+        load_max_pyramid_cache,
+        pyramid_cache_path,
+        write_max_pyramid_cache,
+    )
 
     primary = dems[0]
-    pyramids = tuple(build_max_pyramid(dem) for dem in dems)
+    session = CudaSession(device_id=0, production_concurrency=1)
+    pyramids = []
+    for dem, dem_path in zip(dems, dem_paths, strict=True):
+        cache_path = pyramid_cache_path(dem_path)
+        try:
+            pyramid = load_max_pyramid_cache(dem, cache_path)
+        except (OSError, ValueError):
+            pyramid = session.build_max_pyramid(dem)
+            write_max_pyramid_cache(pyramid, cache_path)
+        pyramids.append(pyramid)
+    pyramids = tuple(pyramids)
     configuration = ContractConfiguration(
         PATCH_SIZE,
         PATCH_SIZE,
@@ -171,8 +206,6 @@ def _run_horizon_pipeline(
         return SegmentTensor(values, dem_ids, configuration)
 
     def processor_factory(_worker_id: int):
-        session = CudaSession(device_id=0, production_concurrency=1)
-
         def process(patch: Any, segments: SegmentTensor) -> np.ndarray:
             return generate_patch_horizons(
                 session,
@@ -267,7 +300,8 @@ def generate_horizons(
     azimuth samples per pixel at 0.25-degree spacing.  Sample 0 is north.
     Tiles are staged beside their destination and atomically published.  A
     failed calculation or cancelled overwrite preserves the prior complete
-    tile.
+    tile.  Each DEM uses a sibling ``.pyr.bin`` maximum-elevation cache.  A
+    missing or invalid cache is rebuilt on CUDA and atomically replaced.
     """
     if isinstance(dem_paths, (str, bytes, Path)):
         raise InputError(
@@ -363,6 +397,7 @@ def generate_horizons(
         _run_horizon_pipeline(
             dems,
             output,
+            dem_paths=resolved_dems,
             observer_height_m=float(observer_height_m),
             compress=compress,
             overwrite=overwrite,

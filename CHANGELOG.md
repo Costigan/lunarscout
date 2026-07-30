@@ -6,6 +6,15 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **CUDA horizon generation performance.** Removed the level-0 cell-exit cap
+  from the production adaptive ray traversal so distant outer-DEM samples use
+  the C# angular-error step budget. Public horizon generation now loads or
+  CUDA-builds C#-compatible sibling ``.pyr.bin`` maximum-elevation caches and
+  atomically publishes missing caches, eliminating the prior single-core
+  Python pyramid build. Verbose horizon progress reports fixed-width rolling
+  seconds-per-patch and estimated-completion fields. Added cache round-trip,
+  CUDA-gated pyramid-equivalence, and progress-format coverage.
+
 - **Interactive notebook curriculum.** Added six curated Jupyter notebooks in
   ``examples/notebooks/`` consolidating the command-line example scripts into
   coherent analytical stories with inline plots, prose, validity side-by-side

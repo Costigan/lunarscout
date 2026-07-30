@@ -29,6 +29,8 @@ from lunarscout._numba_horizon.kernel_math import evaluate_tangent, interpolate_
 from lunarscout._numba_horizon.pyramid import (
     build_max_pyramid,
     load_max_pyramid_cache,
+    pyramid_cache_path,
+    write_max_pyramid_cache,
 )
 
 
@@ -127,6 +129,45 @@ def test_load_max_pyramid_cache_rejects_wrong_length(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="expected"):
         load_max_pyramid_cache(dem, cache)
+
+
+def test_write_max_pyramid_cache_round_trips_csharp_payload(tmp_path: Path) -> None:
+    dem = DemGrid(
+        np.arange(35, dtype=np.float32).reshape(5, 7),
+        np.array((0.0, 2.0, 0.0, 0.0, 0.0, -2.0), dtype=np.float64),
+        ProjectionParameters(1_737_400.0, -np.pi / 2.0, 0.0, 1.0, 0.0, 0.0),
+    )
+    expected = build_max_pyramid(dem)
+    cache = pyramid_cache_path(tmp_path / "dem.tif")
+
+    assert write_max_pyramid_cache(expected, cache) == cache
+    actual = load_max_pyramid_cache(dem, cache)
+
+    np.testing.assert_array_equal(actual.mips, expected.mips)
+    assert cache.read_bytes() == expected.mips.astype("<f4", copy=False).tobytes()
+
+
+@pytest.mark.skipif(
+    os.environ.get("LUNARSCOUT_REQUIRE_NUMBA_CUDA") != "1",
+    reason="set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 for the explicit real-GPU probe",
+)
+def test_cuda_max_pyramid_matches_cpu_reference() -> None:
+    dem = DemGrid(
+        np.array(
+            ((1.0, np.nan, 3.0, 4.0, 5.0),
+             (6.0, -32000.0, 8.0, 9.0, 10.0),
+             (11.0, 12.0, 13.0, 14.0, 15.0)),
+            dtype=np.float32,
+        ),
+        np.array((0.0, 20.0, 0.0, 0.0, 0.0, -20.0), dtype=np.float64),
+        ProjectionParameters(1_737_400.0, -np.pi / 2.0, 0.0, 1.0, 0.0, 0.0),
+    )
+
+    actual = CudaSession().build_max_pyramid(dem)
+    expected = build_max_pyramid(dem)
+
+    np.testing.assert_array_equal(actual.levels, expected.levels)
+    np.testing.assert_array_equal(actual.mips, expected.mips)
 
 
 def test_bilinear_culling_bound_handles_edges_and_invalid_neighbors() -> None:
