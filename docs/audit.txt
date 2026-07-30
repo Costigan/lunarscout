@@ -1,0 +1,96 @@
+Based on my thorough examination of the codebase against both documents, here is my assessment:
+
+Overall Assessment
+
+Both documents are substantially accurate and faithfully reflect the implementation. The API signatures, module organization, behavioral invariants, and design philosophy described match the code. I found only minor issues, none of which are functional inaccuracies.
+
+What's Accurate
+
+- All public API signatures cited in code examples — read_geotiff,
+  slope, align, same_grid, require_same_grid, times, TemporalCube,
+  temporal_mean, generate_horizons, write_temporal_cube,
+  TemporalGeoTiffSeriesWriter, generate_lightmap, generate_psr, etc. —
+  match the implementation exactly, including return types and keyword
+  arguments.
+
+- The backend selection contract ("auto", "cpu", "cuda") is exactly as
+  described: CPU never probes CUDA at
+  lunarscout/src/lunarscout/_numba_horizon/lightmap_pipeline.py:84-90,
+  explicit CUDA never falls back (products.py and pipeline modules),
+  and "auto" falls back silently.
+
+- Horizon generation is CUDA-only per
+  lunarscout/src/lunarscout/horizon.py:220 ("Generate compatible
+  128-pixel horizon tiles with NVIDIA CUDA") with no CPU fallback.
+
+- Lazy initialization: importing Lunarscout does not touch CUDA, SPICE
+kernels, files, or network — confi rmed in cuda.py, spice.py, and
+products.py.
+
+- All 9 product functions (generate_lightmap, generate_psr,
+  generate_sun_elevation, generate_earth_elevation,
+  generate_safe_havens, and 4 mission_duration_from_* variants) exist
+  at lunarscout/src/lunarscout/products.py with correct backend
+  parameters.
+
+- Scenario product facades (lightmap, psr, sun_elevation,
+  earth_elevation, safe_havens, generate_horizons, all 4
+  mission_duration_* methods) all exist at
+  lunarscout/src/lunarscout/scenario.py and delegate correctly.
+
+- Temporal API: TemporalCube (shaped (time, y, x)),
+- TemporalGeoTiffSeries (no .values, has read_time with
+- method="nearest"), TemporalGeoTiffSeriesWriter (context manager with
+- write_layer, .result property, staging), write_temporal_cube, and
+- open_temporal_cube all match.  Map algebra system is fully
+- implemented with Raster, RasterExpression, TemporalRasterExpression,
+- source, temporal_source, compute, explain, plan, write, resample_to,
+- align, arithmetic, focal, distance, validity, units, coordinate
+- constructors, regions, reductions, zonal statistics — all present at
+- lunarscout/src/lunarscout/map_algebra/.
+
+- Error hierarchy matches: all exception classes listed in docs exist
+  at lunarscout/src/lunarscout/errors.py with code= and details=
+  support.
+
+- Example file inventory and notebook pairing table is correct. Gaps
+  (14, 23, 24, 26, 28-30) are accurately noted.
+
+- Dependencies: numba, numpy, rasterio, spiceypy, pyproj, scipy all in
+  pyproject.toml; [cuda] extra with numba-cuda[cu12] exists.
+
+- Region operations (label_regions, region_sizes,
+  filter_regions_by_size, find_borders) all accept connectivity=4|8 at
+  lunarscout/src/lunarscout/regions.py.
+
+- Map product catalog functions (search_map_products,
+  download_map_product, load_map_product_catalog, etc.) all exist.
+
+Minor Issues
+
+1. Hardcoded developer-specific paths: README.md:41 has
+   /e/projects/lunarscout/.venv/bin/python and TUTORIAL.md:106 has cd /e/projects/lunarscout. These only work on one machine. Should use relative paths (e.g., .venv/bin/python).
+
+2. The ls.spice kernel management sub-package is not documented in
+   either README or TUTORIAL. Functions like
+   ls.spice.ensure_default_kernels(),
+   ls.spice.download_default_kernels(), and ls.spice.furnish() exist
+   but are invisible in the learning path. Only the geometry functions
+   (body_azimuth_elevation, etc.) are covered.
+
+3. TUTORIAL line 641 describes "An eager Raster holds..." after
+   setting ma = ls.map_algebra, but Raster is at the package root
+   (ls.Raster), not in ls.map_algebra. The map_algebra namespace has
+   RasterExpression and TemporalRaster. The text is not technically
+   wrong (it's descriptive, not referencing ma.Raster), but a reader
+   could be misled about where Raster lives.
+
+4. The README says Scenario "does not read scenario.db" — accurate in
+   the current implementation, but scenario.db isn't mentioned
+   anywhere else; this is a forward-looking disclaimer rather than a
+   description of current behavior, which is fine but could confuse
+   readers.
+
+Verdict: The documents accurately reflect implementation state,
+behavior, and goals. The few issues are path portability and minor
+organizational clarity, not substantive API errors.

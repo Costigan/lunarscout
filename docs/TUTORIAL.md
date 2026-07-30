@@ -495,6 +495,18 @@ for a lunar south-polar point. It shows:
 
 The first run may download and cache the configured SPICE kernels. Kernel
 loading is lazy: importing Lunarscout alone does not touch the SPICE pool.
+
+Geometry functions such as ``ls.body_vectors_moon_me`` automatically load
+default kernels on first use.  The ``ls.spice`` sub-package provides explicit
+control for workflows that need it:
+
+- ``ls.spice.download_default_kernels()`` -- fetch and verify kernel files.
+- ``ls.spice.ensure_default_kernels()`` -- load them into the SPICE pool
+  (idempotent; geometry functions call this internally).
+- ``ls.spice.furnish(path, disable_autoload=True)`` -- load custom kernels
+  and disable the lazy autoload path.
+- ``ls.spice.clear_kernels()`` -- reset the entire SPICE pool.
+
 Vector units and reference frames are part of the scientific contract, so read
 the corresponding user-guide section before supplying vectors to another
 tool.
@@ -634,6 +646,10 @@ import lunarscout as ls
 
 ma = ls.map_algebra
 ```
+
+The eager `Raster` object lives at the package root (``ls.Raster``).  The
+``ls.map_algebra`` namespace provides operations, lazy ``RasterExpression``
+objects, temporal expressions, and the planner that writes them to disk.
 
 An eager `Raster` holds:
 

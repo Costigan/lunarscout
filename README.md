@@ -38,7 +38,7 @@ environment and source path:
 
 ```bash
 export PYTHONPATH="$PWD/src"
-/e/projects/lunarscout/.venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -q
 ```
 
 Rasterio supplies Lunarscout's maintained Python GDAL boundary. SpiceyPy is a
@@ -48,6 +48,21 @@ core dependency. The base installation does not require CUDA libraries or an
 NVIDIA driver. The `cuda` extra installs the validated Numba-CUDA CUDA 12
 user-space stack; horizon generation and CUDA product execution additionally
 require a compatible NVIDIA GPU and driver.
+
+The `ls.spice` sub-package provides explicit SPICE kernel management when the
+lazy autoload behaviour is not sufficient:
+
+```python
+import lunarscout as ls
+
+ls.spice.download_default_kernels()
+ls.spice.ensure_default_kernels()
+```
+
+Geometry functions such as `ls.body_vectors_moon_me` call
+`ensure_default_kernels` automatically on first use. Call
+`ls.spice.clear_kernels()` to reset the SPICE pool, or
+`ls.spice.furnish()` to load custom kernels with autoload disabled.
 
 ```python
 import lunarscout as ls
@@ -65,8 +80,7 @@ slope_deg, slope_georef = ls.slope(
 ```
 
 `Scenario` provides filesystem-safe conventional paths and delegates public
-product operations. It does not read `scenario.db`, register products, publish
-layers, or become an application state container.
+product operations.
 
 Grid compatibility is never inferred from array shape alone. Verify it or
 align explicitly before combining rasters:
