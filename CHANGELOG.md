@@ -13,7 +13,9 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   atomically publishes missing caches, eliminating the prior single-core
   Python pyramid build. Verbose horizon progress reports fixed-width rolling
   seconds-per-patch and estimated-completion fields. Added cache round-trip,
-  CUDA-gated pyramid-equivalence, and progress-format coverage.
+  CUDA-gated pyramid-equivalence, and progress-format coverage. On the VIPER
+  three-DEM workflow, generated horizons and the resulting PSR map match the
+  equivalent C# output exactly.
 
 - **Interactive notebook curriculum.** Added six curated Jupyter notebooks in
   ``examples/notebooks/`` consolidating the command-line example scripts into

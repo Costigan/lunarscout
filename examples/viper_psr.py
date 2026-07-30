@@ -46,8 +46,8 @@ def main() -> int:
             return 1
 
     horizons = str(HORIZONS_DIR.expanduser().resolve())
-    print(f"Generating horizons -> {horizons}")
-    print(f"  DEMs: {dem_paths}")
+    print(f"Generating horizons -> {horizons}", flush=True)
+    print(f"  DEMs: {dem_paths}", flush=True)
 
     ls.generate_horizons(
         horizons,
@@ -56,7 +56,7 @@ def main() -> int:
         overwrite=False,
         verbose=True,
     )
-    print(f"Horizons written to {horizons}")
+    print(f"Horizons written to {horizons}", flush=True)
 
     psr_output = str(PSR_OUTPUT.expanduser().resolve())
     times = ls.times(
@@ -64,7 +64,7 @@ def main() -> int:
         "2044-01-01T00:00:00Z",
         step_hours=6,
     )
-    print(f"Generating PSR -> {psr_output}")
+    print(f"Generating PSR -> {psr_output}", flush=True)
 
     result = ls.generate_psr(
         dem_paths[0],
@@ -75,7 +75,7 @@ def main() -> int:
         overwrite=False,
         verbose=True,
     )
-    print(f"PSR written to {result}")
+    print(f"PSR written to {result}", flush=True)
     return 0
 
 

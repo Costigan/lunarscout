@@ -11,6 +11,8 @@ docs/prompt*
 docs/#*
 docs/.#*
 
+prompts/
+
 standalone/geotiff_layer_viewer/geotiff_layer_viewer_state.json
 
 debugging
