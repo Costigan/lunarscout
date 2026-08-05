@@ -13,8 +13,8 @@ username = __token__
 password = pypi-xxxxxxxx
 
 2. Tag the release
-git tag -a v0.1.0rc3 -m "v0.1.0rc3"
-git push origin v0.1.0rc3
+git tag -a v0.1.0rc5 -m "v0.1.0rc5"
+git push origin v0.1.0rc5
 
 3. Build artifacts
 .venv/bin/python scripts/build_release_artifacts.py /tmp/lunarscout-release --upload-target testpypi
@@ -22,8 +22,13 @@ The script copies a clean snapshot, builds sdist + wheel, runs twine check, vali
 
 4. Upload to TestPyPI first
 .venv/bin/python -m twine upload --repository testpypi /tmp/lunarscout-release/*.tar.gz /tmp/lunarscout-release/*.whl
+
 Verify the install works:
 python -m pip install --index-url https://test.pypi.org/simple/ lunarscout
+
+
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ lunarscout
+
 
 5. Upload to PyPI
 .venv/bin/python scripts/build_release_artifacts.py /tmp/lunarscout-release
