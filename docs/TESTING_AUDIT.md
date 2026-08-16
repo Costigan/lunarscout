@@ -4,14 +4,14 @@ Generated: 2026-08-05
 
 ## Scope and Scale
 
-| Metric | Count |
-|--------|-------|
-| Source modules (`.py` files under `src/lunarscout/`) | 73 |
-| Source lines (excluding blank/comments) | ~32,000 |
-| Test files | 55 |
-| Test functions (`def test_*`) | 1,324 |
-| Collected test items (`pytest --co -q`) | 1,852 |
-| Test data files (`tests/data/`) | 6 |
+| Metric                                               | Count   |
+| ---------------------------------------------------- | ------- |
+| Source modules (`.py` files under `src/lunarscout/`) | 73      |
+| Source lines (excluding blank/comments)              | ~32,000 |
+| Test files                                           | 55      |
+| Test functions (`def test_*`)                        | 1,324   |
+| Collected test items (`pytest --co -q`)              | 1,852   |
+| Test data files (`tests/data/`)                      | 6       |
 
 Test files are organized in three directories matching the source structure:
 `tests/` (19 files, 264 test functions), `tests/map_algebra/` (21 files, 927 test
@@ -33,14 +33,14 @@ exercise the public `ls.*` API surface and validate import-time invariants
 
 1. Two exported public API functions (`download_map_product`, `sunlight_fraction`)
    have zero direct test coverage.
-2. Six internal implementation modules with nontrivial logic have no dedicated
+1. Six internal implementation modules with nontrivial logic have no dedicated
    tests and are exercised only indirectly through public wrappers.
-3. `ProgressEvent` has no unit tests for its fields, construction, or serde.
-4. Platform- and filesystem-fault error-recovery paths are absent.
-5. The `__init__.py` `__all__` list is not validated for completeness or
+1. `ProgressEvent` has no unit tests for its fields, construction, or serde.
+1. Platform- and filesystem-fault error-recovery paths are absent.
+1. The `__init__.py` `__all__` list is not validated for completeness or
    staleness.
 
----
+______________________________________________________________________
 
 ## 1. Public API Functions with Zero Direct Coverage
 
@@ -67,7 +67,7 @@ exercise the public `ls.*` API surface and validate import-time invariants
   exceptions, or fail silently on edge-case inputs (0%, 100%, NaN inputs).
 - **Recommendation**: Add tests for 0.0, 0.5, 1.0 fractions and invalid inputs.
 
----
+______________________________________________________________________
 
 ## 2. Public API Names Not Validated in `__all__`
 
@@ -82,7 +82,7 @@ exercise the public `ls.*` API surface and validate import-time invariants
   a module stub. Also compare `set(ls.__all__)` against the set of names
   imported in `__init__.py` to flag stale entries.
 
----
+______________________________________________________________________
 
 ## 3. ProgressEvent — No Unit Tests
 
@@ -91,13 +91,13 @@ exercise the public `ls.*` API surface and validate import-time invariants
   argument type, never constructed or inspected directly.
 - **Missing**:
   - Construction with valid and invalid field values
-  - `fraction` invariant (0.0 <= fraction <= 1.0)
+  - `fraction` invariant (0.0 \<= fraction \<= 1.0)
   - `backend` None vs "cpu" vs "cuda"
   - Dataclass immutability / frozen contract
   - Equality and hashing behavior
 - **Risk**: Low (small dataclass), but the frozen/slots contract is untested.
 
----
+______________________________________________________________________
 
 ## 4. Internal Modules with No Dedicated Tests
 
@@ -105,18 +105,19 @@ These modules contain significant logic (combined ~1,500 lines) but are only
 exercised indirectly through public wrappers. When public function behavior
 changes, regressions in these internals may go undetected.
 
-| Module | Lines | What it does | How it is tested |
-|--------|-------|--------------|-------------------|
-| `map_algebra/_dtypes.py` | 797 | Overflow promotion, dtype result tables, safe casting | Only through `normalize_overflow` dispatch in `__init__.py` |
-| `map_algebra/_eager.py` | 227 | Eager evaluation dispatch for operations | Only through public `ma.compute()` |
-| `map_algebra/_kernels.py` | 192 | Focal/convolve kernel implementations | Only through `ma.focal_*()` public API |
-| `map_algebra/_normalization.py` | 94 | Data normalization helpers (`compute_data_range`, etc.) | Only `normalize_canonical` tested directly |
-| `map_algebra/_units.py` | 133 | Unit metadata propagation, cross-unit validation | Only through `add()` / `multiply()` unit checks |
-| `map_algebra/_validity.py` | 76 | Numeric error handling (`normalize_numeric_errors`) | Only through `__init__.py` dispatch |
-| `map_algebra/_validation.py` | 103 | Argument validation, grid checking | Only `_as_raster_operand` and `_as_expression_operand` tested |
+| Module                          | Lines | What it does                                            | How it is tested                                              |
+| ------------------------------- | ----- | ------------------------------------------------------- | ------------------------------------------------------------- |
+| `map_algebra/_dtypes.py`        | 797   | Overflow promotion, dtype result tables, safe casting   | Only through `normalize_overflow` dispatch in `__init__.py`   |
+| `map_algebra/_eager.py`         | 227   | Eager evaluation dispatch for operations                | Only through public `ma.compute()`                            |
+| `map_algebra/_kernels.py`       | 192   | Focal/convolve kernel implementations                   | Only through `ma.focal_*()` public API                        |
+| `map_algebra/_normalization.py` | 94    | Data normalization helpers (`compute_data_range`, etc.) | Only `normalize_canonical` tested directly                    |
+| `map_algebra/_units.py`         | 133   | Unit metadata propagation, cross-unit validation        | Only through `add()` / `multiply()` unit checks               |
+| `map_algebra/_validity.py`      | 76    | Numeric error handling (`normalize_numeric_errors`)     | Only through `__init__.py` dispatch                           |
+| `map_algebra/_validation.py`    | 103   | Argument validation, grid checking                      | Only `_as_raster_operand` and `_as_expression_operand` tested |
 
 **Recommendation**: The `_dtypes.py` module at 797 lines is the most concerning.
 Its overflow promotion tables should have focused tests for:
+
 - Integer overflow promotion chains (uint8→uint16, int8→int16, etc.)
 - Float→int promotion policy
 - Safe vs unsafe casting boundaries
@@ -125,7 +126,7 @@ Its overflow promotion tables should have focused tests for:
 For the other modules, adding at least a smoke test per public function would
 provide regression detection.
 
----
+______________________________________________________________________
 
 ## 5. `_cuda_runtime.py` — Minimal Coverage
 
@@ -136,7 +137,7 @@ provide regression detection.
 - **Risk**: Low (25-line shim), but the import logic could break on Numba
   version upgrades.
 
----
+______________________________________________________________________
 
 ## 6. Missing Error-Recovery Tests
 
@@ -166,7 +167,7 @@ provide regression detection.
 - **Recommendation**: Add cancellation tests for `generate_horizons`,
   `write_temporal_cube`, and `TemporalGeoTiffSeriesWriter.write_cube`.
 
----
+______________________________________________________________________
 
 ## 7. Input Validation Edge Cases — Untested
 
@@ -202,7 +203,7 @@ provide regression detection.
   - `times` array with dtype `datetime64[ns]` (currently uses `datetime64[D]`)
   - Time ranges that span a leap second
 
----
+______________________________________________________________________
 
 ## 8. Platform and Environment Gaps
 
@@ -217,7 +218,7 @@ provide regression detection.
   The `_numba_horizon` modules use `@njit` extensively; stale cache behavior
   is not tested.
 
----
+______________________________________________________________________
 
 ## 9. Test Specificity Observations
 
@@ -258,109 +259,109 @@ provide regression detection.
   tested in `test_alignment.py`. Other operations (`add`, `multiply`,
   `reclassify_values`) lack tests at these extremes.
 
----
+______________________________________________________________________
 
 ## 10. Test File-to-Module Mapping
 
 ### Top-Level
 
-| Test File | Primary Target Module(s) | Test Functions |
-|-----------|--------------------------|----------------|
-| `conftest.py` | Shared fixtures | — |
-| `test_alignment.py` | `alignment.py` | 12 |
-| `test_cuda_status.py` | `cuda.py`, `_cuda_runtime.py` | 5 |
-| `test_dependency_boundary.py` | `__init__.py`, `pyproject.toml` | 5 |
-| `test_examples.py` | Example scripts (integration) | 3 |
-| `test_georeference.py` | `georeference.py` | 7 |
-| `test_geotiff_io.py` | `geotiff.py` | 14 |
-| `test_map_products.py` | `map_products.py` | 14 |
-| `test_product_errors.py` | `errors.py` | 4 |
-| `test_public_horizon.py` | `horizon.py` | 11 |
-| `test_public_lightmap.py` | `products.py` | 34 |
-| `test_public_m2_validation.py` | `products.py` (M2 site) | 12 |
-| `test_regions.py` | `regions.py` | 18 |
-| `test_release_artifacts.py` | `scripts/build_release_artifacts.py` | 4 |
-| `test_scenario.py` | `scenario.py` | 29 |
-| `test_spice.py` | `spice.py`, `spice_geometry.py` | 21 |
-| `test_temporal.py` | `temporal.py` | 12 |
-| `test_temporal_store.py` | `temporal_store.py` | 17 |
-| `test_terrain.py` | `terrain.py` | 8 |
+| Test File                      | Primary Target Module(s)             | Test Functions |
+| ------------------------------ | ------------------------------------ | -------------- |
+| `conftest.py`                  | Shared fixtures                      | —              |
+| `test_alignment.py`            | `alignment.py`                       | 12             |
+| `test_cuda_status.py`          | `cuda.py`, `_cuda_runtime.py`        | 5              |
+| `test_dependency_boundary.py`  | `__init__.py`, `pyproject.toml`      | 5              |
+| `test_examples.py`             | Example scripts (integration)        | 3              |
+| `test_georeference.py`         | `georeference.py`                    | 7              |
+| `test_geotiff_io.py`           | `geotiff.py`                         | 14             |
+| `test_map_products.py`         | `map_products.py`                    | 14             |
+| `test_product_errors.py`       | `errors.py`                          | 4              |
+| `test_public_horizon.py`       | `horizon.py`                         | 11             |
+| `test_public_lightmap.py`      | `products.py`                        | 34             |
+| `test_public_m2_validation.py` | `products.py` (M2 site)              | 12             |
+| `test_regions.py`              | `regions.py`                         | 18             |
+| `test_release_artifacts.py`    | `scripts/build_release_artifacts.py` | 4              |
+| `test_scenario.py`             | `scenario.py`                        | 29             |
+| `test_spice.py`                | `spice.py`, `spice_geometry.py`      | 21             |
+| `test_temporal.py`             | `temporal.py`                        | 12             |
+| `test_temporal_store.py`       | `temporal_store.py`                  | 17             |
+| `test_terrain.py`              | `terrain.py`                         | 8              |
 
 ### Map Algebra
 
-| Test File | Primary Target Module(s) | Test Functions |
-|-----------|--------------------------|----------------|
-| `test_classify_coords.py` | `coordinates.py`, `_validation.py` | ~40 |
-| `test_distance.py` | `distance.py` | ~20 |
-| `test_example_surface_public.py` | Integration (examples 18-21) | 5 |
-| `test_expression.py` | `expression.py`, `_model.py` | ~25 |
-| `test_focal.py` | `focal.py` | ~30 |
-| `test_local_ops.py` | `local.py` | ~30 |
-| `test_numeric_policy.py` | `local.py` (overflow/saturate) | ~25 |
-| `test_planner_windows.py` | `_planner.py`, `_windows.py` | ~20 |
-| `test_public_resample.py` | `_spatial.py` | ~20 |
-| `test_public_terrain.py` | `_model.py` (terrain ops) | ~15 |
-| `test_raster.py` | `raster.py` | ~20 |
-| `test_reductions_zonal.py` | `reductions.py`, `zonal.py` | ~30 |
-| `test_regions.py` | `regions.py` (map_algebra) | ~15 |
-| `test_registry_review.py` | `_registry.py` | ~15 |
-| `test_spatial_windows.py` | `_spatial.py`, `_windows.py` | ~20 |
-| `test_stack_layers.py` | `local.py` (stack) | ~15 |
-| `test_temporal.py` | `temporal.py`, `_temporal_model.py` | ~30 |
-| `test_writer.py` | `_writer.py` | ~25 |
-| `test_writer_lifecycle.py` | `_writer.py` | ~15 |
+| Test File                        | Primary Target Module(s)            | Test Functions |
+| -------------------------------- | ----------------------------------- | -------------- |
+| `test_classify_coords.py`        | `coordinates.py`, `_validation.py`  | ~40            |
+| `test_distance.py`               | `distance.py`                       | ~20            |
+| `test_example_surface_public.py` | Integration (examples 18-21)        | 5              |
+| `test_expression.py`             | `expression.py`, `_model.py`        | ~25            |
+| `test_focal.py`                  | `focal.py`                          | ~30            |
+| `test_local_ops.py`              | `local.py`                          | ~30            |
+| `test_numeric_policy.py`         | `local.py` (overflow/saturate)      | ~25            |
+| `test_planner_windows.py`        | `_planner.py`, `_windows.py`        | ~20            |
+| `test_public_resample.py`        | `_spatial.py`                       | ~20            |
+| `test_public_terrain.py`         | `_model.py` (terrain ops)           | ~15            |
+| `test_raster.py`                 | `raster.py`                         | ~20            |
+| `test_reductions_zonal.py`       | `reductions.py`, `zonal.py`         | ~30            |
+| `test_regions.py`                | `regions.py` (map_algebra)          | ~15            |
+| `test_registry_review.py`        | `_registry.py`                      | ~15            |
+| `test_spatial_windows.py`        | `_spatial.py`, `_windows.py`        | ~20            |
+| `test_stack_layers.py`           | `local.py` (stack)                  | ~15            |
+| `test_temporal.py`               | `temporal.py`, `_temporal_model.py` | ~30            |
+| `test_writer.py`                 | `_writer.py`                        | ~25            |
+| `test_writer_lifecycle.py`       | `_writer.py`                        | ~15            |
 
 ### Numba Horizon
 
-| Test File | Primary Target Module(s) | Test Functions |
-|-----------|--------------------------|----------------|
-| `test_phase1_real_terrain_fixtures.py` | External data validation | 3 |
-| `test_phase1_reference_oracles.py` | Reference data contract | 9 |
-| `test_phase2_contract.py` | `contract.py` | 10 |
-| `test_phase3_geometry.py` | `geometry.py`, `geometry_numba.py` | 8 |
-| `test_phase4_cuda_mechanics.py` | `cuda_backend.py`, `kernel_math.py`, `fixed_step.py` | 5 |
-| `test_phase4_hierarchy_safety.py` | `hierarchy.py` (external script) | 2 |
-| `test_phase4_pyramid.py` | `pyramid.py`, `hierarchy.py` | 12 |
-| `test_phase4_subpatch.py` | `subpatch.py`, `generator.py` | 8 |
-| `test_phase6_pipeline.py` | `pipeline.py`, `file_format.py` | 14 |
-| `test_phase6b_elevation.py` | `elevation_pipeline.py` | 6 |
-| `test_phase6b_lightmap.py` | `lightmap.py`, `lightmap_cpu.py`, `lightmap_cuda.py`, `lightmap_pipeline.py` | 7 |
-| `test_phase6b_mission_duration.py` | `mission_duration.py`, `mission_duration_pipeline.py` | 6 |
-| `test_phase6b_product_store.py` | `product_store.py` | 8 |
-| `test_phase6b_psr.py` | `psr.py`, `psr_cuda.py`, `psr_pipeline.py`, `product_vectors.py` | 9 |
-| `test_phase6b_safe_haven.py` | `safe_haven.py`, `safe_haven_pipeline.py` | 6 |
+| Test File                              | Primary Target Module(s)                                                     | Test Functions |
+| -------------------------------------- | ---------------------------------------------------------------------------- | -------------- |
+| `test_phase1_real_terrain_fixtures.py` | External data validation                                                     | 3              |
+| `test_phase1_reference_oracles.py`     | Reference data contract                                                      | 9              |
+| `test_phase2_contract.py`              | `contract.py`                                                                | 10             |
+| `test_phase3_geometry.py`              | `geometry.py`, `geometry_numba.py`                                           | 8              |
+| `test_phase4_cuda_mechanics.py`        | `cuda_backend.py`, `kernel_math.py`, `fixed_step.py`                         | 5              |
+| `test_phase4_hierarchy_safety.py`      | `hierarchy.py` (external script)                                             | 2              |
+| `test_phase4_pyramid.py`               | `pyramid.py`, `hierarchy.py`                                                 | 12             |
+| `test_phase4_subpatch.py`              | `subpatch.py`, `generator.py`                                                | 8              |
+| `test_phase6_pipeline.py`              | `pipeline.py`, `file_format.py`                                              | 14             |
+| `test_phase6b_elevation.py`            | `elevation_pipeline.py`                                                      | 6              |
+| `test_phase6b_lightmap.py`             | `lightmap.py`, `lightmap_cpu.py`, `lightmap_cuda.py`, `lightmap_pipeline.py` | 7              |
+| `test_phase6b_mission_duration.py`     | `mission_duration.py`, `mission_duration_pipeline.py`                        | 6              |
+| `test_phase6b_product_store.py`        | `product_store.py`                                                           | 8              |
+| `test_phase6b_psr.py`                  | `psr.py`, `psr_cuda.py`, `psr_pipeline.py`, `product_vectors.py`             | 9              |
+| `test_phase6b_safe_haven.py`           | `safe_haven.py`, `safe_haven_pipeline.py`                                    | 6              |
 
 ## 11. Summary of Recommendations
 
 ### High Priority
 
 1. Add tests for `ls.download_map_product` (mocked HTTP).
-2. Add tests for `ls.sunlight_fraction` (direct calls with edge values).
-3. Add a `__all__` validation test for `ls.__init__`.
-4. Add focused tests for `map_algebra/_dtypes.py` overflow promotion tables.
+1. Add tests for `ls.sunlight_fraction` (direct calls with edge values).
+1. Add a `__all__` validation test for `ls.__init__`.
+1. Add focused tests for `map_algebra/_dtypes.py` overflow promotion tables.
 
 ### Medium Priority
 
 5. Add constructor validation edge-case tests for `Raster` (zero-size, >2D
    arrays, non-`bool` valid mask).
-6. Add constructor edge-case tests for `GeoReference` (zero pixel size, extreme
+1. Add constructor edge-case tests for `GeoReference` (zero pixel size, extreme
    latitudes).
-7. Add unit tests for `ProgressEvent` dataclass invariants.
-8. Add pipeline cancellation tests for `generate_horizons` and
+1. Add unit tests for `ProgressEvent` dataclass invariants.
+1. Add pipeline cancellation tests for `generate_horizons` and
    `write_temporal_cube`.
-9. Test floating-point ±inf/NaN propagation across all map_algebra operations
+1. Test floating-point ±inf/NaN propagation across all map_algebra operations
    (not just pyramid).
-10. Test integer boundary values (int64 min/max, uint64 max) across operations
-    beyond alignment.
+1. Test integer boundary values (int64 min/max, uint64 max) across operations
+   beyond alignment.
 
 ### Low Priority
 
 11. Add filesystem-failure-injection tests (disk full, permission denied).
-12. Add network-failure tests for SPICE kernel downloads.
-13. Test big-endian byte order in `_numba_horizon/file_format.py`.
-14. Add single-pixel and single-row/column raster edge-case tests.
+01. Add network-failure tests for SPICE kernel downloads.
+01. Test big-endian byte order in `_numba_horizon/file_format.py`.
+01. Add single-pixel and single-row/column raster edge-case tests.
 
----
+______________________________________________________________________
 
 ## 12. Test Execution Notes
 

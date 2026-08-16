@@ -1,0 +1,435 @@
+Review of docs/trajectory-planning.md
+======================================
+
+Reviewer: deepseek (coding agent)
+Date: 2026-08-12
+Scope: design-discussion review, not an implementation plan.
+
+Status notes incorporated after discussion with the author:
+
+  (a) An existing GridRunner implementation exists outside this repository
+      and will be made available.  The "port the existing ..." language in
+      the documents is therefore not aspirational; it refers to real code.
+
+  (b) The sunlight source for the dynamic planners is intended to involve
+      generating lightmaps on-the-fly as needed.  The planners should reuse
+      existing lunarscout capabilities (horizons, lightmaps, SPICE vectors,
+      terrain products, GeoReference, temporal types) wherever they exist.
+
+This review is written against the current state of the lunarscout package
+(src/lunarscout) and its documented conventions (AGENTS.md, USER_GUIDE.md).
+
+
+Overall assessment
+------------------
+
+The document is sound as a design discussion.  The central decision -- three
+largely independent axes (mission objective x environment model x rover
+execution model) that should be composed through shared abstractions rather
+than multiplied into a separate planner per matrix cell -- is correct, and
+section 33's collapse into three algorithm families plus a simulation layer
+is the right conclusion.
+
+The strongest ideas:
+
+  - "Heuristic estimates desirability; the simulator determines
+    feasibility" (section 16).
+  - "Separate physics from search" and "separate dominance from priority"
+    (section 6 and the companion doc's section 35).
+  - The diminishing-marginal-value reward model, total_value =
+    sum_k V_k(n_k) with concave V_k plus a visited-target set (section 4.2).
+  - Refusing to collapse a multi-day traverse into a single time-dependent
+    edge (sections 1 and 13).
+  - Deterministic replay through counter-based RNG keyed by
+    (global_seed, simulation_id, timestep, event_type) (section 22).
+
+
+Points raised, with the clarified context
+-----------------------------------------
+
+1. GridRunner availability and dependency direction.
+
+   With clarification (a), the "port the existing ..." framing is correct
+   and refers to real code.  The remaining requirement is architectural,
+   not rhetorical: whatever GridRunner is, it must enter lunarscout without
+   violating the one-way dependency rule
+
+       lunar_analyst -> lunarscout
+
+   (AGENTS.md, "Dependency Boundary").  lunarscout must not import Lunar
+   Analyst application modules, FastAPI routes, web UI code, assistant/RAG
+   logic, or notebook-runner helpers.  If GridRunner currently lives inside
+   Lunar Analyst, it must be extracted cleanly (or reimplemented) so that
+   the trajectory layer is a self-contained library capability.  This should
+   be confirmed before implementation planning begins, because the module
+   layout in the companion doc (gridrunner/config.py, gridrunner/rover.py,
+   gridrunner/gpu/*, ...) assumes a standalone package.
+
+2. No public data-contract mapping.
+
+   The document names components but does not say how they consume
+   lunarscout's actual public types.  The library has hard conventions that
+   every new domain must adopt:
+
+     - GeoReference carries geospatial metadata; do not infer grid
+       compatibility from array shape (use same_grid / require_same_grid).
+     - Raster validity is represented by masks and nodata, and payload
+       zeros/NaN are not validity sentinels (see the lightmap/PSR product
+       contract in USER_GUIDE.md).
+     - Temporal axes are UTC and in-memory cubes are (time, y, x);
+       file-backed series stream rather than materialize full cubes.
+     - Explicit-vector product calls must not import SpiceyPy or touch the
+       SPICE kernel pool; importing lunarscout must not initialize CUDA,
+       load SPICE kernels, or perform network access.
+
+   The implementation plan should pin, before code: input arrays plus a
+   GeoReference; validity via mask/nodata; LonLat <-> pixel conversion; and
+   a SunProvider abstraction that accepts explicit Moon-ME vectors or
+   lazily furnishes SPICE.  Without this, the planner layer will diverge
+   from the rest of the package immediately.
+
+3. Sunlight source: on-the-fly lightmaps.
+
+   With clarification (b), the dynamic configuration space C(x, y, t) is
+   backed by lightmaps generated on-the-fly.  This is the right instinct
+   (reuse existing capability), but it carries two concrete constraints
+   that the document does not yet address:
+
+     a. Horizon generation is CUDA-only with no production CPU fallback
+        (AGENTS.md, USER_GUIDE.md).  Lightmaps themselves have CPU and CUDA
+        backends (backend="auto"/"cpu"/"cuda"), but any on-the-fly lightmap
+        requires stored horizons to already exist.  The DynamicPatchPlanner
+        must therefore declare a contract: either horizons are a required
+        input (pre-generated), or generation is an explicit, separately
+        staged, CUDA-gated step -- never a silent prerequisite hidden inside
+        an "auto" backend.
+
+     b. Lightmap generation is patch-major and expensive relative to a
+        single point query.  The dynamic planner needs sun(x, y, t) for the
+        cells it actually visits, not a whole tile, so an on-the-fly
+        lightmap strategy must specify granularity: full-tile lightmaps
+        cached per epoch, per-cell sunlight-fraction evaluation from
+        horizon + SPICE vectors, or a simplified Sun-elevation-over-horizon
+        test.  These have very different costs and import rules.  The doc's
+        "sun(x, y, t)" is a placeholder, not a resolved interface.
+
+   This is the single biggest integration risk for the DynamicPatchPlanner
+   and should be resolved before implementation.
+
+4. Static A* heuristic admissibility under rotated/anisotropic grids.
+
+   AGENTS.md calls out "non-metre and rotated grids" as an explicit test
+   focus, and GeoReference supports rotation and skew (map_algebra/distance.py
+   computes affine-basis distances precisely for this reason).  The
+   recommended heuristic "Euclidean distance / maximum rover speed" is
+   admissible only if the distance is true projected-plane distance derived
+   from the affine transform, not pixel distance.  If pixel distance is
+   used on a rotated or anisotropic grid the heuristic can overestimate and
+   A* is no longer optimal.  The static cost model and heuristic must be
+   specified in physical units, honoring the affine basis, from the start.
+
+5. SOC dominance is the subtlest correctness hazard.
+
+   Section 9 says "initially avoid Pareto sets; objective = earliest
+   arrival."  That is only safe because wait/charge transitions exist: a
+   later-arrival/higher-SOC state is reachable from an earlier state only
+   through a wait transition, so collapsing to earliest arrival is a
+   dominance heuristic, not a free correctness property.  If a high-drain
+   segment ahead exceeds the earlier state's SOC, the wait must be chosen
+   before the drain.  Whether propagation explores that wait at the right
+   time is exactly the failure mode that yields "a feasible path exists but
+   the planner reports none."
+
+   The companion doc (hierarchical-a-star-guided-patch-propagation.md,
+   sections 18 and 19) states the dominance rule slightly differently from
+   this document.  The two must be reconciled into a single rule -- most
+   likely: keep a state iff it is nondominated on (time, SOC), with a small
+   bounded label set per space-time cell -- before either is treated as a
+   specification.
+
+6. Time discretization is still the highest-complexity item and remains
+   vague.
+
+   "Existing planning epoch structure" / two-hour intervals, real-valued
+   drive durations, and in-place "advance time without moving" transitions
+   interact non-trivially.  The make-or-break detail of the space-time
+   lattice -- how continuous drive times map onto integer epochs and how
+   waiting/charging interleaves -- is not pinned.  The companion doc stages
+   this work (its section 34), but the discretization contract itself needs
+   an explicit statement: epoch boundaries, rounding of drive duration,
+   ordering of move-then-wait vs wait-then-move, and whether waiting is
+   unbounded or capped.
+
+7. Exact-solver oracle implies a new dependency.
+
+   Section 12 proposes CP-SAT/MILP as a validation oracle for small
+   orienteering problems.  lunarscout's dependencies are deliberately
+   minimal (numba, numpy, pyproj, rasterio, scipy, spiceypy).  A MILP/CP-SAT
+   oracle should be an optional extra dependency or an internal
+   branch-and-bound reference, not a core requirement.  Otherwise the base
+   install grows an unexpected native solver.
+
+8. Missing lunarscout-specific integration requirements.
+
+   The document never mentions the mechanics that are load-bearing in this
+   repo:
+
+     - Structured exceptions from src/lunarscout/errors.py with stable
+       code= and details=.  A trajectory layer needs new domain exceptions
+       (e.g. TrajectoryError, PlanningError, NoPathError, or similar) added
+       to errors.py and exported from the package root, matching the
+       existing pattern.
+     - The backend contract: backend="auto"/"cpu"/"cuda"; explicit CUDA
+       never falls back, "auto" may; CPU selection must not probe CUDA.
+     - Lazy import discipline: importing lunarscout must not import Numba,
+       initialize CUDA, load SPICE kernels, or open rasters.
+     - Algorithm identifiers and versioned restart metadata for any
+       file-producing operation, following the product pipeline precedent.
+
+   These should shape the module layout from day one, not be retrofitted.
+
+9. Static cost model is enumerated but not specified.
+
+   Section 5 lists edge costs (distance, slope-dependent time, roughness
+   penalty, terrain-dependent speed, fixed hazard penalties) but fixes no
+   concrete formula or units.  The battery model in section 1 is concrete;
+   the traversability/cost model is not.  Without a pinned cost model there
+   is no stable test oracle and no way to prove heuristic admissibility.
+   Pick one explicit cost function (one formula, one set of units) for the
+   first static planner, and derive the heuristic from it.
+
+
+Recommendations
+---------------
+
+1. Preserve the three-family decomposition and the simulation layer; do not
+   proliferate planners.
+
+2. Confirm how the existing GridRunner crosses the dependency boundary
+   before planning modules; if it sits in Lunar Analyst, extract it into a
+   self-contained lunarscout subpackage.
+
+3. Add a data-contract section: input arrays + GeoReference, mask/nodata
+   validity, LonLat/pixel conversion, and a SunProvider abstraction that
+   accepts explicit vectors or lazily uses SPICE.
+
+4. Resolve the sunlight source concretely against the horizon/lightmap/SPICE
+   product set: state whether horizons are a required pre-generated input,
+   and specify the granularity of on-the-fly sun(x, y, t) evaluation
+   (tile lightmap vs per-cell horizon+vector test).
+
+5. Pin the static cost model and the static A* heuristic in physical,
+   affine-aware units.
+
+6. Reconcile the SOC dominance rule between this document and
+   hierarchical-a-star-guided-patch-propagation.md into one statement.
+
+7. Pin the space-time discretization contract (epochs, drive-time rounding,
+   wait/charge interleaving, wait bounds).
+
+8. Keep the exact-solver oracle optional or internal to avoid a new core
+   dependency.
+
+9. Add the trajectory exception taxonomy to errors.py and follow the
+   backend/lazy-import/product-metadata conventions from the outset.
+
+10. Stage the work: static planner first, then the CPU reference dynamic
+    solver, then a thin simulation layer; GPU patch propagation and ensemble
+    policy search last.  This matches the library's CPU-first test
+    discipline and gives every later stage a deterministic reference.
+
+
+Generic Engine (added 2026-08-13)
+==================================
+
+Following discussion of the GridRunner prototype, the target shape for the
+DynamicPatchPlanner is a single relaxation engine with a pluggable outer
+scheduler and a small per-variant "physics" bundle.  This section records the
+generic-engine design and a concrete kernel-factory sketch.
+
+Design principle: do not make the whole algorithm generic.  Make the
+scheduler and the relaxation-loop skeleton generic, and parameterize only the
+physics.
+
+What is fully generic (shared, no cell-state knowledge)
+-------------------------------------------------------
+
+  - The block scheduler: a live-block worklist (FIFO for flood) or an
+    A*-guided priority queue keyed by an optimistic block priority.  It deals
+    only in block indices, a per-block priority scalar, and a per-block
+    "modified" flag.
+
+  - The outer loop: schedule blocks -> run the inner relaxation kernel ->
+    read back modified flags -> reactivate modified blocks and their
+    neighbors -> repeat until no live blocks remain.
+
+  - The A* block heuristic h(P) = affine-aware physical distance from the
+    block to the goal / maximum rover speed.  This is a function of block
+    geometry and the goal, not of the state.
+
+  - The A* g(P) term requires one projection out of the state: the kernel
+    reduces a scalar block-entry cost (for example earliest arrival) from
+    the cells it touches, exactly as it already reduces the modified flag.
+
+What is per-variant (the "physics")
+-----------------------------------
+
+  - State type and its "unoccupied" sentinel.
+  - Dominance predicate: is a candidate state better than the incumbent?
+  - Move transition: neighbor state + direction -> candidate for this cell
+    (or invalid).
+  - Charge/advance transition: state + sun + window end -> candidate
+    (or invalid).  Absent for the static-reachability variant.
+  - Goal test: is a cell/state a goal?
+  - Block-cost projection for the A* g(P) term.
+
+Three concrete variants over one engine
+---------------------------------------
+
+  +---------------------------+----------------------------+----------------+
+  | Variant                   | State                      | Dominance      |
+  +---------------------------+----------------------------+----------------+
+  | static reachability       | (reached_flag, prev)       | unreached      |
+  |                           |                            | -> reached     |
+  | space-time (x, y, t)      | (arrival_time, prev)       | earlier arrival|
+  | space-time + SOC          | (t, energy..., prev)       | greedy         |
+  |                           |                            | TotalWh-then-  |
+  |                           |                            | time (or small |
+  |                           |                            | nondominated   |
+  |                           |                            | set)           |
+  +---------------------------+----------------------------+----------------+
+
+  Move and charge are straightforward in each: reachability just sets the
+  flag when a neighbor is reached and slope is legal; space-time adds drive
+  duration; the SOC variant additionally debits drive energy and applies the
+  wait/charge transition at window end.  The flood/A* distinction is another
+  scheduler swap, so the whole matrix is one engine x {FIFO, A*} schedulers x
+  {reachable, time, time+SOC} physics.
+
+Numba expression
+----------------
+
+  A Python closure cannot be passed into a @cuda.jit kernel, so the engine is
+  generic at source level and specialized at JIT level.  The idiomatic Numba
+  pattern is a kernel factory:
+
+    - State is a typed struct (Numba Record / UniTuple / namedtuple of
+      scalars); kernel code is written against field names, not fixed
+      meaning.
+
+    - Physics is a bundle of small functions: @njit for the CPU reference,
+      @cuda.jit(device=True) for the GPU.  The bundle exposes dominates,
+      move, charge, is_goal, and a block-cost projection.
+
+    - The block-relaxation loop is written once as a parameterized kernel
+      template; a make_relax_kernel(state_type, physics) factory returns the
+      compiled kernel for a given bundle.  Numba compiles lazily and
+      disk-caches, so three (or five) specialized kernels cost one
+      compilation each and are then reused.
+
+  Fallback: if function-typed CUDA kernel arguments prove too awkward, the
+  factory specializes a shared loop skeleton per bundle.  This is "distinct
+  versions" only at the innermost kernel; the scheduler and outer loop stay
+  one implementation either way.
+
+Sketch: make_relax_kernel factory
+---------------------------------
+
+  Illustrative only; field names and types are placeholders.  The point is
+  the API surface: one engine, three physics bundles, two schedulers.
+
+  # --- physics bundle protocol -------------------------------------------
+  # Each bundle provides: a numba state type, UNOCCUPIED, dominates(),
+  # move(), charge(), is_goal(), and block_cost().
+
+  @njit
+  def dominates_demo(new_state, old_state):
+      # placeholder; real logic per bundle
+      return new_state.arrival_time < old_state.arrival_time
+
+  @njit
+  def move_demo(src, dx, dy, window_end):
+      # returns (valid: bool, candidate)
+      duration = DIAGONAL_HOURS if (dx != 0 and dy != 0) else ADJACENT_HOURS
+      t = src.arrival_time + duration
+      if t > window_end:
+          return False, src
+      cand = src
+      cand.arrival_time = t
+      cand.prev = encode(dx, dy)
+      return True, cand
+
+  @njit
+  def charge_demo(state, sun_fraction, window_end):
+      # advance a reached cell to window_end (wait/charge); absent for
+      # static reachability
+      return state.with_arrival_time(window_end)
+
+  # --- generic relaxation engine (CPU reference) --------------------------
+  # The same skeleton drives every bundle.  GPU is the identical loop inside
+  # a @cuda.jit kernel produced by make_relax_kernel().
+
+  def relax_block(state_arr, slope_arr, sun_arr, window_end, physics):
+      changed = False
+      for cell in block_cells(state_arr):
+          if slope_arr[cell] > SLOPE_THRESHOLD:
+              continue
+          best = state_arr[cell]
+          local_changed = False
+          for dx, dy in NEIGHBORS:
+              neighbor = state_arr[cell + (dx, dy)]
+              if neighbor == physics.UNOCCUPIED:
+                  continue
+              valid, cand = physics.move(neighbor, -dx, -dy, window_end)
+              if valid and physics.dominates(cand, best):
+                  best = cand
+                  local_changed = True
+          if local_changed:
+              state_arr[cell] = best
+              changed = True
+      return changed
+
+  def make_relax_kernel(state_type, physics):
+      # Returns a @cuda.jit(device=True) or compiled @cuda.jit kernel
+      # specialized on (state_type, physics).  The loop body is the same as
+      # relax_block above; the factory closes over the concrete dominates /
+      # move / charge device functions so Numba JIT-specializes them.
+      raise NotImplementedError("sketch only")
+
+  # --- three bundles ------------------------------------------------
+  reachability_physics = Physics(state=ReachState, move=move_reach,
+                                 dominates=dominates_reach, charge=None, ...)
+  spacetime_physics    = Physics(state=TimeState, move=move_time,
+                                 dominates=dominates_time, charge=charge_time, ...)
+  soc_physics          = Physics(state=SocState, move=move_soc,
+                                 dominates=dominates_soc, charge=charge_soc, ...)
+
+  # --- two schedulers over the same engine ---------------------------
+  flood_engine = Engine(relax=make_relax_kernel(...),
+                        scheduler=FifoBlockScheduler())
+  astar_engine = Engine(relax=make_relax_kernel(...),
+                        scheduler=ParallelAStarBlockScheduler(n_parallel=3))
+
+Notes that must be pinned before treating this as a specification
+-----------------------------------------------------------------
+
+  1. The g(P) projection.  The physics interface must expose a scalar
+     block-entry cost (earliest arrival / lowest entry cost) that the kernel
+     reduces out alongside the modified flag.  It is not derivable from an
+     opaque state.
+
+  2. Dominance correctness is the interface's responsibility.  Making the
+     engine generic moves the SOC hazard into the dominates predicate rather
+     than removing it.  The single-label greedy rule vs a small nondominated
+     set is a property of the SOC bundle, which must be tested against the
+     CPU reference independently of the scheduler.
+
+  3. N-parallel A* is approximate only when it terminates prematurely (an
+     optional early-exit mode), not when run to exhaustion.  Termination
+     policy is a scheduler option, not a property of the physics.
+
+  4. The A* priority queue must support block reactivation: an inner flood
+     can improve a block boundary after that block was already scheduled, so
+     re-insertion with a new priority (or decrease-key) is required.  The
+     FIFO scheduler hides this because order does not matter; the A* variant
+     makes it visible.
