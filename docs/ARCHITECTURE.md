@@ -122,9 +122,11 @@ The existing core modules remain backend-independent:
   to domain services. It does not become an application state container.
 - `trajectory/` owns the curated static rover-planning namespace. Its public
   static facade delegates to private validation, affine/CRS geometry, and
-  independently inspectable Dijkstra/A* reference modules. Future dynamic and
-  accelerated planners remain absent from the public namespace until their
-  contracts are frozen.
+  independently inspectable Dijkstra/A* reference modules. Large static
+  travel-time fields may lazily dispatch to a semantically equivalent private
+  Numba block-relaxation engine with bounded active-block tracking and neighbor
+  reactivation. Future dynamic and accelerated planners remain absent from the
+  public namespace until their contracts are frozen.
 
 ### 4.2 Horizon and lighting modules
 

@@ -1260,7 +1260,8 @@ More mature areas:
 
 Less mature or explicitly provisional areas:
 
-- the new static trajectory models and CPU reference planners;
+- the new static trajectory models, CPU reference planners, and optimized
+  static travel-time field engine;
 - default SPICE kernel selection and descriptions;
 - compute-backend packaging and cached first-use behavior;
 - safe-haven performance validation;
@@ -1371,6 +1372,10 @@ unavailable, while a mobility model may independently make an edge infeasible.
 Unreachable field cells contain `np.inf`. A valid but unreachable point-to-point
 goal returns `PathResult(reachable=False, travel_time_hours=None, path=None)`.
 Invalid inputs raise structured trajectory exceptions.
+
+The implementation may lazily use the private Numba CPU block engine for large
+travel-time fields. This does not change the public algorithm semantics, and
+small calls and namespace imports do not initialize Numba.
 
 `LonLat` start and goal values select the containing raster cell on half-open
 bounds. See the [static contract record](trajectory-static-contract.md) for the

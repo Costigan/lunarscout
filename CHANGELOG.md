@@ -11,9 +11,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   raster-cell paths, immutable piecewise-linear signed-slope slip models,
   structured trajectory errors, explicit validity/traversability/infeasible-edge
   semantics, read-only result arrays, a frozen static contract record, and a
-  synthetic CPU example. Imports remain free of CUDA probes, SPICE
-  initialization, raster access, and network activity. Verification: 45 focused
-  trajectory and example tests pass; the ordinary suite reports 1875 passed and
+  synthetic CPU example. Large travel-time fields lazily select a private Numba
+  block-relaxation engine validated against Dijkstra; small fields and A* paths
+  retain the reference implementations. Imports remain free of CUDA probes, SPICE
+  initialization, raster access, and network activity. Verification: 64 focused
+  trajectory and example tests pass; the ordinary suite reports 1894 passed and
   18 skipped, plus the pre-existing release-version assertion that expects
   `0.1.0rc3` while package metadata declares `0.1.0rc5`.
 

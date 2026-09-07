@@ -48,6 +48,7 @@ field = trajectory.static_travel_time(np.ones((1, 2), dtype=bool), grid, (0, 0))
 path = trajectory.static_path(np.ones((1, 2), dtype=bool), grid, (0, 0), (1, 0))
 assert field.reached.tolist() == [[True, True]]
 assert path.reachable and path.path.tolist() == [[0, 0], [1, 0]]
+assert not {'numba', 'numba.cuda'} & sys.modules.keys()
 """
     completed = subprocess.run(
         [sys.executable, "-c", program],

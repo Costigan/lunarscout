@@ -15,6 +15,8 @@ from ._validation import prepare_static_problem
 
 Cell: TypeAlias = tuple[int, int]
 SlipExtrapolation: TypeAlias = Literal["infeasible", "constant"]
+_BLOCK_FIELD_MIN_CELLS = 128 * 128
+_BLOCK_FIELD_SIZE = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,7 +306,19 @@ def static_travel_time(
         elevation=elevation,
         model=model,
     )
-    travel_time = dijkstra_field(problem)
+    if problem.available.size >= _BLOCK_FIELD_MIN_CELLS:
+        # Keep Numba out of namespace import and small one-shot calculations.
+        from ._block_cpu import block_static_travel_time
+
+        block_result = block_static_travel_time(
+            problem,
+            block_width=_BLOCK_FIELD_SIZE,
+            block_height=_BLOCK_FIELD_SIZE,
+            track_predecessors=False,
+        )
+        travel_time = block_result.travel_time_hours
+    else:
+        travel_time = dijkstra_field(problem)
     reached = np.isfinite(travel_time)
     return TravelTimeResult(
         travel_time_hours=travel_time,

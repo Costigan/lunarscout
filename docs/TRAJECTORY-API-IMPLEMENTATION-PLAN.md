@@ -1,10 +1,10 @@
 # Trajectory API Implementation Plan
 
-Status: in progress. The static parts of Phase 0/0.5 and the Phase-1 CPU API are
-implemented; dispatch, optimized, and dynamic work has not started.
+Status: in progress. The static parts of Phase 0/0.5 and the Phase-1 and Phase-2
+CPU APIs are implemented; dynamic work has not started.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (45
-tests). The complete ordinary suite reports 1,875 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (64
+tests). The complete ordinary suite reports 1,894 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -339,28 +339,28 @@ of the API design.
 **Private milestone:** optimized static execution without changing Phase-1
 scientific semantics.
 
-- [ ] Specify a private compiled model containing validated affine steps,
+- [x] Specify a private compiled model containing validated affine steps,
   metre conversion, neighbor tables, slip tables, and infeasible sentinels.
-- [ ] Implement private region decomposition with dimensions chosen by the CPU
+- [x] Implement private region decomposition with dimensions chosen by the CPU
   implementation, not by horizon tile size.
-- [ ] Implement single-label relaxation to local quiescence, boundary-change
+- [x] Implement single-label relaxation to local quiescence, boundary-change
   detection, active-region tracking, and neighbor reactivation.
-- [ ] Preserve the reference transition function's semantics in compiled form.
-- [ ] Add termination and non-convergence safeguards with structured failures.
-- [ ] Keep the reference Dijkstra/A* implementation available as an oracle.
-- [ ] Compare full fields, reachability, goal costs, and reconstructed path
+- [x] Preserve the reference transition function's semantics in compiled form.
+- [x] Add termination and non-convergence safeguards with structured failures.
+- [x] Keep the reference Dijkstra/A* implementation available as an oracle.
+- [x] Compare full fields, reachability, goal costs, and reconstructed path
   validity against the reference over canonical 128x128 and 3x3-patch cases.
-- [ ] Add adversarial cases where revisiting/reactivating a region is necessary.
-- [ ] Benchmark end-to-end reference and block workflows, including compilation,
+- [x] Add adversarial cases where revisiting/reactivating a region is necessary.
+- [x] Benchmark end-to-end reference and block workflows, including compilation,
   warm execution, scheduler overhead, and peak memory.
-- [ ] Add optimized public dispatch only if measured behavior justifies it and
+- [x] Add optimized public dispatch only if measured behavior justifies it and
   the selection rule can preserve the existing public contract.
 
 **Exit evidence**
 
-- [ ] Tolerance policy and parity report are checked in.
-- [ ] Benchmarks state cases where the block engine does and does not help.
-- [ ] The ordinary suite still runs CPU-only and namespace import stays lazy.
+- [x] Tolerance policy and parity report are checked in.
+- [x] Benchmarks state cases where the block engine does and does not help.
+- [x] The ordinary suite still runs CPU-only and namespace import stays lazy.
 
 ## 8. Phase 3A -- Dynamic time contract and exact oracle
 
