@@ -31,7 +31,7 @@ common support module at `_example_support.py`.
 
 | Requirement | Examples |
 |-------------|----------|
-| None (fully synthetic) | 01–10, 18–22, 25, 27, 31 |
+| None (fully synthetic) | 01–10, 18–22, 25, 27, 31–32 |
 | SPICE kernel download (first use) | 11–12, 14–16 |
 | Synthetic horizon data (download on first use from GitHub Releases) | 12–13 |
 | Real scenario with `dem.tif` and `horizons/` | 14–16 |
@@ -65,6 +65,7 @@ common support module at `_example_support.py`.
 | `25_map_algebra_focal.py` | Focal smoothing, morphology opening, and distance fields | No | Synthetic |
 | `27_map_algebra_terrain_resample.py` | Terrain expressions, explicit resampling, windowed writes, and canonical validity | No | Synthetic |
 | `31_map_algebra_temporal.py` | Temporal reduction composed with spatial constraints | No | Synthetic |
+| `32_static_trajectory.py` | Static Dijkstra travel-time fields and A* rover paths | No | Synthetic |
 
 ## Synthetic horizon data
 

@@ -6,6 +6,17 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Static trajectory-planning API.** Added the curated `ls.trajectory`
+  namespace with affine- and CRS-unit-aware Dijkstra travel-time fields and A*
+  raster-cell paths, immutable piecewise-linear signed-slope slip models,
+  structured trajectory errors, explicit validity/traversability/infeasible-edge
+  semantics, read-only result arrays, a frozen static contract record, and a
+  synthetic CPU example. Imports remain free of CUDA probes, SPICE
+  initialization, raster access, and network activity. Verification: 45 focused
+  trajectory and example tests pass; the ordinary suite reports 1875 passed and
+  18 skipped, plus the pre-existing release-version assertion that expects
+  `0.1.0rc3` while package metadata declares `0.1.0rc5`.
+
 - **CUDA horizon generation performance.** Removed the level-0 cell-exit cap
   from the production adaptive ray traversal so distant outer-DEM samples use
   the C# angular-error step budget. Public horizon generation now loads or

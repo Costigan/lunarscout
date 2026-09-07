@@ -25,7 +25,8 @@ The current package includes:
 - SPICE-backed Sun and Earth local-frame histories;
 - CUDA-accelerated horizon generation; and
 - patch-streamed lightmap, permanent-shadow, safe-haven, and landed
-  mission-duration product implementations with CPU fallbacks.
+  mission-duration product implementations with CPU fallbacks; and
+- static rover travel-time fields and path planning on projected raster grids.
 
 Lunarscout was split from Lunar Analyst so the calculation library can mature
 independently of the agent, web UI, FastAPI service, application job framework,
@@ -52,6 +53,7 @@ They demonstrate every public API capability in increasing order of scope:
 | SPICE vectors, azimuth/elevation | `11` |
 | Body/horizon plots, synthetic lightmap | `12`–`13` |
 | PSR, horizon generation, downstream products | `15`–`17` |
+| Static trajectory planning | `32` |
 
 Most examples work on synthetic data without a GPU or real scenario.
 A synthetic 256×256 DEM with pregenerated horizon tiles is downloaded
@@ -165,6 +167,20 @@ import lunarscout as ls
 | `TemporalGeoTiffSeries.close()`                        | Close cached datasets held by the series.                   |
 
 SPICE kernel management helpers are available under `ls.spice`.
+
+### Trajectory Namespace
+
+Static trajectory planning is available under `ls.trajectory`; its functions
+are not duplicated at the package root.
+
+| Name | Summary |
+| ---- | ------- |
+| `ls.trajectory.SlipFunction(...)` | Define piecewise-linear signed-slope travel-time factors. |
+| `ls.trajectory.StaticTravelModel(...)` | Configure nominal speed, connectivity, and optional slip. |
+| `ls.trajectory.static_travel_time(...)` | Compute a Dijkstra minimum-time field from one origin. |
+| `ls.trajectory.static_path(...)` | Compute an A* minimum-time raster-cell path. |
+| `ls.trajectory.TravelTimeResult` | Travel-time field, reached mask, grid, and normalized start. |
+| `ls.trajectory.PathResult` | Reachability, travel time, and `[x, y]` path cells. |
 
 ## Installation
 
@@ -1244,6 +1260,7 @@ More mature areas:
 
 Less mature or explicitly provisional areas:
 
+- the new static trajectory models and CPU reference planners;
 - default SPICE kernel selection and descriptions;
 - compute-backend packaging and cached first-use behavior;
 - safe-haven performance validation;
@@ -1298,6 +1315,71 @@ Not public API:
 - examples; and
 - prototype implementations until promoted through documented public
   facades.
+
+## Static Trajectory Planning
+
+Static planning consumes a Boolean/integer traversability array and its
+`GeoReference`. Physical distances come from the full affine transform and the
+projected CRS linear units, so rotated, skewed, anisotropic, and non-metre
+projected grids are handled explicitly. Geographic/angular grids are rejected.
+
+```python
+import lunarscout as ls
+import numpy as np
+
+elevation_m, georef = ls.read_geotiff("dem.tif")
+if georef is None:
+    raise ValueError("The DEM must be georeferenced.")
+traversable = np.ones(elevation_m.shape, dtype=bool)
+start = (2, 2)
+goal = (georef.width - 3, georef.height - 3)
+
+result = ls.trajectory.static_path(
+    traversable,
+    georef,
+    start=start,
+    goal=goal,
+)
+
+if result.reachable:
+    print(result.travel_time_hours)
+    print(result.path)  # shape (N, 2), with [x, y] cells
+```
+
+The default `StaticTravelModel` uses `36.0 m/h` and eight-neighbor movement.
+Diagonals may not cross either unavailable adjacent cardinal cell. Supply a
+same-grid elevation array in metres when using signed-slope slip:
+
+```python
+slip = ls.trajectory.SlipFunction(
+    signed_slopes=(-0.5, 0.0, 0.5),
+    factors=(0.8, 1.0, 2.0),
+    extrapolation="infeasible",
+)
+model = ls.trajectory.StaticTravelModel(slip=slip)
+field = ls.trajectory.static_travel_time(
+    traversable,
+    georef,
+    start=start,
+    elevation=elevation_m,
+    model=model,
+)
+```
+
+`valid` is a separate Boolean mask. Invalid and non-traversable cells are
+unavailable, while a mobility model may independently make an edge infeasible.
+Unreachable field cells contain `np.inf`. A valid but unreachable point-to-point
+goal returns `PathResult(reachable=False, travel_time_hours=None, path=None)`.
+Invalid inputs raise structured trajectory exceptions.
+
+`LonLat` start and goal values select the containing raster cell on half-open
+bounds. See the [static contract record](trajectory-static-contract.md) for the
+exact boundary, unit, diagonal, slip, and result contracts. See the
+[trajectory API design](trajectory-api-design.md) for rationale and planned
+dynamic, power-aware, science, and robustness APIs; those APIs are not yet
+public.
+
+The fully synthetic CPU example is `examples/32_static_trajectory.py`.
 
 ## Map Algebra (0.2.0rc1)
 

@@ -39,6 +39,36 @@ class VectorError(InputError):
     default_code = "vector_error"
 
 
+class TrajectoryError(LunarscoutError):
+    """Base class for trajectory-planning failures."""
+
+    default_code = "trajectory_error"
+
+
+class TrajectoryInputError(InputError):
+    """Trajectory inputs do not satisfy the public planning contract."""
+
+    default_code = "trajectory_input_error"
+
+
+class PlanningError(TrajectoryError):
+    """A trajectory planner failed to execute."""
+
+    default_code = "planning_error"
+
+
+class NoPathError(PlanningError):
+    """A caller-selected operation requires a path but none exists."""
+
+    default_code = "no_path"
+
+
+class ConfigurationSpaceError(TrajectoryError):
+    """Dynamic occupancy data could not be obtained or combined."""
+
+    default_code = "configuration_space_error"
+
+
 class ProductTimeError(InputError):
     """A product time axis or interval contract is invalid."""
 

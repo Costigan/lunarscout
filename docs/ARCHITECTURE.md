@@ -91,10 +91,10 @@ storage and compute backends never define the public API.
 
 ```text
 Public API and Scenario facade
-  horizon generation | lightmaps | PSR | safe havens | mission duration
+  horizon generation | lighting products | static trajectory planning
                                |
 Domain models and algorithms
-  georeference | temporal | vectors | horizon math | product reductions
+  georeference | temporal | vectors | horizon math | mobility | shortest paths
                                |
 Bounded execution and durable storage
   patch scheduler | CPU/CUDA sessions | horizon store | GeoTIFF product store
@@ -120,6 +120,11 @@ The existing core modules remain backend-independent:
 - `spice_geometry.py` owns public local-frame vector and angular histories.
 - `scenario.py` owns filesystem-safe scenario paths and delegates calculations
   to domain services. It does not become an application state container.
+- `trajectory/` owns the curated static rover-planning namespace. Its public
+  static facade delegates to private validation, affine/CRS geometry, and
+  independently inspectable Dijkstra/A* reference modules. Future dynamic and
+  accelerated planners remain absent from the public namespace until their
+  contracts are frozen.
 
 ### 4.2 Horizon and lighting modules
 

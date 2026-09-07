@@ -1,6 +1,6 @@
 from importlib.metadata import PackageNotFoundError, version as _distribution_version
 
-from . import cuda, map_algebra, spice
+from . import cuda, map_algebra, spice, trajectory
 from .alignment import (
     align,
     available_resampling_algorithms,
@@ -10,6 +10,7 @@ from .alignment import (
 from .errors import (
     AlignmentError,
     ComputeBackendError,
+    ConfigurationSpaceError,
     CoordinateTransformError,
     CudaError,
     DistanceFieldError,
@@ -36,6 +37,8 @@ from .errors import (
     MapAlgebraUnitError,
     OutputExistsError,
     OperationCancelledError,
+    NoPathError,
+    PlanningError,
     ProductCalculationError,
     ProductCatalogError,
     ProductError,
@@ -58,6 +61,8 @@ from .errors import (
     TemporalSeriesWriteError,
     TerrainOperationError,
     TimeRangeError,
+    TrajectoryError,
+    TrajectoryInputError,
     VectorError,
 )
 from .georeference import GeoReference
@@ -131,6 +136,7 @@ __all__ = [
     "__version__",
     "AlignmentError",
     "ComputeBackendError",
+    "ConfigurationSpaceError",
     "CoordinateTransformError",
     "CudaStatus",
     "CudaError",
@@ -163,6 +169,8 @@ __all__ = [
     "MapRegion",
     "OutputExistsError",
     "OperationCancelledError",
+    "NoPathError",
+    "PlanningError",
     "ProductCalculationError",
     "ProductCatalogError",
     "ProductError",
@@ -194,6 +202,8 @@ __all__ = [
     "TerrainOperationError",
     "TimeRange",
     "TimeRangeError",
+    "TrajectoryError",
+    "TrajectoryInputError",
     "VectorError",
     "align",
     "aspect",
@@ -242,6 +252,7 @@ __all__ = [
     "temporal_mean",
     "temporal_min",
     "temporal_std",
+    "trajectory",
     "times",
     "utc_datetime",
     "write_geotiff",

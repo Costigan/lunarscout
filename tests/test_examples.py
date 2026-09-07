@@ -24,6 +24,7 @@ _DETERMINISTIC_SCRIPTS = [
     "09_qgis_vrt.py",
     "10_landing_site_screening.py",
     "27_map_algebra_terrain_resample.py",
+    "32_static_trajectory.py",
 ]
 
 
