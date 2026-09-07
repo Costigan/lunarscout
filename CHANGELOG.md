@@ -6,6 +6,16 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Dynamic trajectory temporal oracle.** Froze the initial half-open UTC
+  occupancy, arbitrary-duration movement, conservative edge occupancy, waiting,
+  exact-boundary, and timeline-exhaustion contracts. Added a private bounded
+  earliest-arrival CPU oracle with one label per cell/interval, independent
+  brute-force checks, adversarial temporal tests, and a fresh-process proof that
+  oracle execution requires no SPICE, horizons, Numba, or CUDA. Dynamic mobility
+  providers and public dynamic result types remain deferred. Verification: 14
+  focused dynamic/import tests pass; the ordinary suite reports 1907 passed and
+  18 skipped plus the pre-existing package-version assertion described below.
+
 - **Static trajectory-planning API.** Added the curated `ls.trajectory`
   namespace with affine- and CRS-unit-aware Dijkstra travel-time fields and A*
   raster-cell paths, immutable piecewise-linear signed-slope slip models,

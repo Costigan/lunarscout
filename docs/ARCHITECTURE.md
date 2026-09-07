@@ -125,8 +125,10 @@ The existing core modules remain backend-independent:
   independently inspectable Dijkstra/A* reference modules. Large static
   travel-time fields may lazily dispatch to a semantically equivalent private
   Numba block-relaxation engine with bounded active-block tracking and neighbor
-  reactivation. Future dynamic and accelerated planners remain absent from the
-  public namespace until their contracts are frozen.
+  reactivation. A private, bounded small-problem dynamic occupancy oracle
+  validates half-open interval, movement-boundary, and waiting semantics without
+  SPICE, horizons, Numba, or CUDA. Dynamic planners remain absent from the public
+  namespace until their remaining contracts are frozen.
 
 ### 4.2 Horizon and lighting modules
 

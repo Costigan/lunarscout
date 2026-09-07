@@ -1,10 +1,11 @@
 # Trajectory API Implementation Plan
 
 Status: in progress. The static parts of Phase 0/0.5 and the Phase-1 and Phase-2
-CPU APIs are implemented; dynamic work has not started.
+CPU APIs are implemented. Phase 3A has frozen occupancy/time semantics and a
+private exact occupancy oracle; dynamic mobility/provider work remains open.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (64
-tests). The complete ordinary suite reports 1,894 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (77
+tests). The complete ordinary suite reports 1,907 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -367,33 +368,36 @@ scientific semantics.
 **Contract gate:** no optimized dynamic planner or public dynamic result ships
 until Section 7.1 of the API design is resolved in a reviewed decision record.
 
-- [ ] Define sample meaning, half-open interval boundaries, lookup, and any
+- [x] Define sample meaning, half-open interval boundaries, lookup, and any
   interpolation policy.
-- [ ] Define continuous physical move duration and how an edge crossing one or
+- [x] Define continuous physical move duration and how an edge crossing one or
   multiple environment boundaries is subdivided and checked.
-- [ ] Define exact equality at departure, transition, arrival, and timeline end.
-- [ ] Define wait availability, allowed cells, duration, repeated move/wait
+- [x] Define exact equality at departure, transition, arrival, and timeline end.
+- [x] Define wait availability, allowed cells, duration, repeated move/wait
   ordering, and feasibility throughout a wait.
-- [ ] Define start/goal occupancy at requested departure/arrival times.
-- [ ] Define timeline exhaustion and whether extension is forbidden, delegated
+- [x] Define start/goal occupancy at requested departure/arrival times.
+- [x] Define timeline exhaustion and whether extension is forbidden, delegated
   to a provider, or represented as an ordinary unreachable result.
 - [ ] Define provider consistency requirements for repeated and batched reads.
-- [ ] Freeze internal oracle state dominance without making its representation
+- [x] Freeze internal oracle state dominance without making its representation
   public.
-- [ ] Implement an independent small exact CPU search using explicit in-memory
-  environment arrays and vectors.
-- [ ] Add every adversarial temporal case in Section 15.3, including exact
-  boundaries and multi-interval movement.
-- [ ] Add brute-force enumeration for tiny cases where it provides an oracle
+- [x] Implement an independent small exact CPU search using explicit in-memory
+  environment arrays.
+- [ ] Extend the oracle through Phase 3B's explicit dynamic mobility/vector
+  inputs without introducing SPICE or CUDA into oracle tests.
+- [x] Add the occupancy and boundary adversarial cases in Section 15.3,
+  including exact boundaries and multi-interval movement.
+- [ ] Add the GridRunner block-reactivation adversarial case in Phase 3C.
+- [x] Add brute-force enumeration for tiny cases where it provides an oracle
   independent of the exact search implementation.
-- [ ] Keep the oracle private unless a separate public-reference use case and
+- [x] Keep the oracle private unless a separate public-reference use case and
   contract are approved.
 
 **Exit evidence**
 
 - [ ] The temporal decision record has no unresolved behavior needed by either
   GridRunner or safe-interval planning.
-- [ ] Oracle tests require neither SPICE, horizons, Numba, nor CUDA.
+- [x] Oracle tests require neither SPICE, horizons, Numba, nor CUDA.
 
 ## 9. Phase 3B -- Dynamic environment and mobility providers
 
