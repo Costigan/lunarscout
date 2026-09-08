@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from heapq import heappop, heappush
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -15,6 +16,9 @@ from ._validation import StaticProblem
 
 
 _MAX_EXACT_STATES = 1_000_000
+
+if TYPE_CHECKING:
+    from ._dynamic_mobility import CompiledDynamicTravelModel
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -186,6 +190,8 @@ def exact_dynamic_path(
     problem: StaticProblem,
     timeline: DynamicOccupancyTimeline,
     departure_time: datetime,
+    *,
+    travel_model: CompiledDynamicTravelModel | None = None,
 ) -> ExactDynamicPathResult:
     """Return the private exact earliest-arrival path for a small problem."""
 
@@ -207,6 +213,8 @@ def exact_dynamic_path(
             "Static and dynamic trajectory grids must match.",
             code="trajectory_dynamic_grid_mismatch",
         )
+    if travel_model is not None:
+        travel_model.require_compatible(problem, timeline)
     departure = timeline.snap_hour(
         timeline.hours_from_start(departure_time, name="departure_time")
     )
@@ -262,13 +270,24 @@ def exact_dynamic_path(
         departures = _continuous_wait_boundaries(
             timeline, (x, y), arrival, interval
         )
-        for step in problem.steps:
-            duration = problem.transition_time(x, y, step)
-            if not np.isfinite(duration):
-                continue
+        for direction, step in enumerate(problem.steps):
             destination = (x + step.dx, y + step.dy)
             for candidate_departure in departures:
-                candidate_arrival = timeline.snap_hour(candidate_departure + duration)
+                if travel_model is None:
+                    duration = problem.transition_time(x, y, step)
+                    candidate_arrival = timeline.snap_hour(
+                        candidate_departure + duration
+                    )
+                else:
+                    candidate_arrival = travel_model.arrival_hours(
+                        timeline,
+                        x,
+                        y,
+                        direction,
+                        candidate_departure,
+                    )
+                if not np.isfinite(candidate_arrival):
+                    continue
                 allowed, destination_interval = _span_is_allowed(
                     timeline,
                     (x, y),

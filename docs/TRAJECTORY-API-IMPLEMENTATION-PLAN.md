@@ -2,12 +2,12 @@
 
 Status: in progress. The static parts of Phase 0/0.5 and the Phase-1 and Phase-2
 CPU APIs are implemented. Phase 3A has frozen occupancy/time semantics and a
-private exact occupancy oracle. Phase 3B's public provider foundation is
-implemented, including horizon-backed sunlight evaluation; dynamic mobility
+private exact occupancy oracle. Phase 3B's provider foundation and private
+compiled dynamic mobility bundle are implemented; Sun-direction specialization
 remains open.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (93
-tests). The complete ordinary suite reports 1,923 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (104
+tests). The complete ordinary suite reports 1,934 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -386,8 +386,10 @@ until Section 7.1 of the API design is resolved in a reviewed decision record.
   public.
 - [x] Implement an independent small exact CPU search using explicit in-memory
   environment arrays.
-- [ ] Extend the oracle through Phase 3B's explicit dynamic mobility/vector
+- [x] Extend the oracle through Phase 3B's explicit compiled dynamic mobility
   inputs without introducing SPICE or CUDA into oracle tests.
+- [ ] Add explicit vector-to-mobility compilation after its local-frame and
+  parameterization contract is frozen.
 - [x] Add the occupancy and boundary adversarial cases in Section 15.3,
   including exact boundaries and multi-interval movement.
 - [ ] Add the GridRunner block-reactivation adversarial case in Phase 3C.
@@ -426,8 +428,10 @@ their signatures, lifecycles, and errors are frozen.
 - [x] Implement bounded, configurable private caches for static, signal, and
   combined configuration-space windows; test eviction and resource closure.
 - [x] Ensure trajectory calls never generate horizons as a side effect.
-- [ ] Define and implement the built-in dynamic travel model as a compiled model,
-  preserving signed slope and leaving explicit hazard inputs extensible.
+- [x] Define and implement the private built-in dynamic travel model as a
+  compiled model, preserving signed slope and supporting explicit deterministic
+  hazard factors; see
+  [`trajectory-dynamic-mobility-contract.md`](trajectory-dynamic-mobility-contract.md).
 - [x] Test scalar conceptual semantics against batched/windowed execution.
 - [x] Test explicit providers in a process where SpiceyPy is unavailable.
 
