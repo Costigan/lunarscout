@@ -9,10 +9,12 @@ path API are implemented; the private compiled dynamic-mobility bundle is not
 yet exposed by that API. Phase 3D's exact CPU safe-interval alternative is
 implemented and publicly selectable. Phase 4A's public power models, immutable
 energy records, source-cell movement sampling, and piecewise-constant Wh
-accounting are implemented. Phase 4B exact SOC search is next.
+accounting are implemented. Phase 4B's bounded exact multi-label CPU oracle,
+catch-up dominance, independent replay, and adversarial/exhaustive validation
+are implemented. Phase 4C's scalable approximate SOC planner is next.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (165
-tests). The complete ordinary suite reports 1,995 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (178
+tests). The complete ordinary suite reports 2,008 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -500,8 +502,9 @@ their signatures, lifecycles, and errors are frozen.
 
 ## 12. Phase 4A -- Freeze power and battery semantics
 
-**Contract gate:** resolve Section 8 and power questions 12--17 in Section 18
-before implementing SOC search.
+**Contract gate:** resolve Section 8 and power questions 12--14 in Section 18
+before implementing SOC search. Question 15 gates Phase 4C; questions 16--17
+remain deferred until bounded production multi-label/GPU design.
 
 - [x] Freeze units and validation for battery capacity, initial/minimum energy
   or SOC, drive load, stationary load, solar input, and elapsed time.
@@ -519,19 +522,19 @@ before implementing SOC search.
 
 ## 13. Phase 4B -- Exact SOC CPU oracle
 
-- [ ] Implement a private exact nondominated multi-label resource-constrained
+- [x] Implement a private exact nondominated multi-label resource-constrained
   search for small problems.
-- [ ] Define exact dominance over location, time, energy, and cost under the
+- [x] Define exact dominance over location, time, energy, and cost under the
   frozen model.
-- [ ] Retain enough labels to establish exactness within the declared continuous
+- [x] Retain enough labels to establish exactness within the declared continuous
   or discretized state contract; fail structurally if an explicit oracle bound
   is exceeded.
-- [ ] Validate every returned trajectory by replaying time, environment, power,
+- [x] Validate every returned trajectory by replaying time, environment, power,
   and battery transitions independently.
-- [ ] Add all counterexample classes listed in Section 15.4.
-- [ ] Add tiny exhaustive-state comparisons that do not share the label-store
+- [x] Add all counterexample classes listed in Section 15.4.
+- [x] Add tiny exhaustive-state comparisons that do not share the label-store
   implementation.
-- [ ] Keep mission-scale performance explicitly out of the oracle acceptance
+- [x] Keep mission-scale performance explicitly out of the oracle acceptance
   criteria.
 
 ## 14. Phase 4C -- Scalable approximate SOC planner

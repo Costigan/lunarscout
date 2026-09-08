@@ -133,8 +133,10 @@ The existing core modules remain backend-independent:
   stored battery energy in Wh, distinct drive/idle loads, and immutable
   per-segment results. Shared accounting splits operations at piecewise-constant
   environmental boundaries and uses source-cell sunlight for movement; it
-  remains separate from search. Compiled dynamic-mobility specializations
-  remain private.
+  remains separate from search. A bounded private CPU oracle retains
+  nondominated time/energy labels for small event-time SOC problems and replays
+  every reachable result independently. Compiled dynamic-mobility
+  specializations remain private.
 
 ### 4.2 Horizon and lighting modules
 

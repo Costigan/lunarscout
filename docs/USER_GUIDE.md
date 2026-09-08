@@ -1496,6 +1496,12 @@ records are public, but SOC-aware path search remains under implementation. See
 the [initial power contract](trajectory-power-contract.md) for the precise
 scope.
 
+A bounded exact multi-label CPU oracle now validates small SOC planning cases,
+including charging and later/higher-energy alternatives. It is intentionally
+private and does not add a public `soc_path` operation. Its event-time exactness,
+dominance, resource-bound, and independent-replay scope are recorded in the
+[exact SOC reference contract](trajectory-soc-reference-contract.md).
+
 ## Map Algebra (0.2.0rc1)
 
 The `map_algebra` module provides an array-oriented analysis surface for

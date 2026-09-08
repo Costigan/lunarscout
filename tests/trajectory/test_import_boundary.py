@@ -142,6 +142,61 @@ assert not {'numba', 'numba.cuda', 'spiceypy'} & sys.modules.keys()
     assert completed.returncode == 0, completed.stderr
 
 
+def test_private_soc_oracle_needs_no_spice_or_numba(tmp_path: Path) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(repository / "src")
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    program = """
+from datetime import datetime, timedelta, timezone
+import sys
+import numpy as np
+from pyproj import CRS
+import lunarscout as ls
+from lunarscout.trajectory._dynamic_reference import DynamicOccupancyTimeline
+from lunarscout.trajectory._power_accounting import PiecewiseSunlightTimeline
+from lunarscout.trajectory._power_reference import exact_soc_path
+from lunarscout.trajectory._validation import prepare_static_problem
+crs = CRS.from_user_input('ESRI:103878')
+grid = ls.GeoReference(
+    crs.to_wkt(), crs.to_proj4(), (0.0, 10.0, 0.0, 0.0, 0.0, -10.0),
+    2, 1, 10.0, -10.0, None,
+)
+problem = prepare_static_problem(
+    np.ones((1, 2), dtype=bool), grid, (0, 0), goal=(1, 0),
+    model=ls.trajectory.StaticTravelModel(
+        speed_m_per_h=10.0, include_diagonals=False,
+    ),
+)
+t0 = datetime(2040, 1, 1, tzinfo=timezone.utc)
+boundaries = (t0, t0 + timedelta(hours=1), t0 + timedelta(hours=2))
+occupancy = DynamicOccupancyTimeline(
+    boundaries, np.ones((2, 1, 2), dtype=bool), grid,
+)
+sunlight = PiecewiseSunlightTimeline(
+    boundaries, np.ones((2, 1, 2), dtype=float), grid,
+)
+result = exact_soc_path(
+    problem, occupancy, sunlight, t0,
+    solar=ls.trajectory.SolarPowerModel(100.0),
+    battery=ls.trajectory.BatteryModel(200.0, 100.0, 0.0, 1.0, 1.0),
+    rover=ls.trajectory.RoverPowerModel(100.0, 10.0),
+)
+assert result.reachable and result.energy.final_energy_wh == 100.0
+assert not {'numba', 'numba.cuda', 'spiceypy'} & sys.modules.keys()
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_explicit_providers_need_no_spiceypy(tmp_path: Path) -> None:
     repository = Path(__file__).resolve().parents[2]
     environment = dict(os.environ)
