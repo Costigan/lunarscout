@@ -2,12 +2,13 @@
 
 Status: in progress. The static parts of Phase 0/0.5 and the Phase-1 and Phase-2
 CPU APIs are implemented. Phase 3A has frozen occupancy/time semantics and a
-private exact occupancy oracle. Phase 3B's provider foundation and private
-compiled dynamic mobility bundle are implemented; Sun-direction specialization
-remains open.
+private exact occupancy oracle. Phase 3B's provider foundation, compiled
+dynamic mobility bundle, and explicit Sun-direction specialization are
+implemented. Phase 3C's exhaustive private GridRunner core is implemented;
+its public API and diagnostics gates remain open.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (104
-tests). The complete ordinary suite reports 1,934 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (118
+tests). The complete ordinary suite reports 1,948 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -388,11 +389,12 @@ until Section 7.1 of the API design is resolved in a reviewed decision record.
   environment arrays.
 - [x] Extend the oracle through Phase 3B's explicit compiled dynamic mobility
   inputs without introducing SPICE or CUDA into oracle tests.
-- [ ] Add explicit vector-to-mobility compilation after its local-frame and
-  parameterization contract is frozen.
+- [x] Add explicit vector-to-mobility compilation with its private local-frame
+  and parameterization contract frozen in
+  [`trajectory-dynamic-mobility-contract.md`](trajectory-dynamic-mobility-contract.md).
 - [x] Add the occupancy and boundary adversarial cases in Section 15.3,
   including exact boundaries and multi-interval movement.
-- [ ] Add the GridRunner block-reactivation adversarial case in Phase 3C.
+- [x] Add the GridRunner block-reactivation adversarial case in Phase 3C.
 - [x] Add brute-force enumeration for tiny cases where it provides an oracle
   independent of the exact search implementation.
 - [x] Keep the oracle private unless a separate public-reference use case and
@@ -400,8 +402,8 @@ until Section 7.1 of the API design is resolved in a reviewed decision record.
 
 **Exit evidence**
 
-- [ ] The temporal decision record has no unresolved behavior needed by either
-  GridRunner or safe-interval planning.
+- [x] The temporal and dynamic-mobility decision records have no unresolved
+  behavior needed by either GridRunner or safe-interval planning.
 - [x] Oracle tests require neither SPICE, horizons, Numba, nor CUDA.
 
 ## 9. Phase 3B -- Dynamic environment and mobility providers
@@ -444,20 +446,21 @@ their signatures, lifecycles, and errors are frozen.
 
 ## 10. Phase 3C -- GridRunner dynamic planner
 
-- [ ] Implement a space-time physics bundle using the frozen temporal and
+- [x] Implement a private space-time physics bundle using the frozen temporal and
   provider contracts.
-- [ ] Implement UTC/public-time conversion to private interval state without
+- [x] Implement UTC/public-time conversion to private interval state without
   exposing integer epochs.
-- [ ] Reuse active-region scheduling, local relaxation, boundary propagation,
+- [x] Reuse active-region scheduling, local relaxation, boundary propagation,
   and reactivation only where their assumptions fit the dynamic state.
-- [ ] Add an admissible A*-guided region priority and prove/test the lower-bound
-  assumptions for each built-in model.
-- [ ] Implement wait and movement transitions exactly as frozen in Phase 3A.
-- [ ] Define termination, exact/exhaustive mode, and any approximate early-stop
-  policy as separate algorithmic options.
-- [ ] Compare reachability, arrival/cost, and trajectory feasibility against the
+- [x] Add an admissible A*-guided region priority and record the lower-bound
+  assumptions in
+  [`trajectory-gridrunner-private-contract.md`](trajectory-gridrunner-private-contract.md).
+- [x] Implement wait and movement transitions exactly as frozen in Phase 3A.
+- [x] Define the private implementation's termination as exact/exhaustive, with
+  no approximate early-stop mode.
+- [x] Compare reachability, arrival/cost, and trajectory feasibility against the
   Phase-3A oracle across synthetic and randomized small cases.
-- [ ] Add explicit regression tests requiring region reactivation.
+- [x] Add explicit regression tests requiring region reactivation.
 - [ ] Freeze the dynamic public result, algorithm spelling, defaults, and
   diagnostics boundary before exporting `dynamic_path`.
 - [ ] Document whether the first public GridRunner algorithm is exact,
