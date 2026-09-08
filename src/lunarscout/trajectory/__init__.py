@@ -35,6 +35,7 @@ from .power import (
     RoverPowerModel,
     SolarPowerModel,
 )
+from .soc import SocPathResult, soc_path
 from ..errors import (
     ConfigurationSpaceError,
     NoPathError,
@@ -63,6 +64,7 @@ __all__ = [
     "RoverPowerModel",
     "SlipFunction",
     "SolarPowerModel",
+    "SocPathResult",
     "SpiceSunVectorProvider",
     "StaticConfigurationSpaceProvider",
     "StaticTravelModel",
@@ -73,6 +75,7 @@ __all__ = [
     "TrajectoryInputError",
     "TravelTimeResult",
     "dynamic_path",
+    "soc_path",
     "static_path",
     "static_travel_time",
 ]

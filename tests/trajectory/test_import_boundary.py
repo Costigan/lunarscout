@@ -36,13 +36,13 @@ assert trajectory.__all__ == [
     'EnergyTimelineResult', 'EarthElevationProvider',
     'EarthElevationThresholdProvider', 'ExplicitSunVectorProvider',
     'HorizonSunlightProvider', 'NoPathError', 'PathResult', 'PlanningError',
-    'RoverPowerModel', 'SlipFunction', 'SolarPowerModel',
+    'RoverPowerModel', 'SlipFunction', 'SolarPowerModel', 'SocPathResult',
     'SpiceSunVectorProvider', 'StaticConfigurationSpaceProvider',
     'StaticTravelModel', 'SunVectorProvider', 'SunlightProvider',
     'SunlightThresholdProvider', 'TrajectoryError', 'TrajectoryInputError',
-    'TravelTimeResult', 'dynamic_path', 'static_path', 'static_travel_time',
+    'TravelTimeResult', 'dynamic_path', 'soc_path', 'static_path',
+    'static_travel_time',
 ]
-assert not hasattr(trajectory, 'soc_path')
 solar = trajectory.SolarPowerModel(rated_power_w=100.0)
 battery = trajectory.BatteryModel(
     capacity_wh=500.0, initial_energy_wh=400.0, minimum_energy_wh=100.0,
@@ -85,6 +85,16 @@ safe = trajectory.dynamic_path(
     algorithm='safe_interval', backend='cpu',
 )
 assert safe.reachable and safe.arrival_time == dynamic.arrival_time
+sunlight = trajectory.ArraySunlightProvider(
+    (time0, time0 + timedelta(hours=1)),
+    np.full((1, 1, 2), 255, dtype=np.uint8), grid,
+)
+soc = trajectory.soc_path(
+    np.ones((1, 2), dtype=bool), grid, (0, 0), (1, 0),
+    (time0, time0 + timedelta(hours=1)), configuration, sunlight, time0,
+    solar=solar, battery=battery, rover=rover, algorithm='greedy', backend='cpu',
+)
+assert soc.reachable and soc.algorithm == 'greedy' and not soc.optimal
 assert not {'numba', 'numba.cuda'} & sys.modules.keys()
 """
     completed = subprocess.run(

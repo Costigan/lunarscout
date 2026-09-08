@@ -66,6 +66,8 @@ common support module at `_example_support.py`.
 | `27_map_algebra_terrain_resample.py` | Terrain expressions, explicit resampling, windowed writes, and canonical validity | No | Synthetic |
 | `31_map_algebra_temporal.py` | Temporal reduction composed with spatial constraints | No | Synthetic |
 | `32_static_trajectory.py` | Static Dijkstra travel-time fields and A* rover paths | No | Synthetic |
+| `33_dynamic_trajectory.py` | Exact dynamic paths with interval occupancy and waits | No | Synthetic |
+| `34_soc_trajectory.py` | Exact and greedy battery-aware trajectory comparison | No | Synthetic |
 
 ## Synthetic horizon data
 

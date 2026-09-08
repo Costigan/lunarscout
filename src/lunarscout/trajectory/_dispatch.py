@@ -11,6 +11,14 @@ class DynamicDispatch:
     backend: str
 
 
+@dataclass(frozen=True, slots=True)
+class SocDispatch:
+    algorithm: str
+    backend: str
+    complete: bool
+    optimal: bool
+
+
 def resolve_dynamic_dispatch(algorithm: str, backend: str) -> DynamicDispatch:
     supported_algorithms = {"gridrunner", "safe_interval"}
     if not isinstance(algorithm, str) or algorithm not in supported_algorithms:
@@ -35,3 +43,35 @@ def resolve_dynamic_dispatch(algorithm: str, backend: str) -> DynamicDispatch:
             details={"algorithm": algorithm, "backend": backend},
         )
     return DynamicDispatch(algorithm=algorithm, backend="cpu")
+
+
+def resolve_soc_dispatch(algorithm: str, backend: str) -> SocDispatch:
+    supported_algorithms = {"exact", "greedy"}
+    if not isinstance(algorithm, str) or algorithm not in supported_algorithms:
+        raise TrajectoryInputError(
+            "Unknown SOC trajectory algorithm.",
+            code="trajectory_unknown_algorithm",
+            details={
+                "algorithm": algorithm,
+                "supported": sorted(supported_algorithms),
+            },
+        )
+    if not isinstance(backend, str) or backend not in {"auto", "cpu", "cuda"}:
+        raise TrajectoryInputError(
+            "Unknown SOC trajectory backend.",
+            code="trajectory_unknown_backend",
+            details={"backend": backend, "supported": ["auto", "cpu", "cuda"]},
+        )
+    if backend == "cuda":
+        raise PlanningError(
+            "The selected SOC algorithm has no CUDA implementation.",
+            code="trajectory_backend_unavailable",
+            details={"algorithm": algorithm, "backend": backend},
+        )
+    exact = algorithm == "exact"
+    return SocDispatch(
+        algorithm=algorithm,
+        backend="cpu",
+        complete=exact,
+        optimal=exact,
+    )

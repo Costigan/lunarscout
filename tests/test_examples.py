@@ -26,6 +26,7 @@ _DETERMINISTIC_SCRIPTS = [
     "27_map_algebra_terrain_resample.py",
     "32_static_trajectory.py",
     "33_dynamic_trajectory.py",
+    "34_soc_trajectory.py",
 ]
 
 

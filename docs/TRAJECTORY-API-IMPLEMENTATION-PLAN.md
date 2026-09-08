@@ -11,10 +11,12 @@ implemented and publicly selectable. Phase 4A's public power models, immutable
 energy records, source-cell movement sampling, and piecewise-constant Wh
 accounting are implemented. Phase 4B's bounded exact multi-label CPU oracle,
 catch-up dominance, independent replay, and adversarial/exhaustive validation
-are implemented. Phase 4C's scalable approximate SOC planner is next.
+are implemented. Phase 4C's public exact/greedy dispatch, bounded single-label
+CPU planner, independent replay, and oracle comparisons are implemented. Phase
+5's CUDA block engine is next.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (178
-tests). The complete ordinary suite reports 2,008 passed, 18 skipped, and one
+Latest verification (2026-09-08): trajectory plus example tests pass (192
+tests). The complete ordinary suite reports 2,022 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -539,17 +541,17 @@ remain deferred until bounded production multi-label/GPU design.
 
 ## 14. Phase 4C -- Scalable approximate SOC planner
 
-- [ ] Specify one greedy single-label selection/dominance rule before coding.
-- [ ] State its feasibility, completeness, and optimality guarantees and known
+- [x] Specify one greedy single-label selection/dominance rule before coding.
+- [x] State its feasibility, completeness, and optimality guarantees and known
   non-guarantees in public algorithm metadata/documentation.
-- [ ] Implement the same rule first on CPU using shared energy-transition code.
-- [ ] Compare every small case with the exact multi-label oracle.
-- [ ] Check in minimal reproducible counterexamples where the approximation
+- [x] Implement the same rule first on CPU using shared energy-transition code.
+- [x] Compare every small case with the exact multi-label oracle.
+- [x] Check in minimal reproducible counterexamples where the approximation
   misses a route or returns an inferior route.
-- [ ] Ensure algorithm selection visibly distinguishes exact and greedy SOC;
+- [x] Ensure algorithm selection visibly distinguishes exact and greedy SOC;
   backend selection must not cross that boundary.
-- [ ] Expose bounded-resource exhaustion separately from ordinary no-path.
-- [ ] Add replay validation for every returned power-aware trajectory.
+- [x] Expose bounded-resource exhaustion separately from ordinary no-path.
+- [x] Add replay validation for every returned power-aware trajectory.
 
 ## 15. Phase 5 -- CUDA block engine
 

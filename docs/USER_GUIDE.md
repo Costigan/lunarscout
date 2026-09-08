@@ -186,6 +186,8 @@ are not duplicated at the package root.
 | `ls.trajectory.SolarPowerModel` | Orientation-independent rated solar generation. |
 | `ls.trajectory.BatteryModel` | Capacity, initial energy, minimum energy, and explicit ideal efficiencies. |
 | `ls.trajectory.RoverPowerModel` | Separate constant drive and idle electrical loads. |
+| `ls.trajectory.soc_path(...)` | Plan a replay-validated battery-aware path with exact or greedy SOC search. |
+| `ls.trajectory.SocPathResult` | Dynamic path, energy timeline, algorithm/backend identity, and guarantees. |
 | `ls.trajectory.SunVectorProvider` | Structural protocol for Moon-ME Sun vectors. |
 | `ls.trajectory.SunlightProvider` | Structural protocol for byte-valued sunlight windows. |
 | `ls.trajectory.EarthElevationProvider` | Structural protocol for Earth-elevation windows. |
@@ -1492,15 +1494,37 @@ accounting splits movement and waits at environmental step boundaries. A move
 uses its source cell's sunlight through arrival; a wait uses its occupied cell.
 The immutable `EnergySegment` and `EnergyTimelineResult` records expose UTC
 segment timing and Wh accounting without mutable array state. These models and
-records are public, but SOC-aware path search remains under implementation. See
-the [initial power contract](trajectory-power-contract.md) for the precise
-scope.
+records are public. See the
+[initial power contract](trajectory-power-contract.md) for the precise scope.
 
-A bounded exact multi-label CPU oracle now validates small SOC planning cases,
-including charging and later/higher-energy alternatives. It is intentionally
-private and does not add a public `soc_path` operation. Its event-time exactness,
-dominance, resource-bound, and independent-replay scope are recorded in the
-[exact SOC reference contract](trajectory-soc-reference-contract.md).
+Battery-aware path planning is available on CPU:
+
+```python
+result = ls.trajectory.soc_path(
+    traversable,
+    georef,
+    start,
+    goal,
+    boundaries,
+    configuration_provider,
+    sunlight_provider,
+    departure_time,
+    solar=solar,
+    battery=battery,
+    rover=loads,
+    algorithm="greedy",  # or "exact" for bounded reference problems
+    backend="cpu",
+)
+```
+
+`algorithm="exact"` is complete and minimum-arrival within the documented
+event-time contract unless its label bound is exceeded. The default
+`algorithm="greedy"` keeps one earliest-arrival label per cell and environmental
+interval; it always replays and validates a returned route but may miss a route
+or return a later one. `result.complete` and `result.optimal` report these
+algorithm guarantees. See the
+[public SOC contract](trajectory-soc-public-contract.md) and the runnable
+`examples/34_soc_trajectory.py` comparison.
 
 ## Map Algebra (0.2.0rc1)
 

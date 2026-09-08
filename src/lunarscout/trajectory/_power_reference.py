@@ -96,7 +96,7 @@ def _require_compatible(
 ) -> None:
     if problem.goal is None:
         raise TrajectoryInputError(
-            "The exact SOC oracle requires a goal cell.",
+            "SOC planning requires a goal cell.",
             code="trajectory_dynamic_goal_required",
         )
     try:
@@ -104,7 +104,7 @@ def _require_compatible(
         sunlight_matches = same_grid(problem.georef, sunlight.georef)
     except Exception as exc:
         raise TrajectoryInputError(
-            "Unable to compare exact SOC trajectory grids.",
+            "Unable to compare SOC trajectory grids.",
             code="trajectory_invalid_dynamic_grid",
             details={"error": str(exc)},
         ) from exc
@@ -207,7 +207,7 @@ def _path_from_label(
     while labels[chain[-1]].predecessor is not None:
         if len(chain) > len(labels):
             raise PlanningError(
-                "The exact SOC predecessor chain is invalid.",
+                "The SOC predecessor chain is invalid.",
                 code="trajectory_invalid_soc_predecessor",
             )
         predecessor = labels[chain[-1]].predecessor
@@ -229,7 +229,7 @@ def _path_from_label(
     )
     if len(departures) != len(chain) - 1:
         raise PlanningError(
-            "The exact SOC predecessor departures are incomplete.",
+            "The SOC predecessor departures are incomplete.",
             code="trajectory_invalid_soc_predecessor",
         )
     return ExactDynamicPathResult(

@@ -135,8 +135,10 @@ The existing core modules remain backend-independent:
   environmental boundaries and uses source-cell sunlight for movement; it
   remains separate from search. A bounded private CPU oracle retains
   nondominated time/energy labels for small event-time SOC problems and replays
-  every reachable result independently. Compiled dynamic-mobility
-  specializations remain private.
+  every reachable result independently. The public SOC facade also provides a
+  bounded CPU greedy planner with one selected label per cell/interval and
+  explicit exact-versus-approximate algorithm metadata. Compiled
+  dynamic-mobility specializations remain private.
 
 ### 4.2 Horizon and lighting modules
 
