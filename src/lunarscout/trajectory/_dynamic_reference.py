@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from heapq import heappop, heappush
 
 import numpy as np
@@ -10,28 +10,11 @@ from numpy.typing import NDArray
 from ..alignment import same_grid
 from ..errors import PlanningError, TrajectoryInputError
 from ..georeference import GeoReference
+from ._time_contract import IntervalTimeAxis
 from ._validation import StaticProblem
 
 
-_BOUNDARY_SNAP_HOURS = 1.0e-12
 _MAX_EXACT_STATES = 1_000_000
-
-
-def _as_utc(value: datetime, *, name: str) -> datetime:
-    if not isinstance(value, datetime) or value.tzinfo is None:
-        raise TrajectoryInputError(
-            f"{name} must be a timezone-aware datetime.",
-            code="trajectory_invalid_dynamic_time",
-            details={"name": name},
-        )
-    offset = value.utcoffset()
-    if offset is None:
-        raise TrajectoryInputError(
-            f"{name} must be a timezone-aware datetime.",
-            code="trajectory_invalid_dynamic_time",
-            details={"name": name},
-        )
-    return value.astimezone(timezone.utc)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -39,6 +22,7 @@ class DynamicOccupancyTimeline:
     boundaries: tuple[datetime, ...]
     allowed: NDArray[np.bool_]
     georef: GeoReference
+    _time_axis: IntervalTimeAxis = field(init=False, repr=False)
     _boundary_hours: NDArray[np.float64] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -47,25 +31,8 @@ class DynamicOccupancyTimeline:
                 "Dynamic occupancy georef must be a GeoReference.",
                 code="trajectory_invalid_dynamic_grid",
             )
-        try:
-            boundaries = tuple(
-                _as_utc(value, name=f"boundaries[{index}]")
-                for index, value in enumerate(self.boundaries)
-            )
-        except TypeError as exc:
-            raise TrajectoryInputError(
-                "Dynamic occupancy boundaries must be an iterable of datetimes.",
-                code="trajectory_invalid_dynamic_time",
-            ) from exc
-        if len(boundaries) < 2 or any(
-            right <= left for left, right in zip(boundaries, boundaries[1:])
-        ):
-            raise TrajectoryInputError(
-                "Dynamic occupancy boundaries must be strictly increasing and "
-                "contain at least two values.",
-                code="trajectory_invalid_dynamic_time",
-                details={"boundary_count": len(boundaries)},
-            )
+        axis = IntervalTimeAxis(self.boundaries)
+        boundaries = axis.boundaries
         allowed_input = np.asarray(self.allowed)
         expected = (
             len(boundaries) - 1,
@@ -85,18 +52,11 @@ class DynamicOccupancyTimeline:
                 details={"dtype": str(allowed_input.dtype)},
             )
         allowed = np.array(allowed_input, dtype=np.bool_, copy=True)
-        boundary_hours = np.asarray(
-            [
-                (value - boundaries[0]).total_seconds() / 3600.0
-                for value in boundaries
-            ],
-            dtype=np.float64,
-        )
         allowed.flags.writeable = False
-        boundary_hours.flags.writeable = False
         object.__setattr__(self, "boundaries", boundaries)
         object.__setattr__(self, "allowed", allowed)
-        object.__setattr__(self, "_boundary_hours", boundary_hours)
+        object.__setattr__(self, "_time_axis", axis)
+        object.__setattr__(self, "_boundary_hours", axis.boundary_hours)
 
     @property
     def interval_count(self) -> int:
@@ -104,29 +64,19 @@ class DynamicOccupancyTimeline:
 
     @property
     def duration_hours(self) -> float:
-        return float(self._boundary_hours[-1])
+        return self._time_axis.duration_hours
 
     def hours_from_start(self, value: datetime, *, name: str) -> float:
-        utc = _as_utc(value, name=name)
-        return (utc - self.boundaries[0]).total_seconds() / 3600.0
+        return self._time_axis.hours_from_start(value, name=name)
 
     def datetime_from_hours(self, value: float) -> datetime:
-        return self.boundaries[0] + timedelta(hours=value)
+        return self._time_axis.datetime_from_hours(value)
 
     def snap_hour(self, value: float) -> float:
-        insertion = int(np.searchsorted(self._boundary_hours, value, side="left"))
-        for index in (insertion - 1, insertion):
-            if 0 <= index < self._boundary_hours.size:
-                boundary = float(self._boundary_hours[index])
-                if abs(value - boundary) <= _BOUNDARY_SNAP_HOURS:
-                    return boundary
-        return value
+        return self._time_axis.snap_hour(value)
 
     def interval_index(self, value: float) -> int | None:
-        value = self.snap_hour(value)
-        if value < 0.0 or value >= self.duration_hours:
-            return None
-        return int(np.searchsorted(self._boundary_hours, value, side="right") - 1)
+        return self._time_axis.interval_index_from_hours(value)
 
 
 @dataclass(frozen=True, slots=True, eq=False)

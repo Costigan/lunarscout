@@ -181,6 +181,10 @@ are not duplicated at the package root.
 | `ls.trajectory.static_path(...)` | Compute an A* minimum-time raster-cell path. |
 | `ls.trajectory.TravelTimeResult` | Travel-time field, reached mask, grid, and normalized start. |
 | `ls.trajectory.PathResult` | Reachability, travel time, and `[x, y]` path cells. |
+| `ls.trajectory.SunVectorProvider` | Structural protocol for Moon-ME Sun vectors. |
+| `ls.trajectory.SunlightProvider` | Structural protocol for byte-valued sunlight windows. |
+| `ls.trajectory.EarthElevationProvider` | Structural protocol for Earth-elevation windows. |
+| `ls.trajectory.ConfigurationSpaceProvider` | Structural protocol for Boolean occupancy windows. |
 
 ## Installation
 
@@ -1385,6 +1389,38 @@ dynamic, power-aware, science, and robustness APIs; those APIs are not yet
 public.
 
 The fully synthetic CPU example is `examples/32_static_trajectory.py`.
+
+### Dynamic Environment Providers
+
+Reusable dynamic-environment interfaces are available under `ls.trajectory`.
+They keep physical sunlight and Earth-elevation signals separate from the hard
+occupancy rules of a particular planning problem. The initial adapters support
+explicit Moon-ME Sun vectors, lazy SPICE-backed Sun vectors, in-memory
+half-open interval cubes, sunlight evaluation from existing horizons, static
+occupancy, threshold policies, and logical-AND composition.
+
+```python
+sunlight = ls.trajectory.ArraySunlightProvider(
+    boundaries,
+    sunlight_bytes,  # uint8[interval, y, x]
+    georef,
+)
+sun_required = ls.trajectory.SunlightThresholdProvider(
+    sunlight,
+    minimum_fraction=0.2,
+)
+configuration = ls.trajectory.AllOfConfigurationSpaceProvider(
+    (static_configuration, sun_required),
+)
+allowed = configuration.read(x0, y0, width, height, utc_time)
+```
+
+Provider times are timezone-aware datetimes, signal intervals are half-open,
+and requested windows must lie inside one shared grid. Horizon-backed reads
+require a precomputed horizon store and never generate horizons. See the
+[provider contract record](trajectory-provider-contract.md) for the exact API,
+dtype, caching, error, and lifecycle rules. Public dynamic path planning
+remains under implementation.
 
 ## Map Algebra (0.2.0rc1)
 

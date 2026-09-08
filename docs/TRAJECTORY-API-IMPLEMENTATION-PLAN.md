@@ -2,10 +2,12 @@
 
 Status: in progress. The static parts of Phase 0/0.5 and the Phase-1 and Phase-2
 CPU APIs are implemented. Phase 3A has frozen occupancy/time semantics and a
-private exact occupancy oracle; dynamic mobility/provider work remains open.
+private exact occupancy oracle. Phase 3B's public provider foundation is
+implemented, including horizon-backed sunlight evaluation; dynamic mobility
+remains open.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (77
-tests). The complete ordinary suite reports 1,907 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (93
+tests). The complete ordinary suite reports 1,923 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -112,7 +114,7 @@ examples/
   `import lunarscout.trajectory`.
 - [x] Keep all application, database, job-runner, UI, RAG, and Lunar Analyst
   dependencies outside `src/lunarscout`.
-- [ ] Ensure explicit-vector/provider workflows do not import SpiceyPy or touch
+- [x] Ensure explicit-vector/provider workflows do not import SpiceyPy or touch
   the SPICE kernel pool.
 - [x] Keep block dimensions, epoch indices, predecessor encoding, queues,
   labels, caches, and device state private.
@@ -378,7 +380,8 @@ until Section 7.1 of the API design is resolved in a reviewed decision record.
 - [x] Define start/goal occupancy at requested departure/arrival times.
 - [x] Define timeline exhaustion and whether extension is forbidden, delegated
   to a provider, or represented as an ordinary unreachable result.
-- [ ] Define provider consistency requirements for repeated and batched reads.
+- [x] Define provider consistency requirements for repeated and batched reads
+  in [`trajectory-provider-contract.md`](trajectory-provider-contract.md).
 - [x] Freeze internal oracle state dominance without making its representation
   public.
 - [x] Implement an independent small exact CPU search using explicit in-memory
@@ -404,32 +407,35 @@ until Section 7.1 of the API design is resolved in a reviewed decision record.
 **Milestone:** reusable provider contracts; public exposure occurs only after
 their signatures, lifecycles, and errors are frozen.
 
-- [ ] Decide whether each public provider is a `Protocol`, abstract base class,
-  concrete adapter family, or combination, and document conformance testing.
-- [ ] Implement and test `SunVectorProvider` adapters for explicit vectors and
+- [x] Decide whether each public provider is a `Protocol`, abstract base class,
+  concrete adapter family, or combination, and document conformance testing in
+  [`trajectory-provider-contract.md`](trajectory-provider-contract.md).
+- [x] Implement and test `SunVectorProvider` adapters for explicit vectors and
   lazy existing SPICE-backed vector generation.
-- [ ] Implement `SunlightProvider` for window/time reads plus a private batched
-  path that can reuse one loaded horizon tile across times.
-- [ ] Implement `EarthElevationProvider` separately from communications policy.
-- [ ] Implement composable `ConfigurationSpaceProvider` policies that convert
+- [x] Implement the `SunlightProvider` contract, in-memory interval adapter,
+  window/time reads, and equivalent batched reads.
+- [x] Add a horizon-backed sunlight adapter whose private batched path reuses
+  one loaded horizon tile across times.
+- [x] Implement `EarthElevationProvider` separately from communications policy.
+- [x] Implement composable `ConfigurationSpaceProvider` policies that convert
   selected physical signals into hard occupancy constraints.
-- [ ] Ensure missing data/provider failure raises a structured error rather than
+- [x] Ensure missing data/provider failure raises a structured error rather than
   becoming darkness, outage, traversability, or invalidity.
-- [ ] Validate every returned window's shape, dtype, finiteness where required,
+- [x] Validate every returned window's shape, dtype, finiteness where required,
   grid identity, and time coverage.
-- [ ] Implement bounded, configurable private caches for static, signal, and
+- [x] Implement bounded, configurable private caches for static, signal, and
   combined configuration-space windows; test eviction and resource closure.
-- [ ] Ensure trajectory calls never generate horizons as a side effect.
+- [x] Ensure trajectory calls never generate horizons as a side effect.
 - [ ] Define and implement the built-in dynamic travel model as a compiled model,
   preserving signed slope and leaving explicit hazard inputs extensible.
-- [ ] Test scalar conceptual semantics against batched/windowed execution.
-- [ ] Test explicit providers in a process where SpiceyPy is unavailable.
+- [x] Test scalar conceptual semantics against batched/windowed execution.
+- [x] Test explicit providers in a process where SpiceyPy is unavailable.
 
 **Exit evidence**
 
-- [ ] Provider contract tests cover timestamps, partial edge windows, failures,
+- [x] Provider contract tests cover timestamps, partial edge windows, failures,
   cache eviction, batching equivalence, and deterministic repeated reads.
-- [ ] End-to-end exact-oracle cases run through providers without changing their
+- [x] End-to-end exact-oracle cases run through providers without changing their
   expected answers.
 
 ## 10. Phase 3C -- GridRunner dynamic planner

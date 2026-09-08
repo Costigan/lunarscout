@@ -30,10 +30,16 @@ assert before == after
 assert ls.trajectory is trajectory
 assert not {'numba', 'numba.cuda', 'spiceypy'} & sys.modules.keys()
 assert trajectory.__all__ == [
-    'ConfigurationSpaceError', 'NoPathError', 'PathResult', 'PlanningError',
-    'SlipFunction', 'StaticTravelModel', 'TrajectoryError',
-    'TrajectoryInputError', 'TravelTimeResult', 'static_path',
-    'static_travel_time',
+    'AllOfConfigurationSpaceProvider', 'ArrayEarthElevationProvider',
+    'ArraySunlightProvider', 'ConfigurationSpaceError',
+    'ConfigurationSpaceProvider', 'EarthElevationProvider',
+    'EarthElevationThresholdProvider', 'ExplicitSunVectorProvider',
+    'HorizonSunlightProvider', 'NoPathError', 'PathResult', 'PlanningError',
+    'SlipFunction',
+    'SpiceSunVectorProvider', 'StaticConfigurationSpaceProvider',
+    'StaticTravelModel', 'SunVectorProvider', 'SunlightProvider',
+    'SunlightThresholdProvider', 'TrajectoryError', 'TrajectoryInputError',
+    'TravelTimeResult', 'static_path', 'static_travel_time',
 ]
 assert not hasattr(trajectory, 'dynamic_path')
 assert not hasattr(trajectory, 'soc_path')
@@ -102,4 +108,43 @@ assert not {'numba', 'numba.cuda', 'spiceypy'} & sys.modules.keys()
         text=True,
     )
 
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_explicit_providers_need_no_spiceypy(tmp_path: Path) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(repository / "src")
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    program = """
+from datetime import datetime, timedelta, timezone
+import sys
+import numpy as np
+from pyproj import CRS
+import lunarscout as ls
+assert 'spiceypy' not in sys.modules
+t0 = datetime(2030, 1, 1, tzinfo=timezone.utc)
+vectors = ls.trajectory.ExplicitSunVectorProvider(
+    (t0,), np.asarray([[1.0, 0.0, 0.0]]),
+)
+assert vectors.vectors((t0,)).tolist() == [[1.0, 0.0, 0.0]]
+crs = CRS.from_user_input('ESRI:103878')
+grid = ls.GeoReference(
+    crs.to_wkt(), crs.to_proj4(), (0.0, 10.0, 0.0, 0.0, 0.0, -10.0),
+    1, 1, 10.0, -10.0, None,
+)
+sun = ls.trajectory.ArraySunlightProvider(
+    (t0, t0 + timedelta(hours=1)), np.ones((1, 1, 1), dtype=np.uint8), grid,
+)
+assert sun.read(0, 0, 1, 1, t0).item() == 1
+assert 'spiceypy' not in sys.modules
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
     assert completed.returncode == 0, completed.stderr
