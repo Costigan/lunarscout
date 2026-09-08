@@ -7,12 +7,12 @@ dynamic mobility bundle, and explicit Sun-direction specialization are
 implemented. Phase 3C's exhaustive GridRunner core and initial public dynamic
 path API are implemented; the private compiled dynamic-mobility bundle is not
 yet exposed by that API. Phase 3D's exact CPU safe-interval alternative is
-implemented and publicly selectable. Phase 4A's public power models and scalar
-Wh accounting are implemented; movement sunlight sampling remains a contract
-gate before SOC search.
+implemented and publicly selectable. Phase 4A's public power models, immutable
+energy records, source-cell movement sampling, and piecewise-constant Wh
+accounting are implemented. Phase 4B exact SOC search is next.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (146
-tests). The complete ordinary suite reports 1,976 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (165
+tests). The complete ordinary suite reports 1,995 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -509,11 +509,11 @@ before implementing SOC search.
   clipping, conversion efficiency, and invalid signal behavior.
 - [x] Freeze battery charge/discharge efficiencies, capacity clipping, charging
   limits, and equality at minimum energy.
-- [ ] Define integration when movement/waiting crosses environmental boundaries.
+- [x] Define integration when movement/waiting crosses environmental boundaries.
 - [x] Define drive, idle, charge, and any initial operational modes without
   implying a universal load.
 - [x] Define state feasibility and energy tolerance policy at every transition.
-- [ ] Freeze public power/result structures only after their array ownership,
+- [x] Freeze public power/result structures only after their array ownership,
   units, timeline, and trajectory-event representation are testable.
 - [x] Add direct energy-accounting tests independent of search.
 

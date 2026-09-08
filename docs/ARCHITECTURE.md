@@ -130,9 +130,11 @@ The existing core modules remain backend-independent:
   contract. A separate bounded small-problem oracle validates half-open interval,
   movement-boundary, and waiting semantics without SPICE, horizons, Numba, or
   CUDA. Public power records define orientation-independent solar generation,
-  stored battery energy in Wh, and distinct drive/idle loads; scalar integration
-  remains separate from search. Compiled dynamic-mobility specializations remain
-  private.
+  stored battery energy in Wh, distinct drive/idle loads, and immutable
+  per-segment results. Shared accounting splits operations at piecewise-constant
+  environmental boundaries and uses source-cell sunlight for movement; it
+  remains separate from search. Compiled dynamic-mobility specializations
+  remain private.
 
 ### 4.2 Horizon and lighting modules
 

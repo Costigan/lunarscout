@@ -1,13 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal, TypeAlias
 
 import numpy as np
 
 from ..errors import TrajectoryInputError
+from ._time_contract import as_utc
 
 
-def _finite(name: str, value: object, *, positive: bool) -> float:
+PowerMode: TypeAlias = Literal["drive", "idle"]
+
+
+def _finite(
+    name: str,
+    value: object,
+    *,
+    positive: bool,
+    code: str = "trajectory_invalid_power_model",
+) -> float:
     if isinstance(value, (bool, np.bool_)):
         result = np.nan
     else:
@@ -19,7 +31,7 @@ def _finite(name: str, value: object, *, positive: bool) -> float:
         qualifier = "positive" if positive else "non-negative"
         raise TrajectoryInputError(
             f"{name} must be a finite {qualifier} number.",
-            code="trajectory_invalid_power_model",
+            code=code,
             details={"name": name, "value": value},
         )
     return result
@@ -111,3 +123,147 @@ class RoverPowerModel:
             "idle_power_w",
             _finite("idle_power_w", self.idle_power_w, positive=False),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class EnergySegment:
+    """Energy accounting for one constant-sunlight temporal segment."""
+
+    mode: PowerMode
+    start_time: datetime
+    stop_time: datetime
+    cell: tuple[int, int]
+    sunlight_fraction: float
+    start_energy_wh: float
+    end_energy_wh: float
+    generated_wh: float
+    consumed_wh: float
+    discarded_wh: float
+
+    def __post_init__(self) -> None:
+        if self.mode not in ("drive", "idle"):
+            raise TrajectoryInputError(
+                "EnergySegment mode must be 'drive' or 'idle'.",
+                code="trajectory_invalid_energy_segment",
+            )
+        start = as_utc(self.start_time, name="start_time")
+        stop = as_utc(self.stop_time, name="stop_time")
+        if stop <= start:
+            raise TrajectoryInputError(
+                "EnergySegment stop_time must be after start_time.",
+                code="trajectory_invalid_energy_segment",
+            )
+        if (
+            not isinstance(self.cell, tuple)
+            or len(self.cell) != 2
+            or any(
+                isinstance(value, (bool, np.bool_))
+                or not isinstance(value, (int, np.integer))
+                for value in self.cell
+            )
+        ):
+            raise TrajectoryInputError(
+                "EnergySegment cell must be an integer (x, y) tuple.",
+                code="trajectory_invalid_energy_segment",
+            )
+        values = {
+            name: _finite(
+                name,
+                getattr(self, name),
+                positive=False,
+                code="trajectory_invalid_energy_segment",
+            )
+            for name in (
+                "sunlight_fraction",
+                "start_energy_wh",
+                "end_energy_wh",
+                "generated_wh",
+                "consumed_wh",
+                "discarded_wh",
+            )
+        }
+        if values["sunlight_fraction"] > 1.0:
+            raise TrajectoryInputError(
+                "EnergySegment sunlight_fraction must lie in [0, 1].",
+                code="trajectory_invalid_energy_segment",
+            )
+        object.__setattr__(self, "start_time", start)
+        object.__setattr__(self, "stop_time", stop)
+        object.__setattr__(self, "cell", (int(self.cell[0]), int(self.cell[1])))
+        for name, value in values.items():
+            object.__setattr__(self, name, value)
+
+
+@dataclass(frozen=True, slots=True)
+class EnergyTimelineResult:
+    """Segments evaluated through completion or the first infeasible segment."""
+
+    feasible: bool
+    initial_energy_wh: float
+    final_energy_wh: float
+    segments: tuple[EnergySegment, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.feasible, (bool, np.bool_)):
+            raise TrajectoryInputError(
+                "EnergyTimelineResult feasible must be Boolean.",
+                code="trajectory_invalid_energy_timeline_result",
+            )
+        initial = _finite(
+            "initial_energy_wh",
+            self.initial_energy_wh,
+            positive=False,
+            code="trajectory_invalid_energy_timeline_result",
+        )
+        final = _finite(
+            "final_energy_wh",
+            self.final_energy_wh,
+            positive=False,
+            code="trajectory_invalid_energy_timeline_result",
+        )
+        try:
+            segments = tuple(self.segments)
+        except TypeError as exc:
+            raise TrajectoryInputError(
+                "EnergyTimelineResult segments must be iterable.",
+                code="trajectory_invalid_energy_timeline_result",
+            ) from exc
+        if any(not isinstance(segment, EnergySegment) for segment in segments):
+            raise TrajectoryInputError(
+                "EnergyTimelineResult segments must be EnergySegment values.",
+                code="trajectory_invalid_energy_timeline_result",
+            )
+        previous_energy = initial
+        previous_stop = None
+        for index, segment in enumerate(segments):
+            if segment.start_energy_wh != previous_energy or (
+                previous_stop is not None and segment.start_time != previous_stop
+            ):
+                raise TrajectoryInputError(
+                    "EnergyTimelineResult segments must form a continuous timeline.",
+                    code="trajectory_invalid_energy_timeline_result",
+                    details={"segment": index},
+                )
+            previous_energy = segment.end_energy_wh
+            previous_stop = segment.stop_time
+        if final != previous_energy:
+            raise TrajectoryInputError(
+                "EnergyTimelineResult final energy must match its last segment.",
+                code="trajectory_invalid_energy_timeline_result",
+            )
+        object.__setattr__(self, "feasible", bool(self.feasible))
+        object.__setattr__(self, "initial_energy_wh", initial)
+        object.__setattr__(self, "final_energy_wh", final)
+        object.__setattr__(self, "segments", segments)
+
+    @property
+    def generated_wh(self) -> float:
+        return sum((segment.generated_wh for segment in self.segments), 0.0)
+
+    @property
+    def consumed_wh(self) -> float:
+        return sum((segment.consumed_wh for segment in self.segments), 0.0)
+
+    @property
+    def discarded_wh(self) -> float:
+        return sum((segment.discarded_wh for segment in self.segments), 0.0)

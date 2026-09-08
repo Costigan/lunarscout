@@ -1,7 +1,6 @@
 # Initial Trajectory Power Contract
 
-Status: accepted model and scalar-accounting foundation; movement sampling is
-not yet frozen.
+Status: Phase 4A accepted and implemented.
 Date: 2026-09-07.
 
 Refer to the [trajectory API design](trajectory-api-design.md) for rationale and
@@ -39,7 +38,7 @@ an SOC-indexed lookup table without reinterpreting this model.
 `idle_power_w` loads. It does not define science, communications, heater, or
 other future operating modes.
 
-## Scalar energy transition
+## Energy transitions
 
 Private shared accounting integrates one constant-signal segment of finite
 non-negative duration in hours. Solar generation serves the active load first.
@@ -54,8 +53,25 @@ minimum, including equality. The numerical comparison uses an absolute
 below the minimum back to the minimum. Because power is constant within this
 scalar segment, checking its endpoint also checks the segment minimum.
 
-Movement and waiting that cross environmental boundaries will be integrated as
-consecutive constant-signal segments, checking feasibility after every segment.
-Waiting uses the occupied cell's sunlight. The raster sampling rule for sunlight
-while moving between two cells remains unresolved and blocks SOC search; it is
-not part of `SolarPowerModel`.
+Sunlight rasters are piecewise constant over half-open intervals `[t[i],
+t[i+1])`. A movement or wait that crosses a boundary is split there, and the
+new interval's value applies exactly at the boundary. Feasibility is checked
+after every segment.
+
+Waiting uses the occupied cell's sunlight. Movement uses the source cell's
+sunlight from departure through arrival; the destination value first applies
+to a subsequent wait or movement. There is no interpolation or source/destination
+aggregation.
+
+`EnergySegment` is the immutable public record for one such constant-signal
+segment. It records UTC start/stop times, mode, sampled `(x, y)` cell and
+sunlight fraction, and starting/ending, generated, consumed, and discarded
+energy in Wh. `EnergyTimelineResult` owns an immutable tuple of continuous
+segments and reports feasibility, initial/final energy, and aggregate energy
+properties. A failed candidate includes its first infeasible segment and no
+later segments. A zero-duration candidate has no segments and is feasible only
+when its starting energy satisfies the minimum-energy rule.
+
+The internal sunlight timeline copies input values to a read-only float64
+`(interval, y, x)` array and requires finite fractions in `[0, 1]` on its
+associated georeferenced grid. SOC search is not part of Phase 4A.

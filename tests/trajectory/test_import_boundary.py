@@ -32,7 +32,8 @@ assert not {'numba', 'numba.cuda', 'spiceypy'} & sys.modules.keys()
 assert trajectory.__all__ == [
     'AllOfConfigurationSpaceProvider', 'ArrayEarthElevationProvider',
     'ArraySunlightProvider', 'BatteryModel', 'ConfigurationSpaceError',
-    'ConfigurationSpaceProvider', 'DynamicPathResult', 'EarthElevationProvider',
+    'ConfigurationSpaceProvider', 'DynamicPathResult', 'EnergySegment',
+    'EnergyTimelineResult', 'EarthElevationProvider',
     'EarthElevationThresholdProvider', 'ExplicitSunVectorProvider',
     'HorizonSunlightProvider', 'NoPathError', 'PathResult', 'PlanningError',
     'RoverPowerModel', 'SlipFunction', 'SolarPowerModel',
@@ -51,6 +52,13 @@ rover = trajectory.RoverPowerModel(drive_power_w=200.0, idle_power_w=50.0)
 assert solar.watts_in(0.5) == 50.0
 assert battery.initial_energy_wh == 400.0 and rover.drive_power_w == 200.0
 from datetime import datetime, timedelta, timezone
+segment = trajectory.EnergySegment(
+    'idle', datetime(2030, 1, 1, tzinfo=timezone.utc),
+    datetime(2030, 1, 1, 1, tzinfo=timezone.utc), (0, 0), 0.5,
+    400.0, 400.0, 50.0, 50.0, 0.0,
+)
+energy = trajectory.EnergyTimelineResult(True, 400.0, 400.0, (segment,))
+assert energy.segments == (segment,) and energy.generated_wh == 50.0
 import numpy as np
 from pyproj import CRS
 crs = CRS.from_user_input('ESRI:103878')

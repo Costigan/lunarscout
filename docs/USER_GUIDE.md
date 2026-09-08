@@ -1487,9 +1487,14 @@ loads = ls.trajectory.RoverPowerModel(
 ```
 
 Both efficiency arguments are required and currently must equal `1.0`. Stored
-energy is clipped at capacity and excess generation is discarded. These models
-are public, but SOC-aware path search remains under implementation. See the
-[initial power contract](trajectory-power-contract.md) for the precise scope.
+energy is clipped at capacity and excess generation is discarded. Energy
+accounting splits movement and waits at environmental step boundaries. A move
+uses its source cell's sunlight through arrival; a wait uses its occupied cell.
+The immutable `EnergySegment` and `EnergyTimelineResult` records expose UTC
+segment timing and Wh accounting without mutable array state. These models and
+records are public, but SOC-aware path search remains under implementation. See
+the [initial power contract](trajectory-power-contract.md) for the precise
+scope.
 
 ## Map Algebra (0.2.0rc1)
 
