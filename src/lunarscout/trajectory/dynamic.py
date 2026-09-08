@@ -15,13 +15,14 @@ from ..georeference import GeoReference
 from ..spice_geometry import LonLat
 from ._dispatch import resolve_dynamic_dispatch
 from ._dynamic_gridrunner import gridrunner_dynamic_path_from_provider
+from ._safe_interval import safe_interval_dynamic_path_from_provider
 from ._time_contract import as_utc
 from ._validation import prepare_static_problem
 from .providers import ConfigurationSpaceProvider
 from .static import Cell, StaticTravelModel
 
 
-DynamicAlgorithm: TypeAlias = Literal["gridrunner"]
+DynamicAlgorithm: TypeAlias = Literal["gridrunner", "safe_interval"]
 DynamicBackend: TypeAlias = Literal["auto", "cpu", "cuda"]
 
 
@@ -161,7 +162,7 @@ def dynamic_path(
 ) -> DynamicPathResult:
     """Return an exact earliest-arrival path under dynamic occupancy."""
 
-    resolve_dynamic_dispatch(algorithm, backend)
+    dispatch = resolve_dynamic_dispatch(algorithm, backend)
     problem = prepare_static_problem(
         traversable,
         georef,
@@ -189,13 +190,22 @@ def dynamic_path(
             "The configuration-provider grid must match the trajectory grid.",
             code="trajectory_provider_grid_mismatch",
         )
-    result = gridrunner_dynamic_path_from_provider(
-        problem,
-        configuration,
-        boundaries,
-        departure_time,
-        block_size=8,
-    ).path
+    if dispatch.algorithm == "gridrunner":
+        result = gridrunner_dynamic_path_from_provider(
+            problem,
+            configuration,
+            boundaries,
+            departure_time,
+            block_size=8,
+        ).path
+    else:
+        result = safe_interval_dynamic_path_from_provider(
+            problem,
+            configuration,
+            boundaries,
+            departure_time,
+            read_block_size=128,
+        ).path
     if not result.reachable:
         return DynamicPathResult(False, None, None, None, None)
     return DynamicPathResult(

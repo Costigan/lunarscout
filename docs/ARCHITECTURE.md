@@ -91,7 +91,7 @@ storage and compute backends never define the public API.
 
 ```text
 Public API and Scenario facade
-  horizon generation | lighting products | static trajectory planning
+  horizon generation | lighting products | static/dynamic trajectory planning
                                |
 Domain models and algorithms
   georeference | temporal | vectors | horizon math | mobility | shortest paths
@@ -120,15 +120,16 @@ The existing core modules remain backend-independent:
 - `spice_geometry.py` owns public local-frame vector and angular histories.
 - `scenario.py` owns filesystem-safe scenario paths and delegates calculations
   to domain services. It does not become an application state container.
-- `trajectory/` owns the curated static rover-planning namespace. Its public
-  static facade delegates to private validation, affine/CRS geometry, and
-  independently inspectable Dijkstra/A* reference modules. Large static
-  travel-time fields may lazily dispatch to a semantically equivalent private
-  Numba block-relaxation engine with bounded active-block tracking and neighbor
-  reactivation. A private, bounded small-problem dynamic occupancy oracle
-  validates half-open interval, movement-boundary, and waiting semantics without
-  SPICE, horizons, Numba, or CUDA. Dynamic planners remain absent from the public
-  namespace until their remaining contracts are frozen.
+- `trajectory/` owns the curated rover-planning namespace. Its public static
+  facade delegates to private validation, affine/CRS geometry, and independently
+  inspectable Dijkstra/A* reference modules. Large static travel-time fields may
+  lazily dispatch to a semantically equivalent private Numba block-relaxation
+  engine with bounded active-block tracking and neighbor reactivation. Public
+  dynamic planning consumes bounded configuration-provider windows and offers
+  exact CPU GridRunner and safe-interval algorithms under one UTC result
+  contract. A separate bounded small-problem oracle validates half-open interval,
+  movement-boundary, and waiting semantics without SPICE, horizons, Numba, or
+  CUDA. Compiled dynamic-mobility specializations remain private.
 
 ### 4.2 Horizon and lighting modules
 

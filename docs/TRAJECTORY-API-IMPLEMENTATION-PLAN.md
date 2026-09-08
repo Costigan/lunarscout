@@ -6,10 +6,11 @@ private exact occupancy oracle. Phase 3B's provider foundation, compiled
 dynamic mobility bundle, and explicit Sun-direction specialization are
 implemented. Phase 3C's exhaustive GridRunner core and initial public dynamic
 path API are implemented; the private compiled dynamic-mobility bundle is not
-yet exposed by that API.
+yet exposed by that API. Phase 3D's exact CPU safe-interval alternative is
+implemented and publicly selectable.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (126
-tests). The complete ordinary suite reports 1,956 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (135
+tests). The complete ordinary suite reports 1,965 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -469,25 +470,26 @@ their signatures, lifecycles, and errors are frozen.
 
 ## 11. Phase 3D -- Safe-interval planner
 
-- [ ] Implement maximal allowed-interval construction using the exact Phase-3A
+- [x] Implement maximal allowed-interval construction using the exact Phase-3A
   boundary semantics.
-- [ ] Validate interval construction independently on hand-authored timelines.
-- [ ] Implement no-SOC safe-interval search using the same static model,
+- [x] Validate interval construction independently on hand-authored timelines.
+- [x] Implement no-SOC safe-interval search using the same static model,
   configuration provider, start/goal rules, movement checks, and waiting rules
   as GridRunner.
-- [ ] Use the same public dynamic result and clearly distinct algorithm name.
-- [ ] Compare both optimized planners to the independent exact oracle.
-- [ ] Add sparse-change, frequent-change, long-timeline, exact-boundary, and
+- [x] Use the same public dynamic result and clearly distinct algorithm name.
+- [x] Compare both optimized planners to the independent exact oracle.
+- [x] Add sparse-change, frequent-change, long-timeline, exact-boundary, and
   no-wait cases.
-- [ ] Benchmark cost, agreement, runtime, peak memory, expanded states,
+- [x] Benchmark cost, agreement, runtime, peak memory, expanded states,
   interval count, activation count, and sensitivity dimensions from Sections
-  10.4 and 15.5 of the API design.
-- [ ] Keep both algorithms available when they satisfy their documented
+  10.4 and 15.5 of the API design; see
+  [`trajectory-dynamic-benchmark.md`](trajectory-dynamic-benchmark.md).
+- [x] Keep both algorithms available when they satisfy their documented
   contracts; do not silently substitute one for the other.
 
 **Phase-3 exit evidence**
 
-- [ ] Public time, provider, dynamic result, algorithm, backend, and error
+- [x] Public time, provider, dynamic result, algorithm, backend, and error
   contracts are documented and tested through `ls.trajectory`.
 - [x] Explicit `backend="cpu"` never probes CUDA; `auto` does not change the
   requested algorithm.
@@ -644,34 +646,34 @@ exporting them.
 
 ### 18.3 Required verification at each implementation milestone
 
-- [ ] Run the smallest focused tests while developing.
-- [ ] Run `.venv/bin/python -m pytest tests/trajectory -q`.
-- [ ] Run `.venv/bin/python -m pytest -q` before declaring a CPU milestone
+- [x] Run the smallest focused tests while developing.
+- [x] Run `.venv/bin/python -m pytest tests/trajectory -q`.
+- [x] Run `.venv/bin/python -m pytest -q` before declaring a CPU milestone
   complete.
 - [ ] Run the gated real-CUDA trajectory tests for CUDA milestones.
-- [ ] Run deterministic public examples affected by the change.
-- [ ] Run installed-package/public-API smoke tests in a fresh process.
-- [ ] Run `git diff --check`.
-- [ ] Inspect `git status --short`, including untracked fixtures and docs.
-- [ ] Review the actual diff for correctness, regressions, security, resource
+- [x] Run deterministic public examples affected by the change.
+- [x] Run installed-package/public-API smoke tests in a fresh process.
+- [x] Run `git diff --check`.
+- [x] Inspect `git status --short`, including untracked fixtures and docs.
+- [x] Review the actual diff for correctness, regressions, security, resource
   bounds, edge cases, maintainability, and accidental public exports.
 
 ## 19. Documentation and compatibility checklist
 
-- [ ] Keep `docs/trajectory-api-design.md` as the rationale/contract source and
+- [x] Keep `docs/trajectory-api-design.md` as the rationale/contract source and
   this file as the progress tracker; avoid copying long rationale between them.
-- [ ] Update the User Guide only for behavior that is implemented and tested.
+- [x] Update the User Guide only for behavior that is implemented and tested.
 - [ ] Update the User Guide function overview, examples index, error guidance,
   backend matrix, and implementation-maturity section at each public milestone.
-- [ ] Update Architecture module/layer diagrams when production modules exist,
+- [x] Update Architecture module/layer diagrams when production modules exist,
   not in anticipation of them.
-- [ ] Identify each exact versus approximate algorithm and its guarantees in
+- [x] Identify each exact versus approximate algorithm and its guarantees in
   user-facing documentation.
 - [ ] Document supported algorithm/backend pairs from the dispatch registry or
   another single source of truth so docs and behavior cannot drift silently.
 - [ ] Maintain a compatibility table distinguishing public names, provisional
   names, private oracles, and deferred capabilities.
-- [ ] Do not claim test counts, performance, backend support, or completion that
+- [x] Do not claim test counts, performance, backend support, or completion that
   is not backed by current evidence.
 
 ## 20. Final reconciliation checklist

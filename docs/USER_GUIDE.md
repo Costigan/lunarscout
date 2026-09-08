@@ -1425,9 +1425,10 @@ dtype, caching, error, and lifecycle rules.
 
 ### Dynamic Path Planning
 
-The initial dynamic planner uses exact, exhaustive GridRunner block relaxation
-on CPU. It combines a static movement model with a configuration provider whose
-Boolean values vary over half-open UTC intervals.
+The dynamic planners combine a static movement model with a configuration
+provider whose Boolean values vary over half-open UTC intervals. Both current
+algorithms are exact CPU implementations: `gridrunner` uses exhaustive block
+relaxation, while `safe_interval` searches maximal contiguous allowed periods.
 
 ```python
 result = ls.trajectory.dynamic_path(
@@ -1444,12 +1445,14 @@ result = ls.trajectory.dynamic_path(
 )
 ```
 
+Select `algorithm="safe_interval"` for the alternate safe-interval planner.
+
 Reachable results provide raster cells plus UTC arrival and leg-departure times.
 `result.wait_intervals` identifies waits, while `result.travel_time_hours`
 includes both waiting and driving. A valid but unreachable goal returns an
 ordinary result with no trajectory arrays. `backend="auto"` currently selects
-CPU without probing CUDA; explicit CUDA is unavailable and never silently
-falls back.
+CPU for the requested algorithm without probing CUDA; explicit CUDA is
+unavailable and never silently falls back or changes the algorithm.
 
 The planner currently materializes the requested occupancy timeline and is
 bounded to five million cell-interval states. See the

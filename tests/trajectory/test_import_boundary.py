@@ -63,6 +63,12 @@ dynamic = trajectory.dynamic_path(
     (time0, time0 + timedelta(hours=1)), configuration, time0,
 )
 assert dynamic.reachable
+safe = trajectory.dynamic_path(
+    np.ones((1, 2), dtype=bool), grid, (0, 0), (1, 0),
+    (time0, time0 + timedelta(hours=1)), configuration, time0,
+    algorithm='safe_interval', backend='cpu',
+)
+assert safe.reachable and safe.arrival_time == dynamic.arrival_time
 assert not {'numba', 'numba.cuda'} & sys.modules.keys()
 """
     completed = subprocess.run(

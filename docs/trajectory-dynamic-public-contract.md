@@ -1,6 +1,6 @@
 # Public Dynamic Trajectory Contract
 
-Status: accepted initial Phase 3C public contract.
+Status: accepted Phase 3C/3D public contract.
 Date: 2026-09-07.
 
 This record freezes the first public dynamic path operation. Refer to the
@@ -17,18 +17,20 @@ using the same validation, coordinate, affine, diagonal, elevation, and
 - at least two strictly increasing timezone-aware interval boundaries;
 - a matching `ConfigurationSpaceProvider`;
 - a timezone-aware departure time;
-- `algorithm="gridrunner"`; and
+- `algorithm="gridrunner"` or `"safe_interval"`; and
 - `backend="auto"`, `"cpu"`, or `"cuda"`.
 
 The configuration provider is read at each interval's start boundary. That
 Boolean window applies over the corresponding half-open interval. Reads are
-split into private 8×8 windows and validated before use. The current public
-operation materializes the complete occupancy cube and is bounded to five
-million `(interval, y, x)` states.
+split into bounded private windows and validated before use; window dimensions
+are not public API. The current public operation materializes the complete
+occupancy cube and is bounded to five million `(interval, y, x)` states.
 
-`gridrunner` is exact and exhaustive under the frozen occupancy and static
-movement model. It permits waiting and returns the earliest arrival before
-timeline exhaustion. `backend="auto"` selects its CPU implementation without
+Both public algorithms are exact under the frozen occupancy and static movement
+model. `gridrunner` performs exhaustive block relaxation over cell-interval
+states. `safe_interval` searches maximal contiguous allowed intervals. Both
+permit waiting and return the earliest arrival before timeline exhaustion.
+`backend="auto"` selects the chosen algorithm's CPU implementation without
 probing CUDA. Explicit `backend="cuda"` raises a structured unavailable-backend
 error; it never falls back. Unknown algorithms and backends have distinct
 structured input errors. Backend choice never changes the algorithm.
@@ -60,6 +62,5 @@ start equals goal, the result contains one cell, one arrival equal to departure,
 no leg departures, and zero travel time.
 
 The result omits block queues, labels, predecessors, activation counts, and
-other engine diagnostics. Equal-cost path identity is not promised. A future
-safe-interval algorithm will reuse this result contract under a distinct
-algorithm name.
+other engine diagnostics. Equal-cost path identity is not promised, so the two
+algorithms may return different equal-arrival routes.

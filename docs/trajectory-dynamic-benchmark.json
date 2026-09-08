@@ -1,0 +1,188 @@
+{
+  "cases": [
+    {
+      "configuration_changes": 0,
+      "exact": {
+        "reachable": true,
+        "travel_time_hours": 4.5
+      },
+      "exact_agreement": true,
+      "gridrunner": {
+        "block_activations": 5,
+        "block_reactivations": 1,
+        "expanded_states": 2704,
+        "median_seconds": 0.42039573400688823,
+        "minimum_seconds": 0.4194232490117429,
+        "peak_tracemalloc_bytes": 88134,
+        "state_relaxations": 1035,
+        "travel_time_hours": 4.5
+      },
+      "height": 10,
+      "intervals": 12,
+      "name": "short_no_wait",
+      "pattern": "none",
+      "raw_cell_interval_states": 1200,
+      "safe_interval": {
+        "expanded_states": 100,
+        "median_seconds": 0.01277194800786674,
+        "minimum_seconds": 0.012674921992584132,
+        "peak_tracemalloc_bytes": 56631,
+        "safe_intervals": 100,
+        "state_relaxations": 99,
+        "travel_time_hours": 4.5
+      },
+      "seed": 1,
+      "spacing_hours": 1.0,
+      "width": 10
+    },
+    {
+      "configuration_changes": 48,
+      "exact": {
+        "reachable": true,
+        "travel_time_hours": 4.5
+      },
+      "exact_agreement": true,
+      "gridrunner": {
+        "block_activations": 4,
+        "block_reactivations": 0,
+        "expanded_states": 7970,
+        "median_seconds": 4.077047834987752,
+        "minimum_seconds": 4.076602731991443,
+        "peak_tracemalloc_bytes": 356970,
+        "state_relaxations": 5989,
+        "travel_time_hours": 4.5
+      },
+      "height": 10,
+      "intervals": 48,
+      "name": "long_sparse",
+      "pattern": "sparse",
+      "raw_cell_interval_states": 4800,
+      "safe_interval": {
+        "expanded_states": 100,
+        "median_seconds": 0.013058145996183157,
+        "minimum_seconds": 0.01297990400053095,
+        "peak_tracemalloc_bytes": 63655,
+        "safe_intervals": 124,
+        "state_relaxations": 117,
+        "travel_time_hours": 4.5
+      },
+      "seed": 2,
+      "spacing_hours": 0.5,
+      "width": 10
+    },
+    {
+      "configuration_changes": 1162,
+      "exact": {
+        "reachable": true,
+        "travel_time_hours": 4.5
+      },
+      "exact_agreement": true,
+      "gridrunner": {
+        "block_activations": 7,
+        "block_reactivations": 3,
+        "expanded_states": 15819,
+        "median_seconds": 6.669035831000656,
+        "minimum_seconds": 6.626012476001051,
+        "peak_tracemalloc_bytes": 308334,
+        "state_relaxations": 5583,
+        "travel_time_hours": 4.5
+      },
+      "height": 10,
+      "intervals": 48,
+      "name": "long_frequent",
+      "pattern": "frequent",
+      "raw_cell_interval_states": 4800,
+      "safe_interval": {
+        "expanded_states": 125,
+        "median_seconds": 0.015130037994822487,
+        "minimum_seconds": 0.014764545994694345,
+        "peak_tracemalloc_bytes": 265539,
+        "safe_intervals": 670,
+        "state_relaxations": 592,
+        "travel_time_hours": 4.5
+      },
+      "seed": 3,
+      "spacing_hours": 0.5,
+      "width": 10
+    },
+    {
+      "configuration_changes": 252,
+      "exact": {
+        "reachable": true,
+        "travel_time_hours": 9.5
+      },
+      "exact_agreement": true,
+      "gridrunner": {
+        "block_activations": 13,
+        "block_reactivations": 4,
+        "expanded_states": 14947,
+        "median_seconds": 3.13983280499815,
+        "minimum_seconds": 3.1392885359964566,
+        "peak_tracemalloc_bytes": 505243,
+        "state_relaxations": 7452,
+        "travel_time_hours": 9.5
+      },
+      "height": 20,
+      "intervals": 24,
+      "name": "larger_sparse",
+      "pattern": "sparse",
+      "raw_cell_interval_states": 9600,
+      "safe_interval": {
+        "expanded_states": 442,
+        "median_seconds": 0.017161178999231197,
+        "minimum_seconds": 0.01681104500312358,
+        "peak_tracemalloc_bytes": 204851,
+        "safe_intervals": 526,
+        "state_relaxations": 441,
+        "travel_time_hours": 9.5
+      },
+      "seed": 4,
+      "spacing_hours": 0.5,
+      "width": 20
+    },
+    {
+      "configuration_changes": 5,
+      "exact": {
+        "reachable": true,
+        "travel_time_hours": 3.5
+      },
+      "exact_agreement": true,
+      "gridrunner": {
+        "block_activations": 2,
+        "block_reactivations": 0,
+        "expanded_states": 406,
+        "median_seconds": 0.06313757700263523,
+        "minimum_seconds": 0.06299582800420467,
+        "peak_tracemalloc_bytes": 30573,
+        "state_relaxations": 202,
+        "travel_time_hours": 3.5
+      },
+      "height": 1,
+      "intervals": 24,
+      "name": "required_wait",
+      "pattern": "wait_gate",
+      "raw_cell_interval_states": 288,
+      "safe_interval": {
+        "expanded_states": 12,
+        "median_seconds": 0.011998350993962958,
+        "minimum_seconds": 0.011917527997866273,
+        "peak_tracemalloc_bytes": 12787,
+        "safe_intervals": 12,
+        "state_relaxations": 11,
+        "travel_time_hours": 3.5
+      },
+      "seed": 5,
+      "spacing_hours": 0.25,
+      "width": 12
+    }
+  ],
+  "environment": {
+    "numpy": "2.2.6",
+    "platform": "Linux-7.0.11-76070011-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "generated_at_utc": "2026-09-08T01:36:34.893614+00:00",
+  "repeats": 3,
+  "schema": "lunarscout-trajectory-dynamic-benchmark-v1",
+  "scope": "in-memory planner execution; provider materialization excluded"
+}

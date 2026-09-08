@@ -43,6 +43,7 @@ class GridRunnerDiagnostics:
     block_reactivations: int
     blocks_processed: int
     local_passes: int
+    expanded_states: int
     state_relaxations: int
 
 
@@ -289,6 +290,7 @@ def gridrunner_dynamic_path(
     schedule(start_y // block_size, start_x // block_size)
     blocks_processed = 0
     total_local_passes = 0
+    expanded_states = 0
     state_relaxations = 0
 
     while queue:
@@ -321,6 +323,7 @@ def gridrunner_dynamic_path(
                         arrival = float(labels[interval, y, x])
                         if not np.isfinite(arrival):
                             continue
+                        expanded_states += 1
                         for direction, step in enumerate(problem.steps):
                             destination_x = x + step.dx
                             destination_y = y + step.dy
@@ -397,6 +400,7 @@ def gridrunner_dynamic_path(
             block_reactivations=reactivations,
             blocks_processed=blocks_processed,
             local_passes=total_local_passes,
+            expanded_states=expanded_states,
             state_relaxations=state_relaxations,
         ),
     )

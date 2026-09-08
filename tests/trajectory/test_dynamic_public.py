@@ -112,6 +112,28 @@ def test_public_dynamic_auto_and_cpu_are_equivalent(make_trajectory_georef) -> N
     assert np.array_equal(auto.cells, cpu.cells)
 
 
+def test_public_safe_interval_matches_gridrunner(make_trajectory_georef) -> None:
+    grid, boundaries, configuration = _inputs(make_trajectory_georef)
+    arguments = (
+        np.ones((1, 3), dtype=bool),
+        grid,
+        (0, 0),
+        (2, 0),
+        boundaries,
+        configuration,
+        T0,
+    )
+
+    gridrunner = ls.trajectory.dynamic_path(*arguments, algorithm="gridrunner")
+    safe = ls.trajectory.dynamic_path(*arguments, algorithm="safe_interval")
+
+    assert safe.reachable
+    assert safe.arrival_time == gridrunner.arrival_time
+    assert safe.travel_time_hours == gridrunner.travel_time_hours
+    assert safe.wait_intervals == gridrunner.wait_intervals
+    assert safe.cells.tolist() == gridrunner.cells.tolist()
+
+
 def test_dispatch_fails_before_provider_reads(make_trajectory_georef) -> None:
     grid = make_trajectory_georef(width=1, height=1)
 
@@ -141,10 +163,16 @@ def test_dispatch_fails_before_provider_reads(make_trajectory_georef) -> None:
         ls.trajectory.dynamic_path(*arguments, backend="other")
     with pytest.raises(ls.PlanningError) as cuda:
         ls.trajectory.dynamic_path(*arguments, backend="cuda")
+    with pytest.raises(ls.PlanningError) as safe_cuda:
+        ls.trajectory.dynamic_path(
+            *arguments, algorithm="safe_interval", backend="cuda"
+        )
 
     assert algorithm.value.code == "trajectory_unknown_algorithm"
     assert backend.value.code == "trajectory_unknown_backend"
     assert cuda.value.code == "trajectory_backend_unavailable"
+    assert safe_cuda.value.code == "trajectory_backend_unavailable"
+    assert safe_cuda.value.details["algorithm"] == "safe_interval"
     assert provider.calls == 0
 
 
@@ -256,4 +284,20 @@ def test_public_state_limit_fails_before_provider_reads(
             T0,
         )
     assert capacity.value.code == "trajectory_gridrunner_state_limit"
+
+    from lunarscout.trajectory import _safe_interval
+
+    monkeypatch.setattr(_safe_interval, "_MAX_SAFE_INTERVAL_TIMELINE_STATES", 1)
+    with pytest.raises(ls.PlanningError) as safe_capacity:
+        ls.trajectory.dynamic_path(
+            np.ones((1, 2), dtype=bool),
+            grid,
+            (0, 0),
+            (1, 0),
+            (T0, T0 + timedelta(hours=1)),
+            provider,
+            T0,
+            algorithm="safe_interval",
+        )
+    assert safe_capacity.value.code == "trajectory_safe_interval_state_limit"
     assert provider.calls == 0
