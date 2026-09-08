@@ -7,10 +7,12 @@ dynamic mobility bundle, and explicit Sun-direction specialization are
 implemented. Phase 3C's exhaustive GridRunner core and initial public dynamic
 path API are implemented; the private compiled dynamic-mobility bundle is not
 yet exposed by that API. Phase 3D's exact CPU safe-interval alternative is
-implemented and publicly selectable.
+implemented and publicly selectable. Phase 4A's public power models and scalar
+Wh accounting are implemented; movement sunlight sampling remains a contract
+gate before SOC search.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (135
-tests). The complete ordinary suite reports 1,965 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (146
+tests). The complete ordinary suite reports 1,976 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -501,19 +503,19 @@ their signatures, lifecycles, and errors are frozen.
 **Contract gate:** resolve Section 8 and power questions 12--17 in Section 18
 before implementing SOC search.
 
-- [ ] Freeze units and validation for battery capacity, initial/minimum energy
+- [x] Freeze units and validation for battery capacity, initial/minimum energy
   or SOC, drive load, stationary load, solar input, and elapsed time.
-- [ ] Freeze the first `SolarPowerModel`, including orientation assumptions,
+- [x] Freeze the first `SolarPowerModel`, including orientation assumptions,
   clipping, conversion efficiency, and invalid signal behavior.
-- [ ] Freeze battery charge/discharge efficiencies, capacity clipping, charging
+- [x] Freeze battery charge/discharge efficiencies, capacity clipping, charging
   limits, and equality at minimum energy.
 - [ ] Define integration when movement/waiting crosses environmental boundaries.
-- [ ] Define drive, idle, charge, and any initial operational modes without
+- [x] Define drive, idle, charge, and any initial operational modes without
   implying a universal load.
-- [ ] Define state feasibility and energy tolerance policy at every transition.
+- [x] Define state feasibility and energy tolerance policy at every transition.
 - [ ] Freeze public power/result structures only after their array ownership,
   units, timeline, and trajectory-event representation are testable.
-- [ ] Add direct energy-accounting tests independent of search.
+- [x] Add direct energy-accounting tests independent of search.
 
 ## 13. Phase 4B -- Exact SOC CPU oracle
 

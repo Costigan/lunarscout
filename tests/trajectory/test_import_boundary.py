@@ -31,17 +31,25 @@ assert ls.trajectory is trajectory
 assert not {'numba', 'numba.cuda', 'spiceypy'} & sys.modules.keys()
 assert trajectory.__all__ == [
     'AllOfConfigurationSpaceProvider', 'ArrayEarthElevationProvider',
-    'ArraySunlightProvider', 'ConfigurationSpaceError',
+    'ArraySunlightProvider', 'BatteryModel', 'ConfigurationSpaceError',
     'ConfigurationSpaceProvider', 'DynamicPathResult', 'EarthElevationProvider',
     'EarthElevationThresholdProvider', 'ExplicitSunVectorProvider',
     'HorizonSunlightProvider', 'NoPathError', 'PathResult', 'PlanningError',
-    'SlipFunction',
+    'RoverPowerModel', 'SlipFunction', 'SolarPowerModel',
     'SpiceSunVectorProvider', 'StaticConfigurationSpaceProvider',
     'StaticTravelModel', 'SunVectorProvider', 'SunlightProvider',
     'SunlightThresholdProvider', 'TrajectoryError', 'TrajectoryInputError',
     'TravelTimeResult', 'dynamic_path', 'static_path', 'static_travel_time',
 ]
 assert not hasattr(trajectory, 'soc_path')
+solar = trajectory.SolarPowerModel(rated_power_w=100.0)
+battery = trajectory.BatteryModel(
+    capacity_wh=500.0, initial_energy_wh=400.0, minimum_energy_wh=100.0,
+    charge_efficiency=1.0, discharge_efficiency=1.0,
+)
+rover = trajectory.RoverPowerModel(drive_power_w=200.0, idle_power_w=50.0)
+assert solar.watts_in(0.5) == 50.0
+assert battery.initial_energy_wh == 400.0 and rover.drive_power_w == 200.0
 from datetime import datetime, timedelta, timezone
 import numpy as np
 from pyproj import CRS

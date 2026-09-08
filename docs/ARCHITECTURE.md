@@ -129,7 +129,10 @@ The existing core modules remain backend-independent:
   exact CPU GridRunner and safe-interval algorithms under one UTC result
   contract. A separate bounded small-problem oracle validates half-open interval,
   movement-boundary, and waiting semantics without SPICE, horizons, Numba, or
-  CUDA. Compiled dynamic-mobility specializations remain private.
+  CUDA. Public power records define orientation-independent solar generation,
+  stored battery energy in Wh, and distinct drive/idle loads; scalar integration
+  remains separate from search. Compiled dynamic-mobility specializations remain
+  private.
 
 ### 4.2 Horizon and lighting modules
 

@@ -183,6 +183,9 @@ are not duplicated at the package root.
 | `ls.trajectory.PathResult` | Reachability, travel time, and `[x, y]` path cells. |
 | `ls.trajectory.dynamic_path(...)` | Compute an exact earliest-arrival path under interval occupancy. |
 | `ls.trajectory.DynamicPathResult` | Dynamic cells, UTC arrivals/departures, elapsed time, and waits. |
+| `ls.trajectory.SolarPowerModel` | Orientation-independent rated solar generation. |
+| `ls.trajectory.BatteryModel` | Capacity, initial energy, minimum energy, and explicit ideal efficiencies. |
+| `ls.trajectory.RoverPowerModel` | Separate constant drive and idle electrical loads. |
 | `ls.trajectory.SunVectorProvider` | Structural protocol for Moon-ME Sun vectors. |
 | `ls.trajectory.SunlightProvider` | Structural protocol for byte-valued sunlight windows. |
 | `ls.trajectory.EarthElevationProvider` | Structural protocol for Earth-elevation windows. |
@@ -1461,6 +1464,32 @@ semantics and `examples/33_dynamic_trajectory.py` for a runnable synthetic
 example. `examples/trajectory_real_terrain.py` is a manual comparison workflow
 for a local georeferenced DEM and precomputed sunlight archive; its `--help`
 output documents the required inputs.
+
+### Initial Power Models
+
+The first SOC foundation tracks stored battery energy in Wh. Solar generation
+is orientation-independent because operations are assumed to optimize array
+orientation:
+
+```python
+solar = ls.trajectory.SolarPowerModel(rated_power_w=120.0)
+battery = ls.trajectory.BatteryModel(
+    capacity_wh=500.0,
+    initial_energy_wh=400.0,
+    minimum_energy_wh=100.0,
+    charge_efficiency=1.0,
+    discharge_efficiency=1.0,
+)
+loads = ls.trajectory.RoverPowerModel(
+    drive_power_w=200.0,
+    idle_power_w=40.0,
+)
+```
+
+Both efficiency arguments are required and currently must equal `1.0`. Stored
+energy is clipped at capacity and excess generation is discarded. These models
+are public, but SOC-aware path search remains under implementation. See the
+[initial power contract](trajectory-power-contract.md) for the precise scope.
 
 ## Map Algebra (0.2.0rc1)
 

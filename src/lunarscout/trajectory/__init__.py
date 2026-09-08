@@ -28,6 +28,7 @@ from .providers import (
     SunlightThresholdProvider,
 )
 from .dynamic import DynamicPathResult, dynamic_path
+from .power import BatteryModel, RoverPowerModel, SolarPowerModel
 from ..errors import (
     ConfigurationSpaceError,
     NoPathError,
@@ -40,6 +41,7 @@ __all__ = [
     "AllOfConfigurationSpaceProvider",
     "ArrayEarthElevationProvider",
     "ArraySunlightProvider",
+    "BatteryModel",
     "ConfigurationSpaceError",
     "ConfigurationSpaceProvider",
     "DynamicPathResult",
@@ -50,7 +52,9 @@ __all__ = [
     "NoPathError",
     "PathResult",
     "PlanningError",
+    "RoverPowerModel",
     "SlipFunction",
+    "SolarPowerModel",
     "SpiceSunVectorProvider",
     "StaticConfigurationSpaceProvider",
     "StaticTravelModel",
