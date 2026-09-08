@@ -26,7 +26,7 @@ The current package includes:
 - CUDA-accelerated horizon generation; and
 - patch-streamed lightmap, permanent-shadow, safe-haven, and landed
   mission-duration product implementations with CPU fallbacks; and
-- static rover travel-time fields and path planning on projected raster grids.
+- static and dynamic rover path planning on projected raster grids.
 
 Lunarscout was split from Lunar Analyst so the calculation library can mature
 independently of the agent, web UI, FastAPI service, application job framework,
@@ -53,7 +53,7 @@ They demonstrate every public API capability in increasing order of scope:
 | SPICE vectors, azimuth/elevation | `11` |
 | Body/horizon plots, synthetic lightmap | `12`–`13` |
 | PSR, horizon generation, downstream products | `15`–`17` |
-| Static trajectory planning | `32` |
+| Static and dynamic trajectory planning | `32`–`33` |
 
 Most examples work on synthetic data without a GPU or real scenario.
 A synthetic 256×256 DEM with pregenerated horizon tiles is downloaded
@@ -181,6 +181,8 @@ are not duplicated at the package root.
 | `ls.trajectory.static_path(...)` | Compute an A* minimum-time raster-cell path. |
 | `ls.trajectory.TravelTimeResult` | Travel-time field, reached mask, grid, and normalized start. |
 | `ls.trajectory.PathResult` | Reachability, travel time, and `[x, y]` path cells. |
+| `ls.trajectory.dynamic_path(...)` | Compute an exact earliest-arrival path under interval occupancy. |
+| `ls.trajectory.DynamicPathResult` | Dynamic cells, UTC arrivals/departures, elapsed time, and waits. |
 | `ls.trajectory.SunVectorProvider` | Structural protocol for Moon-ME Sun vectors. |
 | `ls.trajectory.SunlightProvider` | Structural protocol for byte-valued sunlight windows. |
 | `ls.trajectory.EarthElevationProvider` | Structural protocol for Earth-elevation windows. |
@@ -1419,8 +1421,41 @@ Provider times are timezone-aware datetimes, signal intervals are half-open,
 and requested windows must lie inside one shared grid. Horizon-backed reads
 require a precomputed horizon store and never generate horizons. See the
 [provider contract record](trajectory-provider-contract.md) for the exact API,
-dtype, caching, error, and lifecycle rules. Public dynamic path planning
-remains under implementation.
+dtype, caching, error, and lifecycle rules.
+
+### Dynamic Path Planning
+
+The initial dynamic planner uses exact, exhaustive GridRunner block relaxation
+on CPU. It combines a static movement model with a configuration provider whose
+Boolean values vary over half-open UTC intervals.
+
+```python
+result = ls.trajectory.dynamic_path(
+    traversable,
+    georef,
+    start,
+    goal,
+    boundaries,
+    configuration,
+    departure_time,
+    model=ls.trajectory.StaticTravelModel(speed_m_per_h=20.0),
+    algorithm="gridrunner",
+    backend="cpu",
+)
+```
+
+Reachable results provide raster cells plus UTC arrival and leg-departure times.
+`result.wait_intervals` identifies waits, while `result.travel_time_hours`
+includes both waiting and driving. A valid but unreachable goal returns an
+ordinary result with no trajectory arrays. `backend="auto"` currently selects
+CPU without probing CUDA; explicit CUDA is unavailable and never silently
+falls back.
+
+The planner currently materializes the requested occupancy timeline and is
+bounded to five million cell-interval states. See the
+[public dynamic contract](trajectory-dynamic-public-contract.md) for exact
+semantics and `examples/33_dynamic_trajectory.py` for a runnable synthetic
+example.
 
 ## Map Algebra (0.2.0rc1)
 

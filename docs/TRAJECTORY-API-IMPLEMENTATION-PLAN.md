@@ -4,11 +4,12 @@ Status: in progress. The static parts of Phase 0/0.5 and the Phase-1 and Phase-2
 CPU APIs are implemented. Phase 3A has frozen occupancy/time semantics and a
 private exact occupancy oracle. Phase 3B's provider foundation, compiled
 dynamic mobility bundle, and explicit Sun-direction specialization are
-implemented. Phase 3C's exhaustive private GridRunner core is implemented;
-its public API and diagnostics gates remain open.
+implemented. Phase 3C's exhaustive GridRunner core and initial public dynamic
+path API are implemented; the private compiled dynamic-mobility bundle is not
+yet exposed by that API.
 
-Latest verification (2026-09-07): trajectory plus example tests pass (118
-tests). The complete ordinary suite reports 1,948 passed, 18 skipped, and one
+Latest verification (2026-09-07): trajectory plus example tests pass (126
+tests). The complete ordinary suite reports 1,956 passed, 18 skipped, and one
 unrelated pre-existing failure because `tests/test_dependency_boundary.py`
 expects package version `0.1.0rc3` while `pyproject.toml` declares `0.1.0rc5`.
 
@@ -461,9 +462,9 @@ their signatures, lifecycles, and errors are frozen.
 - [x] Compare reachability, arrival/cost, and trajectory feasibility against the
   Phase-3A oracle across synthetic and randomized small cases.
 - [x] Add explicit regression tests requiring region reactivation.
-- [ ] Freeze the dynamic public result, algorithm spelling, defaults, and
+- [x] Freeze the dynamic public result, algorithm spelling, defaults, and
   diagnostics boundary before exporting `dynamic_path`.
-- [ ] Document whether the first public GridRunner algorithm is exact,
+- [x] Document whether the first public GridRunner algorithm is exact,
   complete, bounded-suboptimal, or otherwise approximate under each policy.
 
 ## 11. Phase 3D -- Safe-interval planner
@@ -488,7 +489,7 @@ their signatures, lifecycles, and errors are frozen.
 
 - [ ] Public time, provider, dynamic result, algorithm, backend, and error
   contracts are documented and tested through `ls.trajectory`.
-- [ ] Explicit `backend="cpu"` never probes CUDA; `auto` does not change the
+- [x] Explicit `backend="cpu"` never probes CUDA; `auto` does not change the
   requested algorithm.
 - [ ] Real-terrain/manual examples record source identities and environment
   sampling without entering the ordinary test suite.

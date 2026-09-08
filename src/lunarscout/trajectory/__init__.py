@@ -1,8 +1,7 @@
 """Public trajectory-planning API.
 
 Importing this namespace performs no raster I/O and initializes neither SPICE
-nor CUDA. Optimized and dynamic implementations are added only after their
-scientific contracts are frozen.
+nor CUDA.
 """
 
 from .static import (
@@ -28,6 +27,7 @@ from .providers import (
     SunlightProvider,
     SunlightThresholdProvider,
 )
+from .dynamic import DynamicPathResult, dynamic_path
 from ..errors import (
     ConfigurationSpaceError,
     NoPathError,
@@ -42,6 +42,7 @@ __all__ = [
     "ArraySunlightProvider",
     "ConfigurationSpaceError",
     "ConfigurationSpaceProvider",
+    "DynamicPathResult",
     "EarthElevationProvider",
     "EarthElevationThresholdProvider",
     "ExplicitSunVectorProvider",
@@ -59,6 +60,7 @@ __all__ = [
     "TrajectoryError",
     "TrajectoryInputError",
     "TravelTimeResult",
+    "dynamic_path",
     "static_path",
     "static_travel_time",
 ]

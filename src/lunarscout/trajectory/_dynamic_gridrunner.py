@@ -19,11 +19,22 @@ from ._dynamic_reference import (
 )
 from ._environment import occupancy_timeline_from_provider
 from ._geometry import cell_distance_m
+from ._time_contract import IntervalTimeAxis
 from .providers import ConfigurationSpaceProvider
 from ._validation import StaticProblem
 
 
 _MAX_GRIDRUNNER_STATES = 5_000_000
+
+
+def _require_state_capacity(intervals: int, height: int, width: int) -> None:
+    state_count = intervals * height * width
+    if state_count > _MAX_GRIDRUNNER_STATES:
+        raise PlanningError(
+            "The GridRunner state arrays exceed their configured bound.",
+            code="trajectory_gridrunner_state_limit",
+            details={"state_count": state_count, "maximum": _MAX_GRIDRUNNER_STATES},
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,13 +217,7 @@ def gridrunner_dynamic_path(
     intervals = timeline.interval_count
     height = problem.georef.height
     width = problem.georef.width
-    state_count = intervals * height * width
-    if state_count > _MAX_GRIDRUNNER_STATES:
-        raise PlanningError(
-            "The GridRunner state arrays exceed their configured bound.",
-            code="trajectory_gridrunner_state_limit",
-            details={"state_count": state_count, "maximum": _MAX_GRIDRUNNER_STATES},
-        )
+    _require_state_capacity(intervals, height, width)
     shape = (intervals, height, width)
     labels = np.full(shape, np.inf, dtype=np.float64)
     predecessor_x = np.full(shape, -1, dtype=np.int64)
@@ -408,9 +413,15 @@ def gridrunner_dynamic_path_from_provider(
 ) -> GridRunnerResult:
     """Materialize bounded provider windows, then run private GridRunner."""
 
+    axis = IntervalTimeAxis(boundaries)
+    _require_state_capacity(
+        axis.interval_count,
+        problem.georef.height,
+        problem.georef.width,
+    )
     timeline = occupancy_timeline_from_provider(
         provider,
-        boundaries,
+        axis.boundaries,
         read_block_size=block_size,
     )
     return gridrunner_dynamic_path(

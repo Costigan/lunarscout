@@ -32,17 +32,17 @@ assert not {'numba', 'numba.cuda', 'spiceypy'} & sys.modules.keys()
 assert trajectory.__all__ == [
     'AllOfConfigurationSpaceProvider', 'ArrayEarthElevationProvider',
     'ArraySunlightProvider', 'ConfigurationSpaceError',
-    'ConfigurationSpaceProvider', 'EarthElevationProvider',
+    'ConfigurationSpaceProvider', 'DynamicPathResult', 'EarthElevationProvider',
     'EarthElevationThresholdProvider', 'ExplicitSunVectorProvider',
     'HorizonSunlightProvider', 'NoPathError', 'PathResult', 'PlanningError',
     'SlipFunction',
     'SpiceSunVectorProvider', 'StaticConfigurationSpaceProvider',
     'StaticTravelModel', 'SunVectorProvider', 'SunlightProvider',
     'SunlightThresholdProvider', 'TrajectoryError', 'TrajectoryInputError',
-    'TravelTimeResult', 'static_path', 'static_travel_time',
+    'TravelTimeResult', 'dynamic_path', 'static_path', 'static_travel_time',
 ]
-assert not hasattr(trajectory, 'dynamic_path')
 assert not hasattr(trajectory, 'soc_path')
+from datetime import datetime, timedelta, timezone
 import numpy as np
 from pyproj import CRS
 crs = CRS.from_user_input('ESRI:103878')
@@ -54,6 +54,15 @@ field = trajectory.static_travel_time(np.ones((1, 2), dtype=bool), grid, (0, 0))
 path = trajectory.static_path(np.ones((1, 2), dtype=bool), grid, (0, 0), (1, 0))
 assert field.reached.tolist() == [[True, True]]
 assert path.reachable and path.path.tolist() == [[0, 0], [1, 0]]
+time0 = datetime(2030, 1, 1, tzinfo=timezone.utc)
+configuration = trajectory.StaticConfigurationSpaceProvider(
+    np.ones((1, 2), dtype=bool), grid,
+)
+dynamic = trajectory.dynamic_path(
+    np.ones((1, 2), dtype=bool), grid, (0, 0), (1, 0),
+    (time0, time0 + timedelta(hours=1)), configuration, time0,
+)
+assert dynamic.reachable
 assert not {'numba', 'numba.cuda'} & sys.modules.keys()
 """
     completed = subprocess.run(
