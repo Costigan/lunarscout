@@ -1458,7 +1458,9 @@ The planner currently materializes the requested occupancy timeline and is
 bounded to five million cell-interval states. See the
 [public dynamic contract](trajectory-dynamic-public-contract.md) for exact
 semantics and `examples/33_dynamic_trajectory.py` for a runnable synthetic
-example.
+example. `examples/trajectory_real_terrain.py` is a manual comparison workflow
+for a local georeferenced DEM and precomputed sunlight archive; its `--help`
+output documents the required inputs.
 
 ## Map Algebra (0.2.0rc1)
 

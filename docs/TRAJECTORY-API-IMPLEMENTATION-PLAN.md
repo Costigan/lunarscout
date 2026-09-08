@@ -493,7 +493,7 @@ their signatures, lifecycles, and errors are frozen.
   contracts are documented and tested through `ls.trajectory`.
 - [x] Explicit `backend="cpu"` never probes CUDA; `auto` does not change the
   requested algorithm.
-- [ ] Real-terrain/manual examples record source identities and environment
+- [x] Real-terrain/manual examples record source identities and environment
   sampling without entering the ordinary test suite.
 
 ## 12. Phase 4A -- Freeze power and battery semantics
@@ -634,13 +634,13 @@ exporting them.
 
 ### 18.2 Real-terrain examples
 
-- [ ] Keep real-DEM workflows under `examples/` or a clearly manual validation
+- [x] Keep real-DEM workflows under `examples/` or a clearly manual validation
   area, not the ordinary CPU test suite.
 - [ ] Make editable DEM, horizons, output, and kernel paths explicit.
-- [ ] Record input hashes/identifiers, algorithm, backend, model parameters,
+- [x] Record input hashes/identifiers, algorithm, backend, model parameters,
   environment sampling, software/hardware versions, result summary, runtime,
   and memory as listed in Section 15.6 of the API design.
-- [ ] Compare multiple planner implementations on identical inputs where their
+- [x] Compare multiple planner implementations on identical inputs where their
   scientific contracts match.
 - [ ] State NVIDIA device/driver requirements for every GPU example.
 
