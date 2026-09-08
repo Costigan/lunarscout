@@ -13,6 +13,9 @@ analytical stories combining related examples.
 | `04_map_algebra_foundations.ipynb`      | 18--21               | Raster values, validity, alignment, units, numerical policy |
 | `05_suitability_and_neighborhoods.ipynb` | 22, 25               | Weighted suitability, focal cleanup, morphology, distance |
 | `06_lazy_and_temporal_algebra.ipynb`    | 27, 31               | Expressions, explain/plan, bounded writes, temporal reduction |
+| `07_static_trajectory_planning.ipynb`   | 32                   | Configuration space, travel-time field, and static path overlays |
+| `08_dynamic_trajectory_planning.ipynb`  | 33                   | Time-varying occupancy, waiting, and dynamic path overlays |
+| `09_real_terrain_trajectory.ipynb`      | real-terrain manual  | Editable DEM/sunlight inputs and planner comparison plots |
 
 ## Running the Notebooks
 
@@ -27,6 +30,9 @@ Then navigate to `examples/notebooks/` and open the desired notebook.
 Most notebooks use fully synthetic data and run on CPU with zero external
 dependencies. `03_celestial_geometry.ipynb` requires SPICE kernel download on
 first use and the synthetic horizon data bundle (downloaded automatically).
+`09_real_terrain_trajectory.ipynb` starts with inert editable placeholders and
+requires a local DEM and precomputed sunlight archive before its analysis cells
+do work.
 
 ## Source Maintenance
 

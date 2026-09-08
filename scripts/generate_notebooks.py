@@ -1565,6 +1565,419 @@ print("Series closed.")
     return n
 
 
+# ---------------------------------------------------------------------------
+def notebook_07():
+    n = nb()
+    n.cells = [
+        md("""\
+# 07 -- Static Trajectory Planning
+
+Build a deterministic lunar terrain configuration space, compute a travel-time
+field and minimum-time path, and inspect both as maps. This notebook is based on
+`examples/32_static_trajectory.py` and uses only public `ls.trajectory` APIs.
+"""),
+        md("## Setup"),
+        code(f"""{_SETUP_PREAMBLE}
+
+import lunarscout as ls
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
+
+%matplotlib inline
+
+from _example_support import synthetic_georef
+
+georef = synthetic_georef(width=12, height=9, pixel_size=10.0, nodata=None)
+rows, columns = np.indices((georef.height, georef.width), dtype=np.float64)
+elevation_m = 100.0 + 0.25 * columns + 0.1 * rows
+traversable = np.ones(elevation_m.shape, dtype=bool)
+traversable[1:8, 5] = False
+traversable[6, 5] = True
+valid = np.ones(elevation_m.shape, dtype=bool)
+valid[0, 10:] = False
+start, goal = (1, 1), (10, 7)
+configuration = traversable & valid
+"""),
+        md("""\
+## Configuration space
+
+Terrain elevation is shown beneath the cells removed by validity and
+traversability constraints. The opening in the vertical barrier is the only
+crossing from the left side to the goal.
+"""),
+        code("""\
+fig, ax = plt.subplots(figsize=(9, 5))
+image = ax.imshow(elevation_m, cmap="terrain", origin="upper")
+blocked = np.ma.masked_where(configuration, ~configuration)
+ax.imshow(blocked, cmap=ListedColormap(["black"]), alpha=0.75, origin="upper")
+ax.scatter(*start, marker="o", s=100, color="cyan", edgecolor="black", label="start")
+ax.scatter(*goal, marker="*", s=180, color="gold", edgecolor="black", label="goal")
+ax.set(title="Static configuration space", xlabel="x (cell)", ylabel="y (cell)")
+ax.legend(handles=ax.get_legend_handles_labels()[0] + [Patch(color="black", label="blocked")])
+fig.colorbar(image, ax=ax, label="elevation (m)")
+fig.tight_layout()
+plt.show()
+"""),
+        md("## Travel model and planning"),
+        code("""\
+slip = ls.trajectory.SlipFunction(
+    signed_slopes=(-0.5, 0.0, 0.5),
+    factors=(0.8, 1.0, 2.0),
+    extrapolation="infeasible",
+)
+model = ls.trajectory.StaticTravelModel(
+    speed_m_per_h=36.0,
+    include_diagonals=True,
+    slip=slip,
+)
+field = ls.trajectory.static_travel_time(
+    traversable, georef, start,
+    valid=valid, elevation=elevation_m, model=model,
+)
+route = ls.trajectory.static_path(
+    traversable, georef, start, goal,
+    valid=valid, elevation=elevation_m, model=model,
+)
+print(f"Reachable: {route.reachable}")
+print(f"Travel time: {route.travel_time_hours:.3f} hours")
+print(f"Path cells: {len(route.path)}")
+"""),
+        md("## Travel-time field and path overlay"),
+        code("""\
+times = np.where(field.reached, field.travel_time_hours, np.nan)
+fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
+
+travel_image = axes[0].imshow(times, cmap="viridis", origin="upper")
+axes[0].set_title("Minimum travel time from start")
+fig.colorbar(travel_image, ax=axes[0], label="hours")
+
+terrain_image = axes[1].imshow(elevation_m, cmap="terrain", origin="upper")
+axes[1].imshow(blocked, cmap=ListedColormap(["black"]), alpha=0.65, origin="upper")
+axes[1].set_title("Minimum-time path over terrain")
+fig.colorbar(terrain_image, ax=axes[1], label="elevation (m)")
+
+for ax in axes:
+    ax.plot(route.path[:, 0], route.path[:, 1], "w-o", lw=2, ms=4,
+            markeredgecolor="black")
+    ax.scatter(*start, color="cyan", edgecolor="black", s=90, zorder=4)
+    ax.scatter(*goal, color="gold", edgecolor="black", marker="*", s=170, zorder=4)
+    ax.set(xlabel="x (cell)", ylabel="y (cell)")
+plt.show()
+"""),
+        md("""\
+## Unreachable comparison
+
+Close the barrier opening and compare the resulting configuration space. A
+valid but unreachable goal returns an ordinary result rather than an exception.
+"""),
+        code("""\
+closed = traversable.copy()
+closed[:, 5] = False
+unreachable = ls.trajectory.static_path(
+    closed, georef, start, goal,
+    valid=valid, elevation=elevation_m, model=model,
+)
+fig, ax = plt.subplots(figsize=(9, 4))
+ax.imshow(closed & valid, cmap=ListedColormap(["black", "white"]), origin="upper")
+ax.scatter(*start, color="cyan", edgecolor="black", s=90)
+ax.scatter(*goal, color="gold", edgecolor="black", marker="*", s=170)
+ax.set(title=f"Closed barrier -- reachable: {unreachable.reachable}",
+       xlabel="x (cell)", ylabel="y (cell)")
+plt.show()
+"""),
+    ]
+    return n
+
+
+# ---------------------------------------------------------------------------
+def notebook_08():
+    n = nb()
+    n.cells = [
+        md("""\
+# 08 -- Dynamic Trajectory Planning
+
+Visualize a time-varying sunlight configuration space and the exact path that
+waits for it to open. This notebook is based on
+`examples/33_dynamic_trajectory.py` and compares both public CPU algorithms.
+"""),
+        md("## Setup and interval occupancy"),
+        code(f"""{_SETUP_PREAMBLE}
+
+from datetime import datetime, timedelta, timezone
+
+import lunarscout as ls
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.colors import ListedColormap
+
+%matplotlib inline
+
+from _example_support import synthetic_georef
+
+georef = synthetic_georef(width=7, height=3, pixel_size=10.0, nodata=None)
+start_time = datetime(2035, 1, 1, tzinfo=timezone.utc)
+boundaries = tuple(start_time + timedelta(hours=i) for i in range(5))
+sunlight = np.full((4, georef.height, georef.width), 255, dtype=np.uint8)
+sunlight[:2, :, 4:] = 0
+sunlight[:, 0, 3] = 0
+start, goal = (0, 1), (6, 1)
+allowed = sunlight >= round(0.2 * 255)
+"""),
+        code("""\
+fig, axes = plt.subplots(2, 2, figsize=(12, 5), constrained_layout=True)
+for index, ax in enumerate(axes.flat):
+    ax.imshow(allowed[index], cmap=ListedColormap(["#242424", "#f4d35e"]),
+              vmin=0, vmax=1, origin="upper")
+    ax.scatter(*start, color="cyan", edgecolor="black", s=70)
+    ax.scatter(*goal, color="red", edgecolor="white", marker="*", s=120)
+    ax.set_title(f"[{boundaries[index].hour:02d}:00, {boundaries[index+1].hour:02d}:00) UTC")
+    ax.set(xticks=range(georef.width), yticks=range(georef.height))
+fig.suptitle("Dynamic configuration space: yellow = allowed, dark = unavailable")
+plt.show()
+"""),
+        md("## Build the provider and run both exact algorithms"),
+        code("""\
+signal = ls.trajectory.ArraySunlightProvider(boundaries, sunlight, georef)
+configuration = ls.trajectory.AllOfConfigurationSpaceProvider((
+    ls.trajectory.StaticConfigurationSpaceProvider(
+        np.ones((georef.height, georef.width), dtype=bool), georef
+    ),
+    ls.trajectory.SunlightThresholdProvider(signal, 0.2),
+))
+model = ls.trajectory.StaticTravelModel(speed_m_per_h=20.0,
+                                        include_diagonals=False)
+
+results = {
+    algorithm: ls.trajectory.dynamic_path(
+        np.ones((georef.height, georef.width), dtype=bool),
+        georef, start, goal, boundaries, configuration, start_time,
+        model=model, algorithm=algorithm, backend="cpu",
+    )
+    for algorithm in ("gridrunner", "safe_interval")
+}
+for algorithm, result in results.items():
+    print(f"{algorithm:13s}: arrival={result.arrival_time}, "
+          f"elapsed={result.travel_time_hours:.2f} h, waits={result.wait_intervals}")
+"""),
+        md("## Path, arrival time, and waiting location"),
+        code("""\
+route = results["safe_interval"]
+elapsed = np.array([
+    (value - start_time).total_seconds() / 3600
+    for value in route.arrival_times
+])
+fig, ax = plt.subplots(figsize=(11, 4))
+ax.imshow(allowed[0], cmap=ListedColormap(["#242424", "#dddddd"]),
+          vmin=0, vmax=1, origin="upper")
+ax.plot(route.cells[:, 0], route.cells[:, 1], color="white", lw=3, zorder=2)
+points = ax.scatter(route.cells[:, 0], route.cells[:, 1], c=elapsed,
+                    cmap="plasma", edgecolor="black", s=110, zorder=3)
+for index, hours in enumerate(elapsed):
+    ax.annotate(f"{hours:.1f}h", route.cells[index] + np.array([0.08, -0.18]))
+for wait_start, wait_stop in route.wait_intervals:
+    wait_index = route.arrival_times.index(wait_start)
+    ax.scatter(*route.cells[wait_index], marker="s", facecolors="none",
+               edgecolors="cyan", linewidths=3, s=230, label="wait location")
+ax.set(title="Dynamic path colored by arrival time", xlabel="x (cell)",
+       ylabel="y (cell)", xticks=range(georef.width), yticks=range(georef.height))
+fig.colorbar(points, ax=ax, label="hours after departure")
+ax.legend()
+fig.tight_layout()
+plt.show()
+"""),
+        md("## Route progression through configuration frames"),
+        code("""\
+fig, axes = plt.subplots(2, 2, figsize=(12, 5), constrained_layout=True)
+for interval, ax in enumerate(axes.flat):
+    ax.imshow(allowed[interval], cmap=ListedColormap(["#242424", "#f4d35e"]),
+              vmin=0, vmax=1, origin="upper")
+    arrived = np.array([
+        value < boundaries[interval + 1] for value in route.arrival_times
+    ])
+    ax.plot(route.cells[:, 0], route.cells[:, 1], "--", color="white", alpha=0.5)
+    ax.scatter(route.cells[arrived, 0], route.cells[arrived, 1],
+               color="cyan", edgecolor="black", s=65)
+    ax.set_title(f"By {boundaries[interval+1].hour:02d}:00 UTC")
+    ax.set(xticks=range(georef.width), yticks=range(georef.height))
+fig.suptitle("Cells reached by the end of each occupancy interval")
+plt.show()
+"""),
+    ]
+    return n
+
+
+# ---------------------------------------------------------------------------
+def notebook_09():
+    n = nb()
+    n.cells = [
+        md("""\
+# 09 -- Real-Terrain Dynamic Trajectory Planning
+
+Edit the input cell below to point at your georeferenced DEM and precomputed
+sunlight archive, then compare GridRunner and safe-interval paths visually.
+This notebook follows `examples/trajectory_real_terrain.py`.
+
+The `.npz` archive must contain exactly `sunlight` (`uint8`, shaped
+`(interval, y, x)`) and `boundaries_utc` (`interval + 1` ISO-8601 UTC strings).
+No horizons are generated and no GPU is required.
+"""),
+        md("## Setup and editable inputs"),
+        code(f"""{_SETUP_PREAMBLE_TINY}
+
+import hashlib
+import json
+import time
+import tracemalloc
+from datetime import datetime, timezone
+
+import lunarscout as ls
+import matplotlib.pyplot as plt
+import numpy as np
+
+%matplotlib inline
+
+# EDIT THESE VALUES.
+DEM_PATH = None                 # Path("/data/site/dem.tif")
+SUNLIGHT_ARCHIVE = None        # Path("/data/site/sunlight.npz")
+START = None                    # (x, y), for example (120, 80)
+GOAL = None                     # (x, y), for example (400, 320)
+MINIMUM_SUNLIGHT = 0.2
+SPEED_M_PER_HOUR = 36.0
+REPORT_PATH = None              # Optional: Path("trajectory-report.json")
+
+READY = all(value is not None for value in
+            (DEM_PATH, SUNLIGHT_ARCHIVE, START, GOAL))
+print("Inputs ready." if READY else "Edit DEM_PATH, SUNLIGHT_ARCHIVE, START, and GOAL, then rerun.")
+"""),
+        md("## Load and validate the DEM and sunlight archive"),
+        code("""\
+if READY:
+    DEM_PATH = Path(DEM_PATH).expanduser().resolve()
+    SUNLIGHT_ARCHIVE = Path(SUNLIGHT_ARCHIVE).expanduser().resolve()
+    elevation_m, georef = ls.read_geotiff(DEM_PATH)
+    if georef is None:
+        raise ValueError("DEM must contain complete georeferencing")
+    with np.load(SUNLIGHT_ARCHIVE, allow_pickle=False) as archive:
+        if set(archive.files) != {"boundaries_utc", "sunlight"}:
+            raise ValueError("Archive must contain only boundaries_utc and sunlight")
+        sunlight = np.array(archive["sunlight"], copy=True)
+        boundary_text = [str(value) for value in archive["boundaries_utc"]]
+    boundaries = tuple(datetime.fromisoformat(
+        value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+    ).astimezone(timezone.utc) for value in boundary_text)
+    valid = np.isfinite(elevation_m)
+    if georef.nodata is not None:
+        valid &= elevation_m != georef.nodata
+    print(f"Grid: {georef.width} x {georef.height}")
+    print(f"Intervals: {len(boundaries) - 1}, {boundaries[0]} to {boundaries[-1]}")
+"""),
+        md("## Inspect terrain and configuration-space samples"),
+        code("""\
+if READY:
+    sample_indices = sorted(set((0, len(sunlight)//2, len(sunlight)-1)))
+    fig, axes = plt.subplots(1, len(sample_indices) + 1,
+                             figsize=(5 * (len(sample_indices) + 1), 5),
+                             constrained_layout=True)
+    terrain = np.where(valid, elevation_m, np.nan)
+    image = axes[0].imshow(terrain, cmap="terrain", origin="upper")
+    axes[0].set_title("DEM and endpoints")
+    axes[0].scatter(*START, color="cyan", edgecolor="black", s=70)
+    axes[0].scatter(*GOAL, color="red", edgecolor="white", marker="*", s=120)
+    fig.colorbar(image, ax=axes[0], label="elevation (m)")
+    for ax, index in zip(axes[1:], sample_indices):
+        configuration_frame = valid & (sunlight[index] >= round(MINIMUM_SUNLIGHT * 255))
+        ax.imshow(configuration_frame, cmap="gray", vmin=0, vmax=1, origin="upper")
+        ax.set_title(boundaries[index].isoformat())
+    for ax in axes:
+        ax.set(xlabel="x (cell)", ylabel="y (cell)")
+    plt.show()
+"""),
+        md("## Run both exact CPU algorithms"),
+        code("""\
+if READY:
+    signal = ls.trajectory.ArraySunlightProvider(boundaries, sunlight, georef)
+    configuration = ls.trajectory.AllOfConfigurationSpaceProvider((
+        ls.trajectory.StaticConfigurationSpaceProvider(valid, georef),
+        ls.trajectory.SunlightThresholdProvider(signal, MINIMUM_SUNLIGHT),
+    ))
+    model = ls.trajectory.StaticTravelModel(
+        speed_m_per_h=SPEED_M_PER_HOUR, include_diagonals=True
+    )
+    results, measurements = {}, {}
+    for algorithm in ("gridrunner", "safe_interval"):
+        tracemalloc.start()
+        started = time.perf_counter()
+        results[algorithm] = ls.trajectory.dynamic_path(
+            valid, georef, START, GOAL, boundaries, configuration, boundaries[0],
+            valid=valid, elevation=elevation_m, model=model,
+            algorithm=algorithm, backend="cpu",
+        )
+        elapsed = time.perf_counter() - started
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        measurements[algorithm] = {"runtime_seconds": elapsed,
+                                   "peak_tracemalloc_bytes": peak}
+        result = results[algorithm]
+        print(f"{algorithm:13s}: reachable={result.reachable}, "
+              f"travel={result.travel_time_hours}, runtime={elapsed:.3f}s")
+"""),
+        md("## Overlay paths and arrival times"),
+        code("""\
+if READY:
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), constrained_layout=True)
+    for ax, (algorithm, result) in zip(axes, results.items()):
+        ax.imshow(np.where(valid, elevation_m, np.nan), cmap="terrain", origin="upper")
+        if result.reachable:
+            hours = np.array([(value - boundaries[0]).total_seconds() / 3600
+                              for value in result.arrival_times])
+            ax.plot(result.cells[:, 0], result.cells[:, 1], color="white", lw=2)
+            points = ax.scatter(result.cells[:, 0], result.cells[:, 1], c=hours,
+                                cmap="plasma", s=18, edgecolor="black", linewidth=0.2)
+            fig.colorbar(points, ax=ax, label="hours after departure")
+        ax.set(title=algorithm, xlabel="x (cell)", ylabel="y (cell)")
+    plt.show()
+"""),
+        md("## Build an editable reproducibility report"),
+        code("""\
+if READY:
+    def sha256(path):
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    report = {
+        "dem": {"path": str(DEM_PATH), "sha256": sha256(DEM_PATH)},
+        "sunlight": {"path": str(SUNLIGHT_ARCHIVE),
+                     "sha256": sha256(SUNLIGHT_ARCHIVE)},
+        "grid": [georef.width, georef.height],
+        "start": list(START), "goal": list(GOAL),
+        "environment_sampling": {
+            "boundaries_utc": [value.isoformat() for value in boundaries],
+            "minimum_sunlight": MINIMUM_SUNLIGHT,
+        },
+        "model": {"speed_m_per_h": SPEED_M_PER_HOUR,
+                  "include_diagonals": True, "slip": None},
+        "results": {
+            name: {**measurements[name], "reachable": result.reachable,
+                   "arrival_time": None if result.arrival_time is None else result.arrival_time.isoformat(),
+                   "travel_time_hours": result.travel_time_hours,
+                   "path_cell_count": None if result.cells is None else len(result.cells)}
+            for name, result in results.items()
+        },
+    }
+    print(json.dumps(report, indent=2))
+    if REPORT_PATH is not None:
+        Path(REPORT_PATH).write_text(json.dumps(report, indent=2) + "\\n")
+        print(f"Wrote {REPORT_PATH}")
+"""),
+    ]
+    return n
+
+
 # ===================================================================
 NOTEBOOKS = {
     "01_raster_foundations.ipynb": notebook_01,
@@ -1573,6 +1986,9 @@ NOTEBOOKS = {
     "04_map_algebra_foundations.ipynb": notebook_04,
     "05_suitability_and_neighborhoods.ipynb": notebook_05,
     "06_lazy_and_temporal_algebra.ipynb": notebook_06,
+    "07_static_trajectory_planning.ipynb": notebook_07,
+    "08_dynamic_trajectory_planning.ipynb": notebook_08,
+    "09_real_terrain_trajectory.ipynb": notebook_09,
 }
 
 
