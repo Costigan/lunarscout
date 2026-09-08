@@ -148,3 +148,57 @@ assert 'spiceypy' not in sys.modules
         text=True,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+def test_explicit_dynamic_mobility_needs_no_spice_or_numba(tmp_path: Path) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(repository / "src")
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    program = """
+from datetime import datetime, timedelta, timezone
+import sys
+import numpy as np
+from pyproj import CRS
+import lunarscout as ls
+from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
+from lunarscout.trajectory._dynamic_mobility import (
+    SunDirectionFunction, compile_dynamic_travel_model,
+)
+from lunarscout.trajectory._dynamic_reference import DynamicOccupancyTimeline
+from lunarscout.trajectory._validation import prepare_static_problem
+t0 = datetime(2030, 1, 1, tzinfo=timezone.utc)
+crs = CRS.from_user_input('ESRI:103878')
+grid = ls.GeoReference(
+    crs.to_wkt(), crs.to_proj4(), (0.0, 10.0, 0.0, 0.0, 0.0, -10.0),
+    2, 1, 10.0, -10.0, None,
+)
+problem = prepare_static_problem(
+    np.ones((1, 2), dtype=bool), grid, (0, 0), goal=(1, 0),
+)
+timeline = DynamicOccupancyTimeline(
+    (t0, t0 + timedelta(hours=1)), np.ones((1, 1, 2), dtype=bool), grid,
+)
+dem = DemGrid(
+    np.zeros((1, 2), dtype=np.float32),
+    np.asarray(grid.affine_transform, dtype=np.float64),
+    ProjectionParameters(1737400.0, -np.pi / 2, 0.0, 1.0, 0.0, 0.0),
+)
+vectors = ls.trajectory.ExplicitSunVectorProvider(
+    (t0,), np.asarray([[1.0e9, 0.0, 0.0]]),
+)
+compile_dynamic_travel_model(
+    problem, timeline, dem=dem, dem_georef=grid, sun_vectors=vectors,
+    sun_direction=SunDirectionFunction((-1.0, 1.0), (2.0, 0.5)),
+)
+assert not {'numba', 'numba.cuda', 'spiceypy'} & sys.modules.keys()
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr

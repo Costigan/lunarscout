@@ -54,8 +54,27 @@ to the oracle. A mismatch is rejected before search.
 
 ## Deferred vector specialization
 
-The interval edge-factor representation is the hot-loop form expected to hold
-future Sun-direction or rover-specific mobility factors. Conversion of Moon-ME
-vectors into those factors remains deferred until its local-frame and public
-parameterization contract is frozen. The current implementation does not call
-SPICE, Numba, CUDA, or a Python callback per edge.
+The interval edge-factor representation is the hot-loop form for Sun-direction
+and future rover-specific factors. Sun direction uses one Moon-ME vector at
+each interval's start boundary and a validated `DemGrid` whose complete
+`GeoReference`, affine transform, dimensions, and relevant elevation values
+match the trajectory problem.
+
+For each directed neighboring edge, compilation reconstructs source and
+destination observer positions in Moon-ME using the shared stereographic local
+frame. The normalized three-dimensional destination-minus-source velocity is
+compared with the normalized source-observer-to-Sun ray. Their dot product is a
+cosine in `[-1, 1]` and includes both horizontal direction and the edge's
+vertical component.
+
+A private `SunDirectionFunction` maps strictly increasing cosine knots in
+`[-1, 1]` to finite positive factors using piecewise-linear interpolation and
+constant endpoint values. There is deliberately no default response curve;
+the rover-specific factor response must be supplied. The vector provider is
+called once for all interval-start timestamps, and the resulting factors are
+compiled before search. Explicit-vector compilation imports neither SpiceyPy,
+Numba, nor CUDA and does not execute a Python callback per searched edge.
+
+The local-frame compiler is private because its eventual public rover-model
+parameterization remains a compatibility decision. Its numerical and temporal
+behavior is nevertheless fixed for the Phase 3 exact and optimized planners.

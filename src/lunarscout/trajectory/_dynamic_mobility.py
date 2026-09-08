@@ -16,6 +16,57 @@ from ._validation import StaticProblem
 
 if TYPE_CHECKING:
     from ._dynamic_reference import DynamicOccupancyTimeline
+    from .providers import SunVectorProvider
+
+
+@dataclass(frozen=True, slots=True)
+class SunDirectionFunction:
+    """Private piecewise-linear travel factor over velocity/Sun cosine."""
+
+    alignment_cosines: tuple[float, ...]
+    factors: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        try:
+            cosines = tuple(float(value) for value in self.alignment_cosines)
+            factors = tuple(float(value) for value in self.factors)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise TrajectoryInputError(
+                "Sun-direction knots and factors must be finite numbers.",
+                code="trajectory_invalid_sun_direction_function",
+            ) from exc
+        if len(cosines) < 2 or len(cosines) != len(factors):
+            raise TrajectoryInputError(
+                "SunDirectionFunction requires equally sized sequences with at "
+                "least two values.",
+                code="trajectory_invalid_sun_direction_function",
+            )
+        if (
+            any(not np.isfinite(value) for value in cosines)
+            or any(not -1.0 <= value <= 1.0 for value in cosines)
+            or any(right <= left for left, right in zip(cosines, cosines[1:]))
+            or any(not np.isfinite(value) or value <= 0.0 for value in factors)
+        ):
+            raise TrajectoryInputError(
+                "Sun-direction cosines must increase within [-1, 1], and factors "
+                "must be finite and positive.",
+                code="trajectory_invalid_sun_direction_function",
+            )
+        object.__setattr__(self, "alignment_cosines", cosines)
+        object.__setattr__(self, "factors", factors)
+
+    def evaluate(self, cosines: npt.ArrayLike) -> NDArray[np.float64]:
+        values = np.asarray(cosines, dtype=np.float64)
+        if np.any(~np.isfinite(values)):
+            raise TrajectoryInputError(
+                "Sun-direction alignment cosines must be finite.",
+                code="trajectory_invalid_sun_direction_alignment",
+            )
+        clipped = np.clip(values, -1.0, 1.0)
+        return np.asarray(
+            np.interp(clipped, self.alignment_cosines, self.factors),
+            dtype=np.float64,
+        )
 
 
 def _factor_array(
@@ -200,6 +251,10 @@ def compile_dynamic_travel_model(
     *,
     interval_edge_factors: npt.ArrayLike | None = None,
     hazard_factors: npt.ArrayLike | None = None,
+    dem: object | None = None,
+    dem_georef: GeoReference | None = None,
+    sun_vectors: SunVectorProvider | None = None,
+    sun_direction: SunDirectionFunction | None = None,
 ) -> CompiledDynamicTravelModel:
     """Compile static signed-slope durations and explicit dynamic factors."""
 
@@ -221,6 +276,34 @@ def compile_dynamic_travel_model(
             raw = np.broadcast_to(raw[:, None, None, :], factor_shape)
         factors = _factor_array(raw, factor_shape, name="interval_edge_factors")
         factors = np.array(factors, dtype=np.float64, copy=True, order="C")
+
+    sun_arguments = (dem, dem_georef, sun_vectors, sun_direction)
+    if any(value is not None for value in sun_arguments):
+        if not all(value is not None for value in sun_arguments):
+            raise TrajectoryInputError(
+                "dem, dem_georef, sun_vectors, and sun_direction must be provided "
+                "together.",
+                code="trajectory_incomplete_sun_mobility",
+            )
+        assert sun_vectors is not None
+        assert sun_direction is not None
+        assert dem_georef is not None
+        sun_factors = _compile_sun_direction_factors(
+            problem,
+            timeline,
+            dem,
+            dem_georef,
+            sun_vectors,
+            sun_direction,
+        )
+        try:
+            with np.errstate(over="raise", invalid="raise"):
+                factors *= sun_factors
+        except FloatingPointError as exc:
+            raise TrajectoryInputError(
+                "Combined Sun-direction mobility factors overflowed.",
+                code="trajectory_dynamic_mobility_overflow",
+            ) from exc
 
     if hazard_factors is not None:
         hazards = _factor_array(
@@ -268,3 +351,122 @@ def compile_dynamic_travel_model(
         base_duration_hours=base,
         interval_factors=factors,
     )
+
+
+def _compile_sun_direction_factors(
+    problem: StaticProblem,
+    timeline: DynamicOccupancyTimeline,
+    dem: object,
+    dem_georef: GeoReference,
+    sun_vectors: SunVectorProvider,
+    response: SunDirectionFunction,
+) -> NDArray[np.float64]:
+    from .._numba_horizon.geometry import DemGrid
+    from .._numba_horizon.psr import _pixel_frame
+
+    if not isinstance(dem, DemGrid):
+        raise TrajectoryInputError(
+            "dem must be the validated DemGrid associated with the trajectory grid.",
+            code="trajectory_invalid_sun_mobility_grid",
+        )
+    try:
+        grids_match = isinstance(dem_georef, GeoReference) and same_grid(
+            problem.georef, dem_georef
+        )
+    except Exception as exc:
+        raise TrajectoryInputError(
+            "Unable to compare the Sun-direction DEM grid.",
+            code="trajectory_invalid_sun_mobility_grid",
+            details={"error": str(exc)},
+        ) from exc
+    if not grids_match:
+        raise TrajectoryInputError(
+            "Sun-direction DEM georeferencing must match the trajectory grid.",
+            code="trajectory_invalid_sun_mobility_grid",
+        )
+    if (dem.height, dem.width) != (problem.georef.height, problem.georef.width):
+        raise TrajectoryInputError(
+            "Sun-direction DEM dimensions must match the trajectory grid.",
+            code="trajectory_invalid_sun_mobility_grid",
+        )
+    if not np.array_equal(
+        dem.geo_transform,
+        np.asarray(problem.georef.affine_transform, dtype=np.float64),
+    ):
+        raise TrajectoryInputError(
+            "Sun-direction DEM affine transform must match the trajectory grid.",
+            code="trajectory_invalid_sun_mobility_grid",
+        )
+    if problem.elevation_m is not None and not np.array_equal(
+        dem.elevation_m[problem.available],
+        np.asarray(problem.elevation_m, dtype=np.float32)[problem.available],
+    ):
+        raise TrajectoryInputError(
+            "Sun-direction DEM elevations must match trajectory elevations.",
+            code="trajectory_invalid_sun_mobility_grid",
+        )
+    sample_times = timeline.boundaries[:-1]
+    try:
+        vectors = np.asarray(sun_vectors.vectors(sample_times))
+    except Exception as exc:
+        raise TrajectoryInputError(
+            "Unable to obtain Sun vectors for dynamic mobility compilation.",
+            code="trajectory_sun_mobility_vectors_failed",
+            details={"provider": type(sun_vectors).__name__, "error": str(exc)},
+        ) from exc
+    if (
+        vectors.dtype != np.dtype(np.float64)
+        or vectors.shape != (timeline.interval_count, 3)
+        or np.any(~np.isfinite(vectors))
+        or np.any(np.linalg.norm(vectors, axis=1) == 0.0)
+    ):
+        raise TrajectoryInputError(
+            "Sun-vector provider returned invalid mobility vectors.",
+            code="trajectory_invalid_provider_result",
+            details={"shape": list(vectors.shape), "dtype": str(vectors.dtype)},
+        )
+
+    height = problem.georef.height
+    width = problem.georef.width
+    direction_count = len(problem.steps)
+    positions = np.empty((height, width, 3), dtype=np.float64)
+    for y in range(height):
+        for x in range(width):
+            rotation, translation = _pixel_frame(dem, y, x)
+            positions[y, x] = -translation @ rotation.T
+    result = np.ones(
+        (timeline.interval_count, height, width, direction_count),
+        dtype=np.float64,
+    )
+    for y in range(height):
+        for x in range(width):
+            source = positions[y, x]
+            sun_rays = vectors - source
+            sun_norms = np.linalg.norm(sun_rays, axis=1)
+            if np.any(~np.isfinite(sun_norms)) or np.any(sun_norms <= 0.0):
+                raise TrajectoryInputError(
+                    "A Sun vector coincides with or overflows at a rover position.",
+                    code="trajectory_invalid_sun_mobility_vector",
+                    details={"cell": [x, y]},
+                )
+            for direction, step in enumerate(problem.steps):
+                destination_x = x + step.dx
+                destination_y = y + step.dy
+                if not (
+                    0 <= destination_x < width and 0 <= destination_y < height
+                ):
+                    continue
+                velocity = positions[destination_y, destination_x] - source
+                velocity_norm = float(np.linalg.norm(velocity))
+                if not np.isfinite(velocity_norm) or velocity_norm <= 0.0:
+                    raise TrajectoryInputError(
+                        "Adjacent DEM observers do not define a movement direction.",
+                        code="trajectory_invalid_sun_mobility_grid",
+                        details={
+                            "source": [x, y],
+                            "destination": [destination_x, destination_y],
+                        },
+                    )
+                cosines = (sun_rays @ velocity) / (sun_norms * velocity_norm)
+                result[:, y, x, direction] = response.evaluate(cosines)
+    return result

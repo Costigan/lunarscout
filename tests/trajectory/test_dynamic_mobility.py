@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 
 import lunarscout as ls
-from lunarscout.trajectory._dynamic_mobility import compile_dynamic_travel_model
+from lunarscout.trajectory._dynamic_mobility import (
+    SunDirectionFunction,
+    _compile_sun_direction_factors,
+    compile_dynamic_travel_model,
+)
 from lunarscout.trajectory._dynamic_reference import (
     DynamicOccupancyTimeline,
     exact_dynamic_path,
@@ -188,3 +192,100 @@ def test_finite_dynamic_factor_overflow_is_rejected(make_trajectory_georef) -> N
             hazard_factors=np.full((1, 2), 2.0),
         )
     assert captured.value.code == "trajectory_dynamic_mobility_overflow"
+
+
+def _dem_for_problem(problem):
+    from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
+
+    elevation = (
+        np.zeros(problem.available.shape, dtype=np.float32)
+        if problem.elevation_m is None
+        else np.asarray(problem.elevation_m, dtype=np.float32)
+    )
+    return DemGrid(
+        np.ascontiguousarray(elevation),
+        np.asarray(problem.georef.affine_transform, dtype=np.float64),
+        ProjectionParameters(
+            radius_m=1_737_400.0,
+            latitude_origin_rad=-np.pi / 2.0,
+            longitude_origin_rad=0.0,
+            scale=1.0,
+            false_easting_m=0.0,
+            false_northing_m=0.0,
+        ),
+    )
+
+
+def _observer_position(dem, y, x):
+    from lunarscout._numba_horizon.psr import _pixel_frame
+
+    rotation, translation = _pixel_frame(dem, y, x)
+    return -translation @ rotation.T
+
+
+def test_explicit_sun_vectors_compile_local_direction_factors(
+    make_trajectory_georef,
+) -> None:
+    problem, timeline = _problem_and_timeline(make_trajectory_georef)
+    dem = _dem_for_problem(problem)
+    source = _observer_position(dem, 0, 0)
+    destination = _observer_position(dem, 0, 1)
+    velocity = destination - source
+    velocity /= np.linalg.norm(velocity)
+    distance = 1.0e9
+    vectors = ls.trajectory.ExplicitSunVectorProvider(
+        timeline.boundaries[:-1],
+        np.asarray(
+            [
+                source - velocity * distance,
+                source + velocity * distance,
+                source + velocity * distance,
+            ]
+        ),
+    )
+    response = SunDirectionFunction((-1.0, 1.0), (2.0, 0.5))
+
+    factors = _compile_sun_direction_factors(
+        problem, timeline, dem, problem.georef, vectors, response
+    )
+    compiled = compile_dynamic_travel_model(
+        problem,
+        timeline,
+        dem=dem,
+        dem_georef=problem.georef,
+        sun_vectors=vectors,
+        sun_direction=response,
+    )
+    result = exact_dynamic_path(problem, timeline, T0, travel_model=compiled)
+
+    assert factors[:, 0, 0, 0] == pytest.approx([2.0, 0.5, 0.5])
+    assert result.reachable
+    assert result.departure_times == (T0,)
+    assert result.arrival_time == T0 + timedelta(hours=1.25)
+
+
+@pytest.mark.parametrize(
+    ("cosines", "factors"),
+    [
+        ((-1.0,), (1.0,)),
+        ((-1.1, 1.0), (1.0, 1.0)),
+        ((-1.0, -1.0), (1.0, 1.0)),
+        ((-1.0, 1.0), (1.0, np.inf)),
+        ((-1.0, 1.0), (0.0, 1.0)),
+    ],
+)
+def test_sun_direction_function_validation(cosines, factors) -> None:
+    with pytest.raises(ls.TrajectoryInputError) as captured:
+        SunDirectionFunction(cosines, factors)
+    assert captured.value.code == "trajectory_invalid_sun_direction_function"
+
+
+def test_sun_mobility_requires_complete_inputs(make_trajectory_georef) -> None:
+    problem, timeline = _problem_and_timeline(make_trajectory_georef)
+    with pytest.raises(ls.TrajectoryInputError) as captured:
+        compile_dynamic_travel_model(
+            problem,
+            timeline,
+            dem=_dem_for_problem(problem),
+        )
+    assert captured.value.code == "trajectory_incomplete_sun_mobility"
