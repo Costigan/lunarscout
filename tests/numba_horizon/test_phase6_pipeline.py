@@ -37,6 +37,9 @@ class _FakeStore:
             return Path(f"horizon_{tile_y}_{tile_x}.bin")
         return None
 
+    def list_existing_tiles(self, _observer):
+        return set(self.existing)
+
     def write(
         self,
         tile_y,
@@ -79,6 +82,48 @@ def test_patch_enumeration_retains_partial_right_and_bottom_edges() -> None:
     ]
     with pytest.raises(ValueError, match="even multiples"):
         enumerate_patches(300, 257, include_partial_edges=False)
+
+
+def test_list_existing_tiles_uses_directory_listing(tmp_path: Path) -> None:
+    store = HorizonTileStore(tmp_path)
+
+    assert store.list_existing_tiles(0.0) == set()
+
+    store.write(
+        0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True, valid_width=1, valid_height=1,
+    )
+    store.write(
+        128, 256, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=False, valid_width=1, valid_height=1,
+    )
+    store.write(
+        0, 128, 0.5, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True, valid_width=1, valid_height=1,
+    )
+    legacy = tmp_path / store.build_file_name(512, 0, 0.0, compress=True)
+    legacy.write_bytes(b"\0")
+
+    assert store.list_existing_tiles(0.0) == {(0, 0), (128, 256), (512, 0)}
+    assert store.list_existing_tiles(0.5) == {(0, 128)}
+    assert store.list_existing_tiles(1.0) == set()
+
+
+def test_list_existing_tiles_ignores_staging_and_unrelated_files(tmp_path: Path) -> None:
+    store = HorizonTileStore(tmp_path)
+    (tmp_path / "00000").mkdir()
+    (tmp_path / "00000" / "horizon_00000_00000_000.abcd1234.tmp.cbin").write_bytes(b"partial")
+    (tmp_path / "00000" / "notes.txt").write_bytes(b"x")
+
+    assert store.list_existing_tiles(0.0) == set()
+
+
+def test_list_existing_tiles_includes_incomplete_files(tmp_path: Path) -> None:
+    store = HorizonTileStore(tmp_path)
+    (tmp_path / "00000").mkdir()
+    (tmp_path / "00000" / "horizon_00000_00000_000.cbin").write_bytes(b"incomplete")
+
+    assert store.list_existing_tiles(0.0) == {(0, 0)}
 
 
 def test_store_uses_csharp_naming_precedence_and_structural_completion(tmp_path: Path) -> None:

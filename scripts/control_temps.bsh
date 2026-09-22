@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# The original defaults were PL1_WATT=200 and PL2_WATT=160 watts
+
+# Target limits in Watts
+PL1_WATT=35
+PL2_WATT=35
+
+# Convert Watts to microwatts
+PL1_UW=$((PL1_WATT * 1000000))
+PL2_UW=$((PL2_WATT * 1000000))
+
+RAPL_DIR="/sys/class/powercap/intel-rapl/intel-rapl:0"
+
+# Store original power limits
+ORIG_PL1=$(cat "$RAPL_DIR/constraint_0_power_limit_uw")
+ORIG_PL2=$(cat "$RAPL_DIR/constraint_1_power_limit_uw")
+
+# Function to restore original limits on exit
+cleanup() {
+    echo ""
+    echo "Restoring original power limits..."
+    echo "$ORIG_PL1" | sudo tee "$RAPL_DIR/constraint_0_power_limit_uw" > /dev/null
+    echo "$ORIG_PL2" | sudo tee "$RAPL_DIR/constraint_1_power_limit_uw" > /dev/null
+    echo "Restored PL1: $((ORIG_PL1 / 1000000))W, PL2: $((ORIG_PL2 / 1000000))W"
+}
+
+# Ensure original limits are restored even if killed with Ctrl+C
+trap cleanup EXIT
+
+echo "Applying temporary wattage cap: PL1=${PL1_WATT}W, PL2=${PL2_WATT}W..."
+echo "$PL1_UW" | sudo tee "$RAPL_DIR/constraint_0_power_limit_uw" > /dev/null
+echo "$PL2_UW" | sudo tee "$RAPL_DIR/constraint_1_power_limit_uw" > /dev/null
+
+echo "Running command: $@"
+"$@"

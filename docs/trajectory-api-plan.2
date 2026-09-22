@@ -1,0 +1,1000 @@
+# Trajectory Planning: Public API Design and Implementation Plan
+
+Status: design + plan (no implementation yet).  
+Date: 2026-08-16.
+
+This document records the current design decisions for the public-facing rover
+trajectory-planning API being added to Lunarscout and lays out the phased
+implementation plan.
+
+The broader problem-space discussion lives in:
+
+- `docs/trajectory-planning.md`
+- `docs/deepseek-trajectory-planning-review.txt`
+- `docs/gridrunner-summary.md`
+- `docs/old_code_gridrunner/`
+
+Only the public API is a compatibility promise. Internal module layout,
+compiled representations, block sizes, scheduler state, predecessor encoding,
+cache layout, CUDA data structures, and other implementation details may
+change. Names beginning with `_` are private.
+
+---
+
+## 1. Design principles
+
+### 1.1 Small number of planner families
+
+The trajectory subsystem should cover the main lunar rover mission-planning
+cases with a small number of reusable algorithm families rather than a separate
+planner for every combination of mission objective, environmental model, and
+rover execution model.
+
+The important axes are:
+
+1. mission objective:
+   - point-to-point travel;
+   - science-target / orienteering planning;
+2. environment model:
+   - static terrain;
+   - time-varying constraints such as sunlight and communications;
+   - time-varying constraints with explicit power / battery state;
+3. rover execution model:
+   - deterministic nominal behavior;
+   - uncertain performance;
+   - faults, delays, or degraded modes.
+
+The deterministic raster planners are the foundation. Stochastic performance
+and fault analysis should normally wrap or repeatedly invoke deterministic
+planning rather than require completely separate low-level raster engines.
+
+### 1.2 Separate problem concepts from engine representation
+
+The public API should expose physical and mission concepts:
+
+- traversability;
+- georeferencing;
+- terrain elevation;
+- travel-time models;
+- dynamic environmental constraints;
+- rover power state;
+- trajectories and costs.
+
+It should not expose implementation choices such as:
+
+- GPU block dimensions;
+- horizon-tile dimensions;
+- predecessor direction encodings;
+- integer epoch indices;
+- active-block queues;
+- CUDA kernel state layouts;
+- single-label versus multi-label internal storage.
+
+Those are private engine details.
+
+### 1.3 CPU reference implementations first
+
+Each major planner should have a deterministic CPU implementation suitable for
+unit tests and correctness oracles before introducing Numba or CUDA
+optimizations.
+
+### 1.3.1 Small problems for testing
+
+The GPU implementations are intended to support problems large enough
+for real mission design.  Some algorithms will not be able to execute
+on the CPU at that scale.  For developmenennt and oracle-based
+testing, we will define a small set of canonical problems that will be
+a single 128x128 pixel patch or a 3x3 grid of 128x128 pixel patches
+containing synthetic data.
+
+In addition to standard pytest-based testing that uses these synthetic
+examples, we will have a second level of testing using real DEMs.
+These will be called 'examples' rather than tests and won't be run
+during normal testing, but we will be able to compare results for
+these examples against what was expected.
+
+### 1.4 Static and dynamic factors remain conceptually separate
+
+Static terrain factors and dynamic environmental factors are distinct even when
+a planner ultimately consumes a combined configuration-space representation.
+
+The intended dynamic implementation may maintain separate caches for:
+
+- static terrain tiles;
+- dynamic environment tiles;
+- combined configuration-space tiles.
+
+That cache decomposition remains behind the configuration-space provider and is
+not part of the public compatibility contract.
+
+---
+
+## 2. Data contract
+
+### 2.1 Grid and validity
+
+Trajectory operations use ordinary NumPy arrays plus a `GeoReference`, matching
+existing Lunarscout conventions.
+
+Typical inputs are:
+
+- `traversable`: `np.ndarray` of shape `(height, width)`, boolean or integer;
+  true / non-zero means the rover may occupy the cell;
+- `georef`: `ls.GeoReference` describing the grid;
+- `valid`: optional boolean array of the same shape; false cells are treated as
+  unavailable regardless of payload values;
+- `elevation`: optional co-registered elevation raster when the travel model
+  depends on signed slope.
+
+Grid compatibility is never inferred from array shape alone. Co-registered
+inputs must correspond to the same `GeoReference` grid.
+
+Payload zeros and NaNs are not used as implicit validity sentinels unless a
+specific API explicitly defines them that way.
+
+### 2.2 Coordinates
+
+Raster locations are represented internally and in low-level public APIs as
+integer pixel coordinates:
+
+```python
+(x, y)
+```
+
+where `x` is column and `y` is row.
+
+Public planning functions also accept `LonLat` as a convenience. Conversion to
+pixel coordinates uses the supplied `GeoReference`; resulting cells are
+validated for bounds, validity, and traversability.
+
+### 2.3 Time
+
+Static planning has no time coordinate.
+
+Dynamic public APIs use UTC-aware datetimes or an explicit Lunarscout time-axis
+object. Public provider interfaces do not expose integer epoch numbers.
+
+The planner may internally map times to integer epochs for efficient execution.
+The current mission-analysis convention of approximately two-hour environment
+sampling is an implementation/configuration choice, not a permanent public API
+constraint.
+
+### 2.4 Distances and units
+
+All travel distances are physical projected-plane distances derived from the
+`GeoReference` affine transform so rotated, skewed, and anisotropic grids are
+handled correctly.
+
+Travel costs are expressed as physical travel time in hours unless an API
+explicitly states otherwise.
+
+A* heuristics must remain admissible under the selected travel model.
+
+---
+
+## 3. Static mobility model
+
+### 3.1 Physical factors
+
+For the intended near-term rover models, short-term achievable rover speed may
+depend on:
+
+- signed terrain slope in the direction of travel;
+- rover velocity direction relative to the Sun vector;
+- estimated hazard frequency or hazard burden.
+
+Orbital DEM roughness is not treated as a useful proxy for hazard frequency and
+is not part of the baseline model.
+
+Additional mobility factors may be added later if justified by rover design or
+terrain knowledge.
+
+### 3.2 `SlipFunction`
+
+`SlipFunction` is retained as the public name for the slope-dependent mobility
+component.
+
+Slip is a function of signed along-track slope, not raw elevation difference.
+The same elevation change over different horizontal distances must not imply the
+same mobility effect.
+
+Conceptually:
+
+```python
+signed_slope = (z_to - z_from) / horizontal_distance
+```
+
+The initial interface is:
+
+```python
+@dataclass(frozen=True)
+class SlipFunction:
+    def factor(self, signed_slope: float) -> float:
+        """Return a multiplicative travel-time factor for signed slope."""
+```
+
+Positive slope denotes uphill travel and negative slope downhill travel.
+
+The exact parameterization of the function remains an implementation/design
+question. A piecewise-linear representation is expected initially.
+
+### 3.3 `StaticTravelModel`
+
+The static travel model represents the physical travel-time calculation used by
+static point-to-point planning and static travel-time fields.
+
+Initial form:
+
+```python
+@dataclass(frozen=True)
+class StaticTravelModel:
+    speed_m_per_h: float = 36.0
+    include_diagonals: bool = True
+    slip: SlipFunction | None = None
+```
+
+For a move from one neighboring raster cell to another:
+
+```text
+base_time = physical_step_distance / speed_m_per_h
+travel_time = base_time * slip.factor(signed_slope)
+```
+
+when a slip function is present.
+
+The public model should remain extensible enough to incorporate additional
+spatial mobility factors later, especially hazard-frequency estimates, without
+requiring users to replace the planner.
+
+Arbitrary Python per-cell callbacks should be avoided in the hot-path API
+because they are difficult to support efficiently in Numba and CUDA.
+Built-in model objects should instead be compilable into arrays, constants, or
+specialized kernels.
+
+---
+
+## 4. Static planning API
+
+### 4.1 Namespace
+
+Trajectory functionality lives under:
+
+```python
+import lunarscout as ls
+
+ls.trajectory
+```
+
+The initial public functions are accessed through the subpackage rather than
+re-exported from the package root.
+
+Importing `lunarscout.trajectory` must not:
+
+- initialize CUDA;
+- import Numba unnecessarily;
+- load SPICE kernels;
+- open rasters;
+- perform network access.
+
+### 4.2 Path results
+
+The normal public point-to-point result contains only mission-relevant output,
+not search-engine state.
+
+```python
+@dataclass(frozen=True)
+class PathResult:
+    reachable: bool
+    travel_time_hours: float | None
+    path: NDArray[np.int64] | None
+```
+
+`path` has shape `(N, 2)` and contains `[x, y]` raster cells from start to goal.
+
+If the goal is valid but unreachable:
+
+```python
+reachable == False
+travel_time_hours is None
+path is None
+```
+
+Predecessor arrays, direction encodings, queue state, and label state are
+private implementation details and are not part of `PathResult`.
+
+### 4.3 Static travel-time fields
+
+A pure Boolean reachability flood is not useful enough for mission planning to
+justify being the primary static all-destinations API.
+
+The useful operation is a minimum-travel-time field from one origin.
+
+```python
+@dataclass(frozen=True)
+class TravelTimeResult:
+    travel_time_hours: NDArray[np.float64]
+    reached: NDArray[np.bool_]
+    start: tuple[int, int]
+```
+
+Unreached cells should contain a documented sentinel, preferably `np.inf`, in
+`travel_time_hours`.
+
+The initial function is:
+
+```python
+def static_travel_time(
+    traversable: NDArray[Any],
+    georef: GeoReference,
+    start: tuple[int, int] | LonLat,
+    *,
+    valid: NDArray[np.bool_] | None = None,
+    elevation: NDArray[Any] | None = None,
+    model: StaticTravelModel | None = None,
+) -> TravelTimeResult:
+    """Return minimum static travel time from start to every reachable cell."""
+```
+
+This is conceptually a single-source shortest-path computation, typically
+Dijkstra or an equivalent label-correcting implementation.
+
+It is useful for:
+
+- static mission accessibility analysis;
+- target-to-target travel-time precomputation;
+- reverse heuristic fields;
+- validating block-parallel implementations;
+- supporting later orienteering planners.
+
+A separate Boolean-only reachability function may be added later if a concrete
+use case appears, but it is not required for Phase 1.
+
+### 4.4 Static point-to-point path
+
+```python
+def static_path(
+    traversable: NDArray[Any],
+    georef: GeoReference,
+    start: tuple[int, int] | LonLat,
+    goal: tuple[int, int] | LonLat,
+    *,
+    valid: NDArray[np.bool_] | None = None,
+    elevation: NDArray[Any] | None = None,
+    model: StaticTravelModel | None = None,
+) -> PathResult:
+    """Return the minimum-travel-time static path from start to goal."""
+```
+
+The normal implementation is A*.
+
+`elevation` is required when the selected travel model requires slope.
+
+The heuristic is based on an optimistic physical travel-time lower bound. For a
+constant nominal maximum speed this is:
+
+```text
+affine-aware physical distance to goal / maximum possible rover speed
+```
+
+If the slip model can reduce travel time below the nominal base value, the
+heuristic must account for the minimum possible slip factor.
+
+### 4.5 Search diagnostics
+
+Search internals are deliberately omitted from the normal result types.
+
+If later debugging or research workflows require predecessor fields, expanded
+node counts, frontier statistics, or block-activation histories, expose those
+through a separate diagnostic API or optional diagnostic result object rather
+than extending `PathResult` with engine-specific fields.
+
+---
+
+## 5. Dynamic environment provider architecture
+
+The dynamic planners require environmental information that changes with time.
+The public interfaces should describe spatial and temporal data requirements
+without exposing the planner's internal tiling or epoch representation.
+
+### 5.1 General provider rule
+
+Public providers should accept physical/public coordinates and UTC times or
+requested raster windows.
+
+They should not require callers to know:
+
+- internal GPU block dimensions;
+- horizon tile dimensions;
+- cache tile dimensions;
+- integer epoch indices;
+- internal padding rules.
+
+The engine is free to adapt these providers to whichever block shape is most
+efficient for CPU or GPU execution.
+
+### 5.2 `SunVectorProvider`
+
+A single Sun-vector abstraction isolates trajectory planning from direct SPICE
+usage.
+
+Conceptually:
+
+```python
+class SunVectorProvider:
+    def vectors(
+        self,
+        times: TimeRange | Iterable[datetime],
+    ) -> NDArray[np.float64]:
+        """Return Moon-ME Sun vectors in meters with shape (time, 3)."""
+```
+
+A standard Lunarscout implementation may use the existing SPICE-backed body
+vector machinery and cache results.
+
+Callers may provide explicit vectors instead.
+
+The trajectory layer itself does not call SpiceyPy directly.
+
+### 5.3 `SunlightProvider`
+
+A sunlight provider supplies solar illumination or solar fraction over a
+requested raster region and time.
+
+Conceptually:
+
+```python
+class SunlightProvider:
+    def read(
+        self,
+        x0: int,
+        y0: int,
+        width: int,
+        height: int,
+        time: datetime,
+    ) -> NDArray[np.uint8]:
+        """Return solar fraction bytes for the requested raster window."""
+```
+
+A built-in implementation may generate the requested values from precomputed
+horizons plus Sun vectors and may internally cache horizon-sized or
+planner-sized tiles.
+
+Horizons are currently a required precomputed input. Horizon generation is not
+a hidden side effect of trajectory planning.
+
+### 5.4 Earth communications provider
+
+Communications visibility is kept distinct from sunlight.
+
+The provider should expose a physical quantity or a clearly defined Boolean
+availability state, but threshold ownership must not be ambiguous.
+
+Preferred initial design:
+
+```python
+class EarthElevationProvider:
+    def read(
+        self,
+        x0: int,
+        y0: int,
+        width: int,
+        height: int,
+        time: datetime,
+    ) -> NDArray[np.float32]:
+        """Return Earth elevation above local terrain horizon in degrees."""
+```
+
+A higher-level configuration-space model may then apply a requirement such as:
+
+```text
+Earth elevation > 2 degrees
+```
+
+This keeps thresholding policy separate from the underlying environmental
+quantity.
+
+### 5.5 `ConfigurationSpaceProvider`
+
+`ConfigurationSpaceProvider` is a general abstraction for the dynamic
+planner's occupancy constraints, not a public synonym for "sun threshold AND
+communications threshold".
+
+Conceptually:
+
+```python
+class ConfigurationSpaceProvider:
+    def read(
+        self,
+        x0: int,
+        y0: int,
+        width: int,
+        height: int,
+        time: datetime,
+    ) -> NDArray[np.bool_]:
+        """Return whether the rover may occupy each requested cell at time."""
+```
+
+A standard Lunarscout implementation may combine:
+
+- static traversability;
+- sunlight constraints;
+- Earth communications constraints;
+- temporary exclusions;
+- other mission-specific occupancy rules.
+
+Internally, it may maintain separate LRU caches for static tiles, dynamic tiles,
+and combined configuration-space tiles.
+
+Those cache structures, tile dimensions, and keys are private implementation
+details.
+
+---
+
+## 6. Dynamic travel-time model
+
+### 6.1 Required physical factors
+
+Dynamic short-term travel time may depend on:
+
+- signed terrain slope;
+- rover velocity vector relative to the Sun vector;
+- estimated hazard frequency;
+- additional future rover-specific factors if justified.
+
+The public conceptual model must not assume that eight direction costs are
+constant across an entire map or that they are indexed only by an integer
+epoch.
+
+### 6.2 Public conceptual interface
+
+The conceptual operation is equivalent to:
+
+```python
+travel_time(
+    x: int,
+    y: int,
+    dx: int,
+    dy: int,
+    time: datetime,
+) -> float
+```
+
+but this does not imply that Python callbacks are executed per rover step.
+
+Built-in travel models should be compiled or transformed into efficient arrays,
+tables, or specialized kernels before entering the hot loop.
+
+For a sufficiently small planning region or a rover model where spatial
+variation is negligible, an implementation may optimize the model to eight
+per-time direction values. That representation is private and is not the
+public provider contract.
+
+### 6.3 Hazard frequency
+
+Hazard frequency should be modeled explicitly when estimates are available.
+DEM roughness is not substituted for hazard frequency.
+
+The initial API should leave room for a co-registered hazard-frequency or
+hazard-penalty raster or another built-in spatial model, even if Phase 1 does
+not yet use such data.
+
+---
+
+## 7. Dynamic point-to-point planning
+
+Dynamic planning handles traverses whose feasibility or travel time changes
+while the rover is moving.
+
+Trips may span many environmental samples; they must not be collapsed into a
+single target-to-target edge associated with one epoch.
+
+### 7.1 Dynamic planning without explicit battery state
+
+The state is approximately:
+
+```text
+(x, y, time)
+```
+
+Typical dynamic constraints include:
+
+- sunlight;
+- communications;
+- temporary exclusion zones.
+
+The intended algorithm family is the GridRunner-derived hierarchical,
+A*-guided, block-parallel label-correcting propagation engine.
+
+### 7.2 Dynamic planning with battery state
+
+The state becomes approximately:
+
+```text
+(x, y, time, SOC)
+```
+
+The physics model adds:
+
+- drive power;
+- stationary power;
+- solar generation;
+- battery capacity;
+- minimum allowable SOC;
+- charging;
+- waiting.
+
+The exact dominance representation remains an open correctness issue. The
+initial implementation may begin with a greedy single-label approximation, but
+the engine must permit replacement by a small nondominated label set if tests
+show that one label can incorrectly discard feasible routes.
+
+### 7.3 Dynamic result types
+
+Dynamic planners are not required to return the same result type as static
+planners.
+
+A dynamic trajectory naturally carries information such as:
+
+- position;
+- UTC arrival time;
+- waiting intervals;
+- battery SOC;
+- possibly rover mode or other state.
+
+The dynamic result API is therefore deferred until the state-space and power
+semantics are pinned.
+
+No compatibility promise is made that dynamic paths will be represented simply
+as an `(N, 2)` pixel array.
+
+---
+
+## 8. Engine architecture
+
+The intended implementation retains the central GridRunner-derived design:
+
+```text
+one relaxation engine
+    x scheduler
+    x physics bundle
+```
+
+### 8.1 Generic scheduler / loop skeleton
+
+The generic implementation owns:
+
+- active-region scheduling;
+- local relaxation to quiescence;
+- boundary-change detection;
+- reactivation of affected neighboring regions;
+- optional A*-style optimistic ordering;
+- termination policy.
+
+The scheduler should not know the full physical meaning of a state.
+
+### 8.2 Specialized physics bundles
+
+Physics-specific code owns:
+
+- state representation;
+- unoccupied / invalid state representation;
+- dominance rule;
+- move transition;
+- wait / charge transition where applicable;
+- goal test;
+- projection used for scheduler priority.
+
+Expected variants include:
+
+1. static travel time;
+2. dynamic space-time travel;
+3. dynamic space-time + SOC.
+
+### 8.3 Block geometry is private
+
+No public API fixes a block size.
+
+The CPU and GPU implementations may select different region dimensions based on:
+
+- shared-memory limits;
+- occupancy;
+- register pressure;
+- cache behavior;
+- terrain dimensions;
+- hardware capabilities.
+
+The current 128x128 horizon-tile organization does not constrain trajectory
+planner block dimensions.
+
+### 8.4 A*-guided batch scheduling
+
+The dynamic GPU algorithm may process the best `N` active blocks or regions in
+parallel.
+
+A useful optimistic priority is:
+
+```text
+priority(P) = g(P) + h(P)
+```
+
+where `h(P)` is an admissible lower bound such as affine-aware distance to the
+goal divided by maximum possible speed, or a stronger precomputed terrain-only
+reverse travel-time field.
+
+Block reactivation must remain possible after a block has previously been
+processed.
+
+Running the label-correcting process to exhaustion should preserve the intended
+correctness of the underlying state/dominance model. Optional early termination
+may deliberately trade correctness or optimality for speed and must be exposed
+as such.
+
+---
+
+## 9. Future science-target / orienteering API
+
+Science-target planning remains a separate high-level algorithm family built on
+raster travel planners.
+
+Targets have types and each type has a monotonically increasing,
+diminishing-marginal-value function:
+
+```text
+V_k(n)
+```
+
+The marginal value of another target of type `k` is:
+
+```text
+V_k(n + 1) - V_k(n)
+```
+
+For static terrain, terrain-aware target-to-target costs can be generated using
+`static_path` or `static_travel_time` and then supplied to an orienteering
+solver.
+
+Likely practical solver families include:
+
+- large-neighborhood search;
+- iterated local search;
+- insertion/removal/swap/2-opt heuristics;
+- bounded exact solvers for small validation problems.
+
+The public orienteering API is intentionally deferred until the point-to-point
+trajectory contracts are stable.
+
+---
+
+## 10. Stochastic performance and faults
+
+Performance variation and faults are treated primarily as a simulation/policy
+layer above deterministic trajectory planning.
+
+### 10.1 Fixed-route robustness evaluation
+
+A nominal route may be executed repeatedly under sampled variations in:
+
+- rover speed;
+- power consumption;
+- solar conversion;
+- slip;
+- delays;
+- faults or degraded modes.
+
+Useful metrics include:
+
+- probability of reaching the goal;
+- arrival-time distribution;
+- probability of violating minimum SOC;
+- expected energy margin;
+- lower-tail mission performance.
+
+### 10.2 Adaptive replanning
+
+When faults or deviations materially change future rover capability, use a
+receding-horizon policy:
+
+1. observe the actual rover state;
+2. update the rover/environment model;
+3. invoke the appropriate deterministic planner;
+4. execute part of the plan;
+5. realize variation or fault events;
+6. repeat.
+
+Deterministic simulation should support reproducible counter-based random
+sampling for large ensembles.
+
+---
+
+## 11. Error taxonomy
+
+Add trajectory-specific exceptions to `src/lunarscout/errors.py` following
+existing Lunarscout conventions.
+
+Proposed hierarchy:
+
+- `TrajectoryError(LunarscoutError)`
+  - base trajectory-domain exception;
+  - `code="trajectory_error"`;
+- `TrajectoryInputError(InputError)`
+  - invalid trajectory arguments;
+  - `code="trajectory_input_error"`;
+- `PlanningError(TrajectoryError)`
+  - planner execution failure;
+  - `code="planning_error"`;
+- `NoPathError(PlanningError)`
+  - reserved for APIs or modes that explicitly require success;
+  - `code="no_path"`;
+- `ConfigurationSpaceError(TrajectoryError)`
+  - failure obtaining or combining dynamic occupancy data;
+  - `code="configuration_space_error"`.
+
+Normal inability to reach a valid goal is represented by the result object and
+is not an exception.
+
+---
+
+## 12. Implementation plan
+
+Each phase should be independently testable and shippable.
+
+### Phase 0 -- Foundation
+
+- Add trajectory exception types.
+- Create `src/lunarscout/trajectory/` with lazy imports.
+- Ensure importing the subpackage initializes neither CUDA nor SPICE.
+- Add dependency-boundary tests.
+
+### Phase 1 -- Static CPU reference planners
+
+Implement:
+
+- `SlipFunction` using signed slope;
+- `StaticTravelModel`;
+- affine-aware neighbor geometry;
+- `static_travel_time` using Dijkstra or equivalent;
+- `static_path` using A*;
+- `PathResult`;
+- `TravelTimeResult`.
+
+Do not expose predecessor fields publicly.
+
+Tests should include:
+
+- all-traversable grids;
+- barriers and unreachable goals;
+- diagonal versus orthogonal physical distances;
+- signed uphill/downhill slope behavior;
+- resolution independence of slope-based slip;
+- rotated and anisotropic affine transforms;
+- invalid and non-traversable start/goal cells;
+- shape/grid mismatch;
+- non-finite model parameters;
+- deterministic tie behavior where relevant;
+- comparison of A* result cost against the corresponding Dijkstra travel-time
+  field.
+
+Add a synthetic CPU-only example to `examples/` and document the API in
+`docs/USER_GUIDE.md`.
+
+### Phase 2 -- Numba CPU block engine
+
+- Introduce private region/block decomposition.
+- Port the relaxation engine to Numba CPU.
+- Implement active-region tracking and neighbor reactivation.
+- Permit block dimensions to be selected by the implementation.
+- Require exact parity with the Phase-1 CPU reference for deterministic static
+  cases.
+
+### Phase 3 -- Dynamic space-time planning without SOC
+
+Implement:
+
+- `SunVectorProvider`;
+- window/time-based `SunlightProvider`;
+- Earth elevation / communications provider;
+- general `ConfigurationSpaceProvider`;
+- separate private caching of static, dynamic, and combined c-space data;
+- dynamic travel-time model;
+- space-time physics bundle;
+- UTC/public-time to internal-epoch mapping;
+- dynamic point-to-point planner.
+
+Tests use explicit vectors and synthetic horizon/environment data so ordinary
+tests do not require SPICE or CUDA.
+
+### Phase 4 -- Battery / SOC physics
+
+Add:
+
+- battery capacity;
+- minimum SOC;
+- drive consumption;
+- stationary consumption;
+- solar generation;
+- wait/charge transitions;
+- SOC-aware trajectory state;
+- initial dominance rule;
+- targeted tests demonstrating whether the single-label approximation is
+  adequate.
+
+If required, replace single-label storage with a bounded nondominated state set.
+
+### Phase 5 -- CUDA block engine
+
+- Port relaxation kernels to Numba CUDA.
+- Select block geometry according to GPU constraints rather than horizon-tile
+  dimensions.
+- Implement A*-guided batched active-region scheduling.
+- Preserve region reactivation.
+- Compare against CPU reference implementations on deterministic cases.
+- Gate hardware-required tests behind the existing CUDA test conventions.
+
+### Phase 6 -- Static science-target planning
+
+- Define public target and reward data structures.
+- Use static travel-time/path planning to build target graphs.
+- Implement a practical heuristic orienteering solver.
+- Add a small exact/bounded reference solver only as a development/test tool or
+  optional dependency if useful.
+
+### Phase 7 -- Ensemble simulation and adaptive replanning
+
+- Deterministic replay with counter-based random sampling.
+- Fixed-route Monte Carlo robustness evaluation.
+- Fault and degraded-mode models.
+- Receding-horizon replanning.
+- Large CPU/GPU ensemble execution as appropriate.
+
+---
+
+## 13. Open questions
+
+The following remain intentionally unresolved:
+
+1. exact parameterization and interpolation rules for `SlipFunction`;
+2. representation of hazard-frequency effects in the travel model;
+3. exact public dynamic trajectory/result structure;
+4. space-time discretization details, including move duration across dynamic
+   sampling boundaries and wait semantics;
+5. SOC dominance: greedy single label versus a bounded nondominated set;
+6. dynamic travel-model compilation strategy for CPU and CUDA;
+7. scheduler batch size and GPU block geometry;
+8. whether later diagnostic APIs should expose optional search fields or
+   statistics;
+9. eventual public target/orienteering API.
+
+---
+
+## 14. Current compatibility boundary
+
+The first compatibility promise should be deliberately small.
+
+Phase 1 should commit only to:
+
+- `ls.trajectory` namespace;
+- array + `GeoReference` input conventions;
+- `LonLat` convenience coordinates;
+- `SlipFunction` semantics based on signed slope;
+- `StaticTravelModel`;
+- `static_travel_time`;
+- `static_path`;
+- `TravelTimeResult`;
+- `PathResult`;
+- trajectory exception types.
+
+The following explicitly remain private and changeable:
+
+- predecessor storage;
+- neighbor-direction encoding;
+- block dimensions;
+- scheduler implementation;
+- cache tiling;
+- dynamic epoch indexing;
+- Numba/CUDA state layouts;
+- dynamic trajectory representation;
+- SOC label representation.
+
+This keeps the initial user-facing API centered on mission-planning concepts
+while leaving the implementation free to evolve as the GridRunner-derived CPU
+and GPU planners are developed.

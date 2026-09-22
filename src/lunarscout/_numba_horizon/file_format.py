@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 import struct
 import threading
 import time
@@ -26,6 +27,9 @@ _ELEVATION_SCALE = np.float32(50.0) / np.float32(32767.0)
 _COMPILED_ENCODER = None
 _COMPILED_DECODER = None
 _COMPILED_DECODER_LOCK = threading.Lock()
+
+_TILE_FILE_PATTERN = re.compile(r"\Ahorizon_(\d{5})_(\d{5})_(\d{3})\.(?:cbin|bin)\Z")
+_TILE_DIRECTORY_PATTERN = re.compile(r"\A\d{5}\Z")
 
 
 @dataclass(frozen=True, slots=True)
@@ -367,6 +371,53 @@ class HorizonTileStore:
             if path.is_file() and (not require_complete or self.is_complete(path)):
                 return path
         return None
+
+    def list_existing_tiles(
+        self, observer_elevation_m: float
+    ) -> set[tuple[int, int]]:
+        """Return ``(tile_y, tile_x)`` coordinates for existing horizon files.
+
+        The set is built from directory listings rather than per-tile ``stat``
+        probes so resume decisions stay cheap on latency-sensitive filesystems
+        such as Ceph.  Only files whose elevation field matches
+        ``observer_elevation_m`` are returned, and structural completeness is
+        not validated here; callers that must distinguish complete from corrupt
+        tiles should inspect them separately.
+        """
+        elevation = self._elevation_decimeters(observer_elevation_m)
+        existing: set[tuple[int, int]] = set()
+
+        def add_matching(names: list[str]) -> None:
+            for name in names:
+                match = _TILE_FILE_PATTERN.match(name)
+                if match is None:
+                    continue
+                tile_y = int(match.group(1))
+                tile_x = int(match.group(2))
+                if int(match.group(3)) == elevation:
+                    existing.add((tile_y, tile_x))
+
+        try:
+            root_entries = os.scandir(self.root)
+        except OSError:
+            return existing
+        with root_entries:
+            legacy_names: list[str] = []
+            subdirectories: list[str] = []
+            for entry in root_entries:
+                name = entry.name
+                if _TILE_FILE_PATTERN.match(name):
+                    legacy_names.append(name)
+                elif _TILE_DIRECTORY_PATTERN.match(name):
+                    subdirectories.append(name)
+        add_matching(legacy_names)
+        for directory in subdirectories:
+            try:
+                with os.scandir(self.root / directory) as entries:
+                    add_matching([entry.name for entry in entries])
+            except OSError:
+                continue
+        return existing
 
     def read(
         self, tile_y: int, tile_x: int, observer_elevation_m: float

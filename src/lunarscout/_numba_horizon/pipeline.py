@@ -159,14 +159,14 @@ def run_bounded_pipeline(
 
     pending = []
     skipped = 0
+    existing_tiles = (
+        store.list_existing_tiles(observer_elevation_m) if skip_existing else None
+    )
     for patch in patches:
-        existing = store.find_existing_path(
-            patch.tile_y, patch.tile_x, observer_elevation_m
-        ) if skip_existing else None
-        if existing is None:
-            pending.append(patch)
-        else:
+        if existing_tiles is not None and (patch.tile_y, patch.tile_x) in existing_tiles:
             skipped += 1
+        else:
+            pending.append(patch)
 
     progress_lock = threading.Lock()
     processed = 0

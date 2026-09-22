@@ -1,0 +1,36 @@
+Lunarscout — Typical Use Cases
+Terrain & Raster Analysis
+- Read/write single-band GeoTIFFs with explicit GeoReference metadata.
+- Compute terrain slope, aspect, and hillshade from an elevation raster.
+- Compare grids (same_grid/require_same_grid) and resample/align rasters between grids.
+- Convert between raster pixel, projected, and lunar lon/lat coordinates.
+Region & Candidate Screening
+- Label, measure, and filter connected regions (size thresholds, 4/8 connectivity).
+- Extract region borders and apply morphological opening for landing-site candidate masks.
+- Screen sites by combining slope + illumination thresholds and rejecting small/disconnected regions.
+Temporal Data
+- Build in-memory (time, y, x) temporal cubes with UTC coordinates.
+- Store/stream file-backed timestamped GeoTIFF series (writer/reader) without full-cube materialization.
+- Compute streaming temporal reductions (mean, min, max, std) over cubes or file-backed series.
+Celestial Geometry (SPICE)
+- Compute Sun/Earth local-frame (NED) vector histories and azimuth/elevation angles.
+- Obtain body elevation over terrain horizon for a point/time series.
+- Plot body elevation, body paths, limbs, and zoomed paths against horizons.
+Horizons & Lighting Products
+- Generate CUDA-accelerated terrain horizon tiles from primary + surrounding DEMs.
+- Read stored .bin/.cbin horizon tiles for individual pixels/patches.
+- Generate time-series lightmaps (visible solar fraction), permanent-shadow (PSR) maps, Sun/Earth terrain-relative elevation, and safe-haven maps.
+- Generate landed mission-duration products (sunlight, Sun-elevation, and Sun/Earth combinations).
+Mission / Mobility Planning
+- Static path planning: Dijkstra travel-time fields, A* paths with slope/slip models.
+- Dynamic planning under interval occupancy (earliest-arrival paths).
+- Battery-aware (state-of-charge) path planning with solar/battery/rover power models.
+Map Algebra
+- Eager Raster operations with explicit validity masks, units, dtype, and numeric policies (checked overflow, casts, non-finite handling).
+- Lazy RasterExpression graphs with explain/plan/compute/bounded write.
+- Temporal map algebra over file-backed series.
+- Weighted suitability scoring, focal operations, distance, and morphological cleanup.
+Scenario/Workflow Organization
+- Scenario facade for filesystem-safe paths and product conveniences (dem.tif, horizons/, outputs).
+- Resumable, cancellable, overwrite-safe long-running product jobs with progress callbacks.
+- Map-product catalog loading/search and scenario-name sanitization for downloads.
