@@ -126,6 +126,59 @@ def test_list_existing_tiles_includes_incomplete_files(tmp_path: Path) -> None:
     assert store.list_existing_tiles(0.0) == {(0, 0)}
 
 
+def test_inventory_tiles_returns_file_metadata(tmp_path: Path) -> None:
+    store = HorizonTileStore(tmp_path)
+    path = store.write(
+        0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True, valid_width=1, valid_height=1,
+    )
+
+    inventory = store.inventory_tiles(0.0)
+
+    assert set(inventory) == {(0, 0)}
+    entry = inventory[(0, 0)]
+    assert entry.tile_y == 0
+    assert entry.tile_x == 0
+    assert entry.path == path
+    assert entry.size_bytes == path.stat().st_size
+    assert entry.mtime_ns == path.stat().st_mtime_ns
+
+
+def test_inventory_tiles_applies_find_existing_path_precedence(
+    tmp_path: Path,
+) -> None:
+    store = HorizonTileStore(tmp_path)
+    subdir = tmp_path / "00128"
+    subdir.mkdir()
+    legacy_cbin = tmp_path / "horizon_00128_00256_000.cbin"
+    partitioned_cbin = subdir / "horizon_00128_00256_000.cbin"
+    partitioned_bin = subdir / "horizon_00128_00256_000.bin"
+    legacy_cbin.write_bytes(b"legacy")
+    partitioned_cbin.write_bytes(b"partitioned-cbin")
+    partitioned_bin.write_bytes(b"partitioned-bin")
+
+    inventory = store.inventory_tiles(0.0)
+
+    assert set(inventory) == {(128, 256)}
+    assert inventory[(128, 256)].path == partitioned_cbin
+    assert store.find_existing_path(128, 256, 0.0, require_complete=False) == partitioned_cbin
+
+
+def test_inventory_tiles_filters_by_elevation_and_ignores_junk(
+    tmp_path: Path,
+) -> None:
+    store = HorizonTileStore(tmp_path)
+    (tmp_path / "00000").mkdir()
+    (tmp_path / "00000" / "horizon_00000_00000_000.cbin").write_bytes(b"elev0")
+    (tmp_path / "00000" / "horizon_00000_00000_005.cbin").write_bytes(b"elev5")
+    (tmp_path / "00000" / "horizon_00000_00000_000.abcd1234.tmp.cbin").write_bytes(b"tmp")
+
+    assert set(store.inventory_tiles(0.0)) == {(0, 0)}
+    assert set(store.inventory_tiles(0.5)) == {(0, 0)}
+    assert set(store.inventory_tiles(1.0)) == set()
+
+
+
 def test_store_uses_csharp_naming_precedence_and_structural_completion(tmp_path: Path) -> None:
     store = HorizonTileStore(tmp_path)
     partitioned_raw = store.build_path(128, 256, 0.59, compress=False)

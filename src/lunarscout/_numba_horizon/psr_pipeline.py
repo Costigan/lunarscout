@@ -99,22 +99,20 @@ def _inventory_identity(
     observer_elevation_m: float,
 ) -> str:
     """Fingerprint the bounded input inventory without rereading every payload."""
+    tiles = store.inventory_tiles(observer_elevation_m)
     records = []
     for patch in patches:
-        path = store.find_existing_path(
-            patch.tile_y, patch.tile_x, observer_elevation_m
-        )
-        if path is None:
+        entry = tiles.get((patch.tile_y, patch.tile_x))
+        if entry is None:
             records.append((patch.tile_y, patch.tile_x, None))
         else:
-            stat = path.stat()
             records.append(
                 (
                     patch.tile_y,
                     patch.tile_x,
-                    str(path.resolve()),
-                    int(stat.st_size),
-                    int(stat.st_mtime_ns),
+                    str(entry.path.resolve()),
+                    int(entry.size_bytes),
+                    int(entry.mtime_ns),
                 )
             )
     payload = json.dumps(records, separators=(",", ":"), ensure_ascii=True).encode(
@@ -350,7 +348,10 @@ def run_psr_product(
         lookup_started = time.perf_counter()
         try:
             horizon_path = horizon_store.find_existing_path(
-                patch.tile_y, patch.tile_x, observer_elevation_m
+                patch.tile_y,
+                patch.tile_x,
+                observer_elevation_m,
+                require_complete=False,
             )
         except (OSError, ValueError):
             horizon_path = None

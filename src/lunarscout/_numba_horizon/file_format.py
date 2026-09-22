@@ -28,7 +28,7 @@ _COMPILED_ENCODER = None
 _COMPILED_DECODER = None
 _COMPILED_DECODER_LOCK = threading.Lock()
 
-_TILE_FILE_PATTERN = re.compile(r"\Ahorizon_(\d{5})_(\d{5})_(\d{3})\.(?:cbin|bin)\Z")
+_TILE_FILE_PATTERN = re.compile(r"\Ahorizon_(\d{5})_(\d{5})_(\d{3})\.(cbin|bin)\Z")
 _TILE_DIRECTORY_PATTERN = re.compile(r"\A\d{5}\Z")
 
 
@@ -284,6 +284,17 @@ def read_horizon_tile(path: str | Path) -> npt.NDArray[np.float32]:
     return values
 
 
+@dataclass(frozen=True, slots=True)
+class HorizonTileEntry:
+    """Metadata for one horizon tile discovered by a directory walk."""
+
+    tile_y: int
+    tile_x: int
+    path: Path
+    size_bytes: int
+    mtime_ns: int
+
+
 class HorizonTileStore:
     """Private Python equivalent of the production C# ``HorizonTileStore``."""
 
@@ -372,52 +383,79 @@ class HorizonTileStore:
                 return path
         return None
 
-    def list_existing_tiles(
+    def inventory_tiles(
         self, observer_elevation_m: float
-    ) -> set[tuple[int, int]]:
-        """Return ``(tile_y, tile_x)`` coordinates for existing horizon files.
+    ) -> dict[tuple[int, int], HorizonTileEntry]:
+        """Enumerate existing horizon tiles with their file metadata.
 
-        The set is built from directory listings rather than per-tile ``stat``
-        probes so resume decisions stay cheap on latency-sensitive filesystems
-        such as Ceph.  Only files whose elevation field matches
-        ``observer_elevation_m`` are returned, and structural completeness is
-        not validated here; callers that must distinguish complete from corrupt
-        tiles should inspect them separately.
+        Builds the inventory from directory listings rather than per-tile
+        ``stat`` probes, so callers that touch every horizon tile (resume
+        skips, product inventories, and similar whole-dataset passes) stay
+        cheap on latency-sensitive filesystems such as Ceph.  Only files whose
+        elevation field matches ``observer_elevation_m`` are returned, and
+        structural completeness is not validated here; callers that must
+        distinguish complete from corrupt tiles should inspect them separately.
+
+        Precedence mirrors :meth:`find_existing_path`: partitioned tiles win
+        over legacy flat files, and compressed ``.cbin`` wins over raw
+        ``.bin``.
         """
         elevation = self._elevation_decimeters(observer_elevation_m)
-        existing: set[tuple[int, int]] = set()
+        inventory: dict[tuple[int, int], HorizonTileEntry] = {}
+        best_priority: dict[tuple[int, int], int] = {}
 
-        def add_matching(names: list[str]) -> None:
-            for name in names:
-                match = _TILE_FILE_PATTERN.match(name)
-                if match is None:
-                    continue
-                tile_y = int(match.group(1))
-                tile_x = int(match.group(2))
-                if int(match.group(3)) == elevation:
-                    existing.add((tile_y, tile_x))
+        def consider(name: str, base: Path, legacy: bool) -> None:
+            match = _TILE_FILE_PATTERN.match(name)
+            if match is None or int(match.group(3)) != elevation:
+                return
+            key = (int(match.group(1)), int(match.group(2)))
+            priority = (2 if legacy else 0) + (1 if match.group(4) == "bin" else 0)
+            if key in best_priority and best_priority[key] <= priority:
+                return
+            path = base / name
+            try:
+                stat = path.stat()
+            except OSError:
+                return
+            best_priority[key] = priority
+            inventory[key] = HorizonTileEntry(
+                key[0], key[1], path, stat.st_size, stat.st_mtime_ns
+            )
 
         try:
             root_entries = os.scandir(self.root)
         except OSError:
-            return existing
+            return inventory
         with root_entries:
             legacy_names: list[str] = []
             subdirectories: list[str] = []
             for entry in root_entries:
                 name = entry.name
-                if _TILE_FILE_PATTERN.match(name):
+                if self.read_legacy_flat_files and _TILE_FILE_PATTERN.match(name):
                     legacy_names.append(name)
                 elif _TILE_DIRECTORY_PATTERN.match(name):
                     subdirectories.append(name)
-        add_matching(legacy_names)
+        for name in legacy_names:
+            consider(name, self.root, legacy=True)
         for directory in subdirectories:
+            base = self.root / directory
             try:
-                with os.scandir(self.root / directory) as entries:
-                    add_matching([entry.name for entry in entries])
+                with os.scandir(base) as entries:
+                    for entry in entries:
+                        consider(entry.name, base, legacy=False)
             except OSError:
                 continue
-        return existing
+        return inventory
+
+    def list_existing_tiles(
+        self, observer_elevation_m: float
+    ) -> set[tuple[int, int]]:
+        """Return ``(tile_y, tile_x)`` coordinates for existing horizon files.
+
+        Delegates to :meth:`inventory_tiles` and returns only the coordinates.
+        Structural completeness is not validated here.
+        """
+        return set(self.inventory_tiles(observer_elevation_m))
 
     def read(
         self, tile_y: int, tile_x: int, observer_elevation_m: float
