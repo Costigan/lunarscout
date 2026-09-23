@@ -4,6 +4,7 @@ import os
 import tempfile
 import warnings
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -57,13 +58,7 @@ def _projection_proj4(projection_wkt: str) -> str:
     return proj4
 
 
-def read_geotiff(
-    filename: str | Path,
-    band: int = 1,
-) -> tuple[NDArray[Any], GeoReference | None]:
-    """Read one GeoTIFF band as its native NumPy dtype and georeferencing."""
-
-    path = Path(filename).expanduser()
+def _validate_band_number(band: int, path: Path) -> int:
     try:
         band_number = int(band)
     except (TypeError, ValueError, OverflowError):
@@ -80,6 +75,67 @@ def read_geotiff(
             code="geotiff_file_not_found",
             details={"path": str(path)},
         )
+    return band_number
+
+
+def _read_band_and_georef(
+    dataset: Any,
+    band_number: int,
+) -> tuple[NDArray[Any], GeoReference | None]:
+    if band_number > int(dataset.count):
+        raise GeoTiffBandError(
+            f"GeoTIFF band {band_number} is out of range.",
+            code="geotiff_band_out_of_range",
+            details={"band": band_number, "band_count": int(dataset.count)},
+        )
+    dtype = np.dtype(dataset.dtypes[band_number - 1])
+    if np.issubdtype(dtype, np.complexfloating):
+        raise GeoTiffDataTypeError(
+            "Complex GeoTIFF datatypes are not supported in v0.1.",
+            details={"band": band_number, "dtype": str(dtype)},
+        )
+    values = np.asarray(dataset.read(band_number))
+    if values.ndim != 2:
+        raise GeoTiffOpenError(
+            "A single GeoTIFF band must produce a two-dimensional array.",
+            code="geotiff_invalid_array_shape",
+            details={"shape": list(values.shape)},
+        )
+
+    projection_wkt = dataset.crs.to_wkt() if dataset.crs is not None else ""
+    if not projection_wkt or dataset.transform == Affine.identity():
+        return values, None
+    affine_tuple = tuple(float(value) for value in dataset.transform.to_gdal())
+    if len(affine_tuple) != 6:
+        raise GeoTiffMetadataError(
+            "Rasterio returned an invalid affine transform.",
+            details={"coefficient_count": len(affine_tuple)},
+        )
+    nodata = dataset.nodatavals[band_number - 1]
+    nodata_tag = dataset.tags(band_number).get(_NODATA_TAG)
+    if nodata_tag is not None and np.issubdtype(dtype, np.integer):
+        nodata = int(nodata_tag)
+    georef = GeoReference(
+        projection_wkt=projection_wkt,
+        projection_proj4=_projection_proj4(projection_wkt),
+        affine_transform=affine_tuple,  # type: ignore[arg-type]
+        width=int(dataset.width),
+        height=int(dataset.height),
+        pixel_size_x=float(affine_tuple[1]),
+        pixel_size_y=float(affine_tuple[5]),
+        nodata=nodata,
+    )
+    return values, georef
+
+
+def read_geotiff(
+    filename: str | Path,
+    band: int = 1,
+) -> tuple[NDArray[Any], GeoReference | None]:
+    """Read one GeoTIFF band as its native NumPy dtype and georeferencing."""
+
+    path = Path(filename).expanduser()
+    band_number = _validate_band_number(band, path)
 
     try:
         try:
@@ -97,50 +153,7 @@ def read_geotiff(
                     code="geotiff_unreadable_or_unsupported",
                     details={"path": str(path), "driver": dataset.driver},
                 )
-            if band_number > int(dataset.count):
-                raise GeoTiffBandError(
-                    f"GeoTIFF band {band_number} is out of range.",
-                    code="geotiff_band_out_of_range",
-                    details={"band": band_number, "band_count": int(dataset.count)},
-                )
-            dtype = np.dtype(dataset.dtypes[band_number - 1])
-            if np.issubdtype(dtype, np.complexfloating):
-                raise GeoTiffDataTypeError(
-                    "Complex GeoTIFF datatypes are not supported in v0.1.",
-                    details={"band": band_number, "dtype": str(dtype)},
-                )
-            values = np.asarray(dataset.read(band_number))
-            if values.ndim != 2:
-                raise GeoTiffOpenError(
-                    "A single GeoTIFF band must produce a two-dimensional array.",
-                    code="geotiff_invalid_array_shape",
-                    details={"shape": list(values.shape)},
-                )
-
-            projection_wkt = dataset.crs.to_wkt() if dataset.crs is not None else ""
-            if not projection_wkt or dataset.transform == Affine.identity():
-                return values, None
-            affine_tuple = tuple(float(value) for value in dataset.transform.to_gdal())
-            if len(affine_tuple) != 6:
-                raise GeoTiffMetadataError(
-                    "Rasterio returned an invalid affine transform.",
-                    details={"coefficient_count": len(affine_tuple)},
-                )
-            nodata = dataset.nodatavals[band_number - 1]
-            nodata_tag = dataset.tags(band_number).get(_NODATA_TAG)
-            if nodata_tag is not None and np.issubdtype(dtype, np.integer):
-                nodata = int(nodata_tag)
-            georef = GeoReference(
-                projection_wkt=projection_wkt,
-                projection_proj4=_projection_proj4(projection_wkt),
-                affine_transform=affine_tuple,  # type: ignore[arg-type]
-                width=int(dataset.width),
-                height=int(dataset.height),
-                pixel_size_x=float(affine_tuple[1]),
-                pixel_size_y=float(affine_tuple[5]),
-                nodata=nodata,
-            )
-            return values, georef
+            return _read_band_and_georef(dataset, band_number)
     except (GeoTiffOpenError, GeoTiffBandError, GeoTiffDataTypeError, GeoTiffMetadataError):
         raise
     except Exception as exc:
@@ -148,6 +161,72 @@ def read_geotiff(
             f"Unable to read GeoTIFF: {path}",
             code="geotiff_read_failed",
             details={"path": str(path), "band": band_number, "error": str(exc)},
+        ) from exc
+
+
+def _resolve_dem_path(path: Path) -> Path:
+    """Resolve a DEM path, discovering the PDS3 label sidecar for bare data files.
+
+    GDAL opens PDS3 products through their ``.lbl`` label rather than the
+    ``.img`` data file directly, so a ``.img``/``.dat`` path is redirected to a
+    sibling ``.lbl``/``.LBL`` when one exists.
+    """
+    if path.suffix.lower() in (".img", ".dat"):
+        for ext in (".lbl", ".LBL"):
+            label = path.with_suffix(ext)
+            if label.is_file():
+                return label
+    return path
+
+
+def read_dem_raster(
+    filename: str | Path,
+    band: int = 1,
+) -> tuple[NDArray[Any], GeoReference | None, float | None, float | None]:
+    """Read one DEM band with its declared scale and offset.
+
+    Supports GeoTIFF and GDAL-readable planetary formats such as PDS3/PDS4.
+    Returns the raw band values (native dtype), the georeferencing, and the
+    band's declared ``scale`` and ``offset`` (or ``None`` when unset).  Scale
+    and offset are returned unapplied so callers can normalize elevation units
+    against the reference sphere themselves.
+    """
+
+    path = Path(filename).expanduser()
+    band_number = _validate_band_number(band, path)
+    resolved = _resolve_dem_path(path)
+
+    try:
+        try:
+            dataset = rasterio.open(resolved)
+        except Exception as exc:
+            raise GeoTiffOpenError(
+                f"File is not a readable raster: {resolved}",
+                code="geotiff_unreadable_or_unsupported",
+                details={"path": str(resolved), "error": str(exc)},
+            ) from exc
+        with dataset:
+            values, georef = _read_band_and_georef(dataset, band_number)
+            scales = dataset.scales
+            offsets = dataset.offsets
+            scale = (
+                scales[band_number - 1]
+                if scales is not None and band_number <= len(scales)
+                else None
+            )
+            offset = (
+                offsets[band_number - 1]
+                if offsets is not None and band_number <= len(offsets)
+                else None
+            )
+            return values, georef, scale, offset
+    except (GeoTiffOpenError, GeoTiffBandError, GeoTiffDataTypeError, GeoTiffMetadataError):
+        raise
+    except Exception as exc:
+        raise GeoTiffOpenError(
+            f"Unable to read raster: {resolved}",
+            code="geotiff_read_failed",
+            details={"path": str(resolved), "band": band_number, "error": str(exc)},
         ) from exc
 
 

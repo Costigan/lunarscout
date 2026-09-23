@@ -23,7 +23,7 @@ from .errors import (
     ProductTimeError,
     VectorError,
 )
-from .geotiff import read_geotiff
+from .geotiff import read_dem_raster
 from .progress import Backend, ProgressEvent
 from .temporal import TimeInput, TimeRange
 
@@ -94,6 +94,44 @@ def _projection_value(values: dict[str, Any], *names: str) -> float | None:
     return None
 
 
+def _normalize_dem_elevations(
+    values: npt.ArrayLike,
+    *,
+    scale: float | None,
+    offset: float | None,
+    radius_m: float,
+) -> npt.NDArray[np.float32]:
+    """Convert raw DEM samples to metres above the reference sphere.
+
+    Applies the raster's declared scale and offset.  An offset that encodes
+    the reference-sphere radius (i.e. values stored as radius-from-centre) is
+    undone so the result is elevation relative to the sphere.  When no scale
+    or offset is declared, radius-from-centre values are detected by magnitude
+    and shifted down by the reference radius.
+    """
+    result = np.asarray(values, dtype=np.float32)
+    if not result.flags.c_contiguous:
+        result = np.ascontiguousarray(result, dtype=np.float32)
+    scale_f = 1.0 if scale is None else float(scale)
+    offset_f = 0.0 if offset is None else float(offset)
+    radius = float(radius_m)
+    transformed = False
+    if scale_f != 1.0:
+        result *= scale_f
+        transformed = True
+    if offset_f != 0.0:
+        transformed = True
+        if abs(offset_f - radius) < abs(offset_f):
+            result += offset_f - radius
+        else:
+            result += offset_f
+    if not transformed:
+        finite_min = float(np.nanmin(result))
+        if np.isfinite(finite_min) and finite_min > 0.5 * radius:
+            result -= radius
+    return np.ascontiguousarray(result, dtype=np.float32)
+
+
 def _load_dem(path: str | Path):
     from ._numba_horizon.geometry import DemGrid, ProjectionParameters
 
@@ -104,7 +142,7 @@ def _load_dem(path: str | Path):
             code="product_dem_not_found",
             details={"path": str(dem_path)},
         )
-    values, georef = read_geotiff(dem_path)
+    values, georef, band_scale, band_offset = read_dem_raster(dem_path)
     if georef is None:
         raise GridError(
             "The DEM must have complete geospatial metadata.",
@@ -170,7 +208,9 @@ def _load_dem(path: str | Path):
         false_northing_m=float(false_northing_m),
     )
     dem = DemGrid(
-        np.ascontiguousarray(values, dtype=np.float32),
+        _normalize_dem_elevations(
+            values, scale=band_scale, offset=band_offset, radius_m=float(radius_m)
+        ),
         np.ascontiguousarray(georef.affine_transform, dtype=np.float64),
         projection,
     )
