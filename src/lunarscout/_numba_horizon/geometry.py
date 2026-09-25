@@ -23,6 +23,12 @@ RAY_SAMPLE_FIELDS = (
 
 @dataclass(frozen=True, slots=True)
 class ProjectionParameters:
+    """Stereographic projection parameters for a lunar body.
+
+    ``radius_m`` is the reference-sphere radius in metres.  DEM elevations are
+    measured relative to that sphere, never to the body's centre.
+    """
+
     radius_m: float
     latitude_origin_rad: float
     longitude_origin_rad: float
@@ -40,6 +46,13 @@ class ProjectionParameters:
 
 @dataclass(frozen=True, slots=True)
 class DemGrid:
+    """A lunar DEM whose ``elevation_m`` is metres above the reference sphere.
+
+    ``elevation_m`` holds elevation relative to the sphere of radius
+    ``projection.radius_m``.  It is never radius-from-centre; callers that need
+    the distance from the Moon's centre add ``projection.radius_m`` themselves.
+    """
+
     elevation_m: npt.NDArray[np.float32]
     geo_transform: npt.NDArray[np.float64]
     projection: ProjectionParameters

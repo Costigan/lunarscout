@@ -133,6 +133,12 @@ def _normalize_dem_elevations(
 
 
 def _load_dem(path: str | Path):
+    """Read a stereographic lunar DEM normalized to metres above the reference sphere.
+
+    Applies the raster's declared scale/offset and undoes any radius-from-centre
+    encoding so the returned :class:`DemGrid` ``elevation_m`` is elevation
+    relative to the reference sphere of radius ``projection.radius_m``.
+    """
     from ._numba_horizon.geometry import DemGrid, ProjectionParameters
 
     dem_path = Path(path).expanduser().resolve()
@@ -239,7 +245,8 @@ def _preflight_product_paths(
         )
     if output.exists() and not overwrite:
         raise ProductStorageError(
-            "The product output already exists.",
+            f"The product output already exists: {output}. "
+            "Delete the file or pass overwrite=True to replace it.",
             code="product_output_exists",
             details={"path": str(output)},
         )
@@ -438,7 +445,10 @@ def generate_lightmap(
     model with a 0.27-degree solar half-angle.  Invalid pixels carry
     ``invalid_value`` and are distinguished by the dataset validity mask.
     Compatible staged work resumes by default.  Cancellation leaves resumable
-    staging state and never publishes an incomplete file.
+    staging state and never publishes an incomplete file.  The input DEM is
+    read with its declared scale/offset applied and normalized to metres above
+    the lunar reference sphere (1737.4 km); DEMs stored as radius-from-centre
+    are converted to elevation-from-sphere automatically.
     """
 
     _validate_output_conversion(
@@ -625,7 +635,10 @@ def generate_psr(
     least once.  Both values are valid science data.  The calculation uses a
     five-viewpoint vector-reduction heuristic and a 0.27-degree solar
     half-angle.  In QGIS, render both 0 and 255 as valid classes and use the
-    dataset mask for transparency.
+    dataset mask for transparency.  The input DEM is read with its declared
+    scale/offset applied and normalized to metres above the lunar reference
+    sphere (1737.4 km); DEMs stored as radius-from-centre are converted to
+    elevation-from-sphere automatically.
     """
 
     _validate_output_conversion(
@@ -942,7 +955,10 @@ def generate_sun_elevation(
     Values are the Sun center's elevation relative to the interpolated terrain
     horizon at its azimuth, not elevation above a smooth local horizontal
     plane.  Compatible staged work resumes by default.  Cancellation leaves
-    resumable staging state.
+    resumable staging state.  The input DEM is read with its declared
+    scale/offset applied and normalized to metres above the lunar reference
+    sphere (1737.4 km); DEMs stored as radius-from-centre are converted to
+    elevation-from-sphere automatically.
     """
 
     return _generate_body_elevation(
@@ -1025,7 +1041,10 @@ def generate_earth_elevation(
     -----
     Values are the Earth center's elevation relative to the interpolated
     terrain horizon at its azimuth.  Compatible staged work resumes by
-    default.
+    default.  The input DEM is read with its declared scale/offset applied and
+    normalized to metres above the lunar reference sphere (1737.4 km); DEMs
+    stored as radius-from-centre are converted to elevation-from-sphere
+    automatically.
     """
 
     return _generate_body_elevation(
@@ -1126,7 +1145,10 @@ def generate_safe_havens(
     Pixels where the Earth never goes below the threshold during a month, or
     where Earth is permanently occluded for the entire month, receive ``nodata``
     (NaN by default) because the safe-haven question is ill-posed for those
-    pixels during that month.
+    pixels during that month.  The input DEM is read with its declared
+    scale/offset applied and normalized to metres above the lunar reference
+    sphere (1737.4 km); DEMs stored as radius-from-centre are converted to
+    elevation-from-sphere automatically.
     """
 
     _validate_output_conversion(
@@ -1545,7 +1567,10 @@ def mission_duration_from_sunlight(
     ``[times[i], times[i+1])``, clipped to ``evaluation_stop``.  A run may
     begin at any qualifying sample inside a candidate-start interval and may
     continue beyond it but never beyond the overall evaluation stop.  A run
-    still active at the evaluation stop is right-censored.
+    still active at the evaluation stop is right-censored.  The input DEM is
+    read with its declared scale/offset applied and normalized to metres above
+    the lunar reference sphere (1737.4 km); DEMs stored as radius-from-centre
+    are converted to elevation-from-sphere automatically.
     """
 
     return _generate_mission_duration(

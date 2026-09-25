@@ -132,7 +132,13 @@ def read_geotiff(
     filename: str | Path,
     band: int = 1,
 ) -> tuple[NDArray[Any], GeoReference | None]:
-    """Read one GeoTIFF band as its native NumPy dtype and georeferencing."""
+    """Read one GeoTIFF band as its native NumPy dtype and georeferencing.
+
+    Values are returned raw: the band's declared scale/offset is not applied and
+    no DEM elevation normalization is performed.  Use ``read_dem_raster`` when
+    scale/offset matter, or the DEM-normalizing path when values must be metres
+    above the lunar reference sphere.
+    """
 
     path = Path(filename).expanduser()
     band_number = _validate_band_number(band, path)

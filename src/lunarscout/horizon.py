@@ -261,7 +261,10 @@ def generate_horizons(
         An ordered sequence of DEM files.  The first DEM defines the output
         grid.  Later DEMs extend surrounding terrain coverage.  The
         cumulative horizon from earlier DEMs participates in hierarchy
-        culling for later DEMs.
+        culling for later DEMs.  Each DEM is read with its declared
+        scale/offset applied and normalized to metres above the lunar
+        reference sphere (1737.4 km); DEMs stored as radius-from-centre are
+        converted to elevation-from-sphere automatically.
     observer_height_m:
         Observer height above the DEM surface, in meters.  Must be finite
         and in ``[0, 100)``.
