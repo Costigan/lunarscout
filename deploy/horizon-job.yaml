@@ -1,0 +1,77 @@
+# Scheduler-free horizon generation on NRP — one file to apply and delete.
+#
+#   kubectl apply  -f deploy/horizon-job.yaml -n <namespace>
+#   kubectl delete -f deploy/horizon-job.yaml -n <namespace>
+#
+# The ConfigMap at the top holds the per-scenario DATA; the Job below is the
+# stable executor that reads it. For a new scenario, edit only the values marked
+# EDIT, and keep POD_COUNT in sync with the Job's completions/parallelism.
+#
+# One-time edits (not per-scenario): the image tag and the PVC claimName below.
+---
+# --- Scenario (data) ---------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: horizon-scenario
+data:
+  PRIMARY_DEM: /workspace/70south/fixed_ldem_80s_20m.clipped.tif      # EDIT
+  SURROUNDING_DEMS: /workspace/70south/ldem_70s_118m.tif              # EDIT (comma-separated, or empty)
+  OUTPUT_DIR: /workspace/70south/horizons                       # EDIT
+  LOG_DIR: /workspace/70south/logs                              # EDIT
+  POD_COUNT: "4"                                             # EDIT: match completions/parallelism below
+  OBSERVER_HEIGHT_M: "0"
+  COMPRESS: "1"                                              # "1" for .cbin, "" for .bin
+---
+# --- Executor (shape) --------------------------------------------------------
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: horizon-generation
+spec:
+  completionMode: Indexed
+  completions: 4      # keep in sync with POD_COUNT above
+  parallelism: 4      # keep in sync with POD_COUNT above
+  template:
+    metadata:
+      labels:
+        app: horizon-worker
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: gitlab-registry.nrp-nautilus.io/costigan/lunarscout-worker:70317e4   # EDIT (image tag)
+          command: ["lunarscout-horizon-worker"]
+          envFrom:
+            - configMapRef:
+                name: horizon-scenario
+          env:
+            - name: NUMBA_CACHE_DIR
+              value: /tmp/numba-cache   # per-pod ephemeral; avoids a cross-pod compile-cache race
+          resources:
+            requests:
+              cpu: "6"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "6"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: docker-test-lunar
+              mountPath: /workspace
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.product
+                    operator: In
+                    values:
+                      - NVIDIA-GeForce-RTX-3090
+                      - NVIDIA-GeForce-RTX-4090
+                      - NVIDIA-GeForce-RTX-5090
+      volumes:
+        - name: docker-test-lunar
+          persistentVolumeClaim:
+            claimName: docker-test-lunar

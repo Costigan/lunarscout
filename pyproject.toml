@@ -68,6 +68,9 @@ dev = [
     "twine>=6.0",
 ]
 
+[project.scripts]
+lunarscout-horizon-worker = "lunarscout._numba_horizon.worker:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

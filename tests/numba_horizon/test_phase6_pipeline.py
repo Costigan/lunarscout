@@ -22,6 +22,7 @@ from lunarscout._numba_horizon.file_format import (
 from lunarscout._numba_horizon.pipeline import (
     HorizonPipelineCancelled,
     enumerate_patches,
+    partition_patches,
     run_bounded_pipeline,
 )
 from lunarscout.scenario import Scenario
@@ -82,6 +83,48 @@ def test_patch_enumeration_retains_partial_right_and_bottom_edges() -> None:
     ]
     with pytest.raises(ValueError, match="even multiples"):
         enumerate_patches(300, 257, include_partial_edges=False)
+
+
+def test_partition_patches_splits_into_disjoint_covering_shares() -> None:
+    patches = enumerate_patches(128 * 4, 128)  # indices 0..3
+
+    shares = [
+        partition_patches(patches, offset=offset, stride=4) for offset in range(4)
+    ]
+
+    assert [p.index for p in shares[0]] == [0]
+    assert [p.index for p in shares[1]] == [1]
+    assert [p.index for p in shares[2]] == [2]
+    assert [p.index for p in shares[3]] == [3]
+
+    assigned = [p.index for share in shares for p in share]
+    assert sorted(assigned) == [0, 1, 2, 3]
+    assert len(assigned) == len(set(assigned))
+
+
+def test_partition_patches_strided_over_larger_batch() -> None:
+    patches = enumerate_patches(128 * 10, 128)  # indices 0..9
+
+    share = partition_patches(patches, offset=1, stride=3)
+
+    assert [p.index for p in share] == [1, 4, 7]
+
+
+def test_partition_patches_default_stride_is_identity() -> None:
+    patches = enumerate_patches(128 * 3, 128)
+
+    assert partition_patches(patches, offset=0, stride=1) == patches
+
+
+def test_partition_patches_validates_offset_and_stride() -> None:
+    patches = enumerate_patches(128 * 4, 128)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        partition_patches(patches, offset=0, stride=0)
+    with pytest.raises(ValueError, match="offset in"):
+        partition_patches(patches, offset=4, stride=4)
+    with pytest.raises(ValueError, match="offset in"):
+        partition_patches(patches, offset=-1, stride=4)
 
 
 def test_list_existing_tiles_uses_directory_listing(tmp_path: Path) -> None:

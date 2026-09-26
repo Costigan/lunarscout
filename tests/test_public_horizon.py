@@ -221,6 +221,33 @@ def test_public_horizon_callback_exception_propagates_unchanged(
     assert raised.value is expected
 
 
+def test_public_horizon_validates_patch_partition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dem = _write_dem(tmp_path / "dem.tif")
+    called = False
+
+    def fail_if_called(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(horizon_module, "_run_horizon_pipeline", fail_if_called)
+
+    with pytest.raises(ls.InputError) as raised:
+        ls.generate_horizons(tmp_path / "h", [dem], patch_stride=0)
+    assert raised.value.code == "horizon_patch_stride_invalid"
+
+    with pytest.raises(ls.InputError) as raised:
+        ls.generate_horizons(tmp_path / "h", [dem], patch_stride=2, patch_offset=2)
+    assert raised.value.code == "horizon_patch_offset_invalid"
+
+    with pytest.raises(ls.InputError) as raised:
+        ls.generate_horizons(tmp_path / "h", [dem], patch_stride=2, patch_offset=-1)
+    assert raised.value.code == "horizon_patch_offset_invalid"
+
+    assert called is False
+
+
 @pytest.mark.skipif(
     os.environ.get("LUNARSCOUT_REQUIRE_NUMBA_CUDA") != "1",
     reason="set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 for the explicit real-GPU probe",

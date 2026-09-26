@@ -124,6 +124,33 @@ def enumerate_patches(
     return patches
 
 
+def partition_patches(
+    patches: Sequence[PatchDescriptor],
+    *,
+    offset: int,
+    stride: int,
+) -> list[PatchDescriptor]:
+    """Return the patches assigned to one strided partition of a batch.
+
+    Partition ``offset`` of ``stride`` receives every ``stride``-th patch in
+    enumeration order: indices ``offset, offset + stride, offset + 2*stride, ...``.
+    This is the manual ``--pod-nth``/``--pod-count`` split used to shard an
+    independent patch workload across worker pods without a scheduler.  Every
+    patch belongs to exactly one partition, so no two pods compute the same
+    patch, and the existing skip-if-exists logic still provides resume.
+    """
+    if (
+        isinstance(stride, bool)
+        or not isinstance(stride, int)
+        or stride < 1
+        or isinstance(offset, bool)
+        or not isinstance(offset, int)
+        or not 0 <= offset < stride
+    ):
+        raise ValueError("stride must be a positive integer and offset in [0, stride)")
+    return [patch for patch in patches if patch.index % stride == offset]
+
+
 def run_bounded_pipeline(
     patches: Sequence[PatchDescriptor],
     *,

@@ -1,0 +1,25 @@
+# Exclude everything the Dask worker image does not need, so the build context
+# stays small (the virtual environment alone is gigabytes).
+
+.git
+.gitignore
+.gitattributes
+
+.venv
+**/__pycache__
+**/*.py[cod]
+*.egg-info
+.pytest_cache
+.ipynb_checkpoints
+.coverage
+
+dist
+build
+*.whl
+
+tests
+docs
+data
+benchmarks
+prompts
+tools

@@ -144,6 +144,8 @@ def _run_horizon_pipeline(
     overwrite: bool,
     progress_callback: Callable[[Any], None] | None,
     cancellation_requested: CancellationCheck | None,
+    patch_offset: int = 0,
+    patch_stride: int = 1,
 ) -> None:
     """Bind validated public inputs to the selected private production pipeline."""
     from ._numba_horizon.contract import (
@@ -158,7 +160,11 @@ def _run_horizon_pipeline(
         GridConvergenceInput,
         build_subpatch_segments_numba,
     )
-    from ._numba_horizon.pipeline import enumerate_patches, run_bounded_pipeline
+    from ._numba_horizon.pipeline import (
+        enumerate_patches,
+        partition_patches,
+        run_bounded_pipeline,
+    )
     from ._numba_horizon.pyramid import (
         load_max_pyramid_cache,
         pyramid_cache_path,
@@ -221,8 +227,13 @@ def _run_horizon_pipeline(
     def finalize(_patch: Any, slopes: np.ndarray) -> np.ndarray:
         return HorizonBuffers(slopes).degrees()
 
-    run_bounded_pipeline(
+    patches = partition_patches(
         enumerate_patches(primary.width, primary.height),
+        offset=patch_offset,
+        stride=patch_stride,
+    )
+    run_bounded_pipeline(
+        patches,
         store=HorizonTileStore(output_directory),
         prepare_patch=prepare,
         processor_factory=processor_factory,
@@ -249,6 +260,8 @@ def generate_horizons(
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
+    patch_offset: int = 0,
+    patch_stride: int = 1,
 ) -> Path:
     """Generate compatible 128-pixel horizon tiles with NVIDIA CUDA.
 
@@ -286,6 +299,15 @@ def generate_horizons(
         returns ``True``, generation raises
         :class:`~lunarscout.OperationCancelledError` and leaves resumable
         staging state.
+    patch_offset:
+        Partition index (0-based) when sharding the patch list across
+        independent workers.  ``patch_stride=1`` (the default) and
+        ``patch_offset=0`` process every patch.  With ``patch_stride=N``,
+        worker ``patch_offset`` processes patches ``patch_offset,
+        patch_offset+N, ...`` so ``N`` workers cover every patch exactly once.
+    patch_stride:
+        Number of workers sharing the patch list (see ``patch_offset``).  Must
+        be a positive integer; the default ``1`` processes all patches.
 
     Returns
     -------
@@ -370,6 +392,22 @@ def generate_horizons(
                 code="horizon_callback_invalid",
                 details={"argument": name},
             )
+    if isinstance(patch_stride, bool) or not isinstance(patch_stride, int) or patch_stride < 1:
+        raise InputError(
+            "patch_stride must be a positive integer.",
+            code="horizon_patch_stride_invalid",
+            details={"patch_stride": patch_stride},
+        )
+    if (
+        isinstance(patch_offset, bool)
+        or not isinstance(patch_offset, int)
+        or not 0 <= patch_offset < patch_stride
+    ):
+        raise InputError(
+            "patch_offset must be an integer in [0, patch_stride).",
+            code="horizon_patch_offset_invalid",
+            details={"patch_offset": patch_offset, "patch_stride": patch_stride},
+        )
     if cancellation_requested is not None and cancellation_requested():
         raise OperationCancelledError(
             "Horizon generation was cancelled.",
@@ -406,6 +444,8 @@ def generate_horizons(
             overwrite=overwrite,
             progress_callback=adapter,
             cancellation_requested=cancellation_requested,
+            patch_offset=patch_offset,
+            patch_stride=patch_stride,
         )
         return output
     except Exception as exc:
