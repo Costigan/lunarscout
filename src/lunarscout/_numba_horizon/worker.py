@@ -13,6 +13,7 @@ import argparse
 import os
 import sys
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..horizon import generate_horizons
@@ -141,10 +142,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.log_dir:
         log_path = Path(args.log_dir) / f"pod-{pod_nth}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_handle = log_path.open("w", buffering=1)
+        # Append rather than overwrite: a retried pod must not clobber the
+        # previous attempt's crash traceback.
+        log_handle = log_path.open("a", buffering=1)
         sys.stdout = _Tee(original_stdout, log_handle)
         sys.stderr = _Tee(original_stderr, log_handle)
-        print(f"pod {pod_nth}/{args.pod_count}: logging to {log_path}")
+        print(
+            f"--- pod {pod_nth}/{args.pod_count} started "
+            f"{datetime.now(timezone.utc).isoformat(timespec='seconds')}Z ---"
+        )
 
     try:
         result = run_horizon_partition(
