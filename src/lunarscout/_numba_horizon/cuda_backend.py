@@ -1528,7 +1528,16 @@ class CudaSession:
                     events[pass_index + 1].record()
                 else:
                     events[pass_index + 1].record(stream)
-            events[-1].synchronize()
+                # Synchronize this pass before launching the next so a kernel
+                # fault is attributed to the exact DEM pass that raised it
+                # instead of surfacing only at the final event with no context.
+                try:
+                    events[pass_index + 1].synchronize()
+                except Exception as error:
+                    raise RuntimeError(
+                        f"CUDA kernel fault during horizon pass {pass_index} "
+                        f"of {len(pyramids)}"
+                    ) from error
             kernel_wall_seconds = time.perf_counter() - kernel_started
             pass_kernel_seconds = [
                 events[index].elapsed_time(events[index + 1]) / 1000.0

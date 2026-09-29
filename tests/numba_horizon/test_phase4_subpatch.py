@@ -191,6 +191,73 @@ def test_cuda_session_reuses_unchanged_production_pyramids() -> None:
     assert len(session._cuda.uploads) == 20
 
 
+def test_subpatch_hierarchical_all_passes_reports_faulting_pass() -> None:
+    from unittest import mock
+
+    session = object.__new__(CudaSession)
+
+    class FakeEvent:
+        def __init__(self, fail: bool = False):
+            self.fail = fail
+
+        def record(self, stream=None):
+            return None
+
+        def synchronize(self):
+            if self.fail:
+                raise RuntimeError("CUDA_ERROR_LAUNCH_FAILED")
+
+        def elapsed_time(self, other):
+            return 0.0
+
+    dem_count = 3
+    fail_sync = 2  # events[2], recorded after pass index 1, will fault
+
+    counter = {"n": 0}
+
+    def make_event(timing=False):
+        index = counter["n"]
+        counter["n"] += 1
+        return FakeEvent(fail=(index == fail_sync))
+
+    session._cuda = SimpleNamespace(event=make_event)
+    session._subpatch_hierarchy_kernel = mock.MagicMock()
+
+    device_pyramids = [
+        tuple(SimpleNamespace() for _ in range(5)) for _ in range(dem_count)
+    ]
+    session._prepare_production_pyramids = lambda _pyramids: device_pyramids
+
+    slot = SimpleNamespace(
+        stream=None,
+        device_segments=SimpleNamespace(copy_to_device=lambda *a, **k: None),
+        device_output=SimpleNamespace(copy_to_device=lambda *a, **k: None),
+        output_reset=np.full((16384, 1), -np.inf, dtype=np.float32),
+    )
+    session._prepare_production_slots = (
+        lambda _shape, _output: SimpleNamespace(get=lambda: slot, put=lambda _s: None)
+    )
+    session._production_timings = SimpleNamespace()
+
+    host_pyramids = [object() for _ in range(dem_count)]
+    segments = np.zeros((1, 324, dem_count, 18), dtype=np.float32)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        session.subpatch_hierarchical_all_passes(
+            segments,
+            host_pyramids,
+            tile_column=0,
+            tile_row=0,
+            tile_width=128,
+            tile_height=128,
+            subpatch_size=8,
+        )
+
+    assert "pass 1" in str(excinfo.value)
+    assert "of 3" in str(excinfo.value)
+    assert "CUDA_ERROR_LAUNCH_FAILED" in str(excinfo.value.__cause__)
+
+
 def _boundary_patch_inputs():
     artifact = load_reference_artifact(
         DATA / "phase1_reference_rays.json", DATA / "phase1_reference_rays.npz"

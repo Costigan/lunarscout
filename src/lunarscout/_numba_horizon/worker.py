@@ -81,6 +81,43 @@ def _env_int(name: str) -> int | None:
     return int(value) if value else None
 
 
+def _node_label() -> str:
+    pod = os.environ.get("HOSTNAME") or os.environ.get("POD_NAME")
+    node = os.environ.get("NODE_NAME")
+    parts: list[str] = []
+    if pod:
+        parts.append(pod)
+    if node:
+        parts.append(f"node={node}")
+    return " ".join(parts) if parts else "unknown node"
+
+
+def _describe_gpu() -> str:
+    """One-line GPU identity for correlating failures with specific hardware."""
+    try:
+        from ..cuda import status
+    except Exception as exc:  # pragma: no cover - import should always work
+        return f"gpu: identity unavailable ({exc})"
+    result = status()
+    if not result.available:
+        return f"gpu: unavailable ({result.reason})"
+    capability = (
+        f"sm_{result.compute_capability[0]}{result.compute_capability[1]}"
+        if result.compute_capability
+        else "unknown"
+    )
+    memory = (
+        f"{result.total_memory_bytes / 2**30:.1f} GiB"
+        if result.total_memory_bytes
+        else "unknown"
+    )
+    driver = result.cuda_driver_version or "unknown"
+    return (
+        f"gpu: {result.device_name} ({capability}) "
+        f"driver {driver} memory {memory}"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     # Every argument falls back to an environment variable so the Kubernetes
     # Job can provide the scenario through a ConfigMap (envFrom) while the same
@@ -149,6 +186,9 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout = _Tee(original_stdout, log_handle)
         sys.stderr = _Tee(original_stderr, log_handle)
         print(f"pod {pod_nth}/{args.pod_count}: logging to {log_path.name}")
+
+    print(f"worker: {_node_label()}")
+    print(_describe_gpu())
 
     try:
         result = run_horizon_partition(
