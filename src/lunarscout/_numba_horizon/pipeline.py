@@ -221,7 +221,15 @@ def run_bounded_pipeline(
             progress_stream.flush()
 
     total = len(pending)
-    emit(HorizonProgress(0, total, 10.0, "prepare_patches", "Preparing horizon patch pipeline."))
+    emit(
+        HorizonProgress(
+            0,
+            total,
+            10.0,
+            "prepare_patches",
+            f"found {skipped} existing horizon tiles, {total} patches to generate",
+        )
+    )
     if total == 0:
         emit(HorizonProgress(0, 0, 100.0, "complete", "No horizon patches need to be generated."))
         return PipelineResult(

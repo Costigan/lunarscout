@@ -112,10 +112,11 @@ class _HorizonProgressAdapter:
         if self.verbose:
             if event.stage == "prepare_patches":
                 print("horizons: using cuda backend", file=sys.stdout, flush=True)
+            message = f" | {event.message}" if event.message else ""
             print(
                 f"horizons: {event.stage:<16} "
                 f"{event.completed:6d}/{event.total:<6d} | "
-                f"{self._timing_status(event)}",
+                f"{self._timing_status(event)}{message}",
                 file=sys.stdout,
                 flush=True,
             )

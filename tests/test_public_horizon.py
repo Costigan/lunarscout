@@ -95,10 +95,12 @@ def test_public_horizon_facade_reports_cuda_and_returns_directory(
     assert verbose_output[0] == "horizons: using cuda backend"
     progress_lines = verbose_output[1:]
     assert len({line.index("|") for line in progress_lines}) == 1
-    assert progress_lines[0].endswith("--.-- s/patch | ETA -------------------")
+    assert progress_lines[0].startswith("horizons: prepare_patches")
+    assert "--.-- s/patch | ETA -------------------" in progress_lines[0]
+    assert progress_lines[0].endswith("| Preparing.")
     assert re.search(
         r"process_patches\s+1/100\s+\|\s+\d+\.\d{2} s/patch \| "
-        r"ETA \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$",
+        r"ETA \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| Generated\.$",
         progress_lines[2],
     )
 

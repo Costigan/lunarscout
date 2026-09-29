@@ -420,6 +420,9 @@ def test_bounded_pipeline_skips_complete_tiles_streams_and_flushes_progress() ->
 
     assert prepared == [0, 2]
     assert result.skipped_patches == 1
+    assert progress[0].message == (
+        "found 1 existing horizon tiles, 2 patches to generate"
+    )
     assert result.maximum_prepared_queue_depth <= 1
     assert len(result.producer_enqueue_wait_seconds) == 2
     assert len(result.consumer_dequeue_wait_seconds) == 2
