@@ -140,17 +140,15 @@ def main(argv: list[str] | None = None) -> int:
     original_stderr = sys.stderr
     log_handle = None
     if args.log_dir:
-        log_path = Path(args.log_dir) / f"pod-{pod_nth}.log"
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        log_path = Path(args.log_dir) / f"pod-{pod_nth}-{stamp}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        # Append rather than overwrite: a retried pod must not clobber the
-        # previous attempt's crash traceback.
-        log_handle = log_path.open("a", buffering=1)
+        # A timestamped filename keeps each attempt's log unique, so a retried
+        # pod cannot clobber a previous attempt's output.
+        log_handle = log_path.open("w", buffering=1)
         sys.stdout = _Tee(original_stdout, log_handle)
         sys.stderr = _Tee(original_stderr, log_handle)
-        print(
-            f"--- pod {pod_nth}/{args.pod_count} started "
-            f"{datetime.now(timezone.utc).isoformat(timespec='seconds')}Z ---"
-        )
+        print(f"pod {pod_nth}/{args.pod_count}: logging to {log_path.name}")
 
     try:
         result = run_horizon_partition(
@@ -162,9 +160,10 @@ def main(argv: list[str] | None = None) -> int:
             pod_count=args.pod_count,
             pod_nth=pod_nth,
         )
-        print("horizons written to", result)
+        print(f"SUCCESS: pod {pod_nth}/{args.pod_count} finished; horizons in {result}")
         return 0
     except BaseException:
+        print(f"FAILED: pod {pod_nth}/{args.pod_count} raised the following:")
         traceback.print_exc()
         return 1
     finally:

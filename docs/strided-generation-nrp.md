@@ -52,8 +52,11 @@ The pieces are split by what changes and how often:
    kubectl logs -f <pod> -n <namespace>
    ```
 
-   Each pod tees stdout/stderr to `$LOG_DIR/pod-<nth>.log` on the shared
-   filesystem, because Kubernetes pod logs disappear when the pod is deleted.
+   Each pod tees stdout/stderr to `$LOG_DIR/pod-<nth>-<timestamp>.log` on the
+   shared filesystem (a unique name per attempt, so a retried pod never
+   clobbers an earlier attempt), because Kubernetes pod logs disappear when the
+   pod is deleted. Each log ends with an explicit `SUCCESS: ...` or
+   `FAILED: ...` line.
 
 ## Worker configuration
 
@@ -65,7 +68,7 @@ supplies from the scenario ConfigMap via `envFrom`:
 | `PRIMARY_DEM`      | primary DEM (defines the output grid)    |
 | `SURROUNDING_DEMS` | comma-separated surrounding DEMs         |
 | `OUTPUT_DIR`       | shared horizon output directory          |
-| `LOG_DIR`          | directory for `pod-<nth>.log`            |
+| `LOG_DIR`          | directory for `pod-<nth>-<timestamp>.log` |
 | `POD_COUNT`        | number of partitions (matches the Job)   |
 | `OBSERVER_HEIGHT_M`| observer height in metres                |
 | `COMPRESS`         | `1` for `.cbin`, unset for `.bin`        |
