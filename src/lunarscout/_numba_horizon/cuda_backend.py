@@ -1536,7 +1536,7 @@ class CudaSession:
                 except Exception as error:
                     raise RuntimeError(
                         f"CUDA kernel fault during horizon pass {pass_index} "
-                        f"of {len(pyramids)}"
+                        f"of {len(pyramids)} at tile ({tile_column}, {tile_row})"
                     ) from error
             kernel_wall_seconds = time.perf_counter() - kernel_started
             pass_kernel_seconds = [

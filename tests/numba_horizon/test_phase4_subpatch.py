@@ -246,8 +246,8 @@ def test_subpatch_hierarchical_all_passes_reports_faulting_pass() -> None:
         session.subpatch_hierarchical_all_passes(
             segments,
             host_pyramids,
-            tile_column=0,
-            tile_row=0,
+            tile_column=123,
+            tile_row=456,
             tile_width=128,
             tile_height=128,
             subpatch_size=8,
@@ -255,6 +255,7 @@ def test_subpatch_hierarchical_all_passes_reports_faulting_pass() -> None:
 
     assert "pass 1" in str(excinfo.value)
     assert "of 3" in str(excinfo.value)
+    assert "at tile (123, 456)" in str(excinfo.value)
     assert "CUDA_ERROR_LAUNCH_FAILED" in str(excinfo.value.__cause__)
 
 
