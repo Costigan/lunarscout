@@ -40,7 +40,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: worker
-          image: gitlab-registry.nrp-nautilus.io/costigan/lunarscout-worker:30d817c   # EDIT (image tag)
+          image: gitlab-registry.nrp-nautilus.io/costigan/lunarscout-worker:4014918   # EDIT (image tag)
           command: ["lunarscout-horizon-worker"]
           envFrom:
             - configMapRef:
