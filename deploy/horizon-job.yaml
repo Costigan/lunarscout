@@ -40,7 +40,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: worker
-          image: gitlab-registry.nrp-nautilus.io/costigan/lunarscout-worker:9cfbec9   # EDIT (image tag)
+          image: gitlab-registry.nrp-nautilus.io/costigan/lunarscout-worker:30d817c   # EDIT (image tag)
           command: ["lunarscout-horizon-worker"]
           envFrom:
             - configMapRef:
@@ -75,6 +75,16 @@ spec:
                       - NVIDIA-GeForce-RTX-3090
                       - NVIDIA-GeForce-RTX-4090
                       - NVIDIA-GeForce-RTX-5090
+                  # The hcc-chase-shor-c470x/c471x UNL nodes have failing
+                  # NVIDIA device plugins (UnexpectedAdmissionError or stuck
+                  # ContainerCreating). Route around the broken siblings so
+                  # pods land on healthy 3090/4090 nodes elsewhere.
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values:
+                      - hcc-chase-shor-c4705.unl.edu
+                      - hcc-chase-shor-c4715.unl.edu
+                      - hcc-chase-shor-c4719.unl.edu
       volumes:
         - name: docker-test-lunar
           persistentVolumeClaim:
