@@ -1,0 +1,30 @@
+# One-off debug pod: run a single horizon tile on a 3090 (sm_86) node to
+# reproduce the CUDA fault locally on the architecture that crashes.
+#
+#   kubectl apply -f deploy/debug-repro.yaml
+#   kubectl cp scripts/repro_horizon_tile.py debug-repro:/opt/lunarscout/ -n environmental-analytics-group-usra
+#   kubectl exec debug-repro -n environmental-analytics-group-usra -- python /opt/lunarscout/repro_horizon_tile.py --primary-dem /workspace/70south/fixed_ldem_80s_20m.clipped.tif --surrounding-dems /workspace/70south/ldem_70s_118m.tif --tile-x 29056 --tile-y 18944
+#   kubectl delete -f deploy/debug-repro.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug-repro
+  namespace: environmental-analytics-group-usra
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    nvidia.com/gpu.product: NVIDIA-GeForce-RTX-3090
+  containers:
+    - name: debug-repro
+      image: gitlab-registry.nrp-nautilus.io/costigan/lunarscout-worker:4014918
+      command: ["sleep", "3600"]
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+      volumeMounts:
+        - name: docker-test-lunar
+          mountPath: /workspace
+  volumes:
+    - name: docker-test-lunar
+      persistentVolumeClaim:
+        claimName: docker-test-lunar

@@ -173,7 +173,7 @@ def _run_horizon_pipeline(
     )
 
     primary = dems[0]
-    session = CudaSession(device_id=0, production_concurrency=1)
+    session = CudaSession(device_id=0, production_concurrency=2)
     pyramids = []
     for dem, dem_path in zip(dems, dem_paths, strict=True):
         cache_path = pyramid_cache_path(dem_path)
@@ -233,6 +233,18 @@ def _run_horizon_pipeline(
         offset=patch_offset,
         stride=patch_stride,
     )
+    if patches:
+        # Warm up the lazy-compiled CUDA kernels on a single thread so the
+        # concurrent pipeline workers do not race on numba's first-launch path.
+        warmup_tensor = prepare(patches[0])
+        generate_patch_horizons(
+            session,
+            warmup_tensor,
+            pyramids,
+            tile_column=patches[0].tile_x,
+            tile_row=patches[0].tile_y,
+            observer_elevation_m=observer_height_m,
+        )
     run_bounded_pipeline(
         patches,
         store=HorizonTileStore(output_directory),
@@ -242,9 +254,9 @@ def _run_horizon_pipeline(
         observer_elevation_m=observer_height_m,
         compress=compress,
         skip_existing=not overwrite,
-        prepared_queue_capacity=1,
-        writer_queue_capacity=1,
-        worker_count=1,
+        prepared_queue_capacity=2,
+        writer_queue_capacity=2,
+        worker_count=2,
         progress_callback=progress_callback,
         cancellation_requested=cancellation_requested,
     )

@@ -19,7 +19,7 @@ data:
   SURROUNDING_DEMS: /workspace/70south/ldem_70s_118m.tif              # EDIT (comma-separated, or empty)
   OUTPUT_DIR: /workspace/70south/horizons                       # EDIT
   LOG_DIR: /workspace/70south/logs                              # EDIT
-  POD_COUNT: "4"                                             # EDIT: match completions/parallelism below
+  POD_COUNT: "2"                                             # EDIT: match completions/parallelism below
   OBSERVER_HEIGHT_M: "0"
   COMPRESS: "1"                                              # "1" for .cbin, "" for .bin
 ---
@@ -30,8 +30,8 @@ metadata:
   name: horizon-generation
 spec:
   completionMode: Indexed
-  completions: 4      # keep in sync with POD_COUNT above
-  parallelism: 4      # keep in sync with POD_COUNT above
+  completions: 2      # keep in sync with POD_COUNT above
+  parallelism: 2      # keep in sync with POD_COUNT above
   template:
     metadata:
       labels:
@@ -48,17 +48,19 @@ spec:
           env:
             - name: NUMBA_CACHE_DIR
               value: /tmp/numba-cache   # per-pod ephemeral; avoids a cross-pod compile-cache race
+            - name: NUMBA_NUM_THREADS
+              value: "8"   # match the CPU request so parallel segment build uses all cores
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
           resources:
             requests:
-              cpu: "6"
+              cpu: "8"
               memory: "16Gi"
               nvidia.com/gpu: "1"
             limits:
-              cpu: "6"
+              cpu: "8"
               memory: "16Gi"
               nvidia.com/gpu: "1"
           volumeMounts:
@@ -72,13 +74,15 @@ spec:
                   - key: nvidia.com/gpu.product
                     operator: In
                     values:
-                      - NVIDIA-GeForce-RTX-3090
                       - NVIDIA-GeForce-RTX-4090
                       - NVIDIA-GeForce-RTX-5090
+                      - NVIDIA-L40
+                      - NVIDIA-L4
+                      - NVIDIA-L40S
                   # The hcc-chase-shor-c470x/c471x UNL nodes have failing
                   # NVIDIA device plugins (UnexpectedAdmissionError or stuck
                   # ContainerCreating). Route around the broken siblings so
-                  # pods land on healthy 3090/4090 nodes elsewhere.
+                  # pods land on healthy 4090/5090 nodes elsewhere.
                   - key: kubernetes.io/hostname
                     operator: NotIn
                     values:
