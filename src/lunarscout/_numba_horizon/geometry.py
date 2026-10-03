@@ -615,6 +615,13 @@ def build_subpatch_segments_numba(
     observers = np.empty((len(unique_keys), 3), dtype=np.float64)
     correction_radii = np.empty(len(unique_keys), dtype=np.float64)
     directions = np.empty((len(unique_keys), azimuth_count, 3), dtype=np.float64)
+    azimuth_rad = np.arange(azimuth_count, dtype=np.float64) * (
+        2.0 * np.pi / azimuth_count
+    )
+    angle = np.pi / 2.0 - azimuth_rad
+    local_directions = np.column_stack(
+        (np.cos(angle), np.sin(angle), np.zeros(azimuth_count, dtype=np.float64))
+    )
     for center_index, (center_column, center_row) in enumerate(unique_keys):
         x, y = primary.pixel_to_crs(center_column, center_row)
         latitude, longitude = inverse_stereographic(x, y, primary.projection)
@@ -627,10 +634,10 @@ def build_subpatch_segments_numba(
             correction_radii[center_index] + observer_elevation_m,
         )
         rotation = enu_to_moon_matrix(latitude, longitude)
-        for azimuth_index in range(azimuth_count):
-            directions[center_index, azimuth_index] = azimuth_direction(
-                rotation, azimuth_index * 2.0 * np.pi / azimuth_count
-            )
+        directions[center_index] = local_directions @ rotation
+        directions[center_index] /= np.linalg.norm(
+            directions[center_index], axis=1, keepdims=True
+        )
 
     job_count = len(unique_keys) * azimuth_count
     job_observers = np.repeat(observers, azimuth_count, axis=0)

@@ -88,6 +88,7 @@ def test_public_horizon_facade_reports_cuda_and_returns_directory(
     assert calls[0][2]["observer_height_m"] == 1.5
     assert calls[0][2]["compress"] is False
     assert calls[0][2]["overwrite"] is True
+    assert calls[0][2]["verbose"] is True
     assert fractions == pytest.approx([0.1, 0.15, 0.1585, 1.0])
     assert events[0].backend == "cuda"
     assert (events[-1].tile_y, events[-1].tile_x) == (0, 128)
@@ -103,6 +104,28 @@ def test_public_horizon_facade_reports_cuda_and_returns_directory(
         r"ETA \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| Generated\.$",
         progress_lines[2],
     )
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+def test_public_horizon_routes_verbose_timings_to_stdout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verbose: bool,
+) -> None:
+    from lunarscout._numba_horizon import cuda_backend, pipeline, pyramid
+
+    dem = _write_dem(tmp_path / "dem.tif")
+    calls = []
+    monkeypatch.setattr(cuda_backend, "CudaSession", lambda **_kwargs: object())
+    monkeypatch.setattr(pyramid, "load_max_pyramid_cache", lambda *_args: object())
+    # No pending patches avoids CUDA warmup while exercising the real public
+    # facade and its production pipeline binding.
+    monkeypatch.setattr(pipeline, "enumerate_patches", lambda *_args: [])
+    monkeypatch.setattr(
+        pipeline, "run_bounded_pipeline", lambda *_args, **kwargs: calls.append(kwargs)
+    )
+    ls.generate_horizons(tmp_path / "horizons", [dem], verbose=verbose)
+    assert len(calls) == 1
+    assert calls[0]["timing_stream"] is (sys.stdout if verbose else None)
+    assert "progress_stream" not in calls[0]
 
 
 def test_public_horizon_cuda_failure_is_structured_and_writes_nothing(

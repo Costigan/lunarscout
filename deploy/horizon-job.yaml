@@ -40,7 +40,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: worker
-          image: gitlab-registry.nrp-nautilus.io/costigan/lunarscout-worker:4014918   # EDIT (image tag)
+          image: gitlab-registry.nrp-nautilus.io/costigan/lunarscout-worker:cdccc11   # EDIT (image tag)
           command: ["lunarscout-horizon-worker"]
           envFrom:
             - configMapRef:
@@ -49,19 +49,19 @@ spec:
             - name: NUMBA_CACHE_DIR
               value: /tmp/numba-cache   # per-pod ephemeral; avoids a cross-pod compile-cache race
             - name: NUMBA_NUM_THREADS
-              value: "8"   # match the CPU request so parallel segment build uses all cores
+              value: "10"   # match the CPU request so parallel segment build uses all cores
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
           resources:
             requests:
-              cpu: "8"
-              memory: "16Gi"
+              cpu: "10"
+              memory: "10Gi"
               nvidia.com/gpu: "1"
             limits:
-              cpu: "8"
-              memory: "16Gi"
+              cpu: "10"
+              memory: "10Gi"
               nvidia.com/gpu: "1"
           volumeMounts:
             - name: docker-test-lunar
@@ -79,6 +79,8 @@ spec:
                       - NVIDIA-L40
                       - NVIDIA-L4
                       - NVIDIA-L40S
+                      - NVIDIA-A10
+                      - NVIDIA-RTX-A6000
                   # The hcc-chase-shor-c470x/c471x UNL nodes have failing
                   # NVIDIA device plugins (UnexpectedAdmissionError or stuck
                   # ContainerCreating). Route around the broken siblings so

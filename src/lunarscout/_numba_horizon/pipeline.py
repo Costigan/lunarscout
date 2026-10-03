@@ -171,8 +171,14 @@ def run_bounded_pipeline(
     progress_callback: Callable[[HorizonProgress], None] | None = None,
     cancellation_requested: CancellationCheck | None = None,
     progress_stream: TextIO | None = None,
+    timing_stream: TextIO | None = None,
 ) -> PipelineResult:
-    """Prepare, compute, and immediately stage/write patches with bounded memory."""
+    """Prepare, compute, and immediately stage/write patches with bounded memory.
+
+    Timing diagnostics use ``timing_stream`` when supplied, otherwise
+    ``progress_stream``. A separate timing stream lets callers that already
+    render progress callbacks receive timings without duplicate progress lines.
+    """
     if prepared_queue_capacity < 1:
         raise ValueError("prepared_queue_capacity must be positive")
     if worker_count < 1:
@@ -202,6 +208,10 @@ def run_bounded_pipeline(
     compute_seconds = 0.0
     finalization_seconds = 0.0
     write_seconds = 0.0
+    prepared_count = 0
+    computed_count = 0
+    finalized_count = 0
+    written_count = 0
     maximum_queue_depth = 0
     maximum_writer_queue_depth = 0
     producer_enqueue_wait_seconds: list[float] = []
@@ -210,6 +220,7 @@ def run_bounded_pipeline(
     writer_dequeue_wait_seconds: list[float] = []
     metrics_lock = threading.Lock()
     finalize_patch = finalize_patch or (lambda _patch, payload: payload)
+    timing_stream = timing_stream if timing_stream is not None else progress_stream
 
     def emit(item: HorizonProgress) -> None:
         if progress_callback is not None:
@@ -219,6 +230,30 @@ def run_bounded_pipeline(
                 f"[{item.stage}] {item.percent:5.1f}% {item.message}\n"
             )
             progress_stream.flush()
+        if (
+            timing_stream is not None
+            and item.stage == "process_patches"
+            and item.processed_patches > 0
+            and item.processed_patches % 10 == 0
+        ):
+            with metrics_lock:
+                stages = (
+                    ("build", preparation_seconds, prepared_count),
+                    ("compute", compute_seconds, computed_count),
+                    ("finalize", finalization_seconds, finalized_count),
+                    ("write", write_seconds, written_count),
+                )
+            # Stage counts differ while preparation/compute run ahead of writes.
+            # These are host elapsed times, not CUDA event timings or utilization.
+            timings = " ".join(
+                f"{name}={seconds / count:.2f}s (n={count})"
+                if count else f"{name}=n/a (n=0)"
+                for name, seconds, count in stages
+            )
+            timing_stream.write(
+                f"horizons: mean completed-stage time | {timings}\n"
+            )
+            timing_stream.flush()
 
     total = len(pending)
     emit(
@@ -303,7 +338,7 @@ def run_bounded_pipeline(
                 continue
 
     def producer() -> None:
-        nonlocal preparation_seconds, maximum_queue_depth
+        nonlocal preparation_seconds, prepared_count, maximum_queue_depth
         try:
             for patch in pending:
                 if stop.is_set():
@@ -313,7 +348,9 @@ def run_bounded_pipeline(
                 item_started = time.perf_counter()
                 payload = prepare_patch(patch)
                 elapsed = time.perf_counter() - item_started
-                preparation_seconds += elapsed
+                with metrics_lock:
+                    preparation_seconds += elapsed
+                    prepared_count += 1
                 enqueued, enqueue_wait = put(_PreparedPatch(patch, payload, elapsed))
                 producer_enqueue_wait_seconds.append(enqueue_wait)
                 if not enqueued:
@@ -328,6 +365,7 @@ def run_bounded_pipeline(
 
     def worker(worker_id: int) -> None:
         nonlocal processed, compute_seconds, finalization_seconds, write_seconds
+        nonlocal computed_count, finalized_count, written_count
         try:
             processor = processor_factory(worker_id)
         except BaseException as error:
@@ -351,6 +389,9 @@ def run_bounded_pipeline(
                     compute_started = time.perf_counter()
                     computed = processor(item.patch, item.payload)
                     compute_elapsed = time.perf_counter() - compute_started
+                    with metrics_lock:
+                        compute_seconds += compute_elapsed
+                        computed_count += 1
                     if cancellation_requested():
                         raise HorizonPipelineCancelled("Horizon generation was cancelled.")
                     if writer_queue is not None:
@@ -358,12 +399,13 @@ def run_bounded_pipeline(
                             _ComputedPatch(item.patch, computed, compute_elapsed)
                         ):
                             continue
-                        with metrics_lock:
-                            compute_seconds += compute_elapsed
                         continue
                     finalize_started = time.perf_counter()
                     degrees = finalize_patch(item.patch, computed)
                     finalize_elapsed = time.perf_counter() - finalize_started
+                    with metrics_lock:
+                        finalization_seconds += finalize_elapsed
+                        finalized_count += 1
                     write_started = time.perf_counter()
                     path = store.write(
                         item.patch.tile_y,
@@ -375,10 +417,10 @@ def run_bounded_pipeline(
                         valid_height=item.patch.height,
                     )
                     write_elapsed = time.perf_counter() - write_started
-                    with progress_lock:
-                        compute_seconds += compute_elapsed
-                        finalization_seconds += finalize_elapsed
+                    with metrics_lock:
                         write_seconds += write_elapsed
+                        written_count += 1
+                    with progress_lock:
                         output_paths.append(path)
                         processed += 1
                         percent = processed * 100.0 / total
@@ -399,6 +441,7 @@ def run_bounded_pipeline(
 
     def writer() -> None:
         nonlocal processed, finalization_seconds, write_seconds
+        nonlocal finalized_count, written_count
         assert writer_queue is not None
         while True:
             dequeue_started = time.perf_counter()
@@ -418,6 +461,9 @@ def run_bounded_pipeline(
                     finalize_started = time.perf_counter()
                     degrees = finalize_patch(item.patch, item.payload)
                     finalize_elapsed = time.perf_counter() - finalize_started
+                    with metrics_lock:
+                        finalization_seconds += finalize_elapsed
+                        finalized_count += 1
                     if cancellation_requested():
                         raise HorizonPipelineCancelled("Horizon generation was cancelled.")
                     write_started = time.perf_counter()
@@ -431,9 +477,10 @@ def run_bounded_pipeline(
                         valid_height=item.patch.height,
                     )
                     write_elapsed = time.perf_counter() - write_started
-                    with progress_lock:
-                        finalization_seconds += finalize_elapsed
+                    with metrics_lock:
                         write_seconds += write_elapsed
+                        written_count += 1
+                    with progress_lock:
                         output_paths.append(path)
                         processed += 1
                         percent = processed * 100.0 / total

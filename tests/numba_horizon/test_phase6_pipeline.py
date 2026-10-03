@@ -439,6 +439,99 @@ def test_bounded_pipeline_skips_complete_tiles_streams_and_flushes_progress() ->
     assert stream.getvalue().endswith("Horizons generation complete.\n")
 
 
+@pytest.mark.parametrize("writer_queue_capacity", [None, 1])
+@pytest.mark.parametrize("with_stream", [False, True])
+def test_pipeline_timing_output_uses_only_progress_stream(
+    capsys, writer_queue_capacity, with_stream,
+) -> None:
+    stream = StringIO() if with_stream else None
+    result = run_bounded_pipeline(
+        enumerate_patches(1280, 128),
+        store=_FakeStore(),
+        prepare_patch=lambda patch: patch.index,
+        processor_factory=lambda _worker: lambda _patch, payload: payload,
+        writer_queue_capacity=writer_queue_capacity,
+        progress_stream=stream,
+    )
+    assert len(result.output_paths) == 10
+    assert capsys.readouterr().out == ""
+    if stream is not None:
+        lines = stream.getvalue().splitlines()
+        timings = [line for line in lines if "mean completed-stage time" in line]
+        assert len(timings) == 1
+        assert timings[0].count("(n=10)") == 4
+
+
+def test_pipeline_timing_averages_use_completed_stage_counts(monkeypatch) -> None:
+    last_compute_started = threading.Event()
+    timing_emitted = threading.Event()
+    clock = threading.local()
+
+    def perf_counter():
+        clock.value = getattr(clock, "value", 0.0) + 1.0
+        return clock.value
+
+    monkeypatch.setattr(time, "perf_counter", perf_counter)
+
+    class Stream(StringIO):
+        def write(self, message):
+            result = super().write(message)
+            if "mean completed-stage time" in message:
+                timing_emitted.set()
+            return result
+
+    class Store(_FakeStore):
+        def write(self, *args, **kwargs):
+            # Hold the first write until 11 computations have completed. The
+            # twelfth computation waits for the diagnostic at the tenth write.
+            assert last_compute_started.wait(timeout=5)
+            return super().write(*args, **kwargs)
+
+    def process(patch, payload):
+        if patch.index == 11:
+            last_compute_started.set()
+            assert timing_emitted.wait(timeout=5)
+        return payload
+
+    stream = Stream()
+    result = run_bounded_pipeline(
+        enumerate_patches(1536, 128),
+        store=Store(),
+        prepare_patch=lambda patch: patch.index,
+        processor_factory=lambda _worker: process,
+        prepared_queue_capacity=12,
+        writer_queue_capacity=12,
+        progress_stream=stream,
+    )
+    assert len(result.output_paths) == 12
+    assert (
+        "horizons: mean completed-stage time | "
+        "build=1.00s (n=12) compute=1.00s (n=11) "
+        "finalize=1.00s (n=10) write=1.00s (n=10)\n"
+    ) in stream.getvalue()
+    assert result.preparation_seconds == 12.0
+    assert result.compute_seconds == 12.0
+    assert result.finalization_seconds == 12.0
+    assert result.write_seconds == 12.0
+
+
+def test_pipeline_separate_timing_stream_avoids_duplicate_progress(capsys) -> None:
+    progress = []
+    stream = StringIO()
+    run_bounded_pipeline(
+        enumerate_patches(1280, 128),
+        store=_FakeStore(),
+        prepare_patch=lambda patch: patch.index,
+        processor_factory=lambda _worker: lambda _patch, payload: payload,
+        progress_callback=progress.append,
+        timing_stream=stream,
+    )
+    assert len([item for item in progress if item.processed_patches > 0]) == 11
+    assert len(stream.getvalue().splitlines()) == 1
+    assert stream.getvalue().startswith("horizons: mean completed-stage time")
+    assert capsys.readouterr().out == ""
+
+
 def test_pipeline_cancellation_after_compute_writes_no_incomplete_product() -> None:
     patch = enumerate_patches(128, 128)
     store = _FakeStore()

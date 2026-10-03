@@ -147,6 +147,7 @@ def _run_horizon_pipeline(
     cancellation_requested: CancellationCheck | None,
     patch_offset: int = 0,
     patch_stride: int = 1,
+    verbose: bool = False,
 ) -> None:
     """Bind validated public inputs to the selected private production pipeline."""
     from ._numba_horizon.contract import (
@@ -259,6 +260,7 @@ def _run_horizon_pipeline(
         worker_count=2,
         progress_callback=progress_callback,
         cancellation_requested=cancellation_requested,
+        timing_stream=sys.stdout if verbose else None,
     )
 
 
@@ -301,7 +303,10 @@ def generate_horizons(
         When ``False`` (the default), structurally complete existing tiles
         are skipped.  ``overwrite=True`` regenerates every tile.
     verbose:
-        When ``True``, writes backend and progress messages to stdout.
+        When ``True``, writes backend and progress messages to stdout, plus
+        mean elapsed times and completion counts for each pipeline stage every
+        ten written patches. Compute time includes host-side overhead and is
+        not a measurement of GPU utilization.
     progress_callback:
         Optional callable receiving a monotonic durable fraction ``[0, 1]``.
     progress_event_callback:
@@ -459,6 +464,7 @@ def generate_horizons(
             cancellation_requested=cancellation_requested,
             patch_offset=patch_offset,
             patch_stride=patch_stride,
+            verbose=verbose,
         )
         return output
     except Exception as exc:
