@@ -50,7 +50,7 @@ EARTH_VECTORS_M = None
 # byte = clamp(ceil(float32_hours / 2), 0, 255). Thus 255 saturates at 510 hours.
 # Undefined monthly results are NaN before conversion. NODATA must be an integer
 # in [0, 255] for byte output; its value also fills missing-horizon patches.
-NODATA = float("nan")
+NODATA = 255
 
 
 def hours_to_two_hour_bytes(hours: np.ndarray) -> np.ndarray:

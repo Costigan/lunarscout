@@ -1199,7 +1199,8 @@ def generate_safe_havens(
         disables this callback.
     cancellation_requested : callable, optional
         Zero-argument callable checked between bounded work units, including
-        time samples. Returning ``True`` raises ``OperationCancelledError``
+        CPU time samples or CUDA time batches. Returning ``True`` raises
+        ``OperationCancelledError``
         with code ``safe_haven_cancelled`` and leaves resumable staging state.
         Default ``None`` disables cancellation checks.
 
@@ -1236,6 +1237,15 @@ def generate_safe_havens(
     values indicate shorter low-sunlight runs associated with those outages.
     The product does not certify survival or select suitable landing sites:
     it does not include thermal, battery, terrain-slope, or rover models.
+
+    With ``backend="cuda"``, Sun visibility, Earth elevation, and monthly
+    run-duration reduction are calculated on the GPU. Lighting batches and
+    run state remain in device memory; only the completed monthly duration
+    patches are copied to the host for output conversion, compression, and
+    writing. Memory use is bounded by the patch, time-batch, and month counts,
+    rather than a full ``(time, y, x)`` lighting cube. ``backend="cpu"`` uses
+    the streaming CPU reducer; ``"auto"`` selects one complete calculation
+    backend for both bodies and the reduction.
 
     Bands are ordered chronologically, starting at GeoTIFF band 1. Each band
     corresponds to the UTC calendar interval ``[month start, next month start)``

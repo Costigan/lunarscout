@@ -1008,6 +1008,18 @@ computed with the expected algorithm.
 
 ### Shared Tiled-Product Pipeline
 
+For safe-haven products, `backend="cuda"` calculates Sun visibility, Earth
+elevation, and monthly duration reduction on the GPU. Lighting batches and
+the low-Sun run state remain in device memory. Only the completed monthly
+duration patches are copied to the CPU for optional output conversion,
+compression, and writing. This avoids transferring and reducing each
+timestamp's lighting raster on the CPU. Memory is bounded by patch size,
+time-batch size, and the number of monthly bands, without a full time cube.
+`backend="auto"` selects a complete CUDA calculation path or a complete CPU
+fallback; the Sun and Earth calculations do not select different backends.
+Cancellation is checked between CUDA time batches, and each patch remains
+one resumable work unit across all its monthly bands.
+
 Horizon-derived products are computed patch-major because reading a horizon
 tile is often more expensive than applying all requested times or reductions
 to that tile. The shared pipeline follows this pattern:

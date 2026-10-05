@@ -107,9 +107,16 @@ def run_safe_haven_product(
     )
 
     selected_backend: Literal["cpu", "cuda"] | None = None
+    cuda_session = None
 
-    if fraction_calculator is not None:
-        calc_fractions = fraction_calculator
+    if fraction_calculator is not None or elevation_calculator is not None:
+        # Any injected calculator selects the reference streaming path.  Fill
+        # the other signal with the compiled CPU implementation below.
+        if fraction_calculator is not None:
+            calc_fractions = fraction_calculator
+        else:
+            calc_fractions = LightmapCpuSession(time_batch_size=time_batch_size).iter_patch_fraction_tiles
+        selected_backend = "cpu"
     elif backend == "cpu":
         calc_fractions = LightmapCpuSession(
             time_batch_size=time_batch_size
@@ -117,12 +124,12 @@ def run_safe_haven_product(
         selected_backend = "cpu"
     else:
         from .cuda_backend import CudaBackendError
-        from .lightmap_cuda import LightmapCudaSession
+        from .safe_haven_cuda import SafeHavenCudaSession, SafeHavenCudaCancelled
 
         try:
-            calc_fractions = LightmapCudaSession(
+            cuda_session = SafeHavenCudaSession(
                 time_batch_size=time_batch_size
-            ).iter_patch_fraction_tiles
+            )
             selected_backend = "cuda"
         except CudaBackendError:
             if backend == "cuda":
@@ -134,24 +141,14 @@ def run_safe_haven_product(
 
     if elevation_calculator is not None:
         calc_elevations = elevation_calculator
-    elif backend == "cpu" or selected_backend == "cpu":
+    elif fraction_calculator is not None:
+        calc_elevations = LightmapCpuSession(time_batch_size=time_batch_size).iter_patch_margin_tiles
+    elif cuda_session is not None:
+        calc_elevations = None
+    else:
         calc_elevations = LightmapCpuSession(
             time_batch_size=time_batch_size
         ).iter_patch_margin_tiles
-    else:
-        from .cuda_backend import CudaBackendError
-        from .lightmap_cuda import LightmapCudaSession
-
-        try:
-            calc_elevations = LightmapCudaSession(
-                time_batch_size=time_batch_size
-            ).iter_patch_margin_tiles
-        except CudaBackendError:
-            if backend == "cuda":
-                raise
-            calc_elevations = LightmapCpuSession(
-                time_batch_size=time_batch_size
-            ).iter_patch_margin_tiles
 
     band_timestamps: list[datetime | str] = []
     for start, stop in month_bands:
@@ -242,51 +239,52 @@ def run_safe_haven_product(
         else:
             report(patch, "calculate")
 
-            fractions = calc_fractions(
-                dem,
-                horizons,
-                sun_vectors,
-                tile_y=patch.tile_y,
-                tile_x=patch.tile_x,
-                valid_height=patch.height,
-                valid_width=patch.width,
-            )
-            elevations = calc_elevations(
-                dem,
-                horizons,
-                earth_vectors,
-                tile_y=patch.tile_y,
-                tile_x=patch.tile_x,
-                valid_height=patch.height,
-                valid_width=patch.width,
-            )
+            if cuda_session is not None and fraction_calculator is None and elevation_calculator is None:
+                try:
+                    duration_tiles = cuda_session.reduce_patch(
+                        dem, horizons, sun_vectors, earth_vectors,
+                        tile_y=patch.tile_y, tile_x=patch.tile_x,
+                        valid_height=patch.height, valid_width=patch.width,
+                        month_bands=month_bands, month_index_of=month_index_of,
+                        time_count=len(timestamps),
+                        sunlight_threshold=sunlight_threshold,
+                        earth_threshold_deg=earth_threshold_deg,
+                        time_step_hours=time_step_hours,
+                        cancellation_requested=cancelled,
+                    )
+                except SafeHavenCudaCancelled as error:
+                    raise SafeHavenPipelineCancelled(str(error)) from error
+            else:
+                fractions = calc_fractions(
+                    dem, horizons, sun_vectors, tile_y=patch.tile_y,
+                    tile_x=patch.tile_x, valid_height=patch.height,
+                    valid_width=patch.width,
+                )
+                elevations = calc_elevations(
+                    dem, horizons, earth_vectors, tile_y=patch.tile_y,
+                    tile_x=patch.tile_x, valid_height=patch.height,
+                    valid_width=patch.width,
+                )
 
-            def checked_fractions() -> Iterable[npt.ArrayLike]:
-                for tile in fractions:
-                    if cancelled():
-                        raise SafeHavenPipelineCancelled(
-                            "safe-haven generation was cancelled"
-                        )
-                    yield tile
+                def checked_fractions() -> Iterable[npt.ArrayLike]:
+                    for tile in fractions:
+                        if cancelled():
+                            raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
+                        yield tile
 
-            def checked_elevations() -> Iterable[npt.ArrayLike]:
-                for tile in elevations:
-                    if cancelled():
-                        raise SafeHavenPipelineCancelled(
-                            "safe-haven generation was cancelled"
-                        )
-                    yield tile
+                def checked_elevations() -> Iterable[npt.ArrayLike]:
+                    for tile in elevations:
+                        if cancelled():
+                            raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
+                        yield tile
 
-            duration_tiles = reduce_safe_haven_patch_stream(
-                checked_fractions(),
-                checked_elevations(),
-                len(timestamps),
-                month_bands,
-                month_index_of=month_index_of,
-                sunlight_threshold=sunlight_threshold,
-                earth_threshold_deg=earth_threshold_deg,
-                time_step_hours=time_step_hours,
-            )
+                duration_tiles = reduce_safe_haven_patch_stream(
+                    checked_fractions(), checked_elevations(), len(timestamps),
+                    month_bands, month_index_of=month_index_of,
+                    sunlight_threshold=sunlight_threshold,
+                    earth_threshold_deg=earth_threshold_deg,
+                    time_step_hours=time_step_hours,
+                )
             if cancelled():
                 raise SafeHavenPipelineCancelled(
                     "safe-haven generation was cancelled"

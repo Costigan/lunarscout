@@ -265,13 +265,13 @@ def test_cpu_safe_haven_pipeline_writes_monthly_float_duration_bands(tmp_path: P
 def test_safe_haven_auto_backend_falls_back_to_cpu(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from lunarscout._numba_horizon import lightmap_cuda
+    from lunarscout._numba_horizon import safe_haven_cuda
 
     class UnavailableCudaSession:
         def __init__(self, **_kwargs) -> None:
             raise CudaBackendError("deliberately unavailable")
 
-    monkeypatch.setattr(lightmap_cuda, "LightmapCudaSession", UnavailableCudaSession)
+    monkeypatch.setattr(safe_haven_cuda, "SafeHavenCudaSession", UnavailableCudaSession)
     dem = _dem()
     store = HorizonTileStore(tmp_path / "horizons")
     store.write(
@@ -301,6 +301,135 @@ def test_safe_haven_auto_backend_falls_back_to_cpu(
     with rasterio.open(output) as dataset:
         duration = dataset.read(1).item()
         assert np.isfinite(duration)
+
+
+def test_safe_haven_partial_injection_uses_reference_path(tmp_path: Path) -> None:
+    dem = _dem()
+    store = HorizonTileStore(tmp_path / "horizons")
+    store.write(0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+                compress=True, valid_width=1, valid_height=1)
+    times = ("2027-01-01T00:00:00Z", "2027-01-01T12:00:00Z")
+
+    def fractions(*_args, **_kwargs):
+        yield np.asarray([[0.1]], dtype=np.float32)
+        yield np.asarray([[0.1]], dtype=np.float32)
+
+    output = run_safe_haven_product(
+        dem=dem, georef=_georef(), horizon_store=store,
+        output_path=tmp_path / "partial.tif", times_utc=times,
+        sun_vectors_m=np.stack((_position(dem, -1.0), _position(dem, -1.0))),
+        earth_vectors_m=np.stack((_position(dem, -1.0), _position(dem, 10.0))),
+        time_step_hours=12.0, fraction_calculator=fractions, backend="auto",
+    )
+    with rasterio.open(output) as dataset:
+        assert np.isfinite(dataset.read(1).item())
+
+
+def test_cuda_production_dispatch_does_not_use_host_iterators_or_reducer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lunarscout._numba_horizon import lightmap_cpu, safe_haven_cuda, safe_haven_pipeline
+
+    dem = _dem()
+    store = HorizonTileStore(tmp_path / "horizons")
+    store.write(0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+                compress=True, valid_width=1, valid_height=1)
+    calls = []
+
+    class FakeCuda:
+        def __init__(self, **_kwargs):
+            pass
+        def reduce_patch(self, *_args, **_kwargs):
+            calls.append("reduce")
+            return (np.asarray([[2.0]], dtype=np.float32),)
+
+    monkeypatch.setattr(safe_haven_cuda, "SafeHavenCudaSession", FakeCuda)
+    monkeypatch.setattr(safe_haven_pipeline, "reduce_safe_haven_patch_stream",
+                        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("host reducer")))
+    monkeypatch.setattr(lightmap_cpu.LightmapCpuSession, "iter_patch_fraction_tiles",
+                        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("host fraction")))
+    monkeypatch.setattr(lightmap_cpu.LightmapCpuSession, "iter_patch_margin_tiles",
+                        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("host margin")))
+    output = run_safe_haven_product(
+        dem=dem, georef=_georef(), horizon_store=store, output_path=tmp_path / "gpu.tif",
+        times_utc=("2027-01-01T00:00:00Z",),
+        sun_vectors_m=np.asarray([_position(dem, -1.0)]),
+        earth_vectors_m=np.asarray([_position(dem, -1.0)]), time_step_hours=2.0,
+        backend="cuda",
+    )
+    assert calls == ["reduce"]
+    with rasterio.open(output) as dataset:
+        assert dataset.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cuda"]'
+        assert dataset.read(1).item() == 2.0
+
+
+def test_explicit_cpu_does_not_construct_cuda(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lunarscout._numba_horizon import safe_haven_cuda
+    monkeypatch.setattr(safe_haven_cuda, "SafeHavenCudaSession",
+                        lambda **_k: (_ for _ in ()).throw(AssertionError("CUDA probe")))
+    dem = _dem()
+    store = HorizonTileStore(tmp_path / "horizons")
+    store.write(0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32), compress=True,
+                valid_width=1, valid_height=1)
+    output = run_safe_haven_product_cpu(
+        dem=dem, georef=_georef(), horizon_store=store, output_path=tmp_path / "cpu.tif",
+        times_utc=("2027-01-01T00:00:00Z", "2027-01-01T12:00:00Z"),
+        sun_vectors_m=np.stack((_position(dem, -1.0),) * 2),
+        earth_vectors_m=np.stack((_position(dem, -1.0), _position(dem, 10.0))),
+        time_step_hours=12.0,
+    )
+    assert output.exists()
+
+
+def test_explicit_cuda_unavailable_and_auto_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lunarscout._numba_horizon import safe_haven_cuda
+    class Unavailable:
+        def __init__(self, **_k):
+            raise CudaBackendError("unavailable")
+    monkeypatch.setattr(safe_haven_cuda, "SafeHavenCudaSession", Unavailable)
+    dem = _dem()
+    store = HorizonTileStore(tmp_path / "horizons")
+    store.write(0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32), compress=True,
+                valid_width=1, valid_height=1)
+    kwargs = dict(dem=dem, georef=_georef(), horizon_store=store,
+                  times_utc=("2027-01-01T00:00:00Z", "2027-01-01T12:00:00Z"),
+                  sun_vectors_m=np.stack((_position(dem, -1.0),) * 2),
+                  earth_vectors_m=np.stack((_position(dem, -1.0), _position(dem, 10.0))),
+                  time_step_hours=12.0)
+    with pytest.raises(CudaBackendError):
+        run_safe_haven_product(output_path=tmp_path / "explicit.tif", backend="cuda", **kwargs)
+    assert run_safe_haven_product(output_path=tmp_path / "auto.tif", backend="auto", **kwargs).exists()
+
+
+def test_fake_cuda_typed_cancellation_resumes_unjournaled_patch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lunarscout._numba_horizon import safe_haven_cuda
+    calls = {"count": 0}
+
+    class FakeCuda:
+        def __init__(self, **_kwargs):
+            pass
+        def reduce_patch(self, *_args, **_kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise safe_haven_cuda.SafeHavenCudaCancelled("cancelled")
+            return (np.asarray([[1.0]], dtype=np.float32),)
+
+    monkeypatch.setattr(safe_haven_cuda, "SafeHavenCudaSession", FakeCuda)
+    dem = _dem()
+    store = HorizonTileStore(tmp_path / "horizons")
+    store.write(0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32), compress=True,
+                valid_width=1, valid_height=1)
+    kwargs = dict(dem=dem, georef=_georef(), horizon_store=store,
+                  times_utc=("2027-01-01T00:00:00Z",),
+                  sun_vectors_m=np.asarray([_position(dem, -1.0)]),
+                  earth_vectors_m=np.asarray([_position(dem, -1.0)]), time_step_hours=1.0,
+                  backend="cuda", output_path=tmp_path / "resume.tif")
+    with pytest.raises(SafeHavenPipelineCancelled):
+        run_safe_haven_product(**kwargs)
+    assert not (tmp_path / "resume.tif").exists()
+    assert run_safe_haven_product(**kwargs).exists()
 
 
 def test_safe_haven_cancellation_is_checked_during_time_stream_and_resumes(
