@@ -2411,11 +2411,36 @@ Current open work:
 - expand the user guide with complete installation, data, and product
   reference sections.
 
+## Generated API Reference
+
+The [API Reference](API_REFERENCE.md) collects public function and class
+signatures, source docstrings, public methods, properties, and dataclass fields
+from the package root and the `cuda`, `spice`, `trajectory`, and `map_algebra`
+namespaces. Some source docstrings are incomplete; the generated reference
+flags parameters without explicit documentation entries instead of inventing
+descriptions. It preserves docstrings as text, including their source markup.
+
+Update documentation in the source code, then regenerate from the repository
+root using the project environment:
+
+```bash
+.venv/bin/python scripts/generate_api_reference.py
+.venv/bin/python scripts/generate_api_reference.py --check
+```
+
+Generation imports the package but does not call scientific functions, probe
+CUDA, or load SPICE kernels. `--check` writes nothing and exits nonzero when
+the reference is missing or differs from the current source. `--output PATH`
+selects another destination; source and guide links assume the usual `docs/`
+destination. Namespaces with `__all__` use that export list; others include
+public functions and classes owned by Lunarscout. Constants, typing aliases,
+private members, and third-party helpers are omitted.
+
 ## Reference Stubs
 
 The following sections are expected but not ready to fill in:
 
-- API reference;
+- complete per-argument source documentation for the generated API reference;
 - supported raster formats;
 - supported coordinate reference systems;
 - nodata and mask conventions;

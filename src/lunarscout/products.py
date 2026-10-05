@@ -1094,61 +1094,181 @@ def generate_safe_havens(
     progress_event_callback: ProgressEventCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> Path:
-    """Generate per-pixel safe-haven duration bands, one per calendar month.
+    """Generate monthly maps of low-sunlight duration during Earth outages.
+
+    The default output contains float32 durations in hours, one band per
+    sampled UTC calendar month. See Notes for the scientific definition
+    and allocation of low-Sun runs to bands.
 
     Parameters
     ----------
-    times:
-        The UTC time domain as a :class:`TimeRange`.  Must be strictly
-        increasing and uniformly spaced.  Calendar-month bands are computed
-        from the timestamps in this range.
-    sun_vectors_m / earth_vectors_m:
-        Optional explicit Moon-ME vectors in meters, shape ``(time, 3)``.
-        Supplied vectors take precedence and avoid SPICE import.
-    earth_elevation_threshold_deg:
-        Earth-center elevation threshold in degrees.  An Earth outage begins
-        when Earth elevation relative to the local terrain horizon drops
-        strictly below this threshold and ends when it rises above.
-        Default 2.0 degrees.
-    sunlight_fraction_threshold:
-        Unitless sunlight-fraction threshold.  A pixel is low-Sun when its
-        sunlight fraction is strictly below this value.  Default 0.2.
-    backend:
-        ``"auto"``, ``"cpu"``, or ``"cuda"``.  See :func:`generate_lightmap`.
-    observer_height_m:
-        Observer height above the DEM surface, in meters.
-    nodata:
-        Value stored in pixels where the safe-haven question is ill-posed:
-        Earth never goes below the threshold during that month, or Earth
-        stays below the threshold for the entire month.  Defaults to ``NaN``.
-    output_transform / output_dtype / output_transform_id:
-        Optional per-patch conversion.  See :func:`generate_lightmap`.
-    compress:
-        ``True`` (default) compresses tiles; ``False`` disables compression
-        while preserving tiling.
-    overwrite / start_fresh:
-        See :func:`generate_lightmap`.
+    dem_path : str or pathlib.Path
+        Primary DEM GeoTIFF defining the output grid. Its declared scale and
+        offset are applied and elevations are normalized to metres above the
+        1737.4-km lunar reference sphere. Radius-from-centre DEMs are converted
+        to elevations above that sphere.
+    horizons_path : str or pathlib.Path
+        Directory containing precomputed 128-pixel horizon tiles for the DEM
+        grid and ``observer_height_m``. This call does not generate horizons.
+    output_path : str or pathlib.Path
+        Destination for the tiled, multi-band GeoTIFF. Parent directories are
+        created as needed. Completed output is published atomically.
+    times : TimeRange
+        UTC sampling domain, with at least two strictly increasing, uniformly
+        spaced timestamps. Use ``lunarscout.times`` to construct it. Its stop
+        is inclusive when it falls on the sampling grid. Bands are created for
+        months containing samples, including partially sampled months.
+    sun_vectors_m : array-like, optional
+        Geometric Moon-centered Sun positions in the Moon-ME frame, in metres,
+        with finite values and shape ``(times.time_count, 3)``. Rows correspond
+        to the timestamps in ``times``. Default ``None`` generates Sun vectors
+        with SPICE. Explicit Sun vectors bypass SPICE for the Sun only.
+    earth_vectors_m : array-like, optional
+        Geometric Moon-centered Earth positions in the Moon-ME frame, in
+        metres, with finite values and shape ``(times.time_count, 3)``. Default
+        ``None`` generates Earth vectors with SPICE. Supply both vector arrays
+        to avoid importing SpiceyPy and loading kernels for this operation.
+    earth_elevation_threshold_deg : float, default 2.0
+        Earth-center elevation threshold in degrees relative to each pixel's
+        terrain horizon at the Earth's azimuth. A sample is an Earth outage
+        when this elevation is strictly below the threshold. Equality counts
+        as Earth being available. This is a geometric communication criterion;
+        it does not model antenna, link-budget, or ground-station constraints.
+    sunlight_fraction_threshold : float, default 0.2
+        Unitless threshold for the visible fraction of the solar disk, whose
+        physical range is zero to one. A sample is low-Sun when its fraction
+        is strictly below the threshold; equality is not low-Sun. The default
+        means less than 20 percent of the solar disk is visible. This fraction
+        does not represent electrical power or a battery state of charge.
+    backend : {"auto", "cpu", "cuda"}, default "auto"
+        Calculation backend. ``"cpu"`` does not probe CUDA. ``"auto"`` uses
+        CUDA when it can initialize a session, otherwise CPU. Explicit
+        ``"cuda"`` raises a structured CUDA error if unavailable and never
+        falls back to CPU.
+    observer_height_m : float, default 0.0
+        Observer height above the DEM surface, in metres. Selects the stored
+        horizon tiles for that height; matching horizons must already exist.
+        This call does not generate or adjust horizon tiles for a new height.
+    nodata : float, default numpy.nan
+        GeoTIFF nodata metadata and the fill value for patches whose horizons
+        are missing or unreadable. The monthly reducer itself always emits
+        NaN where Earth is never below the threshold or is below it at every
+        evaluated sample in that month. A finite ``nodata`` does not replace
+        those reducer NaNs automatically; use ``output_transform`` to encode
+        them if a finite sentinel or integer storage is required.
+    output_transform : callable, optional
+        Optional conversion of each calculated band's two-dimensional patch
+        before writing. Receives a duration array in hours that can contain
+        NaNs. Must preserve its shape and return exactly ``output_dtype``.
+        Handle NaNs explicitly and keep the chosen encoding consistent with
+        ``nodata``. Missing-horizon patches are filled directly with ``nodata``
+        and do not pass through this callable. Default ``None`` writes float32
+        durations without conversion.
+    output_dtype : numpy dtype-like, optional
+        Required storage dtype when ``output_transform`` is provided; omitted
+        otherwise. Accepts forms such as ``numpy.float32`` or ``"uint16"``.
+        The configured ``nodata`` must be representable in the storage dtype.
+    output_transform_id : str, optional
+        Optional identity for the conversion, recorded in the staged job's
+        compatibility metadata. Requires ``output_transform``. Reusing staged
+        output requires the same ID; omitting the ID on both runs also matches.
+        Choose an ID that changes when the conversion's meaning changes.
+    compress : bool, default True
+        Use DEFLATE compression for the tiled output. ``False`` retains tiling
+        but disables compression.
+    overwrite : bool, default False
+        Permit replacement of an existing completed output. Without permission,
+        an existing output raises ``ProductStorageError`` before calculation.
+        A failed overwrite preserves the previous completed product; the new
+        file is published only after all patches finish.
+    start_fresh : bool, default False
+        Discard staged output for this destination and restart calculation.
+        Otherwise compatible staged work is resumed, skipping completed
+        patches. This is separate from permission to overwrite a completed
+        output. Do not discard staging while another process is writing it.
+    verbose : bool, default False
+        Print selected-backend and patch-completion messages to standard output.
+    progress_callback : callable, optional
+        Callable receiving a durable completion fraction in ``[0, 1]`` when
+        the completed-patch count changes, including resumed work. Default
+        ``None`` disables this callback.
+    progress_event_callback : callable, optional
+        Callable receiving immutable ``lunarscout.ProgressEvent`` objects with
+        operation, stage, completed and total patch counts, fraction, backend,
+        output path, and tile coordinates where applicable. Default ``None``
+        disables this callback.
+    cancellation_requested : callable, optional
+        Zero-argument callable checked between bounded work units, including
+        time samples. Returning ``True`` raises ``OperationCancelledError``
+        with code ``safe_haven_cancelled`` and leaves resumable staging state.
+        Default ``None`` disables cancellation checks.
 
     Returns
     -------
     pathlib.Path
-        The completed output path.  Each band represents one calendar month.
+        Resolved completed output path, containing chronological monthly bands.
+
+    Raises
+    ------
+    InputError
+        Invalid backend, callback, or output-conversion arguments.
+    ProductTimeError
+        Insufficient, nonuniform, or inconsistent sampling timestamps.
+    VectorError
+        Invalid explicitly supplied Sun or Earth vectors.
+    CudaError
+        Explicit CUDA selection cannot initialize or CUDA execution fails.
+    OperationCancelledError
+        The cancellation callback requests cancellation.
+    ProductStorageError
+        Output already exists without overwrite permission, incompatible staged
+        work, or a storage failure.
+    ProductCalculationError
+        Calculation or patch-conversion failure. Exceptions from the progress
+        callbacks propagate unchanged.
 
     Notes
     -----
-    Earth outages are detected **per-pixel** from each pixel's own terrain
-    horizon (not from the DEM center).  Each ``float32`` output band stores
-    the longest complete contiguous low-Sun interval that overlaps any Earth
-    outage for that pixel during that calendar month, in hours.  The band is
-    labeled with the month's UTC ``[start, stop)`` interval.
+    Here a safe-haven product characterizes the low-sunlight duration that
+    coincides with losing the geometric Earth link at a fixed terrain location.
+    For each pixel and month, it reports the longest contiguous low-Sun run
+    that includes at least one Earth-outage sample in that month. Shorter
+    values indicate shorter low-sunlight runs associated with those outages.
+    The product does not certify survival or select suitable landing sites:
+    it does not include thermal, battery, terrain-slope, or rover models.
 
-    Pixels where the Earth never goes below the threshold during a month, or
-    where Earth is permanently occluded for the entire month, receive ``nodata``
-    (NaN by default) because the safe-haven question is ill-posed for those
-    pixels during that month.  The input DEM is read with its declared
-    scale/offset applied and normalized to metres above the lunar reference
-    sphere (1737.4 km); DEMs stored as radius-from-centre are converted to
-    elevation-from-sphere automatically.
+    Bands are ordered chronologically, starting at GeoTIFF band 1. Each band
+    corresponds to the UTC calendar interval ``[month start, next month start)``
+    and is timestamped at the first day of that month at 00:00 UTC. Only months
+    containing evaluation samples get bands. A partial month uses only its
+    available samples, even though the band's timestamp names the full month.
+
+    Earth visibility and solar fraction are calculated from each pixel's own
+    terrain horizon. A low-Sun run is tracked independently of Earth visibility.
+    If the run overlaps an outage in a month, its entire sampled duration is
+    credited to that month, including portions before and after the outage
+    and outside the month. Crossing a month boundary alone does not qualify
+    it for the other month: it must also overlap an Earth outage there.
+    For example, a 36-hour low-Sun run crossing January and February contributes
+    36 hours to each band if it overlaps an outage in each month and both
+    months have some samples where Earth is available. The duration is not
+    split into January and February portions. Multiple qualifying runs are
+    reduced by taking their maximum, not their sum.
+
+    Duration is ``number of consecutive low-Sun samples * sampling step`` in
+    hours, including the last sample. A run already active at the first sample
+    or still active at the last sample is counted only over the sampled data;
+    its true start or end outside the evaluation domain is unknown. In
+    particular, this sample-count convention can yield one step more than the
+    elapsed time between the first and last timestamps in a run.
+
+    A month's result is NaN when Earth is below the threshold at no samples
+    or at every sample, regardless of sunlight. These are undefined results,
+    not zero-duration havens. Zero is a valid result when that month contains
+    both outage and available-Earth samples but no low-Sun run overlaps an
+    outage. With partial-month input, these classifications describe the
+    sampled portion only. Patches with missing or unreadable horizons are
+    instead written as invalid patches filled with ``nodata``.
     """
 
     _validate_output_conversion(
