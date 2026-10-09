@@ -22,6 +22,8 @@ PIXEL_COUNT = PATCH_SIZE * PATCH_SIZE
 TOTAL_SAMPLES = PIXEL_COUNT * AZIMUTH_COUNT
 RAW_FILE_BYTES = TOTAL_SAMPLES * np.dtype("<f4").itemsize
 MAX_COMPRESSED_BLOCK_BYTES = 2 * AZIMUTH_COUNT
+# Lowest horizon elevation a tile reports; the compressed format cannot store less.
+HORIZON_FLOOR_DEG = -50.0
 _SHORT_SCALE = np.float32(32767.0) / np.float32(50.0)
 _ELEVATION_SCALE = np.float32(50.0) / np.float32(32767.0)
 _COMPILED_ENCODER = None
@@ -51,7 +53,7 @@ def _encode_horizons_python(
         previous = 0
         for sample_index, raw_value in enumerate(horizon):
             value = float(raw_value)
-            value = max(-50.0, min(50.0, value))
+            value = max(HORIZON_FLOOR_DEG, min(50.0, value))
             scaled = float(np.float32(value) * _SHORT_SCALE)
             quantized = int(np.floor(scaled + 0.5) if scaled >= 0 else np.ceil(scaled - 0.5))
             quantized = max(-32767, min(32767, quantized))
@@ -113,7 +115,9 @@ def _normalize_tile(
         return np.ascontiguousarray(source)
     # Existing readers require a complete 128x128 tile. Pixels outside the DEM
     # are never addressable and use the compressor's minimum representable angle.
-    padded = np.full((PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), -50.0, dtype=np.float32)
+    padded = np.full(
+        (PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), HORIZON_FLOOR_DEG, dtype=np.float32
+    )
     if source.shape == full_shape:
         valid = source.reshape(PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT)[
             :valid_height, :valid_width
@@ -270,6 +274,13 @@ def read_horizon_tile_with_timings(
         values = _decode_compressed_payload(payload, flat_output)
     else:
         raise ValueError("horizon tile must have a .bin or .cbin extension")
+    if suffix == ".bin":
+        # Raw tiles store -inf for rays that met no terrain. Products interpolate
+        # between azimuth bins, and -inf - (-inf) is NaN, which made such pixels
+        # dark (review finding H-D). Apply the compressed format's -50 degree
+        # floor so raw and compressed tiles decode alike; NaN (a corrupt tile)
+        # is left for the product validation to reject.
+        np.maximum(values, np.float32(HORIZON_FLOOR_DEG), out=values)
     decompression_seconds = time.perf_counter() - decode_started
     result = values.reshape(PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT)
     return result, HorizonReadTimings(

@@ -364,6 +364,36 @@ def test_scenario_lightmap_resolves_canonical_paths(tmp_path: Path) -> None:
     assert output == tmp_path / "analysis/lightmap.tif"
 
 
+def test_unobstructed_raw_horizon_tile_is_lit(tmp_path: Path) -> None:
+    # Review finding H-D: a raw tile stores -inf for rays that met no terrain.
+    # Interpolating between two -inf bins gave NaN, so the pixel came out dark
+    # (lightmap) or was rejected (PSR).
+    dem_path = tmp_path / "dem.tif"
+    ls.write_geotiff(dem_path, np.zeros((1, 1), dtype=np.float32), _georef())
+    horizons_path = tmp_path / "horizons"
+    HorizonTileStore(horizons_path).write(
+        0, 0, 0.0,
+        np.full((1, AZIMUTH_COUNT), -np.inf, dtype=np.float32),
+        compress=False, valid_width=1, valid_height=1,
+    )
+    sun = _sun_vector(1.0)[None, :]
+
+    lightmap = ls.generate_lightmap(
+        dem_path, horizons_path, tmp_path / "lightmap.tif",
+        times=(datetime(2027, 1, 1, tzinfo=timezone.utc),),
+        sun_vectors_m=sun, backend="cpu",
+    )
+    psr = ls.generate_psr(
+        dem_path, horizons_path, tmp_path / "psr.tif",
+        times=("2027-01-01T00:00:00Z",), sun_vectors_m=sun, backend="cpu",
+    )
+
+    with rasterio.open(lightmap) as dataset:
+        assert dataset.read(1).item() == 255
+    with rasterio.open(psr) as dataset:
+        assert dataset.read(1).item() == 0
+
+
 def test_public_cpu_psr_returns_path_values_mask_and_backend_metadata(
     tmp_path: Path,
 ) -> None:
