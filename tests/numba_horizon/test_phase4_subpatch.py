@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from lunarscout.errors import HorizonGenerationError
 from lunarscout._numba_horizon.contract import (
     ContractConfiguration,
     PyramidArrays,
@@ -139,6 +140,30 @@ def test_generator_carries_accumulated_slopes_between_dem_passes() -> None:
     np.testing.assert_array_equal(
         generated.slopes, np.array([[5.0, 4.0, 3.0]], dtype=np.float32)
     )
+
+
+def test_generator_reports_rays_stopped_by_the_step_limit() -> None:
+    configuration = ContractConfiguration(
+        tile_width=1, tile_height=1, azimuth_count=3, subpatch_size=8,
+        dem_count=1, primary_width=2, primary_height=2,
+    )
+    values = np.zeros((3, 4, 1, 18), dtype=np.float32)
+    ids = np.zeros(values.shape[:-1], dtype=np.int32)
+    tensor = SegmentTensor(values, ids, configuration)
+
+    class FakeSession:
+        def subpatch_hierarchical_all_passes(self, *args, **kwargs):
+            # The production kernel returns NaN for a ray that hit its step limit.
+            return np.array([[0.1, np.nan, np.nan]], dtype=np.float32), [0.1]
+
+    with pytest.raises(HorizonGenerationError) as raised:
+        generate_patch_horizons(
+            FakeSession(), tensor, [object()], tile_column=256, tile_row=128
+        )
+    assert raised.value.code == "horizon_step_limit_exceeded"
+    assert raised.value.details == {
+        "tile_column": 256, "tile_row": 128, "ray_count": 2,
+    }
 
 
 def test_cuda_session_reuses_unchanged_production_pyramids() -> None:

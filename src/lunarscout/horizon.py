@@ -470,6 +470,8 @@ def generate_horizons(
     except Exception as exc:
         if adapter.callback_error is exc:
             raise
+        if isinstance(exc, HorizonGenerationError):
+            raise
         from ._numba_horizon.cuda_backend import CudaBackendError
         from ._numba_horizon.pipeline import HorizonPipelineCancelled
 

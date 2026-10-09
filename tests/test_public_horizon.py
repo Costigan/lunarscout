@@ -168,6 +168,28 @@ def test_public_horizon_missing_cuda_runtime_has_install_hint(
     )
 
 
+def test_public_horizon_step_limit_error_keeps_its_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dem = _write_dem(tmp_path / "dem.tif")
+    details = {"tile_column": 0, "tile_row": 0, "ray_count": 3}
+
+    def step_limit(*_args, **_kwargs):
+        raise ls.HorizonGenerationError(
+            "Horizon rays exceeded the ray-march step limit.",
+            code="horizon_step_limit_exceeded",
+            details=details,
+        )
+
+    monkeypatch.setattr(horizon_module, "_run_horizon_pipeline", step_limit)
+
+    with pytest.raises(ls.HorizonGenerationError) as raised:
+        ls.generate_horizons(tmp_path / "horizons", [dem])
+
+    assert raised.value.code == "horizon_step_limit_exceeded"
+    assert raised.value.details == details
+
+
 def test_public_horizon_cuda_jit_failure_is_structured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

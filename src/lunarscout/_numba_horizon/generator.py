@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import numpy as np
+
+from ..errors import HorizonGenerationError
 from .contract import HorizonBuffers, PyramidArrays, SegmentTensor
 from .cuda_backend import CudaSession
 
@@ -33,4 +36,15 @@ def generate_patch_horizons(
         subpatch_size=configuration.subpatch_size,
         observer_elevation_m=observer_elevation_m,
     )
+    capped = int(np.count_nonzero(np.isnan(slopes)))
+    if capped:
+        raise HorizonGenerationError(
+            "Horizon rays exceeded the ray-march step limit.",
+            code="horizon_step_limit_exceeded",
+            details={
+                "tile_column": int(tile_column),
+                "tile_row": int(tile_row),
+                "ray_count": capped,
+            },
+        )
     return HorizonBuffers(slopes)

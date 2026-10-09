@@ -661,6 +661,9 @@ def _build_kernels(cuda):
         level0, mips, levels, observer_z, radius, map_resolution, pass_index,
         initial,
     ):
+        if math.isnan(initial):
+            # An earlier DEM pass hit the step limit; keep the marker.
+            return initial
         s = float32(max(s_start, float32(0.001)))
         current = float32(-1e30) if math.isinf(initial) else float32(initial)
         minimum_step = float32(
@@ -669,8 +672,20 @@ def _build_kernels(cuda):
         primary_far_step = float32(
             float32(float32(0.8) * map_resolution) * float32(0.001)
         )
+        # Step limit (review finding M-G): a ray that stops advancing must
+        # not keep the GPU busy. Normal rays need at most a few steps per
+        # pixel of range; 16 per pixel plus 1000 is a wide margin. A capped
+        # ray returns NaN, which generate_patch_horizons reports as
+        # horizon_step_limit_exceeded.
+        step_limit = int(
+            float32(16.0) * s_end / float32(map_resolution * float32(0.001))
+        ) + 1000
+        step_count = 0
         ray_out = False
         while s <= s_end:
+            step_count += 1
+            if step_count > step_limit:
+                return float32(np.nan)
             delta = s - s_start
             pixel_x = evaluate(
                 start_x, a1, a2, a3, a4, delta
