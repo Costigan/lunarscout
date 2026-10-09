@@ -60,6 +60,28 @@ def _build_kernels(cuda):
         return maximum
 
     @cuda.jit(device=True)
+    def cull_bound_distance(
+        true_m, block_m, maximum_height, observer_z, radius, near_field
+    ):
+        # Distance at which a block of height <= maximum_height can reach its
+        # largest slope. Above the observer the slope falls with distance, so
+        # the nearest point bounds it. Below the observer the slope rises with
+        # distance (flat model) or peaks at d* = sqrt(-dh * (2R + h + z0))
+        # (curved model), so the far side of the block, or d*, bounds it.
+        true_near = float32(max(float32(true_m - block_m), float32(1.0)))
+        height_delta = float32(maximum_height - observer_z)
+        if height_delta >= float32(0.0):
+            return true_near
+        true_far = float32(true_m + float32(block_m * float32(1.4142136)))
+        if near_field:
+            return true_far
+        radius_sum = float32(
+            float32(float32(2.0) * radius) + maximum_height + observer_z
+        )
+        peak = float32(math.sqrt(float32(-height_delta * radius_sum)))
+        return float32(min(max(peak, true_near), true_far))
+
+    @cuda.jit(device=True)
     def evaluate(x0, a1, a2, a3, a4, distance):
         distance = float32(distance)
         distance2 = float32(distance * distance)
@@ -535,16 +557,17 @@ def _build_kernels(cuda):
                     s = float32(s + advance)
                     break
                 block_m = float32(float32(scale) * map_resolution)
-                true_near = float32(max(
-                    float32(true_m - block_m), float32(1.0)
-                ))
+                bound_m = cull_bound_distance(
+                    true_m, block_m, maximum_height, observer_z[index],
+                    radius[index], s < float32(0.5),
+                )
                 observer_radius = float32(radius[index] + observer_z[index])
                 if s < float32(0.5):
                     possible = float32(
-                        float32(maximum_height - observer_z[index]) / true_near
+                        float32(maximum_height - observer_z[index]) / bound_m
                     )
                 else:
-                    squared = float32(true_near * true_near)
+                    squared = float32(bound_m * bound_m)
                     height_delta = float32(maximum_height - observer_z[index])
                     radius_sum = float32(
                         float32(float32(2.0) * radius[index])
@@ -765,16 +788,17 @@ def _build_kernels(cuda):
                     s = float32(s + advance)
                     break
                 block_m = float32(float32(scale) * map_resolution)
-                true_near = float32(max(
-                    float32(true_m - block_m), float32(1.0)
-                ))
+                bound_m = cull_bound_distance(
+                    true_m, block_m, maximum_height, observer_z,
+                    radius, s < float32(0.5),
+                )
                 observer_radius = float32(radius + observer_z)
                 if s < float32(0.5):
                     possible = float32(
-                        float32(maximum_height - observer_z) / true_near
+                        float32(maximum_height - observer_z) / bound_m
                     )
                 else:
-                    squared = float32(true_near * true_near)
+                    squared = float32(bound_m * bound_m)
                     height_delta = float32(maximum_height - observer_z)
                     radius_sum = float32(
                         float32(float32(2.0) * radius) + maximum_height

@@ -70,6 +70,34 @@ def _cell(pyramid: PyramidArrays, level: int, x: int, y: int) -> np.float32:
     return pyramid.mips[offset + y * width + x]
 
 
+def _cull_bound_distance(
+    true_m: np.float32,
+    block_m: np.float32,
+    maximum_height: np.float32,
+    observer_z: np.float32,
+    radius: np.float32,
+    near_field: bool,
+) -> np.float32:
+    """Distance at which a block's height bound gives its largest slope.
+
+    Above the observer the slope falls with distance, so the nearest point
+    bounds it.  Below the observer the slope rises with distance (flat model)
+    or peaks at ``d* = sqrt(-dh * (2R + h + z0))`` (curved model), so the far
+    side of the block, or ``d*`` clamped to the block, bounds it.  Mirrors
+    ``cull_bound_distance`` in the CUDA backend.
+    """
+    true_near = max(np.float32(true_m - block_m), np.float32(1.0))
+    height_delta = np.float32(maximum_height - observer_z)
+    if height_delta >= 0:
+        return true_near
+    true_far = np.float32(true_m + block_m * np.float32(1.4142136))
+    if near_field:
+        return true_far
+    radius_sum = np.float32(np.float32(2.0) * radius + maximum_height + observer_z)
+    peak = np.float32(np.sqrt(np.float32(-height_delta * radius_sum)))
+    return np.float32(min(max(peak, true_near), true_far))
+
+
 def _bilinear_bound(
     pyramid: PyramidArrays, level: int, x: int, y: int
 ) -> np.float32:
@@ -187,12 +215,15 @@ def traverse_hierarchy(
                 s += advance
                 break
             block_m = np.float32(scale) * map_resolution
-            true_near = max(true_m - block_m, np.float32(1.0))
+            bound_m = _cull_bound_distance(
+                true_m, block_m, maximum_height, observer_z, radius,
+                s < np.float32(0.5),
+            )
             observer_radius = radius + observer_z
             if s < np.float32(0.5):
-                possible = (maximum_height - observer_z) / true_near
+                possible = (maximum_height - observer_z) / bound_m
             else:
-                squared = true_near * true_near
+                squared = bound_m * bound_m
                 local_z = (
                     (maximum_height - observer_z)
                     * (np.float32(2.0) * radius + maximum_height + observer_z)
