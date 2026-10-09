@@ -15,6 +15,9 @@ Other variants are any '+'-joined combination of the edits HA, nocull, dense and
                   CPU oracle do (removed for speed in d543e6e)
   fine            quarter-pixel level-0 steps at every range, with no 0.8 / 0.5 pixel step floor
   diagnear        (fix/hierarchy-cull-bound tree only) a block's near distance uses its diagonal
+Every variant except baseline also gets a step guard in the production ray march (see add_step_guard):
+a ray that exceeds 16 x ray length / pixel + 1000 steps returns NaN and is reported, so a stalled
+experiment cannot keep the GPU busy after the script is stopped.
 
 For each variant it generates horizons for the LOLA fixture and the synthetic wall in a child process,
 then compares the same rays against s2's float64 brute force (computed once, shared by all variants):
@@ -74,6 +77,24 @@ def sub(text, label, pattern, repl, expected):
     return text
 
 
+def add_step_guard(text):
+    """Cap the production ray march (hierarchy_maximum) so a stalled ray cannot run forever.
+
+    Killing the host process does not stop a running CUDA kernel, so the s6 --timeout alone cannot
+    protect the GPU; the cap must be inside the kernel. Allowed steps = 16 x ray length / pixel + 1000,
+    four times the quarter-pixel 'fine' variant. A capped ray returns NaN, which s6 counts and reports.
+    """
+    return sub(text, "step guard",
+               r"( +)ray_out = False\n( +)while s <= s_end:\n",
+               lambda m: (f"{m.group(1)}ray_out = False\n"
+                          f"{m.group(1)}guard_limit = int(float32(16.0) * s_end / float32(map_resolution * float32(0.001))) + 1000\n"
+                          f"{m.group(1)}guard_steps = 0\n"
+                          f"{m.group(2)}while s <= s_end:\n"
+                          f"{m.group(2)}    guard_steps += 1\n"
+                          f"{m.group(2)}    if guard_steps > guard_limit:\n"
+                          f"{m.group(2)}        return float32(np.nan)\n"), 1)
+
+
 def build(repo: Path, work: Path, name: str, edits) -> Path:
     root = work / name
     shutil.copytree(repo / "src", root / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
@@ -96,6 +117,8 @@ def build(repo: Path, work: Path, name: str, edits) -> Path:
         text = sub(text, "fine-1", r"if s < float32\(0\.5\):\n( +)advance = float32\(advance \* float32\(0\.25\)\)",
                    r"if True:\n\1advance = float32(advance * float32(0.25))", 2)
         text = sub(text, "fine-2", r"advance = float32\(max\(advance, floor\)\)", "advance = float32(max(advance, float32(1e-6)))", 2)
+    if edits:  # every experiment runs under the step guard; baseline stays byte-identical to production
+        text = add_step_guard(text)
     compile(text, str(root / BACKEND), "exec")
     (root / BACKEND).write_text(text)
     return root
@@ -117,6 +140,7 @@ def child(a):
         result[f"seconds_{ds}"] = time.perf_counter() - t0
         tile = s2.read_production_tile(out, 0, 0, 0.0)
         result[ds] = [float(tile[r, c, az]) for c, r, az in keys[ds]]
+        result[f"guard_nan_{ds}"] = int(np.isnan(tile).sum())
         shutil.rmtree(out, ignore_errors=True)
     Path(a.result).write_text(json.dumps(result))
 
@@ -210,6 +234,11 @@ def main():
         results[n] = json.loads(res.read_text())
         print(f"  imported {results[n]['imported']}\n  real {results[n]['seconds_real']:.1f} s, "
               f"wall {results[n]['seconds_wall']:.1f} s")
+        hits = results[n]["guard_nan_real"] + results[n]["guard_nan_wall"]
+        if hits:
+            print(f"  WARNING: {hits} NaN values in tile (0,0) (real {results[n]['guard_nan_real']}, wall "
+                  f"{results[n]['guard_nan_wall']}): rays stopped by the step guard (or non-finite output); "
+                  "they are excluded from the statistics below")
 
     def diffs(n, s):
         label, ds, rays, rng, refs, off = s
