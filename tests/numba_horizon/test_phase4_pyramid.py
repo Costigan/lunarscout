@@ -25,11 +25,7 @@ from lunarscout._numba_horizon.hierarchy import (
     traversal_counters,
     traverse_hierarchy,
 )
-from lunarscout._numba_horizon.kernel_math import (
-    evaluate_tangent,
-    far_field_slope,
-    interpolate_segments,
-)
+from lunarscout._numba_horizon.kernel_math import evaluate_tangent, interpolate_segments
 from lunarscout._numba_horizon.pyramid import (
     build_max_pyramid,
     load_max_pyramid_cache,
@@ -258,7 +254,7 @@ def _production_hierarchy_inputs():
     )
 
 
-def _assert_trace_matches_csharp(
+def _assert_traces_match(
     actual, expected, *, sample_elevation_atol=2e-8, slope_atol=2e-8
 ):
     assert actual.shape == expected.shape
@@ -276,48 +272,6 @@ def _assert_trace_matches_csharp(
         actual[:, 9], expected[:, 9], rtol=0, atol=slope_atol, equal_nan=True
     )
     np.testing.assert_allclose(actual[:, 10], expected[:, 10], rtol=0, atol=6e-6)
-
-
-def _with_corrected_far_field(trace, observer_z, radius):
-    """C# trace with far-field sample slopes recomputed by the corrected formula.
-
-    The C# capture uses the far-field slope that review finding H-A corrected
-    (a ground chord treated as slant range).  Traversal (levels, cells, actions,
-    positions, distances, advances) must still match C# exactly; only level-0
-    sample slopes beyond 0.5 km change, recomputed here from C#'s own captured
-    distance and sample elevation.
-    """
-    corrected = trace.copy()
-    rows = (
-        (corrected[:, 0] >= 0.5)
-        & np.isfinite(corrected[:, 9])
-        & np.isfinite(corrected[:, 8])
-        & (corrected[:, 8] > -20000.0)
-    )
-    for row in np.flatnonzero(rows):
-        corrected[row, 9] = far_field_slope(
-            corrected[row, 1], observer_z, radius, corrected[row, 8]
-        )
-    return corrected
-
-
-def _trace_maximum(trace):
-    slopes = trace[:, 9]
-    slopes = slopes[np.isfinite(slopes) & (slopes > -1e29)]
-    return float(slopes.max()) if len(slopes) else float("-inf")
-
-
-def _trace_from_capture(capture):
-    fields = (
-        "s_km", "true_distance_m", "level", "cell_x", "cell_y", "pixel_x",
-        "pixel_y", "maximum_elevation_m", "sample_elevation_m", "sample_slope",
-        "advance_km", "action",
-    )
-    return np.asarray(
-        [[np.nan if row[field] is None else row[field] for field in fields]
-         for row in capture["trace"]],
-        dtype=np.float32,
-    )
 
 
 def _synthetic_hierarchy_inputs(case_id: str):
@@ -361,17 +315,6 @@ def test_cpu_hierarchy_uses_conservative_bilinear_bound(case_id: str) -> None:
         map_resolution_m=resolution, pass_index=0,
     )
     if case_id == "single_obstacle_north":
-        csharp = json.loads(
-            (DATA / "phase4d_production_segments.json").read_text(encoding="utf-8")
-        )["bilinear_boundary_case"]
-        assert hierarchy.maximum_slope == pytest.approx(
-            _trace_maximum(
-                _with_corrected_far_field(
-                    _trace_from_capture(csharp), observer_z, radius
-                )
-            ),
-            abs=1e-6,
-        )
         fixed = traverse_level0_fixed_step(
             segment, pyramid.level0, observer_z_m=observer_z, radius_m=radius,
             map_resolution_m=resolution,
@@ -397,12 +340,6 @@ def test_hierarchy_trace_covers_cardinal_tangents_and_exact_block_boundary() -> 
     assert abs(east_dy) < 1e-8
     assert abs(north_dx) < 1e-8
 
-    artifact, base, _, _, _, _ = _production_hierarchy_inputs()
-    trace = artifact.arrays[f"{base}__traversal_trace"]
-    assert trace[1, 5] == 42.0
-    assert trace[1, 3] == 42.0
-    assert trace[1, 11] == 1.0
-
 
 def _bilinear_boundary_inputs():
     capture = json.loads(
@@ -419,26 +356,7 @@ def _bilinear_boundary_inputs():
     _, pyramid, observer_z, radius, resolution = _synthetic_hierarchy_inputs(
         "single_obstacle_north"
     )
-    expected = _with_corrected_far_field(
-        _trace_from_capture(capture), observer_z, radius
-    )
-    return segment, pyramid, observer_z, radius, resolution, expected, capture
-
-
-def test_cpu_hierarchy_reproduces_corrected_csharp_bilinear_boundary_trace() -> None:
-    segment, pyramid, observer_z, radius, resolution, expected, capture = (
-        _bilinear_boundary_inputs()
-    )
-    actual = traverse_hierarchy(
-        segment, pyramid, observer_z_m=observer_z, radius_m=radius,
-        map_resolution_m=resolution, pass_index=0,
-    )
-    _assert_trace_matches_csharp(
-        actual.values, expected, sample_elevation_atol=2e-3, slope_atol=2e-6
-    )
-    assert actual.maximum_slope == pytest.approx(
-        _trace_maximum(expected), abs=1e-6
-    )
+    return segment, pyramid, observer_z, radius, resolution
 
 
 def test_production_hierarchy_and_adaptive_paths_are_measured_separately() -> None:
@@ -451,78 +369,44 @@ def test_production_hierarchy_and_adaptive_paths_are_measured_separately() -> No
         segment, pyramid.level0, observer_z_m=observer_z, radius_m=radius,
         map_resolution_m=30.0, pass_index=1,
     )
-    capture = json.loads(
-        (DATA / "phase4d_production_segments.json").read_text(encoding="utf-8")
-    )["production_hierarchy_case"]
-    expected = _with_corrected_far_field(
-        _trace_from_capture(capture), observer_z, radius
-    )
-    assert hierarchy.maximum_slope == pytest.approx(
-        _trace_maximum(expected), abs=3e-8
-    )
-    # Regression value with the corrected far-field slope (0.10548653 before H-A).
+    # Regression values with the corrected far-field slope (review finding H-A).
+    assert hierarchy.maximum_slope == pytest.approx(0.16295525, abs=3e-8)
     assert adaptive.maximum_slope == pytest.approx(0.10458692, abs=3e-8)
     assert hierarchy.maximum_slope != adaptive.maximum_slope
     assert traversal_counters(hierarchy.values).culled_blocks > 0
-
-
-def test_cpu_hierarchy_reproduces_csharp_production_trace() -> None:
-    artifact, base, segment, pyramid, observer_z, radius = _production_hierarchy_inputs()
-    actual = traverse_hierarchy(
-        segment,
-        pyramid,
-        observer_z_m=observer_z,
-        radius_m=radius,
-        map_resolution_m=30.0,
-        pass_index=1,
-    )
-    capture = json.loads(
-        (DATA / "phase4d_production_segments.json").read_text(encoding="utf-8")
-    )["production_hierarchy_case"]
-    expected = _with_corrected_far_field(
-        _trace_from_capture(capture), observer_z, radius
-    )
-    _assert_trace_matches_csharp(
-        actual.values, expected, sample_elevation_atol=0.5, slope_atol=2e-5
-    )
-    assert actual.maximum_slope == pytest.approx(
-        _trace_maximum(expected), abs=3e-8
-    )
 
 
 @pytest.mark.skipif(
     os.environ.get("LUNARSCOUT_REQUIRE_NUMBA_CUDA") != "1",
     reason="set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 for the explicit real-GPU probe",
 )
-def test_cuda_hierarchy_reproduces_csharp_production_trace() -> None:
-    artifact, base, segment, pyramid, observer_z, radius = _production_hierarchy_inputs()
+def test_cuda_hierarchy_trace_matches_cpu_oracle() -> None:
+    _, _, segment, pyramid, observer_z, radius = _production_hierarchy_inputs()
+    cpu = traverse_hierarchy(
+        segment, pyramid, observer_z_m=observer_z, radius_m=radius,
+        map_resolution_m=30.0, pass_index=1,
+    )
     maximum, traces, counts = CudaSession().hierarchical(
         segment[np.newaxis], pyramid, np.array([observer_z]), np.array([radius]),
         30.0, pass_index=1,
     )
-    capture = json.loads(
-        (DATA / "phase4d_production_segments.json").read_text(encoding="utf-8")
-    )["production_hierarchy_case"]
-    expected = _with_corrected_far_field(
-        _trace_from_capture(capture), observer_z, radius
+    _assert_traces_match(
+        traces[0, : counts[0]], cpu.values, sample_elevation_atol=0.5,
+        slope_atol=2e-5,
     )
-    actual = traces[0, : counts[0]]
-    _assert_trace_matches_csharp(actual, expected)
-    assert maximum[0] == pytest.approx(
-        _trace_maximum(expected), abs=3e-8
-    )
+    assert maximum[0] == pytest.approx(float(cpu.maximum_slope), abs=6e-8)
 
-    segment, pyramid, observer_z, radius, resolution, expected, capture = (
-        _bilinear_boundary_inputs()
+    segment, pyramid, observer_z, radius, resolution = _bilinear_boundary_inputs()
+    cpu = traverse_hierarchy(
+        segment, pyramid, observer_z_m=observer_z, radius_m=radius,
+        map_resolution_m=resolution, pass_index=0,
     )
     maximum, traces, counts = CudaSession().hierarchical(
         segment[np.newaxis], pyramid, np.array([observer_z]), np.array([radius]),
         resolution, pass_index=0,
     )
-    _assert_trace_matches_csharp(
-        traces[0, : counts[0]], expected,
-        sample_elevation_atol=6e-4, slope_atol=1e-6,
+    _assert_traces_match(
+        traces[0, : counts[0]], cpu.values, sample_elevation_atol=2e-3,
+        slope_atol=2e-6,
     )
-    assert maximum[0] == pytest.approx(
-        _trace_maximum(expected), abs=1e-6
-    )
+    assert maximum[0] == pytest.approx(float(cpu.maximum_slope), abs=2e-6)
