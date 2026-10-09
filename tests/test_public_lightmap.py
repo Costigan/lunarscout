@@ -1470,3 +1470,93 @@ def test_downstream_products_emit_timestamps_and_backend_tags(
         assert "LUNARSCOUT_TIMESTAMPS_UTC" in tags
         assert "LUNARSCOUT_COMPUTE_BACKENDS" in tags
         assert tags["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
+
+
+def _two_pixel_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    # One valid DEM node and one NaN node (no terrain).
+    georef = _georef()
+    georef = ls.GeoReference(
+        projection_wkt=georef.projection_wkt,
+        projection_proj4=georef.projection_proj4,
+        affine_transform=georef.affine_transform,
+        width=2, height=1, pixel_size_x=1.0, pixel_size_y=-1.0, nodata=None,
+    )
+    dem_path = tmp_path / "dem.tif"
+    ls.write_geotiff(dem_path, np.array([[0.0, np.nan]], dtype=np.float32), georef)
+    horizons_path = tmp_path / "horizons"
+    HorizonTileStore(horizons_path).write(
+        0, 0, 0.0, np.zeros((2, AZIMUTH_COUNT), dtype=np.float32),
+        compress=True, valid_width=2, valid_height=1,
+    )
+    return dem_path, horizons_path
+
+
+@pytest.mark.parametrize("skip", [False, True])
+def test_lightmap_marks_pixels_on_invalid_dem_nodes(tmp_path: Path, skip: bool) -> None:
+    dem_path, horizons_path = _two_pixel_inputs(tmp_path)
+    output = ls.generate_lightmap(
+        dem_path, horizons_path, tmp_path / "lightmap.tif",
+        times=(datetime(2027, 1, 1, tzinfo=timezone.utc),),
+        sun_vectors_m=_sun_vector(1.0)[None, :], backend="cpu",
+        invalid_value=0, skip_dem_nodata_check=skip,
+    )
+    with rasterio.open(output) as dataset:
+        values = dataset.read(1)[0]
+        mask = dataset.dataset_mask()[0]
+    assert values[0] == 255 and mask[0] == 255
+    if skip:
+        assert mask[1] == 255
+    else:
+        assert values[1] == 0 and mask[1] == 0
+
+
+_SCENARIO_PRODUCT_METHODS = (
+    ("lightmap", "generate_lightmap"),
+    ("psr", "generate_psr"),
+    ("sun_elevation", "generate_sun_elevation"),
+    ("earth_elevation", "generate_earth_elevation"),
+    ("safe_havens", "generate_safe_havens"),
+    ("mission_duration_from_sunlight", "mission_duration_from_sunlight"),
+    ("mission_duration_from_sun_elevation", "mission_duration_from_sun_elevation"),
+    (
+        "mission_duration_from_sunlight_and_earth_elevation",
+        "mission_duration_from_sunlight_and_earth_elevation",
+    ),
+    (
+        "mission_duration_from_sun_and_earth_elevation",
+        "mission_duration_from_sun_and_earth_elevation",
+    ),
+)
+
+
+@pytest.mark.parametrize(("method", "function"), _SCENARIO_PRODUCT_METHODS)
+def test_scenario_forwards_skip_dem_nodata_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str, function: str
+) -> None:
+    import inspect
+
+    import lunarscout.products as products
+
+    _inputs(tmp_path)
+    scenario = ls.open_scenario(tmp_path)
+    captured: dict[str, object] = {}
+
+    def capture(*_args, **kwargs):
+        captured.update(kwargs)
+        return tmp_path / "out.tif"
+
+    monkeypatch.setattr(products, function, capture)
+    bound = getattr(scenario, method)
+    required = {
+        name: object()
+        for name, parameter in inspect.signature(bound).parameters.items()
+        if parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        and parameter.default is inspect.Parameter.empty
+    }
+    positional = [
+        name for name, parameter in inspect.signature(bound).parameters.items()
+        if parameter.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        and parameter.default is inspect.Parameter.empty
+    ]
+    bound(*(["out.tif"] * len(positional)), **required, skip_dem_nodata_check=True)
+    assert captured["skip_dem_nodata_check"] is True

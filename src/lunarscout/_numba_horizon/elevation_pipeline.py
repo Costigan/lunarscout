@@ -58,6 +58,7 @@ def _run_body_elevation_product(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     cancellation_requested: Callable[[], bool] | None = None,
     progress_callback: Callable[[BodyElevationProgress], None] | None = None,
     progress_stream: TextIO | None = None,
@@ -138,6 +139,7 @@ def _run_body_elevation_product(
         start_fresh=start_fresh,
         backend=selected_backend,
         output_transform=output_transform,
+        dem_elevation=None if skip_dem_nodata_check else dem.elevation_m,
     )
 
     def cancelled() -> bool:

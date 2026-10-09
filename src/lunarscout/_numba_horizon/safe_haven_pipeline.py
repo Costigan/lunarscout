@@ -66,6 +66,7 @@ def run_safe_haven_product(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     time_batch_size: int = 32,
     fraction_calculator: FractionCalculator | None = None,
     elevation_calculator: MarginCalculator | None = None,
@@ -188,6 +189,7 @@ def run_safe_haven_product(
         start_fresh=start_fresh,
         backend=selected_backend,
         output_transform=output_transform,
+        dem_elevation=None if skip_dem_nodata_check else dem.elevation_m,
     )
 
     def cancelled() -> bool:

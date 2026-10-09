@@ -384,6 +384,7 @@ def generate_lightmap(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     verbose: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
@@ -436,6 +437,13 @@ def generate_lightmap(
     start_fresh:
         When ``True``, discards any compatible staged work and begins again.
         Does not substitute for ``overwrite`` permission.
+    skip_dem_nodata_check:
+        When ``False`` (the default), pixels whose DEM node is invalid (NaN,
+        the DEM's declared nodata value, or at or below -20000 m) are written
+        as invalid, with the product's invalid value and dataset mask 0,
+        because horizons computed there are meaningless.  Only the DEM window
+        of each written patch is checked.  ``True`` skips the check, for DEMs
+        known to contain no invalid nodes.
     verbose:
         When ``True``, writes concise backend and progress messages to stdout.
     progress_callback / progress_event_callback / cancellation_requested:
@@ -524,6 +532,7 @@ def generate_lightmap(
             compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
+            skip_dem_nodata_check=skip_dem_nodata_check,
             cancellation_requested=cancellation_requested,
             progress_callback=adapter,
             backend=backend,
@@ -592,6 +601,7 @@ def generate_psr(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     verbose: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
@@ -630,6 +640,9 @@ def generate_psr(
     start_fresh:
         When ``True``, discards compatible staged work.  Does not grant
         ``overwrite`` permission.
+    skip_dem_nodata_check:
+        See :func:`generate_lightmap`.  Invalid DEM pixels are written with
+        ``invalid_value`` and dataset mask 0 unless this is ``True``.
 
     Returns
     -------
@@ -706,6 +719,7 @@ def generate_psr(
             compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
+            skip_dem_nodata_check=skip_dem_nodata_check,
             cancellation_requested=cancellation_requested,
             progress_event_callback=adapter,
             backend=backend,
@@ -775,6 +789,7 @@ def _generate_body_elevation(
     compress: bool,
     overwrite: bool,
     start_fresh: bool,
+    skip_dem_nodata_check: bool,
     verbose: bool,
     progress_callback: ProgressCallback | None,
     progress_event_callback: ProgressEventCallback | None,
@@ -851,6 +866,7 @@ def _generate_body_elevation(
             compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
+            skip_dem_nodata_check=skip_dem_nodata_check,
             cancellation_requested=cancellation_requested,
             progress_callback=adapter,
             backend=backend,
@@ -920,6 +936,7 @@ def generate_sun_elevation(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     verbose: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
@@ -950,9 +967,9 @@ def generate_sun_elevation(
     compress:
         ``True`` (default) compresses tiles; ``False`` disables compression
         while preserving tiling.
-    overwrite / start_fresh:
-        See :func:`generate_lightmap` for the shared overwrite and restart
-        contract.
+    overwrite / start_fresh / skip_dem_nodata_check:
+        See :func:`generate_lightmap` for the shared overwrite, restart, and
+        DEM nodata contract.
 
     Returns
     -------
@@ -986,6 +1003,7 @@ def generate_sun_elevation(
         compress=compress,
         overwrite=overwrite,
         start_fresh=start_fresh,
+        skip_dem_nodata_check=skip_dem_nodata_check,
         verbose=verbose,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
@@ -1009,6 +1027,7 @@ def generate_earth_elevation(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     verbose: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
@@ -1038,7 +1057,7 @@ def generate_earth_elevation(
     compress:
         ``True`` (default) compresses tiles; ``False`` disables compression
         while preserving tiling.
-    overwrite / start_fresh:
+    overwrite / start_fresh / skip_dem_nodata_check:
         See :func:`generate_lightmap`.
 
     Returns
@@ -1072,6 +1091,7 @@ def generate_earth_elevation(
         compress=compress,
         overwrite=overwrite,
         start_fresh=start_fresh,
+        skip_dem_nodata_check=skip_dem_nodata_check,
         verbose=verbose,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
@@ -1098,6 +1118,7 @@ def generate_safe_havens(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     verbose: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
@@ -1195,6 +1216,12 @@ def generate_safe_havens(
         Otherwise compatible staged work is resumed, skipping completed
         patches. This is separate from permission to overwrite a completed
         output. Do not discard staging while another process is writing it.
+    skip_dem_nodata_check : bool, default False
+        By default, pixels whose DEM node is invalid (NaN, the DEM's declared
+        nodata value, or at or below -20000 m) are written as ``nodata`` with
+        dataset mask 0, because horizons computed there are meaningless. Only
+        the DEM window of each written patch is checked. ``True`` skips the
+        check, for DEMs known to contain no invalid nodes.
     verbose : bool, default False
         Print selected-backend and patch-completion messages to standard output.
     progress_callback : callable, optional
@@ -1384,6 +1411,7 @@ def generate_safe_havens(
             compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
+            skip_dem_nodata_check=skip_dem_nodata_check,
             backend=backend,
             cancellation_requested=cancellation_requested,
             progress_callback=adapter,
@@ -1461,6 +1489,7 @@ def _generate_mission_duration(
     compress: bool,
     overwrite: bool,
     start_fresh: bool,
+    skip_dem_nodata_check: bool,
     verbose: bool,
     progress_callback: ProgressCallback | None,
     progress_event_callback: ProgressEventCallback | None,
@@ -1578,6 +1607,7 @@ def _generate_mission_duration(
             compress=compress,
             overwrite=overwrite,
             start_fresh=start_fresh,
+            skip_dem_nodata_check=skip_dem_nodata_check,
             cancellation_requested=cancellation_requested,
             progress_callback=adapter,
             backend=backend,
@@ -1652,6 +1682,7 @@ def mission_duration_from_sunlight(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     verbose: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
@@ -1691,7 +1722,7 @@ def mission_duration_from_sunlight(
     compress:
         ``True`` (default) compresses tiles; ``False`` disables compression
         while preserving tiling.
-    overwrite / start_fresh:
+    overwrite / start_fresh / skip_dem_nodata_check:
         See :func:`generate_lightmap`.
 
     Returns
@@ -1726,6 +1757,7 @@ def mission_duration_from_sunlight(
         output_transform_id=output_transform_id,
         compress=compress,
         overwrite=overwrite, start_fresh=start_fresh, verbose=verbose,
+        skip_dem_nodata_check=skip_dem_nodata_check,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
         cancellation_requested=cancellation_requested,
@@ -1753,6 +1785,7 @@ def mission_duration_from_sun_elevation(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     verbose: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
@@ -1785,6 +1818,7 @@ def mission_duration_from_sun_elevation(
         output_transform_id=output_transform_id,
         compress=compress, overwrite=overwrite,
         start_fresh=start_fresh, verbose=verbose,
+        skip_dem_nodata_check=skip_dem_nodata_check,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
         cancellation_requested=cancellation_requested,
@@ -1814,6 +1848,7 @@ def mission_duration_from_sunlight_and_earth_elevation(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     verbose: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
@@ -1846,6 +1881,7 @@ def mission_duration_from_sunlight_and_earth_elevation(
         output_transform_id=output_transform_id,
         compress=compress,
         overwrite=overwrite, start_fresh=start_fresh, verbose=verbose,
+        skip_dem_nodata_check=skip_dem_nodata_check,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
         cancellation_requested=cancellation_requested,
@@ -1875,6 +1911,7 @@ def mission_duration_from_sun_and_earth_elevation(
     compress: bool = True,
     overwrite: bool = False,
     start_fresh: bool = False,
+    skip_dem_nodata_check: bool = False,
     verbose: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_event_callback: ProgressEventCallback | None = None,
@@ -1906,6 +1943,7 @@ def mission_duration_from_sun_and_earth_elevation(
         output_transform_id=output_transform_id,
         compress=compress,
         overwrite=overwrite, start_fresh=start_fresh, verbose=verbose,
+        skip_dem_nodata_check=skip_dem_nodata_check,
         progress_callback=progress_callback,
         progress_event_callback=progress_event_callback,
         cancellation_requested=cancellation_requested,

@@ -265,7 +265,16 @@ class ResumableTiledProduct:
         backend: str | None = None,
         output_transform: Callable[[np.ndarray[Any, Any]], np.ndarray[Any, Any]]
         | None = None,
+        dem_elevation: npt.NDArray[Any] | None = None,
     ) -> None:
+        """``dem_elevation``, when given, is the product's DEM elevation grid.
+
+        Pixels whose DEM node is NaN or at or below -20000 m have no valid
+        terrain, so their horizons (and any product computed from them) are
+        meaningless; valid patches write ``invalid_value`` and mask 0 there.
+        Only the 128x128 window of each written patch is checked, so DEMs
+        without holes cost one small check per patch.
+        """
         self.output_path = Path(output_path).expanduser().resolve()
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self.staging_path = self.output_path.with_name(
@@ -275,6 +284,16 @@ class ResumableTiledProduct:
         self.journal_path = self.staging_path.with_suffix(".journal.json")
         self._mask_sidecar = Path(f"{self.staging_path}.msk")
         self._manifest = job.manifest()
+        self._dem_elevation = None
+        if dem_elevation is not None:
+            if np.shape(dem_elevation) != (
+                int(self._manifest["height"]), int(self._manifest["width"])
+            ):
+                raise ValueError("dem_elevation must match the output grid shape")
+            self._dem_elevation = dem_elevation
+            # Staged jobs written before DEM nodata masking must not resume
+            # into a mix of masked and unmasked patches.
+            self._manifest["dem_nodata_masked"] = True
         self._fingerprint = hashlib.sha256(_json_bytes(self._manifest)).hexdigest()
         self._dtype = np.dtype(self._manifest["dtype"])
         self._output_transform = output_transform
@@ -358,6 +377,28 @@ class ResumableTiledProduct:
     def _invalid_value(self) -> int | float:
         value = self._manifest["invalid_value"]
         return np.nan if value == "NaN" else value
+
+    def _invalid_dem_pixels(
+        self, tile_y: int, tile_x: int, height: int, width: int
+    ) -> npt.NDArray[np.bool_] | None:
+        """Pixels of this patch on invalid DEM nodes, or None when there are none."""
+        if self._dem_elevation is None:
+            return None
+        window = np.asarray(
+            self._dem_elevation[tile_y:tile_y + height, tile_x:tile_x + width]
+        )
+        with np.errstate(invalid="ignore"):
+            invalid = ~(window > -20000.0)  # NaN compares False
+        return invalid if invalid.any() else None
+
+    def _mask_invalid_dem_pixels(
+        self, tile: npt.NDArray[Any], invalid: npt.NDArray[np.bool_] | None
+    ) -> npt.NDArray[Any]:
+        if invalid is None:
+            return tile
+        tile = tile.copy()
+        tile[invalid] = np.asarray(self._invalid_value(), dtype=self._dtype)
+        return tile
 
     def _prepare_tile(
         self, source: npt.ArrayLike, height: int, width: int
@@ -574,6 +615,9 @@ class ResumableTiledProduct:
         invalid_tile = np.full(
             (height, width), self._invalid_value(), dtype=self._dtype
         )
+        invalid_dem = (
+            self._invalid_dem_pixels(tile_y, tile_x, height, width) if valid else None
+        )
         write_started = time.perf_counter()
         with Env(GDAL_TIFF_INTERNAL_MASK=True):
             with open_raster(self.staging_path, "r+") as dataset:
@@ -583,7 +627,9 @@ class ResumableTiledProduct:
                             source = next(iterator)
                         except StopIteration as exc:
                             raise ValueError("band_tiles has fewer entries than band_count") from exc
-                        tile = self._prepare_tile(source, height, width)
+                        tile = self._mask_invalid_dem_pixels(
+                            self._prepare_tile(source, height, width), invalid_dem
+                        )
                     else:
                         tile = invalid_tile
                     dataset.write(tile, band_index, window=window)
@@ -595,6 +641,8 @@ class ResumableTiledProduct:
                     else:
                         raise ValueError("band_tiles has more entries than band_count")
                 mask = np.full((height, width), 255 if valid else 0, dtype=np.uint8)
+                if invalid_dem is not None:
+                    mask[invalid_dem] = 0
                 dataset.write_mask(mask, window=window)
         tiff_write_close_seconds = time.perf_counter() - write_started
         sync_started = time.perf_counter()
@@ -723,6 +771,10 @@ class ProductBatchWriter:
             product._invalid_value(),
             dtype=product._dtype,
         )
+        invalid_dem = (
+            product._invalid_dem_pixels(tile_y, tile_x, height, width)
+            if valid else None
+        )
         write_started = time.perf_counter()
         dataset = self._open_dataset()
         for band_index in range(1, int(product._manifest["band_count"]) + 1):
@@ -733,7 +785,9 @@ class ProductBatchWriter:
                     raise ValueError(
                         "band_tiles has fewer entries than band_count"
                     ) from exc
-                tile = product._prepare_tile(source, height, width)
+                tile = product._mask_invalid_dem_pixels(
+                    product._prepare_tile(source, height, width), invalid_dem
+                )
             else:
                 tile = invalid_tile
             dataset.write(tile, band_index, window=window)
@@ -745,6 +799,8 @@ class ProductBatchWriter:
             else:
                 raise ValueError("band_tiles has more entries than band_count")
         mask = np.full((height, width), 255 if valid else 0, dtype=np.uint8)
+        if invalid_dem is not None:
+            mask[invalid_dem] = 0
         dataset.write_mask(mask, window=window)
         tiff_write_seconds = time.perf_counter() - write_started
         self._pending[key] = "valid" if valid else "invalid"

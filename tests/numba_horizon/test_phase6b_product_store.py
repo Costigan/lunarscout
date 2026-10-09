@@ -427,3 +427,82 @@ def test_open_batch_survives_abrupt_process_exit_and_recomputes(
     resumed.finalize()
     with rasterio.open(output) as dataset:
         assert np.all(dataset.dataset_mask() == 0)
+
+
+def _dem_with_edge_holes() -> np.ndarray:
+    # Invalid nodes along part of the left edge of the 128x256 grid: NaN, the
+    # -32000 invalid sentinel, and a value just below the -20000 m cutoff.
+    dem = np.zeros((128, 256), dtype=np.float32)
+    dem[:10, 0] = np.nan
+    dem[10:20, 0] = -32000.0
+    dem[20, 0] = -20000.0
+    return dem
+
+
+def _float_job() -> ProductJob:
+    return ProductJob(
+        georef=_georef(width=256, height=128),
+        dtype=np.float32,
+        band_count=2,
+        invalid_value=-1.0,
+    )
+
+
+@pytest.mark.parametrize("batched", [False, True])
+def test_patches_mark_pixels_on_invalid_dem_nodes(tmp_path: Path, batched: bool) -> None:
+    output = tmp_path / "dem-holes.tif"
+    dem = _dem_with_edge_holes()
+    store = ResumableTiledProduct(output, _float_job(), dem_elevation=dem)
+    bands = (np.full((128, 128), 3.0, np.float32), np.full((128, 128), 4.0, np.float32))
+    if batched:
+        with store.batch_writer(2) as writer:
+            writer.write_patch_with_timings(0, 0, bands)
+            writer.write_patch_with_timings(0, 128, bands)
+    else:
+        store.write_patch(0, 0, bands)
+        store.write_patch(0, 128, bands)
+    store.finalize()
+
+    invalid = ~(dem > -20000.0)
+    assert invalid.sum() == 21
+    with rasterio.open(output) as dataset:
+        for band, value in ((1, 3.0), (2, 4.0)):
+            data = dataset.read(band)
+            assert np.all(data[invalid] == -1.0)
+            assert np.all(data[~invalid] == value)
+        mask = dataset.dataset_mask()
+        assert np.all(mask[invalid] == 0)
+        assert np.all(mask[~invalid] == 255)
+
+
+def test_skipping_the_dem_check_writes_computed_values(tmp_path: Path) -> None:
+    output = tmp_path / "unchecked.tif"
+    store = ResumableTiledProduct(output, _float_job(), dem_elevation=None)
+    bands = (np.full((128, 128), 3.0, np.float32), np.full((128, 128), 4.0, np.float32))
+    store.write_patch(0, 0, bands)
+    store.write_patch(0, 128, bands)
+    store.finalize()
+
+    with rasterio.open(output) as dataset:
+        assert np.all(dataset.read(1) == 3.0)
+        assert np.all(dataset.dataset_mask() == 255)
+
+
+def test_dem_check_setting_must_match_to_resume(tmp_path: Path) -> None:
+    output = tmp_path / "resume.tif"
+    dem = _dem_with_edge_holes()
+    staged = ResumableTiledProduct(output, _float_job(), dem_elevation=dem)
+    staged.write_invalid_patch(0, 0)
+
+    with pytest.raises(IncompatibleProductJobError, match="does not match"):
+        ResumableTiledProduct(output, _float_job(), dem_elevation=None)
+    resumed = ResumableTiledProduct(output, _float_job(), dem_elevation=dem)
+    assert resumed.completed_patches == {"0,0": "invalid"}
+
+
+def test_dem_elevation_must_match_the_output_grid(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="output grid"):
+        ResumableTiledProduct(
+            tmp_path / "shape.tif", _float_job(),
+            dem_elevation=np.zeros((128, 255), dtype=np.float32),
+        )

@@ -1037,6 +1037,14 @@ valid science value and is not a nodata sentinel. Float products physically
 store and declare `nodata=np.nan` by default. Consumers should use the dataset
 mask as the authoritative validity representation for both families.
 
+Pixels whose DEM node is invalid (NaN, the DEM's declared nodata value, or at
+or below -20000 m) have no terrain to stand on, so their horizons are
+meaningless; every downstream operation marks them invalid in the same way.
+Each patch's DEM window is checked just before the patch is written, so a DEM
+without holes costs one small check per patch. Pass
+`skip_dem_nodata_check=True` to skip the check for a DEM known to contain no
+invalid nodes. Staged work resumes only with the same setting.
+
 Multi-time products are BigTIFF files with one band per UTC time. Each band is
 made of 128 by 128 tiles, compressed by default. Pass `compress=False` for
 tiled but uncompressed output. The band stores its ISO-8601 UTC timestamp
