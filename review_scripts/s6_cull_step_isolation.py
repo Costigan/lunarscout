@@ -10,6 +10,11 @@ each a different edit of _numba_horizon/cuda_backend.py (every site asserted by 
   HA+nocull       HA, and the cull test `if possible <= current:` never fires (both hierarchy kernels)
   HA+dense        HA, and margin_step = 0, so level 0 advances one pixel (a quarter pixel within 0.5 km)
   HA+nocull+dense both
+Other variants are any '+'-joined combination of the edits HA, nocull, dense and
+  clamp           production kernel stops each level-0 step at the cell exit, as the traced kernel and the
+                  CPU oracle do (removed for speed in d543e6e)
+  fine            quarter-pixel level-0 steps at every range, with no 0.8 / 0.5 pixel step floor
+  diagnear        (fix/hierarchy-cull-bound tree only) a block's near distance uses its diagonal
 
 For each variant it generates horizons for the LOLA fixture and the synthetic wall in a child process,
 then compares the same rays against s2's float64 brute force (computed once, shared by all variants):
@@ -22,7 +27,7 @@ Reading: if HA+nocull removes the near-field negatives, H-B causes them; if HA+d
 
 Run from the repo root with the repo venv (GPU and the LOLA fixture, as for s2):
     .venv/bin/python review_scripts/s6_cull_step_isolation.py --dem /tmp/lunarscout-phase1-lola-512.tif
-Options: --repo PATH, --variants baseline,HA,..., --keep. Experiment only; no variant is a proposed fix.
+Options: --repo PATH, --variants baseline,HA,HA+clamp,..., --keep. Experiment only; no variant is a proposed fix.
 """
 from __future__ import annotations
 
@@ -41,13 +46,8 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 BACKEND = Path("src/lunarscout/_numba_horizon/cuda_backend.py")
-VARIANTS = {
-    "baseline": (),
-    "HA": ("HA",),
-    "HA+nocull": ("HA", "nocull"),
-    "HA+dense": ("HA", "dense"),
-    "HA+nocull+dense": ("HA", "nocull", "dense"),
-}
+EDITS = ("HA", "nocull", "dense", "clamp", "fine", "diagnear")
+DEFAULT_VARIANTS = "baseline,HA,HA+nocull,HA+dense,HA+nocull+dense"
 # (dataset, col, row, azimuth index): rays named in the review
 NAMED = [("real", 9, 2, 0), ("real", 39, 5, 180), ("real", 11, 92, 1360), ("real", 11, 92, 1320),
          ("real", 10, 3, 400), ("wall", 74, 64, 300), ("wall", 89, 64, 600), ("wall", 89, 84, 443),
@@ -85,6 +85,17 @@ def build(repo: Path, work: Path, name: str, edits) -> Path:
         text = sub(text, "nocull", r"if possible <= current:", "if False and possible <= current:", 2)
     if "dense" in edits:
         text = sub(text, "dense", r"float32\(float32\(margin \* true_m\) \* float32\(1\.732\)\)", "float32(0.0)", 2)
+    if "clamp" in edits:  # production kernel only: stop each level-0 step at the cell exit, as the traced kernel does
+        text = sub(text, "clamp", r"(\n( +)advance = float32\(max\(advance, floor\)\)\n)(\s+# The production C# kernel)",
+                   lambda m: m.group(1) + f"{m.group(2)}advance = float32(min(advance, float32(distance_to_exit + "
+                   f"float32(0.000001)) if distance_to_exit > float32(0.0) else fallback))\n" + m.group(3), 1)
+    if "diagnear" in edits:  # fixed tree only: near distance of a block = true_m - diagonal, not - side
+        text = sub(text, "diagnear", r"true_near = float32\(max\(float32\(true_m - block_m\), float32\(1\.0\)\)\)",
+                   "true_near = float32(max(float32(true_m - float32(block_m * float32(1.4142136))), float32(1.0)))", 1)
+    if "fine" in edits:  # quarter-pixel level-0 steps at every range, no 0.8 / 0.5 pixel floor
+        text = sub(text, "fine-1", r"if s < float32\(0\.5\):\n( +)advance = float32\(advance \* float32\(0\.25\)\)",
+                   r"if True:\n\1advance = float32(advance * float32(0.25))", 2)
+        text = sub(text, "fine-2", r"advance = float32\(max\(advance, floor\)\)", "advance = float32(max(advance, float32(1e-6)))", 2)
     compile(text, str(root / BACKEND), "exec")
     (root / BACKEND).write_text(text)
     return root
@@ -144,8 +155,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--repo", type=Path, default=HERE.parent)
     ap.add_argument("--dem", default="/tmp/lunarscout-phase1-lola-512.tif")
-    ap.add_argument("--variants", default=",".join(VARIANTS))
+    ap.add_argument("--variants", default=DEFAULT_VARIANTS,
+                    help=f"comma-separated; each is 'baseline' or edits joined by '+', from {EDITS}")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--timeout", type=float, default=1200.0, help="seconds allowed per variant (default 1200)")
     ap.add_argument("--child-repo"), ap.add_argument("--wall"), ap.add_argument("--keys"), ap.add_argument("--result")
     a = ap.parse_args()
     if a.child_repo:
@@ -153,12 +166,13 @@ def main():
 
     repo = a.repo.resolve()
     names = a.variants.split(",")
-    unknown = [n for n in names if n not in VARIANTS]
+    edits = {n: () if n == "baseline" else tuple(n.split("+")) for n in names}
+    unknown = [n for n, e in edits.items() if any(x not in EDITS for x in e)]
     if unknown:
-        sys.exit(f"unknown variants {unknown}; choose from {list(VARIANTS)}")
+        sys.exit(f"unknown variants {unknown}; use 'baseline' or edits joined by '+' from {EDITS}")
     work = Path(tempfile.mkdtemp(prefix="ls_s6_"))
     print(f"repo   : {repo}\nscratch: {work}\nbuilding variants:")
-    roots = {n: build(repo, work, n, VARIANTS[n]) for n in names}
+    roots = {n: build(repo, work, n, edits[n]) for n in names}
 
     sys.path.insert(0, str(HERE))
     import s2_horizon_vs_bruteforce as s2  # inserts <repo>/src; used here only for the DEM loader
@@ -186,7 +200,10 @@ def main():
         res = work / f"{n}.json"
         cmd = [sys.executable, str(Path(__file__).resolve()), "--child-repo", str(roots[n]), "--dem", a.dem,
                "--wall", str(wall_path), "--keys", str(work / "keys.json"), "--result", str(res)]
-        p = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=a.timeout)
+        except subprocess.TimeoutExpired:
+            sys.exit(f"variant {n} exceeded --timeout {a.timeout:.0f} s; stopped (child killed)")
         if p.returncode:
             print(p.stdout[-3000:], p.stderr[-3000:])
             sys.exit(f"variant {n} failed")

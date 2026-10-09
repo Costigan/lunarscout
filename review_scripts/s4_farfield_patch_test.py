@@ -98,14 +98,15 @@ def patch(source: str) -> str:
     def possible(m):
         block = m.group(0)
         obs, rad = ("observer_z[index]", "radius[index]") if "observer_z[index]" in block else ("observer_z", "radius")
-        return f"possible = far_slope_patched(true_near, {obs}, {rad}, maximum_height)"
+        bound = "bound_m" if "bound_m * bound_m" in block else "true_near"
+        return f"possible = far_slope_patched({bound}, {obs}, {rad}, maximum_height)"
 
     def level0(m):
         block = m.group(0)
         obs, rad = ("observer_z[index]", "radius[index]") if "radius[index]" in block else ("observer_z", "radius")
         return f"slope = far_slope_patched(true_m, {obs}, {rad}, height)"
 
-    text = sub("cull bound", r"squared = float32\(true_near \* true_near\).*?possible = float32\(local_z / local_x\)",
+    text = sub("cull bound", r"squared = float32\((?:true_near \* true_near|bound_m \* bound_m)\).*?possible = float32\(local_z / local_x\)",
                possible, text, 2)
     text = sub("level-0 slope", r"squared = float32\(true_m \* true_m\).*?slope = float32\(local_z / local_x\)",
                level0, text, 2)
