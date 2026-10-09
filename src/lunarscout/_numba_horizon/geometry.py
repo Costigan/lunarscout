@@ -129,6 +129,27 @@ class DemGrid:
         )
 
 
+def segment_center_terrain(dem: DemGrid, column: float, row: float) -> float:
+    """Terrain height at a subpatch centre for ray-segment geometry.
+
+    Uses bilinear elevation when the four surrounding nodes are valid.
+    Otherwise (NaN or nodata at the centre) uses the mean of the valid nodes
+    in the surrounding 9x9 window, or 0 when there are none.  The height only
+    sets the sphere radius for the chord fit, so the fallback changes segment
+    geometry by at most about height / radius, instead of making every
+    segment for that centre NaN.
+    """
+    terrain = dem.elevation(column, row)
+    if np.isfinite(terrain) and terrain > -20000.0:
+        return float(terrain)
+    x, y = int(column), int(row)
+    window = np.asarray(
+        dem.elevation_m[max(y - 4, 0):y + 5, max(x - 4, 0):x + 5], dtype=np.float64
+    )
+    valid = window[np.isfinite(window) & (window > -20000.0)]
+    return float(valid.mean()) if valid.size else 0.0
+
+
 @dataclass(frozen=True, slots=True)
 class DemSegmentContext:
     dem: DemGrid
@@ -528,7 +549,7 @@ class SubpatchSegmentCache:
         latitude, longitude = inverse_stereographic(x, y, primary.projection)
         terrain_column = min(max(float(center_column), 0.0), primary.width - 1.001)
         terrain_row = min(max(float(center_row), 0.0), primary.height - 1.001)
-        center_terrain = primary.elevation(terrain_column, terrain_row)
+        center_terrain = segment_center_terrain(primary, terrain_column, terrain_row)
         observer = lat_lon_to_vector(
             latitude, longitude,
             primary.projection.radius_m + center_terrain + self.observer_elevation_m,
@@ -627,7 +648,7 @@ def build_subpatch_segments_numba(
         latitude, longitude = inverse_stereographic(x, y, primary.projection)
         terrain_column = min(max(float(center_column), 0.0), primary.width - 1.001)
         terrain_row = min(max(float(center_row), 0.0), primary.height - 1.001)
-        terrain = primary.elevation(terrain_column, terrain_row)
+        terrain = segment_center_terrain(primary, terrain_column, terrain_row)
         correction_radii[center_index] = primary.projection.radius_m + terrain
         observers[center_index] = lat_lon_to_vector(
             latitude, longitude,

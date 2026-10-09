@@ -22,6 +22,7 @@ from lunarscout._numba_horizon.geometry import (
     inverse_stereographic,
     lat_lon_to_vector,
     project_stereographic,
+    segment_center_terrain,
     vector_to_lat_lon,
 )
 from lunarscout._numba_horizon.geometry_numba import (
@@ -374,3 +375,42 @@ def test_compiled_complete_sampling_and_fitting_match_csharp(artifact) -> None:
             )
             np.testing.assert_allclose(serial, expected, rtol=0, atol=6e-7)
             np.testing.assert_array_equal(parallel, serial)
+
+
+def _hole_dems():
+    projection = ProjectionParameters(
+        radius_m=1737400.0, latitude_origin_rad=-np.pi / 2.0,
+        longitude_origin_rad=0.0, scale=1.0, false_easting_m=0.0,
+        false_northing_m=0.0,
+    )
+    rows, columns = np.mgrid[0:64, 0:64]
+    elevation = (0.5 * columns + 0.25 * rows).astype(np.float32)
+    transform = np.array((-640.0, 20.0, 0.0, 640.0, 0.0, -20.0), dtype=np.float64)
+    with_hole = elevation.copy()
+    with_hole[4, 4] = np.nan  # the subpatch centre of the first interior subpatch
+    return DemGrid(elevation, transform, projection), DemGrid(with_hole, transform, projection)
+
+
+def test_segment_center_terrain_falls_back_to_nearby_valid_nodes() -> None:
+    clean, holed = _hole_dems()
+    assert segment_center_terrain(clean, 4.0, 4.0) == pytest.approx(3.0)
+    assert np.isnan(holed.elevation(4.0, 4.0))
+    fallback = segment_center_terrain(holed, 4.0, 4.0)
+    window = holed.elevation_m[0:9, 0:9]
+    assert fallback == pytest.approx(float(np.nanmean(window.astype(np.float64))))
+
+
+@pytest.mark.parametrize("builder", [build_subpatch_segments, build_subpatch_segments_numba])
+def test_nan_subpatch_center_keeps_segments_finite(builder) -> None:
+    # Review finding H-C: a NaN at a subpatch centre used to make every segment
+    # for that centre NaN/degenerate, and interpolation spread it to neighbours.
+    clean, holed = _hole_dems()
+    arguments = dict(
+        tile_column=0, tile_row=0, tile_width=8, azimuth_count=16,
+        maximum_distance_m=2000.0, observer_elevation_m=0.0, subpatch_size=8,
+        grid_convergence=GridConvergenceInput(0.0, 0.0, 0.0),
+    )
+    expected, _, _ = builder([clean], **arguments)
+    actual, _, _ = builder([holed], **arguments)
+    assert np.all(np.isfinite(actual))
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-4)

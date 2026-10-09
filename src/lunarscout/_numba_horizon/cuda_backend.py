@@ -1101,9 +1101,12 @@ def _build_kernels(cuda):
         chord_c1 = interpolate_subpatch_field(segments, azimuth, pass_index, 15, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
         chord_c2 = interpolate_subpatch_field(segments, azimuth, pass_index, 16, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
         chord_c3 = interpolate_subpatch_field(segments, azimuth, pass_index, 17, index00, index10, index01, index11, tx, ty, shift_x_left, shift_x_right, shift_y_top, shift_y_bottom)
-        observer_terrain = bilinear(
-            primary_level0, tile_column + column, tile_row + row
-        )
+        # The observer stands on its own DEM node. A bilinear read would
+        # return the invalid sentinel whenever any of the three neighbouring
+        # nodes is NaN/nodata, corrupting valid pixels next to a hole.
+        observer_terrain = primary_level0[tile_row + row, tile_column + column]
+        if not valid_elevation(observer_terrain):
+            observer_terrain = float32(-32000.0)
         observer_z = float32(observer_terrain + observer_elevation)
         map_resolution = float32(
             float32(active_column_resolution + active_row_resolution)

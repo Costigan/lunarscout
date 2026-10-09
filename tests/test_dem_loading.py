@@ -21,6 +21,7 @@ def _write_dem(
     *,
     scale: float | None = None,
     offset: float | None = None,
+    nodata: float | None = None,
 ) -> Path:
     path = tmp_path / name
     crs = CRS.from_user_input("ESRI:103878")
@@ -33,6 +34,8 @@ def _write_dem(
         "crs": crs.to_wkt(),
         "transform": Affine.from_gdal(1000.0, 20.0, 0.0, 2000.0, 0.0, -20.0),
     }
+    if nodata is not None:
+        profile["nodata"] = nodata
     with rasterio.open(path, "w", **profile) as dataset:
         dataset.write(values, 1)
         if scale is not None:
@@ -90,6 +93,57 @@ def test_normalize_applies_ordinary_offset() -> None:
     )
 
     np.testing.assert_allclose(result, [110.0, 120.0])
+
+
+def test_normalize_masks_declared_nodata_in_raw_units() -> None:
+    raw = np.array([-9999, 100, 200], dtype=np.int16)
+
+    result = _normalize_dem_elevations(
+        raw, scale=0.5, offset=None, radius_m=RADIUS_M, nodata=-9999
+    )
+
+    assert np.isnan(result[0])
+    np.testing.assert_allclose(result[1:], [50.0, 100.0])
+
+
+def test_normalize_does_not_modify_the_caller_array() -> None:
+    values = np.array([1730103.0, 1744427.0, np.nan], dtype=np.float32)
+    original = values.copy()
+
+    _normalize_dem_elevations(values, scale=None, offset=None, radius_m=RADIUS_M)
+
+    np.testing.assert_array_equal(values, original)
+
+
+def test_normalize_detects_radius_from_centre_despite_nodata_zero() -> None:
+    radius_from_centre = np.array([0.0, 1730103.0, 1744427.0], dtype=np.float64)
+
+    result = _normalize_dem_elevations(
+        radius_from_centre, scale=None, offset=None, radius_m=RADIUS_M, nodata=0.0
+    )
+
+    assert np.isnan(result[0])
+    np.testing.assert_allclose(result[1:], radius_from_centre[1:] - RADIUS_M)
+
+
+def test_normalize_all_nodata_returns_all_nan() -> None:
+    result = _normalize_dem_elevations(
+        np.full(4, -9999.0), scale=None, offset=None, radius_m=RADIUS_M,
+        nodata=-9999.0,
+    )
+
+    assert result.dtype == np.float32
+    assert np.isnan(result).all()
+
+
+def test_load_dem_masks_the_declared_nodata_value(tmp_path: Path) -> None:
+    values = np.array([[10.0, -9999.0], [30.0, 40.0]], dtype=np.float32)
+    path = _write_dem(tmp_path, "nodata.tif", values, nodata=-9999.0)
+
+    dem, _ = _load_dem(path)
+
+    assert np.isnan(dem.elevation_m[0, 1])
+    np.testing.assert_allclose(dem.elevation_m[[0, 1, 1], [0, 0, 1]], [10.0, 30.0, 40.0])
 
 
 def test_read_dem_raster_returns_declared_scale_and_offset(tmp_path: Path) -> None:

@@ -100,18 +100,25 @@ def _normalize_dem_elevations(
     scale: float | None,
     offset: float | None,
     radius_m: float,
+    nodata: float | None = None,
 ) -> npt.NDArray[np.float32]:
     """Convert raw DEM samples to metres above the reference sphere.
 
-    Applies the raster's declared scale and offset.  An offset that encodes
-    the reference-sphere radius (i.e. values stored as radius-from-centre) is
-    undone so the result is elevation relative to the sphere.  When no scale
-    or offset is declared, radius-from-centre values are detected by magnitude
-    and shifted down by the reference radius.
+    Samples equal to the declared ``nodata`` value (compared in raw units,
+    before scale and offset) and non-finite samples become NaN, which every
+    horizon stage treats as invalid terrain.  Applies the raster's declared
+    scale and offset.  An offset that encodes the reference-sphere radius
+    (i.e. values stored as radius-from-centre) is undone so the result is
+    elevation relative to the sphere.  When no scale or offset is declared,
+    radius-from-centre values are detected by the magnitude of the valid
+    samples and shifted down by the reference radius.  The input array is
+    never modified.
     """
-    result = np.asarray(values, dtype=np.float32)
-    if not result.flags.c_contiguous:
-        result = np.ascontiguousarray(result, dtype=np.float32)
+    raw = np.asarray(values)
+    result = np.array(raw, dtype=np.float32, order="C", copy=True)
+    invalid = ~np.isfinite(result)
+    if nodata is not None and np.isfinite(nodata):
+        invalid |= raw == nodata
     scale_f = 1.0 if scale is None else float(scale)
     offset_f = 0.0 if offset is None else float(offset)
     radius = float(radius_m)
@@ -125,11 +132,12 @@ def _normalize_dem_elevations(
             result += offset_f - radius
         else:
             result += offset_f
-    if not transformed:
-        finite_min = float(np.nanmin(result))
-        if np.isfinite(finite_min) and finite_min > 0.5 * radius:
+    result[invalid] = np.nan
+    if not transformed and not invalid.all():
+        finite_min = float(np.min(result[~invalid]))
+        if finite_min > 0.5 * radius:
             result -= radius
-    return np.ascontiguousarray(result, dtype=np.float32)
+    return result
 
 
 def _load_dem(path: str | Path):
@@ -215,7 +223,8 @@ def _load_dem(path: str | Path):
     )
     dem = DemGrid(
         _normalize_dem_elevations(
-            values, scale=band_scale, offset=band_offset, radius_m=float(radius_m)
+            values, scale=band_scale, offset=band_offset,
+            radius_m=float(radius_m), nodata=georef.nodata,
         ),
         np.ascontiguousarray(georef.affine_transform, dtype=np.float64),
         projection,
