@@ -7,11 +7,23 @@ Run them with the repo's own virtualenv and paste each script's full output back
 |---|---|---|
 | `s1_cpu_repros.py` | CPU only | Reproduces 8 findings: int8 multiply overflow, `-inf` horizon -> dark pixel, truncated tile skipped on resume, observer-height file-name collision, stale `.cbin` after rewrite, 50 deg clamp, PSR writer-failure hang, tolerance arithmetic. About 1 minute (the hang check waits 40 s). **I ran this in my sandbox and all 8 reproduced.** |
 | `s2_horizon_vs_bruteforce.py` | GPU, DEM | Compares production horizon tiles with an independent float64 ray march. `--selftest` runs on CPU. `--synthetic wall/nan/bowl` builds test terrain from the fixture's CRS. **You ran real terrain, wall and nan on the RTX 5090 (see the report). The `nan` case was badly designed in the first version and has been fixed; re-run it. The output now also reports error by distance to the limiting terrain point and the production range cap.** |
+| `s4_farfield_patch_test.py` | GPU, DEM | Patches the far-field slope formula in a temp copy of `src/` and compares production vs brute force before and after. Isolates how much of the error review finding H-A explains. Experiment only, not a proposed fix. **Run on real terrain and wall: isolates H-A (mean abs 0.300° → 0.033°); see the report.** |
+| `s5_residual_diagnostics.py` | GPU, DEM | Diagnoses what s4 left: near-field outliers, exact-zero rays, sun-relevant tails. **Run 2026-10-08 by Claude Code on this machine; see the report.** |
+| `s6_cull_step_isolation.py` | GPU, DEM | Builds scratch copies with the H-A patch, the cull disabled (H-B) and/or `margin_step` zeroed (M-A), and compares all of them on the same rays against one brute-force reference. **Run 2026-10-08 by Claude Code: isolates H-B; M-A inactive on this fixture; see the report.** |
 | `s3_wheel_check.py` | network | Builds wheel and sdist from tracked files, lists contents, installs into a clean venv, tries imports, `pip check`, and the worker entry point. **You ran it: no problems found.** Its pandas probe only checks that an attribute exists, not that calling it fails. |
 
 ## What to run next
 
-Re-run these two, then paste the output:
+Isolate the far-field slope finding (H-A). `s4` patches a scratch copy of `src/` (your tree is untouched), then runs `s2` on the unpatched repo and on the patched copy with identical arguments:
+
+```bash
+.venv/bin/python review_scripts/s4_farfield_patch_test.py --dem /tmp/lunarscout-phase1-lola-512.tif
+.venv/bin/python review_scripts/s4_farfield_patch_test.py --dem /tmp/lunarscout-phase1-lola-512.tif --synthetic wall
+```
+
+Add `--check-only` first if you want just the patch and the CPU sanity table (no GPU). If the patch does not apply, or Numba fails to compile the patched kernel, paste the output: I could not compile CUDA in my sandbox, so the first GPU compile happens on your machine.
+
+Other optional runs:
 
 ```bash
 .venv/bin/python review_scripts/s2_horizon_vs_bruteforce.py --dem /tmp/lunarscout-phase1-lola-512.tif

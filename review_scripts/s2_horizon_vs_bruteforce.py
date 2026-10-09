@@ -87,7 +87,7 @@ def bilinear_vec(elev, c, r):
     return v
 
 
-def brute_horizon_deg(dems, col, row, az_deg, obs_h=0.0, max_range_m=1.0e6, step_frac=0.25):
+def brute_horizon_deg(dems, col, row, az_deg, obs_h=0.0, max_range_m=1.0e6, step_frac=0.25, min_range_m=0.0):
     """Independent float64 horizon: returns (elevation angle deg, distance m to the limiting terrain point)."""
     d0 = dems[0]
     p = d0.projection
@@ -108,6 +108,9 @@ def brute_horizon_deg(dems, col, row, az_deg, obs_h=0.0, max_range_m=1.0e6, step
     for dem in dems:
         step = dem.map_resolution_m * step_frac
         s = np.concatenate([np.arange(1.0, min(20.0, max_range_m), 1.0), np.arange(20.0, max_range_m, step)])
+        s = s[s >= min_range_m]
+        if s.size == 0:
+            continue
         th = s / R_MOON
         pdir = np.cos(th)[:, None] * up + np.sin(th)[:, None] * tdir
         la = np.arcsin(np.clip(pdir[:, 2], -1, 1))
