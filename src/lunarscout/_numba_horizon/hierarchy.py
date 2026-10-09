@@ -12,6 +12,7 @@ from .kernel_math import (
     evaluate_planar_chord,
     evaluate_quartic,
     evaluate_tangent,
+    far_field_slope,
     is_valid_elevation,
     sample_bilinear,
 )
@@ -82,7 +83,8 @@ def _cull_bound_distance(
 
     Above the observer the slope falls with distance, so the nearest point
     bounds it.  Below the observer the slope rises with distance (flat model)
-    or peaks at ``d* = sqrt(-dh * (2R + h + z0))`` (curved model), so the far
+    or peaks at ``d* = sqrt(-2 R0 dh / (1 + dh / R0))`` (curved model,
+    ``far_field_slope``), so the far
     side of the block, or ``d*`` clamped to the block, bounds it.  Mirrors
     ``cull_bound_distance`` in the CUDA backend.
     """
@@ -93,8 +95,9 @@ def _cull_bound_distance(
     true_far = np.float32(true_m + block_m * np.float32(1.4142136))
     if near_field:
         return true_far
-    radius_sum = np.float32(np.float32(2.0) * radius + maximum_height + observer_z)
-    peak = np.float32(np.sqrt(np.float32(-height_delta * radius_sum)))
+    observer_radius = np.float32(radius + observer_z)
+    scale = np.float32(1.0) + height_delta / observer_radius
+    peak = np.float32(np.sqrt(np.float32(-2.0) * observer_radius * height_delta / scale))
     return np.float32(min(max(peak, true_near), true_far))
 
 
@@ -219,22 +222,12 @@ def traverse_hierarchy(
                 true_m, block_m, maximum_height, observer_z, radius,
                 s < np.float32(0.5),
             )
-            observer_radius = radius + observer_z
             if s < np.float32(0.5):
                 possible = (maximum_height - observer_z) / bound_m
             else:
-                squared = bound_m * bound_m
-                local_z = (
-                    (maximum_height - observer_z)
-                    * (np.float32(2.0) * radius + maximum_height + observer_z)
-                    - squared
-                ) / (np.float32(2.0) * observer_radius)
-                local_x_squared = squared - local_z * local_z
-                local_x = (
-                    np.sqrt(local_x_squared).astype(np.float32)
-                    if local_x_squared > 0 else np.float32(1e-6)
+                possible = far_field_slope(
+                    bound_m, observer_z, radius, maximum_height
                 )
-                possible = local_z / local_x
             if possible <= current:
                 advance = (
                     distance_to_exit + np.float32(0.0001)
@@ -253,18 +246,9 @@ def traverse_hierarchy(
                     if s < np.float32(0.5):
                         slope = (height_value - observer_z) / true_m
                     else:
-                        squared = true_m * true_m
-                        point_radius = radius + height_value
-                        local_z = (
-                            (point_radius - observer_radius)
-                            * (point_radius + observer_radius) - squared
-                        ) / (np.float32(2.0) * observer_radius)
-                        local_x_squared = squared - local_z * local_z
-                        local_x = (
-                            np.sqrt(local_x_squared).astype(np.float32)
-                            if local_x_squared > 0 else np.float32(1e-6)
+                        slope = far_field_slope(
+                            true_m, observer_z, radius, height_value
                         )
-                        slope = local_z / local_x
                     current = max(current, slope)
                 row[8], row[9] = height_value, slope
                 magnitude = np.sqrt(dx * dx + dy * dy).astype(np.float32)

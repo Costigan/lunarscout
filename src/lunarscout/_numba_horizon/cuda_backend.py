@@ -60,14 +60,37 @@ def _build_kernels(cuda):
         return maximum
 
     @cuda.jit(device=True)
+    def far_field_slope(chord_m, observer_z, radius, height):
+        # Slope from the observer (radius R0 = radius + observer_z) to terrain
+        # at height h, where chord_m is the distance from the observer to the
+        # ground-sphere point below the target, not to the target itself:
+        # q = 1 - cos(theta) = c^2 / (2 R0^2), z = dh - R_p q, x = R_p sqrt(q (2 - q)).
+        # Written so float32 never subtracts two lunar radii.
+        inverse = float32(float32(1.0) / float32(radius + observer_z))
+        height_delta = float32(height - observer_z)
+        scale = float32(float32(1.0) + float32(height_delta * inverse))
+        ratio = float32(chord_m * inverse)
+        drop = float32(float32(float32(0.5) * chord_m) * ratio)
+        local_z = float32(height_delta - float32(drop * scale))
+        shrink = float32(float32(float32(0.25) * ratio) * ratio)
+        local_x = float32(
+            float32(chord_m * scale)
+            * float32(math.sqrt(float32(float32(1.0) - shrink)))
+        )
+        if local_x <= float32(0.0):
+            return float32(-1e30)
+        return float32(local_z / local_x)
+
+    @cuda.jit(device=True)
     def cull_bound_distance(
         true_m, block_m, maximum_height, observer_z, radius, near_field
     ):
         # Distance at which a block of height <= maximum_height can reach its
         # largest slope. Above the observer the slope falls with distance, so
         # the nearest point bounds it. Below the observer the slope rises with
-        # distance (flat model) or peaks at d* = sqrt(-dh * (2R + h + z0))
-        # (curved model), so the far side of the block, or d*, bounds it.
+        # distance (flat model) or peaks at d* = sqrt(-2 R0 dh / (1 + dh / R0))
+        # (curved model, far_field_slope), so the far side of the block, or
+        # d*, bounds it.
         true_near = float32(max(float32(true_m - block_m), float32(1.0)))
         height_delta = float32(maximum_height - observer_z)
         if height_delta >= float32(0.0):
@@ -75,10 +98,13 @@ def _build_kernels(cuda):
         true_far = float32(true_m + float32(block_m * float32(1.4142136)))
         if near_field:
             return true_far
-        radius_sum = float32(
-            float32(float32(2.0) * radius) + maximum_height + observer_z
+        observer_radius = float32(radius + observer_z)
+        scale = float32(
+            float32(1.0) + float32(height_delta / observer_radius)
         )
-        peak = float32(math.sqrt(float32(-height_delta * radius_sum)))
+        peak = float32(math.sqrt(float32(
+            float32(float32(-2.0) * observer_radius) * height_delta / scale
+        )))
         return float32(min(max(peak, true_near), true_far))
 
     @cuda.jit(device=True)
@@ -306,16 +332,9 @@ def _build_kernels(cuda):
                         if true_m > 1e-6 else -1e30
                     )
                 else:
-                    observer_radius = radius[index] + observer_z[index]
-                    distance_squared = true_m * true_m
-                    local_z = (
-                        (height - observer_z[index])
-                        * (2.0 * radius[index] + height + observer_z[index])
-                        - distance_squared
-                    ) / (2.0 * observer_radius)
-                    local_x_squared = distance_squared - local_z * local_z
-                    local_x = math.sqrt(local_x_squared) if local_x_squared > 0 else 1e-6
-                    slope = local_z / local_x if local_x != 0 else -1e30
+                    slope = far_field_slope(
+                        true_m, observer_z[index], radius[index], height
+                    )
                 if slope > current:
                     current = slope
             traces[index, count, 0] = s
@@ -380,16 +399,9 @@ def _build_kernels(cuda):
                         if true_m > 1e-6 else -1e30
                     )
                 else:
-                    observer_radius = radius[index] + observer_z[index]
-                    distance_squared = true_m * true_m
-                    local_z = (
-                        (height - observer_z[index])
-                        * (2.0 * radius[index] + height + observer_z[index])
-                        - distance_squared
-                    ) / (2.0 * observer_radius)
-                    local_x_squared = distance_squared - local_z * local_z
-                    local_x = math.sqrt(local_x_squared) if local_x_squared > 0 else 1e-6
-                    slope = local_z / local_x if local_x != 0 else -1e30
+                    slope = far_field_slope(
+                        true_m, observer_z[index], radius[index], height
+                    )
                 if slope > current:
                     current = slope
             dx = tangent(segment[4], segment[5], segment[6], segment[7], delta)
@@ -561,32 +573,14 @@ def _build_kernels(cuda):
                     true_m, block_m, maximum_height, observer_z[index],
                     radius[index], s < float32(0.5),
                 )
-                observer_radius = float32(radius[index] + observer_z[index])
                 if s < float32(0.5):
                     possible = float32(
                         float32(maximum_height - observer_z[index]) / bound_m
                     )
                 else:
-                    squared = float32(bound_m * bound_m)
-                    height_delta = float32(maximum_height - observer_z[index])
-                    radius_sum = float32(
-                        float32(float32(2.0) * radius[index])
-                        + maximum_height
+                    possible = far_field_slope(
+                        bound_m, observer_z[index], radius[index], maximum_height
                     )
-                    radius_sum = float32(radius_sum + observer_z[index])
-                    numerator = float32(
-                        float32(height_delta * radius_sum) - squared
-                    )
-                    denominator = float32(float32(2.0) * observer_radius)
-                    local_z = float32(numerator / denominator)
-                    local_x_squared = float32(
-                        squared - float32(local_z * local_z)
-                    )
-                    local_x = (
-                        float32(math.sqrt(local_x_squared))
-                        if local_x_squared > float32(0.0) else float32(1e-6)
-                    )
-                    possible = float32(local_z / local_x)
                 if possible <= current:
                     advance = float32(
                         distance_to_exit + float32(0.0001)
@@ -606,25 +600,9 @@ def _build_kernels(cuda):
                                 float32(height - observer_z[index]) / true_m
                             )
                         else:
-                            squared = float32(true_m * true_m)
-                            point_radius = float32(radius[index] + height)
-                            radius_delta = float32(point_radius - observer_radius)
-                            radius_sum = float32(point_radius + observer_radius)
-                            numerator = float32(
-                                float32(radius_delta * radius_sum) - squared
+                            slope = far_field_slope(
+                                true_m, observer_z[index], radius[index], height
                             )
-                            denominator = float32(
-                                float32(2.0) * observer_radius
-                            )
-                            local_z = float32(numerator / denominator)
-                            local_x_squared = float32(
-                                squared - float32(local_z * local_z)
-                            )
-                            local_x = (
-                                float32(math.sqrt(local_x_squared))
-                                if local_x_squared > float32(0.0) else float32(1e-6)
-                            )
-                            slope = float32(local_z / local_x)
                         if slope > current:
                             current = slope
                     traces[index, count, 8] = height
@@ -792,31 +770,14 @@ def _build_kernels(cuda):
                     true_m, block_m, maximum_height, observer_z,
                     radius, s < float32(0.5),
                 )
-                observer_radius = float32(radius + observer_z)
                 if s < float32(0.5):
                     possible = float32(
                         float32(maximum_height - observer_z) / bound_m
                     )
                 else:
-                    squared = float32(bound_m * bound_m)
-                    height_delta = float32(maximum_height - observer_z)
-                    radius_sum = float32(
-                        float32(float32(2.0) * radius) + maximum_height
+                    possible = far_field_slope(
+                        bound_m, observer_z, radius, maximum_height
                     )
-                    radius_sum = float32(radius_sum + observer_z)
-                    numerator = float32(
-                        float32(height_delta * radius_sum) - squared
-                    )
-                    denominator = float32(float32(2.0) * observer_radius)
-                    local_z = float32(numerator / denominator)
-                    local_x_squared = float32(
-                        squared - float32(local_z * local_z)
-                    )
-                    local_x = (
-                        float32(math.sqrt(local_x_squared))
-                        if local_x_squared > float32(0.0) else float32(1e-6)
-                    )
-                    possible = float32(local_z / local_x)
                 if possible <= current:
                     advance = float32(
                         distance_to_exit + float32(0.0001)
@@ -833,25 +794,9 @@ def _build_kernels(cuda):
                                 float32(height - observer_z) / true_m
                             )
                         else:
-                            squared = float32(true_m * true_m)
-                            point_radius = float32(radius + height)
-                            radius_delta = float32(point_radius - observer_radius)
-                            radius_sum = float32(point_radius + observer_radius)
-                            numerator = float32(
-                                float32(radius_delta * radius_sum) - squared
+                            slope = far_field_slope(
+                                true_m, observer_z, radius, height
                             )
-                            denominator = float32(
-                                float32(2.0) * observer_radius
-                            )
-                            local_z = float32(numerator / denominator)
-                            local_x_squared = float32(
-                                squared - float32(local_z * local_z)
-                            )
-                            local_x = (
-                                float32(math.sqrt(local_x_squared))
-                                if local_x_squared > float32(0.0) else float32(1e-6)
-                            )
-                            slope = float32(local_z / local_x)
                         if slope > current:
                             current = slope
                     magnitude = float32(math.sqrt(float32(

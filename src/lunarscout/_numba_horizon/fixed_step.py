@@ -11,6 +11,7 @@ from .kernel_math import (
     evaluate_planar_chord,
     evaluate_quartic,
     evaluate_tangent,
+    far_field_slope,
     is_valid_elevation,
     sample_bilinear,
 )
@@ -76,19 +77,9 @@ def traverse_level0_fixed_step(
                     if true_m > np.float32(1e-6) else np.float32(-1e30)
                 )
             else:
-                observer_radius = np.float32(radius_m + observer_z_m)
-                distance_squared = true_m * true_m
-                local_z = (
-                    (height - np.float32(observer_z_m))
-                    * (np.float32(2.0 * radius_m) + height + np.float32(observer_z_m))
-                    - distance_squared
-                ) / (np.float32(2.0) * observer_radius)
-                local_x_squared = distance_squared - local_z * local_z
-                local_x = (
-                    np.sqrt(local_x_squared).astype(np.float32)
-                    if local_x_squared > 0 else np.float32(1e-6)
+                slope = far_field_slope(
+                    true_m, observer_z_m, radius_m, height
                 )
-                slope = local_z / local_x if local_x != 0 else np.float32(-1e30)
             current = max(current, slope)
         trace.append((s, true_m, pixel_x, pixel_y, height, slope, current))
         s += step
@@ -144,19 +135,9 @@ def traverse_level0_adaptive(
                     if true_m > np.float32(1e-6) else np.float32(-1e30)
                 )
             else:
-                observer_radius = np.float32(radius_m + observer_z_m)
-                distance_squared = true_m * true_m
-                local_z = (
-                    (height - np.float32(observer_z_m))
-                    * (np.float32(2.0 * radius_m) + height + np.float32(observer_z_m))
-                    - distance_squared
-                ) / (np.float32(2.0) * observer_radius)
-                local_x_squared = distance_squared - local_z * local_z
-                local_x = (
-                    np.sqrt(local_x_squared).astype(np.float32)
-                    if local_x_squared > 0 else np.float32(1e-6)
+                slope = far_field_slope(
+                    true_m, observer_z_m, radius_m, height
                 )
-                slope = local_z / local_x if local_x != 0 else np.float32(-1e30)
             current = max(current, slope)
         dx, dy = evaluate_tangent(segment[4:8], segment[8:12], delta)
         magnitude = np.sqrt(dx * dx + dy * dy).astype(np.float32)

@@ -140,8 +140,12 @@ def test_fixed_step_cpu_oracle_exposes_near_and_far_behavior() -> None:
         segment, elevation, observer_z_m=observer_z, radius_m=radius,
         map_resolution_m=fit["map_resolution_m"],
     )
-    assert obstacle_trace.maximum_slope > 0.25
-    assert obstacle_case["result"]["maximum_slope"] > 0.24
+    # The independent C# spherical reference gives 0.24107. The corrected
+    # far-field slope gives 0.24822 (the chord-as-slant formula gave > 0.25);
+    # the rest is the near-field flat model and fixed-step sampling.
+    reference = obstacle_case["result"]["maximum_slope"]
+    assert reference == pytest.approx(0.24107163, abs=1e-6)
+    assert 0.0 < obstacle_trace.maximum_slope - reference < 0.008
 
 
 def test_adaptive_cpu_oracle_exposes_step_floors_and_skipped_terrain() -> None:

@@ -13,6 +13,31 @@ def is_valid_elevation(value: float) -> bool:
     return bool(np.isfinite(value) and value > -20000.0)
 
 
+def far_field_slope(
+    chord_m: float, observer_z_m: float, radius_m: float, height_m: float
+) -> np.float32:
+    """Slope from the observer to terrain at ``height_m`` beyond 0.5 km.
+
+    ``chord_m`` is the distance from the observer (radius
+    ``R0 = radius_m + observer_z_m``) to the ground-sphere point below the
+    target, not to the target itself, so ``q = 1 - cos(theta) = c^2 / (2 R0^2)``,
+    ``z = dh - R_p q`` and ``x = R_p sqrt(q (2 - q))``.  The float32 form never
+    subtracts two lunar radii.  Mirrors ``far_field_slope`` in the CUDA backend.
+    """
+    inverse = np.float32(1.0) / np.float32(np.float32(radius_m) + np.float32(observer_z_m))
+    height_delta = np.float32(np.float32(height_m) - np.float32(observer_z_m))
+    scale = np.float32(1.0) + height_delta * inverse
+    chord = np.float32(chord_m)
+    ratio = chord * inverse
+    drop = np.float32(0.5) * chord * ratio
+    local_z = height_delta - drop * scale
+    shrink = np.float32(0.25) * ratio * ratio
+    local_x = chord * scale * np.sqrt(np.float32(1.0) - shrink).astype(np.float32)
+    if local_x <= 0:
+        return np.float32(-1e30)
+    return np.float32(local_z / local_x)
+
+
 def evaluate_quartic(x0: float, coefficients: npt.ArrayLike, distance: float) -> np.float32:
     a1, a2, a3, a4 = np.asarray(coefficients, dtype=np.float32)
     s = np.float32(distance)

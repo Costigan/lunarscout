@@ -14,7 +14,7 @@ def test_dense_bilinear_matrix_is_recorded_as_diagnostic() -> None:
     assert not report["diagnostic_comparison"]["is_acceptance_gate"]
     assert not report["diagnostic_comparison"]["all_cases_within_threshold"]
     assert report["maximum_dense_minus_hierarchy_degrees"] == pytest.approx(
-        0.5714783590002774
+        0.5637415835898194  # 0.5714783590002774 before the H-A far-field correction
     )
     assert report["configuration"]["case_count"] == 10
     assert any(

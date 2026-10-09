@@ -13,15 +13,13 @@ def _flat_slope(height, observer_z, distance):
 
 
 def _curved_slope(height, observer_z, distance):
-    # The production far-field slope used by the cull and level-0 samples,
-    # evaluated in float64.
-    radius = float(RADIUS)
-    squared = distance * distance
-    observer_radius = radius + observer_z
-    local_z = (
-        (height - observer_z) * (2.0 * radius + height + observer_z) - squared
-    ) / (2.0 * observer_radius)
-    local_x = np.sqrt(max(squared - local_z * local_z, 1e-12))
+    # far_field_slope (used by the cull and level-0 samples), in float64.
+    observer_radius = float(RADIUS) + observer_z
+    height_delta = height - observer_z
+    scale = 1.0 + height_delta / observer_radius
+    ratio = distance / observer_radius
+    local_z = height_delta - 0.5 * distance * ratio * scale
+    local_x = distance * scale * np.sqrt(1.0 - 0.25 * ratio * ratio)
     return local_z / local_x
 
 
@@ -42,12 +40,12 @@ def test_block_below_observer_is_bounded_at_its_far_side_in_the_near_field() -> 
 
 
 def test_block_below_observer_is_bounded_at_the_curved_slope_peak() -> None:
-    # d* = sqrt(-dh * (2R + h + z0)) = sqrt(1 * 3474799) ~ 1864 m, inside the block.
+    # d* = sqrt(-2 R0 dh / (1 + dh / R0)) ~ sqrt(2 * 1737400) ~ 1864 m, inside the block.
     bound = _cull_bound_distance(
         np.float32(1500.0), np.float32(640.0), np.float32(-1.0),
         np.float32(0.0), RADIUS, False,
     )
-    assert bound == pytest.approx(np.sqrt(2.0 * 1737400.0 - 1.0), rel=1e-5)
+    assert bound == pytest.approx(np.sqrt(2.0 * 1737400.0 / (1.0 - 1.0 / 1737400.0)), rel=1e-5)
 
 
 @pytest.mark.parametrize("near_field", [True, False])
