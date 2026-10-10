@@ -178,8 +178,9 @@ class TestPublicTerrainEager:
         raster = ma_raster(values, grid)
         result = hillshade(raster, azimuth=0, altitude=0, compute_edges=True)
         assert result.dtype == np.uint8
-        valid_interior = result.values[1:-1, 1:-1]
-        assert np.any(valid_interior == 0)
+        # gdaldem maps grazing or shaded cells to 1; they stay valid.
+        assert result.valid.all()
+        assert np.all(result.values == 1)
 
     def test_invalid_nodata_rejected(self):
         raster, _, _ = self._make_dem()

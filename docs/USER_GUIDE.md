@@ -1978,6 +1978,15 @@ slope_expr = ma.slope(dem_expr, units="degrees")
 ma.write("slope.tif", slope_expr)
 ```
 
+Gradients use Horn's 3x3 kernel, as `gdaldem` does; slope, aspect and
+hillshade match `gdaldem` on north-up grids, including the `compute_edges`
+border (missing neighbours are linearly extrapolated; in the four corner
+windows columns are replicated). Signed pixel sizes keep aspect correct on
+south-up grids. Rotated grids are rejected
+(`terrain_rotated_grid_unsupported`), and so are geographic (degree) grids
+unless `scale` gives the ratio of horizontal to elevation units, as
+`gdaldem -s` does (`terrain_geographic_grid_requires_scale`).
+
 All terrain operations require a one-pixel source halo.  ``ma.write()`` reads
 each output window with a one-pixel expansion, evaluates the terrain kernel,
 and crops back to the exact output window.  This produces identical results to
@@ -2001,8 +2010,8 @@ compute_edges=False, scale=1.0, z_factor=1.0)``**
 
 Returns ``uint8`` shaded relief.  ``azimuth`` is degrees clockwise from north;
 ``altitude`` is degrees above the horizon.  ``z_factor`` exaggerates vertical
-relief.  Output values range from 0 to 255; a valid hillshade pixel at zero
-is distinct from an invalid fill cell.
+relief.  As with `gdaldem`, valid values run from 1 (shaded or grazing) to
+255, so a value of 0 never occurs for a valid pixel.
 
 Canonical validity for all terrain products is computed from the source
 elevation and neighbourhood gradient, independent of the ``output_nodata``

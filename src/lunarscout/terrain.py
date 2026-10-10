@@ -120,16 +120,91 @@ def _prepared_elevation(
     return elevation, neighborhood_invalid
 
 
+def _require_supported_grid(georef: GeoReference, *, scale: float) -> None:
+    transform = georef.affine_transform
+    if float(transform[2]) != 0.0 or float(transform[4]) != 0.0:
+        raise TerrainOperationError(
+            "Terrain operations require a north-up or south-up grid without rotation.",
+            code="terrain_rotated_grid_unsupported",
+            details={"affine_transform": list(transform)},
+        )
+    if scale == 1.0:
+        from pyproj import CRS
+
+        try:
+            geographic = CRS.from_wkt(georef.projection_wkt).is_geographic
+        except Exception:  # noqa: BLE001 - an unreadable CRS is not rejected here
+            geographic = False
+        if geographic:
+            raise TerrainOperationError(
+                "Terrain operations on a geographic (degree) grid need scale, the "
+                "ratio of horizontal units to elevation units (as gdaldem -s).",
+                code="terrain_geographic_grid_requires_scale",
+            )
+
+
+def _horn_window_sums(
+    padded: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Horn's weighted differences over every 3x3 window of a padded grid.
+
+    Returns (right - left, bottom - top) column and row differences in
+    elevation units, not yet divided by 8 x pixel size.
+    """
+    a, b, c = padded[:-2, :-2], padded[:-2, 1:-1], padded[:-2, 2:]
+    d, f = padded[1:-1, :-2], padded[1:-1, 2:]
+    g, h, i = padded[2:, :-2], padded[2:, 1:-1], padded[2:, 2:]
+    return (c + 2.0 * f + i) - (a + 2.0 * d + g), (g + 2.0 * h + i) - (a + 2.0 * b + c)
+
+
 def _gradient(elevation: NDArray[np.float64], georef: GeoReference) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    xres = abs(float(georef.pixel_size_x))
-    yres = abs(float(georef.pixel_size_y))
-    if xres <= 0.0 or yres <= 0.0:
+    """Horn (gdaldem) gradient: dz/d(east) and dz/d(south) for every pixel.
+
+    Missing neighbours at the raster edge follow gdaldem -compute_edges:
+    each is linearly extrapolated (2 x edge - inner) along its row or column,
+    except in the four corner windows, where rows are extrapolated and
+    columns are replicated. Edge values are discarded unless compute_edges
+    is requested. Signed pixel sizes make the result physical on north-up
+    and south-up grids; on north-up grids it equals gdaldem's.
+    """
+    xres = float(georef.pixel_size_x)
+    yres = float(georef.pixel_size_y)
+    if xres == 0.0 or yres == 0.0 or not np.isfinite(xres) or not np.isfinite(yres):
         raise TerrainOperationError(
             "Terrain operations require non-zero pixel sizes.",
             code="terrain_invalid_georeference",
         )
-    dzdy, dzdx = np.gradient(elevation, yres, xres)
-    return dzdx, dzdy
+    height, width = elevation.shape
+    padded = np.empty((height + 2, width + 2), dtype=np.float64)
+    padded[1:-1, 1:-1] = elevation
+    if height >= 2:
+        padded[0, 1:-1] = 2.0 * elevation[0] - elevation[1]
+        padded[-1, 1:-1] = 2.0 * elevation[-1] - elevation[-2]
+    else:
+        padded[0, 1:-1] = padded[-1, 1:-1] = elevation[0]
+    if width >= 2:
+        padded[:, 0] = 2.0 * padded[:, 1] - padded[:, 2]
+        padded[:, -1] = 2.0 * padded[:, -2] - padded[:, -3]
+    else:
+        padded[:, 0] = padded[:, -1] = padded[:, 1]
+    column_difference, row_difference = _horn_window_sums(padded)
+    if height >= 2 and width >= 2:
+        for row, inner in ((0, 1), (height - 1, height - 2)):
+            for column in (0, width - 1):
+                columns = [max(column - 1, 0), column, min(column + 1, width - 1)]
+                edge = elevation[row, columns]
+                beyond = 2.0 * edge - elevation[inner, columns]
+                window = np.vstack(
+                    (beyond, edge, elevation[inner, columns]) if row == 0
+                    else (elevation[inner, columns], edge, beyond)
+                )
+                corner_columns, corner_rows = _horn_window_sums(np.pad(window, 1))
+                column_difference[row, column] = corner_columns[1, 1]
+                row_difference[row, column] = corner_rows[1, 1]
+    # Pixel columns run east when xres > 0; rows run south when yres < 0.
+    dz_east = column_difference / (8.0 * xres)
+    dz_south = row_difference / (8.0 * -yres)
+    return dz_east, dz_south
 
 
 def _apply_invalid_edges(
@@ -168,7 +243,9 @@ def slope(
             details={"argument": "units", "value": units},
         )
     elevation, invalid = _prepared_elevation(array, georef, output_nodata=output_nodata)
-    dzdx, dzdy = _gradient(elevation / _positive_finite(scale, name="scale"), georef)
+    scale_value = _positive_finite(scale, name="scale")
+    _require_supported_grid(georef, scale=scale_value)
+    dzdx, dzdy = _gradient(elevation / scale_value, georef)
     rise_run = np.sqrt(dzdx * dzdx + dzdy * dzdy)
     if units == "degrees":
         output = np.degrees(np.arctan(rise_run)).astype(np.float32)
@@ -195,6 +272,7 @@ def aspect(
     """Calculate GDAL-compatible Horn aspect in azimuth degrees."""
 
     elevation, invalid = _prepared_elevation(array, georef, output_nodata=output_nodata)
+    _require_supported_grid(georef, scale=2.0)  # aspect is independent of scale
     dzdx, dzdy = _gradient(elevation, georef)
     aspect_degrees = (90.0 - np.degrees(np.arctan2(dzdy, -dzdx))) % 360.0
     flat = np.isclose(dzdx, 0.0) & np.isclose(dzdy, 0.0)
@@ -247,7 +325,9 @@ def hillshade(
             details={"dtype": "uint8", "output_nodata": output_nodata},
         ) from exc
     elevation, invalid = _prepared_elevation(array, georef, output_nodata=output_nodata)
-    z_scale = _positive_finite(z_factor, name="z_factor") / _positive_finite(scale, name="scale")
+    scale_value = _positive_finite(scale, name="scale")
+    _require_supported_grid(georef, scale=scale_value)
+    z_scale = _positive_finite(z_factor, name="z_factor") / scale_value
     dzdx, dzdy = _gradient(elevation * z_scale, georef)
     slope_rad = np.arctan(np.sqrt(dzdx * dzdx + dzdy * dzdy))
     aspect_rad = np.arctan2(dzdy, -dzdx)
@@ -257,7 +337,8 @@ def hillshade(
         np.sin(altitude_rad) * np.cos(slope_rad)
         + np.cos(altitude_rad) * np.sin(slope_rad) * np.cos(azimuth_rad - aspect_rad)
     )
-    output = np.rint(np.clip(255.0 * shaded, 0.0, 255.0)).astype(np.uint8)
+    # gdaldem: 1 + 254 x cos(incidence), and 1 where the cell faces away.
+    output = np.rint(np.where(shaded <= 0.0, 1.0, 1.0 + 254.0 * shaded)).astype(np.uint8)
     return (
         _apply_invalid_edges(
             output,

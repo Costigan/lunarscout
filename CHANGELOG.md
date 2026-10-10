@@ -38,6 +38,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     errors, the spatial unit rules, and the `overflow=` / `numeric_errors=`
     keywords (H4; previously uint8 `250 + 10` gave 4). `hypot` and `arctan2`
     accept scalar operands instead of raising `AttributeError`.
+  - *Terrain (results change).* `slope`, `aspect` and `hillshade` use the
+    Horn 3x3 kernel and match `gdaldem`, including `compute_edges` borders
+    and the hillshade value scale (1-255); they previously used two-point
+    central differences (H2). Aspect is correct on south-up grids; rotated
+    grids, and geographic grids without `scale`, are rejected.
   - *Alignment.* `align()` across coordinate systems no longer overwrites
     covered pixels with nodata: the coverage mask now transforms destination
     coordinates into the source CRS (H1).
