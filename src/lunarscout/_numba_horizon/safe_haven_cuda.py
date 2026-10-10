@@ -20,10 +20,19 @@ _FINALIZER = None
 _REDUCER_LOCK = threading.Lock()
 
 
+def _cuda_jit_cached(cuda, function):
+    """Compile with Numba's on-disk cache when the source has a locator."""
+    try:
+        return cuda.jit(cache=True)(function)
+    except RuntimeError as error:
+        if "no locator available" not in str(error):
+            raise
+        return cuda.jit(function)
+
+
 def _build_reducer(cuda):
     from numba import float32
 
-    @cuda.jit
     def reducer(
         fractions, margins, month_map, start, count, final, valid_width, valid_height,
         sunlight_threshold, earth_threshold, touched, best, had_outage, was_above,
@@ -81,13 +90,12 @@ def _build_reducer(cuda):
         min_month[pixel] = lo
         max_month[pixel] = hi
 
-    return reducer
+    return _cuda_jit_cached(cuda, reducer)
 
 
 def _build_finalizer(cuda):
     from numba import float32
 
-    @cuda.jit
     def finalizer(best, had_outage, was_above, output, month_count, step):
         pixel = cuda.grid(1)
         if pixel >= PATCH_SIZE * PATCH_SIZE:
@@ -98,7 +106,7 @@ def _build_finalizer(cuda):
             else:
                 output[band, pixel] = float32(best[band, pixel]) * step
 
-    return finalizer
+    return _cuda_jit_cached(cuda, finalizer)
 
 
 class SafeHavenCudaCancelled(RuntimeError):

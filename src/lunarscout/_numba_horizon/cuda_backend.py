@@ -205,7 +205,7 @@ def _build_kernels(cuda):
         bottom = float32(q01 + tx * float32(q11 - q01))
         return float32(top + ty * (bottom - top))
 
-    @cuda.jit
+    @cuda_jit_cached()
     def pyramid_downsample_kernel(source, destination):
         column, row = cuda.grid(2)
         if column >= destination.shape[1] or row >= destination.shape[0]:
