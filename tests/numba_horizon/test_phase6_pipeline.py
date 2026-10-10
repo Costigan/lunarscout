@@ -276,6 +276,39 @@ def test_staged_write_preserves_existing_file_on_failure(
     assert list(final_path.parent.glob("*.tmp.bin")) == []
 
 
+@pytest.mark.parametrize("first_compress", [True, False])
+def test_rewrite_in_other_format_removes_stale_sibling(
+    tmp_path: Path, first_compress: bool
+) -> None:
+    store = HorizonTileStore(tmp_path)
+    old = np.full((PIXEL_COUNT, AZIMUTH_COUNT), 5.0, dtype=np.float32)
+    new = np.full((PIXEL_COUNT, AZIMUTH_COUNT), 20.0, dtype=np.float32)
+    old_path = store.write(0, 0, 0.0, old, compress=first_compress)
+
+    new_path = store.write(0, 0, 0.0, new, compress=not first_compress)
+
+    assert not old_path.exists()
+    assert store.find_existing_path(0, 0, 0.0) == new_path
+    np.testing.assert_allclose(read_horizon_tile(new_path), 20.0, atol=1e-3)
+
+
+def test_failed_rewrite_in_other_format_keeps_existing_sibling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = HorizonTileStore(tmp_path)
+    degrees = np.full((PIXEL_COUNT, AZIMUTH_COUNT), 5.0, dtype=np.float32)
+    existing = store.write(0, 0, 0.0, degrees, compress=True)
+
+    def fail(_handle, _degrees):
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr(file_format, "_write_uncompressed", fail)
+    with pytest.raises(OSError, match="simulated disk failure"):
+        store.write(0, 0, 0.0, degrees, compress=False)
+
+    assert store.find_existing_path(0, 0, 0.0) == existing
+
+
 def test_uncompressed_partial_tile_is_readable_and_padded(tmp_path: Path) -> None:
     store = HorizonTileStore(tmp_path)
     degrees = np.full((PIXEL_COUNT, AZIMUTH_COUNT), 99.0, dtype=np.float32)

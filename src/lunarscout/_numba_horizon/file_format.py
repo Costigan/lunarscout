@@ -518,6 +518,12 @@ class HorizonTileStore:
             except OSError:
                 pass
             raise
+        # Remove the tile's other-format copy only after the new one is
+        # published; readers prefer .cbin, so a stale .cbin would shadow a
+        # fresh .bin.
+        self.build_path(
+            tile_y, tile_x, observer_elevation_m, compress=not compress
+        ).unlink(missing_ok=True)
         return final_path
 
 

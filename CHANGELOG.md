@@ -31,6 +31,9 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     or NaN-bearing tile raises `HorizonFormatError` with code
     `horizon_tile_unreadable` (H-H). Only a missing tile becomes an invalid
     patch, and the final progress event reports the invalid-patch count.
+  - *Horizon tiles.* Rewriting a tile with the other `compress` setting
+    removes the old `.bin` or `.cbin` copy once the new file is published;
+    before, a stale `.cbin` shadowed a fresh `.bin` on read (M-K).
   - *Safety.* Each production horizon ray is capped at 16 steps per pixel of
     range; a capped ray raises `HorizonGenerationError` with code
     `horizon_step_limit_exceeded` instead of keeping the GPU busy (M-G). A PSR
