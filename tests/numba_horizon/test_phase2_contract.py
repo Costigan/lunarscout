@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -52,8 +53,19 @@ def _configuration(fixture: dict) -> ContractConfiguration:
 
 
 def test_contract_loads_every_reference_array_without_native_runtime(artifact) -> None:
-    assert "clr" not in sys.modules
-    assert "numba.cuda" not in sys.modules
+    # A fresh process: GPU tests earlier in this session may already have
+    # imported numba.cuda here.
+    code = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from lunarscout._numba_horizon.contract import load_reference_artifact\n"
+        f"load_reference_artifact(Path({str(METADATA_PATH)!r}), Path({str(NPZ_PATH)!r}))\n"
+        "print(sorted(m for m in ('clr', 'numba.cuda') if m in sys.modules))\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    assert completed.stdout.strip() == "[]"
     assert len(artifact.arrays) == 822
     assert set(artifact.arrays) == set(artifact.metadata["arrays"])
     assert all(array.flags.c_contiguous for array in artifact.arrays.values())
