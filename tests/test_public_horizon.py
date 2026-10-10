@@ -85,7 +85,6 @@ def test_public_horizon_facade_reports_cuda_and_returns_directory(
     assert actual == output
     assert len(calls[0][0]) == 2
     assert calls[0][1] == output
-    assert calls[0][2]["dem_paths"] == (primary, outer)
     assert calls[0][2]["observer_height_m"] == 1.5
     assert calls[0][2]["compress"] is False
     assert calls[0][2]["overwrite"] is True

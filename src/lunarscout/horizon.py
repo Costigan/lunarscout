@@ -139,7 +139,6 @@ def _run_horizon_pipeline(
     dems: Sequence[Any],
     output_directory: Path,
     *,
-    dem_paths: Sequence[Path],
     observer_height_m: float,
     compress: bool,
     overwrite: bool,
@@ -444,7 +443,6 @@ def generate_horizons(
         _run_horizon_pipeline(
             dems,
             output,
-            dem_paths=resolved_dems,
             observer_height_m=float(observer_height_m),
             compress=compress,
             overwrite=overwrite,
