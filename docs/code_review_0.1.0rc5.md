@@ -18,7 +18,7 @@ Date: 2026-10-08. Mode: read-only. Scope: public API and root namespace, map alg
 
 ### BLOCKER
 
-**B1. Signed-integer multiply overflow is missed (silent wrong result).** `map_algebra/_dtypes.py:467-469`. The checks use floor division (`lower // aa`), which is off by one for inexact quotients when operand signs differ or both are negative. **[verified by me]** I enumerated all int8 pairs: 366 of 65,536 overflowing products go undetected (e.g. 3 × −43 = −129, and −1 × −128). **[reproduced]** `multiply(int8 raster [3], -43)` returned 127, valid=True, under the default `overflow="raise"`. The same mask feeds `checked_integer_power` and `square`, for every signed width. Fix: use ceil-based bounds or compute in a wider type; add exhaustive int8/int16 tests. Existing `test_numeric_policy.py` only checks max/min boundaries.
+**B1. Signed-integer multiply overflow is missed (silent wrong result).** **[FIXED on `fix/b1-integer-multiply-overflow`, 2026-10-09: ceiling bounds in the three affected branches; exhaustive int8/uint8 and int16-int64 frontier tests. The int8 power path was not affected.]** `map_algebra/_dtypes.py:467-469`. The checks use floor division (`lower // aa`), which is off by one for inexact quotients when operand signs differ or both are negative. **[verified by me]** I enumerated all int8 pairs: 366 of 65,536 overflowing products go undetected (e.g. 3 × −43 = −129, and −1 × −128). **[reproduced]** `multiply(int8 raster [3], -43)` returned 127, valid=True, under the default `overflow="raise"`. The same mask feeds `checked_integer_power` and `square`, for every signed width. Fix: use ceil-based bounds or compute in a wider type; add exhaustive int8/int16 tests. Existing `test_numeric_policy.py` only checks max/min boundaries.
 
 ### HIGH
 

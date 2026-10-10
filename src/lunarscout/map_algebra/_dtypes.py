@@ -429,6 +429,18 @@ def _require_values_representable(
         )
 
 
+def _ceil_divide(
+    numerator: int, denominator: np.ndarray[Any, Any]
+) -> np.ndarray[Any, Any]:
+    """Exact ceil(numerator / denominator) in the denominator's integer dtype.
+
+    ``numerator`` is a bound of that dtype, so floor division and remainder
+    cannot overflow, and adding one to an inexact floor stays in range.
+    """
+    quotient = numerator // denominator
+    return quotient + (numerator % denominator != 0).astype(denominator.dtype)
+
+
 def _overflow_mask(
     a: np.ndarray[Any, Any],
     b: np.ndarray[Any, Any] | None,
@@ -463,10 +475,13 @@ def _overflow_mask(
         pn = (aa > 0) & (bb < 0)
         np_ = (aa < 0) & (bb > 0)
         nn = (aa < 0) & (bb < 0)
+        # With x * y overflowing iff one factor passes bound / other, the
+        # mixed-sign and negative cases need the ceiling of that quotient;
+        # floor division misses products such as 3 * -43 in int8.
         mask[pp] = aa[pp] > upper // bb[pp]
-        mask[pn] = bb[pn] < lower // aa[pn]
-        mask[np_] = aa[np_] < lower // bb[np_]
-        mask[nn] = aa[nn] < upper // bb[nn]
+        mask[pn] = bb[pn] < _ceil_divide(lower, aa[pn])
+        mask[np_] = aa[np_] < _ceil_divide(lower, bb[np_])
+        mask[nn] = aa[nn] < _ceil_divide(upper, bb[nn])
         return mask
     if operation == "floor_divide":
         if dtype.kind == "i":
