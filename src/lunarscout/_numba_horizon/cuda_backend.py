@@ -818,6 +818,11 @@ def _build_kernels(cuda):
                         float32(float32(1.0) / magnitude)
                         if magnitude > float32(1e-6) else float32(0.0005)
                     )
+                    # The margin step cannot jump over terrain rising more
+                    # slowly than 1/1.732 (about 30 degrees) along the ray;
+                    # steeper terrain can be skipped.  It binds only where
+                    # angular_step exceeds a pixel, beyond about 13 km on a
+                    # 20 m grid (review finding M-A).
                     margin = float32(current - slope)
                     margin_step = (
                         float32(

@@ -1005,6 +1005,12 @@ the pipeline may hold up to five prepared patches at once, so a polar run can
 temporarily need up to about 8 GiB more host memory and 3.3 GiB more GPU
 memory per DEM. Patches farther from a pole are unaffected.
 
+Beyond about 1.5 milliradians of range per pixel (about 13 km on a 20 m
+grid), level-0 ray steps grow longer than a pixel. The step length is chosen
+so that it cannot jump over terrain rising more slowly than about 30 degrees
+relative to the ray; steeper distant terrain can be missed, which biases
+horizons low.
+
 ### Scientific Algorithm Identifiers
 
 Every downstream product records the algorithm that produced it in

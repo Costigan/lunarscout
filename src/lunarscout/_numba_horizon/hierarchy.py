@@ -256,6 +256,8 @@ def traverse_hierarchy(
                     np.float32(1.0) / magnitude
                     if magnitude > 1e-6 else np.float32(0.0005)
                 )
+                # Can skip terrain steeper than about 30 degrees; see
+                # hierarchy_maximum in cuda_backend.py (review finding M-A).
                 margin = current - slope
                 margin_step = (
                     margin * true_m * np.float32(1.732 / 1000.0)
