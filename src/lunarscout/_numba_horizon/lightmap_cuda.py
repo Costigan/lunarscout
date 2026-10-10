@@ -225,6 +225,7 @@ class LightmapCudaSession:
             )
             self._vectors = None
             self._vector_key = None
+            self._input_owner = None
 
     def _iter_patch_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int, valid_width: int, signal: str):
         vectors64 = _validate_vectors(body_vectors_m)
@@ -238,18 +239,25 @@ class LightmapCudaSession:
         patch_dem[:valid_height, :valid_width] = dem.elevation_m[tile_y:tile_y + valid_height, tile_x:tile_x + valid_width]
         projection = np.asarray((dem.projection.radius_m, dem.projection.latitude_origin_rad, dem.projection.longitude_origin_rad, dem.projection.scale, dem.projection.false_easting_m, dem.projection.false_northing_m), dtype=np.float64)
         vector_key = hashlib.sha256(vectors.tobytes()).digest()
-        with self._lock:
-            if self._vector_key != vector_key:
-                self._vectors = self._cuda.to_device(vectors)
-                self._vector_key = vector_key
-            self._dem.copy_to_device(patch_dem)
-            self._geotransform.copy_to_device(dem.geo_transform)
-            self._projection.copy_to_device(projection)
-            self._horizons.copy_to_device(horizons)
-            threads = 128
-            blocks = (PATCH_SIZE * PATCH_SIZE + threads - 1) // threads
-            for start in range(0, vectors.shape[0], self.time_batch_size):
-                count = min(self.time_batch_size, vectors.shape[0] - start)
+        # The lock is held per batch, never across a yield: two interleaved
+        # iterators on one session would otherwise deadlock.  The device
+        # inputs are shared, so they are re-uploaded whenever another
+        # iterator used them since this one's last batch.
+        owner = object()
+        threads = 128
+        blocks = (PATCH_SIZE * PATCH_SIZE + threads - 1) // threads
+        for start in range(0, vectors.shape[0], self.time_batch_size):
+            count = min(self.time_batch_size, vectors.shape[0] - start)
+            with self._lock:
+                if self._vector_key != vector_key:
+                    self._vectors = self._cuda.to_device(vectors)
+                    self._vector_key = vector_key
+                if self._input_owner is not owner:
+                    self._dem.copy_to_device(patch_dem)
+                    self._geotransform.copy_to_device(dem.geo_transform)
+                    self._projection.copy_to_device(projection)
+                    self._horizons.copy_to_device(horizons)
+                    self._input_owner = owner
                 self._kernel[blocks, threads](self._dem, self._geotransform, self._projection, self._vectors, self._horizons, start, count, tile_x, tile_y, valid_width, valid_height, self._output, self._fraction_output, self._margin_output, signal == "margin")
                 self._cuda.synchronize()
                 if signal == "fraction":
@@ -259,7 +267,7 @@ class LightmapCudaSession:
                 else:
                     source = self._output
                 batch = source[:count].copy_to_host().reshape(count, PATCH_SIZE, PATCH_SIZE)
-                yield batch[:, :valid_height, :valid_width]
+            yield batch[:, :valid_height, :valid_width]
 
     def iter_patch_fraction_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
         for batch in self._iter_patch_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, signal="fraction"):

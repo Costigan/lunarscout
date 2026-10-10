@@ -422,3 +422,39 @@ def test_interrupted_patch_recomputes_every_band_on_resume(tmp_path: Path) -> No
     )
     with rasterio.open(result) as dataset:
         np.testing.assert_array_equal(dataset.read()[:, 0, 0], (9, 10))
+
+
+@pytest.mark.skipif(
+    os.environ.get("LUNARSCOUT_REQUIRE_NUMBA_CUDA") != "1",
+    reason="set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 for the explicit real-GPU probe",
+)
+def test_lightmap_cuda_iterators_can_interleave_on_one_session() -> None:
+    import threading
+
+    dem = _dem(width=3, height=2)
+    vectors = np.stack(tuple(
+        _position_for_local_angle(dem, 10.0 * index, 0.3) for index in range(6)
+    ))
+    low = np.full((128, 128, AZIMUTH_COUNT), 0.1, dtype=np.float32)
+    high = np.full((128, 128, AZIMUTH_COUNT), 0.5, dtype=np.float32)
+    arguments = dict(tile_y=0, tile_x=0, valid_height=2, valid_width=3)
+    session = LightmapCudaSession(time_batch_size=2)
+    expected_low = np.stack(tuple(session.iter_patch_tiles(dem, low, vectors, **arguments)))
+    expected_high = np.stack(tuple(session.iter_patch_tiles(dem, high, vectors, **arguments)))
+    assert not np.array_equal(expected_low, expected_high)
+    result = {}
+
+    def interleave() -> None:
+        first = session.iter_patch_tiles(dem, low, vectors, **arguments)
+        second = session.iter_patch_tiles(dem, high, vectors, **arguments)
+        pairs = [(next(first), next(second)) for _ in range(len(vectors))]
+        result["low"] = np.stack([pair[0] for pair in pairs])
+        result["high"] = np.stack([pair[1] for pair in pairs])
+
+    thread = threading.Thread(target=interleave, daemon=True)
+    thread.start()
+    thread.join(timeout=60)
+
+    assert not thread.is_alive(), "interleaved iterators deadlocked"
+    np.testing.assert_array_equal(result["low"], expected_low)
+    np.testing.assert_array_equal(result["high"], expected_high)

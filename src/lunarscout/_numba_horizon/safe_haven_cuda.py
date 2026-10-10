@@ -207,6 +207,8 @@ class SafeHavenCudaSession(LightmapCudaSession):
             self._geotransform.copy_to_device(dem.geo_transform)
             self._projection.copy_to_device(np.asarray((dem.projection.radius_m, dem.projection.latitude_origin_rad, dem.projection.longitude_origin_rad, dem.projection.scale, dem.projection.false_easting_m, dem.projection.false_northing_m), dtype=np.float64))
             self._horizons.copy_to_device(np.ascontiguousarray(horizons_array, dtype=np.float32))
+            # The lightmap iterators share these inputs; force a re-upload.
+            self._input_owner = None
             threads = 128
             blocks = (n + threads - 1) // threads
             for start in range(0, time_count, self.time_batch_size):
