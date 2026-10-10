@@ -323,3 +323,115 @@ def test_public_horizon_executes_real_cuda_kernel(tmp_path: Path) -> None:
         or name.startswith("moonlib.")
         for name in sys.modules
     )
+
+
+def _write_polar_dem(
+    path: Path, elevation: np.ndarray, *, origin_x: float, origin_y: float
+) -> Path:
+    height, width = elevation.shape
+    georef = ls.GeoReference(
+        projection_wkt=_WKT,
+        projection_proj4="+proj=stere +lat_0=-90 +lon_0=0 +k=1 +R=1737400 +units=m",
+        affine_transform=(origin_x, 20.0, 0.0, origin_y, 0.0, -20.0),
+        width=width,
+        height=height,
+        pixel_size_x=20.0,
+        pixel_size_y=-20.0,
+        nodata=None,
+    )
+    return ls.write_geotiff(path, elevation.astype(np.float32), georef)
+
+
+def test_pole_patch_selection_covers_patches_near_the_pole(tmp_path: Path) -> None:
+    from lunarscout._numba_horizon.pipeline import enumerate_patches
+    from lunarscout.products import _load_dem
+
+    # The south pole (projection origin) lies at pixel (128, 384).
+    path = _write_polar_dem(
+        tmp_path / "dem.tif",
+        np.zeros((1024, 1024)),
+        origin_x=-128 * 20.0,
+        origin_y=384 * 20.0,
+    )
+    dem = _load_dem(path)[0]
+    patches = enumerate_patches(dem.width, dem.height)
+
+    selected = horizon_module._pole_patch_origins(dem, patches)
+
+    # Patches whose nearest pixel is within 160 px of (128, 384).
+    expected = {(x, y) for x in (0, 128, 256) for y in (256, 384)}
+    expected |= {(x, y) for x in (0, 128) for y in (128, 512)}
+    assert selected == expected
+
+
+def test_pole_patch_selection_includes_pole_just_outside_the_dem(
+    tmp_path: Path,
+) -> None:
+    from lunarscout._numba_horizon.pipeline import enumerate_patches
+    from lunarscout.products import _load_dem
+
+    # The pole lies 100 px left of column 0 and level with row 64; the DEM is
+    # narrower than a patch, so the edge patch is partial.
+    path = _write_polar_dem(
+        tmp_path / "dem.tif",
+        np.zeros((300, 100)),
+        origin_x=100 * 20.0,
+        origin_y=64 * 20.0,
+    )
+    dem = _load_dem(path)[0]
+    patches = enumerate_patches(dem.width, dem.height)
+
+    assert horizon_module._pole_patch_origins(dem, patches) == {(0, 0), (0, 128)}
+    assert horizon_module._pole_patch_origins(dem, patches, radius_px=50) == set()
+
+
+def test_pole_patch_selection_is_empty_far_from_the_pole(tmp_path: Path) -> None:
+    from lunarscout._numba_horizon.pipeline import enumerate_patches
+    from lunarscout.products import _load_dem
+
+    path = _write_polar_dem(
+        tmp_path / "dem.tif", np.zeros((256, 256)), origin_x=50_000.0, origin_y=-50_000.0
+    )
+    dem = _load_dem(path)[0]
+
+    assert horizon_module._pole_patch_origins(
+        dem, enumerate_patches(dem.width, dem.height)
+    ) == set()
+
+
+@pytest.mark.skipif(
+    os.environ.get("LUNARSCOUT_REQUIRE_NUMBA_CUDA") != "1",
+    reason="set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1 for the explicit real-GPU probe",
+)
+def test_public_horizon_is_exact_around_the_pole(tmp_path: Path) -> None:
+    # A bowl centred on the south pole: z = h (r / rim)^2 inside the rim, flat
+    # at h outside.  Azimuths are measured from true north, so every pixel at
+    # the same distance from the pole sees the same horizon profile, and the
+    # pole itself sees the rim at the same angle in every direction.  The DEM
+    # is three patches wide; the last patch is too far from the pole for
+    # exact rays, so one run mixes both segment layouts.
+    rim_m, rim_height_m, radius_m = 1000.0, 200.0, 1737400.0
+    x, y = np.meshgrid((np.arange(384) - 64) * 20.0, -(np.arange(128) - 64) * 20.0)
+    r = np.minimum(np.hypot(x, y), rim_m)
+    path = _write_polar_dem(
+        tmp_path / "bowl.tif",
+        rim_height_m * (r / rim_m) ** 2,
+        origin_x=-64 * 20.0,
+        origin_y=64 * 20.0,
+    )
+
+    output = ls.generate_horizons(tmp_path / "horizons", [path], compress=False)
+
+    store = HorizonTileStore(output)
+    far_tile = read_horizon_tile(store.find_existing_path(0, 256, 0.0))
+    assert not np.any(np.isnan(far_tile))
+    tile = read_horizon_tile(store.find_existing_path(0, 0, 0.0))
+    pole = tile[64, 64]
+    expected = np.degrees(np.arctan(rim_height_m / rim_m - rim_m / (2.0 * radius_m)))
+    assert np.max(np.abs(pole - expected)) < 0.15
+    assert np.ptp(pole) < 0.1
+    for k in (1, 4, 16):
+        profiles = np.stack(
+            (tile[64, 64 + k], tile[64, 64 - k], tile[64 + k, 64], tile[64 - k, 64])
+        )
+        assert np.max(np.ptp(profiles, axis=0)) < 0.05, k

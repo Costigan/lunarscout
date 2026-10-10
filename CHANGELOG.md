@@ -14,7 +14,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     tile 0.300 -> 0.015 deg). The hierarchy cull bound is conservative for
     blocks below the observer (H-B). NaN or declared-nodata DEM nodes no
     longer corrupt neighbouring horizons (H-C: one NaN node gave 89 deg
-    horizons). Horizons generated before these fixes should be regenerated.
+    horizons). Patches within 160 px of a geographic pole compute exact rays
+    for every pixel instead of translating rays computed every 8 px (M-C:
+    mean errors of 6 deg at the pole and 1.5 deg at 20-60 m on a 20 m LOLA
+    tile fall to 0.02 deg; such patches need about 1.6 GiB of segments per
+    DEM). Horizons generated before these fixes should be regenerated.
   - *DEM loading.* The DEM's declared nodata value is masked to NaN, radius
     encoding is detected from valid samples only, and the caller's array is
     no longer modified (H-C).

@@ -135,6 +135,35 @@ class _HorizonProgressAdapter:
             self._last_fraction = fraction
 
 
+# Patches with any pixel this close to a geographic pole get exact rays for
+# every pixel (subpatch size 1).  Elsewhere rays are exact only every 8 px and
+# are translated, not rotated, in between; near a pole grid north turns fast
+# enough that the translated rays point the wrong way (review finding M-C).
+# On the 20 m LOLA fixture (review_scripts/s10_polar_rays.py) the mean error
+# is 6 degrees at the pole, about 0.03 degrees at 50-60 px, and at the
+# background level by about 100 px.
+_POLE_EXACT_RAY_RADIUS_PX = 160
+
+
+def _pole_patch_origins(
+    primary: Any, patches: Sequence[Any], radius_px: float = _POLE_EXACT_RAY_RADIUS_PX
+) -> frozenset[tuple[int, int]]:
+    """Return ``(tile_x, tile_y)`` of patches within ``radius_px`` of a pole."""
+    poles = []
+    for latitude in (0.5 * np.pi, -0.5 * np.pi):
+        column, row = primary.lon_lat_to_pixel(0.0, latitude)
+        if np.isfinite(column) and np.isfinite(row):
+            poles.append((column, row))
+    selected = set()
+    for patch in patches:
+        for column, row in poles:
+            dx = max(patch.tile_x - column, 0.0, column - (patch.tile_x + patch.width - 1))
+            dy = max(patch.tile_y - row, 0.0, row - (patch.tile_y + patch.height - 1))
+            if dx * dx + dy * dy <= radius_px * radius_px:
+                selected.add((patch.tile_x, patch.tile_y))
+    return frozenset(selected)
+
+
 def _run_horizon_pipeline(
     dems: Sequence[Any],
     output_directory: Path,
@@ -172,17 +201,29 @@ def _run_horizon_pipeline(
     # Building each max pyramid on the GPU takes about 0.3 s for a 30,400 px
     # DEM, mostly the host-to-device copy, so no on-disk cache is kept.
     pyramids = tuple(session.build_max_pyramid(dem) for dem in dems)
-    configuration = ContractConfiguration(
-        PATCH_SIZE,
-        PATCH_SIZE,
-        AZIMUTH_COUNT,
-        8,
-        len(dems),
-        primary.width,
-        primary.height,
+    configurations = {
+        subpatch_size: ContractConfiguration(
+            PATCH_SIZE,
+            PATCH_SIZE,
+            AZIMUTH_COUNT,
+            subpatch_size,
+            len(dems),
+            primary.width,
+            primary.height,
+        )
+        for subpatch_size in (1, 8)
+    }
+    patches = partition_patches(
+        enumerate_patches(primary.width, primary.height),
+        offset=patch_offset,
+        stride=patch_stride,
     )
+    pole_patches = _pole_patch_origins(primary, patches)
 
     def prepare(patch: Any) -> SegmentTensor:
+        # Subpatch size 1 needs about 1.6 GiB of segments per DEM per patch
+        # (64x the default) and about 10 s of CPU time to build.
+        subpatch_size = 1 if (patch.tile_x, patch.tile_y) in pole_patches else 8
         values, _centers, _convergence = build_subpatch_segments_numba(
             dems,
             tile_column=patch.tile_x,
@@ -191,14 +232,14 @@ def _run_horizon_pipeline(
             azimuth_count=AZIMUTH_COUNT,
             maximum_distance_m=1_000_000.0,
             observer_elevation_m=observer_height_m,
-            subpatch_size=8,
+            subpatch_size=subpatch_size,
             grid_convergence=GridConvergenceInput(0.0, 0.0, 0.0),
             parallel=True,
         )
         dem_ids = np.broadcast_to(
             np.arange(len(dems), dtype=np.int32), values.shape[:-1]
         ).copy()
-        return SegmentTensor(values, dem_ids, configuration)
+        return SegmentTensor(values, dem_ids, configurations[subpatch_size])
 
     def processor_factory(_worker_id: int):
         def process(patch: Any, segments: SegmentTensor) -> np.ndarray:
@@ -216,11 +257,6 @@ def _run_horizon_pipeline(
     def finalize(_patch: Any, slopes: np.ndarray) -> np.ndarray:
         return HorizonBuffers(slopes).degrees()
 
-    patches = partition_patches(
-        enumerate_patches(primary.width, primary.height),
-        offset=patch_offset,
-        stride=patch_stride,
-    )
     if patches:
         # Warm up the lazy-compiled CUDA kernels on a single thread so the
         # concurrent pipeline workers do not race on numba's first-launch path.

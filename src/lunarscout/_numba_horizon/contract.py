@@ -43,7 +43,8 @@ KERNEL_FLOAT_FIELDS = (
 KERNEL_INT_FIELDS = (
     "debug_azimuth_index", "debug_flags", "primary_width", "primary_height",
 )
-SUPPORTED_SUBPATCH_SIZES = frozenset((2, 4, 8, 16, 32, 64, 128))
+# 1 gives every pixel its own exact ray segments (used near the projection pole).
+SUPPORTED_SUBPATCH_SIZES = frozenset((1, 2, 4, 8, 16, 32, 64, 128))
 SLOPE_SENTINEL = np.float32(-np.inf)
 
 

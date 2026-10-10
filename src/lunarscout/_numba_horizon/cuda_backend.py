@@ -1174,8 +1174,7 @@ class CudaSession:
         self._production_device_pyramids = None
         self._production_pyramid_lock = threading.Lock()
         self._production_concurrency = production_concurrency
-        self._production_slots = None
-        self._production_slot_signature = None
+        self._production_slots = {}
         self._production_slot_lock = threading.Lock()
         self._production_timings = threading.local()
 
@@ -1184,14 +1183,12 @@ class CudaSession:
         return getattr(self._production_timings, "value", None)
 
     def _prepare_production_slots(self, segment_shape, output_shape):
+        # One slot set per shape: pole patches (subpatch size 1) have far
+        # larger segment tensors than ordinary patches in the same run.
         signature = (segment_shape, output_shape)
         with self._production_slot_lock:
-            if self._production_slots is not None:
-                if signature != self._production_slot_signature:
-                    raise ValueError(
-                        "production work-buffer shape changed within one CUDA session"
-                    )
-                return self._production_slots
+            if signature in self._production_slots:
+                return self._production_slots[signature]
             slots = Queue(maxsize=self._production_concurrency)
             output_reset = np.full(output_shape, -np.inf, dtype=np.float32)
             for _ in range(self._production_concurrency):
@@ -1208,8 +1205,7 @@ class CudaSession:
                         output_reset,
                     )
                 )
-            self._production_slot_signature = signature
-            self._production_slots = slots
+            self._production_slots[signature] = slots
             return slots
 
     def _prepare_production_pyramids(self, pyramids):

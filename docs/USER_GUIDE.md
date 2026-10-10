@@ -994,6 +994,17 @@ staged file writes, but are hardware- and terrain-specific; see the
 [Phase 6 pipeline evaluation](numba-horizon-phase-6-production-pipeline.md)
 for scope and detailed timings.
 
+Ray segments are normally computed exactly every 8 pixels and translated to
+the pixels between. Near a geographic pole, true north turns quickly from
+pixel to pixel, so translated rays point the wrong way (mean errors of 6 deg
+at the pole on a 20 m DEM). Every 128 x 128 patch with a pixel within 160
+pixels of a pole projected into the primary DEM therefore computes exact
+rays for every pixel. Such a patch needs about 1.6 GiB of segment memory per
+DEM (64 times the normal amount) and about 10 seconds of extra CPU time, and
+the pipeline may hold up to five prepared patches at once, so a polar run can
+temporarily need up to about 8 GiB more host memory and 3.3 GiB more GPU
+memory per DEM. Patches farther from a pole are unaffected.
+
 ### Scientific Algorithm Identifiers
 
 Every downstream product records the algorithm that produced it in
