@@ -10,6 +10,9 @@ Run them with the repo's own virtualenv and paste each script's full output back
 | `s4_farfield_patch_test.py` | GPU, DEM | Patches the far-field slope formula in a temp copy of `src/` and compares production vs brute force before and after. Isolates how much of the error review finding H-A explains. Experiment only, not a proposed fix. **Run on real terrain and wall: isolates H-A (mean abs 0.300° → 0.033°); see the report.** |
 | `s5_residual_diagnostics.py` | GPU, DEM | Diagnoses what s4 left: near-field outliers, exact-zero rays, sun-relevant tails. **Run 2026-10-08 by Claude Code on this machine; see the report.** |
 | `s6_cull_step_isolation.py` | GPU, DEM | Builds scratch copies with the H-A patch, the cull disabled (H-B) and/or `margin_step` zeroed (M-A), and compares all of them on the same rays against one brute-force reference. **Run 2026-10-08 by Claude Code: isolates H-B; M-A inactive on this fixture; see the report.** |
+| `s7_stepping_matrix.py` | CPU | Level-0 stepping variants (no clamp, stall-safe clamp, quarter-pixel, both) on the hierarchy safety matrix and the C# production fixture, plus the worst-case sample trace. Used for `docs/numba-horizon-terrain-interpolation.md`. |
+| `s8_interpolation_sensitivity.py` | CPU, DEM | Bilinear vs cubic B-spline terrain, and bilinear reference convergence, on the s6 real-terrain rays, by limiting distance. About 3 minutes. |
+| `s9_interpolation_cost.py` | GPU, DEM | Stand-alone CUDA cost of bilinear, cubic B-spline and Catmull-Rom lookups. Under a minute. |
 | `s3_wheel_check.py` | network | Builds wheel and sdist from tracked files, lists contents, installs into a clean venv, tries imports, `pip check`, and the worker entry point. **You ran it: no problems found.** Its pandas probe only checks that an attribute exists, not that calling it fails. |
 
 ## What to run next
