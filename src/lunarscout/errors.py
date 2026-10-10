@@ -81,6 +81,12 @@ class HorizonError(LunarscoutError):
     default_code = "horizon_error"
 
 
+class OptionalDependencyError(LunarscoutError, ImportError):
+    """A feature needs an optional dependency that is not installed."""
+
+    default_code = "optional_dependency_missing"
+
+
 class HorizonFormatError(HorizonError):
     """A stored horizon does not satisfy the public file contract."""
 

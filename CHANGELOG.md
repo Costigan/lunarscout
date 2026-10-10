@@ -53,6 +53,10 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     flush every layer, the manifest and the layer directory before writing
     `COMPLETE`. A durable journal or marker no longer outlives its data after
     power loss (H7).
+  - *Optional dependencies.* New `analysis` (pandas) and `plot`
+    (matplotlib) extras. The DataFrame and plotting helpers raise
+    `OptionalDependencyError` (also an `ImportError`) naming the extra,
+    instead of a bare `ModuleNotFoundError` (H9).
   - *Alignment.* `align()` across coordinate systems no longer overwrites
     covered pixels with nodata: the coverage mask now transforms destination
     coordinates into the source CRS (H1).

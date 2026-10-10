@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from . import spice as _kernel_state
+from ._optional import require_optional
 from .errors import SpiceGeometryError, TimeRangeError
 from .temporal import TimeInput, TimeRange, _parse_time
 
@@ -303,7 +304,7 @@ def body_vectors_ned_dataframe(
     *,
     ensure_kernels: bool = True,
 ):
-    import pandas as pd
+    pd = require_optional("pandas", extra="analysis", feature="DataFrame output")
 
     time_values = _time_list(times)
     vectors = body_vectors_ned(
@@ -430,7 +431,7 @@ def body_azimuth_elevation_dataframe(
     *,
     ensure_kernels: bool = True,
 ):
-    import pandas as pd
+    pd = require_optional("pandas", extra="analysis", feature="DataFrame output")
 
     time_values = _time_list(times)
     angles = body_azimuth_elevation(
@@ -456,7 +457,7 @@ def plot_body_elevation(
     grid: bool = True,
     ensure_kernels: bool = True,
 ):
-    import matplotlib.pyplot as plt
+    plt = require_optional("matplotlib.pyplot", extra="plot", feature="Plotting")
 
     time_values = _time_list(times)
     angles = body_azimuth_elevation(
@@ -482,7 +483,7 @@ def plot_body_elevations(
     grid: bool = True,
     ensure_kernels: bool = True,
 ):
-    import matplotlib.pyplot as plt
+    plt = require_optional("matplotlib.pyplot", extra="plot", feature="Plotting")
 
     time_values = _time_list(times)
     fig, ax = plt.subplots()

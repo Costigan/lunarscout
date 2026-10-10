@@ -11,6 +11,7 @@ from typing import Any, BinaryIO, Literal
 import numpy as np
 import numpy.typing as npt
 
+from ._optional import require_optional
 from .errors import (
     GeoTiffMetadataError,
     HorizonError,
@@ -1259,7 +1260,7 @@ class Scenario:
     ):
         """Create an empty azimuth/elevation plot using the horizon convention."""
 
-        import matplotlib.pyplot as plt
+        plt = require_optional("matplotlib.pyplot", extra="plot", feature="Plotting")
 
         fig, ax = plt.subplots()
         self._configure_azimuth_elevation_axis(
@@ -1458,7 +1459,9 @@ class Scenario:
             (artist,) = ax.plot([azimuth], [elevation], label=label, **kwargs)
             return artist
         if style_key == "limb":
-            from matplotlib.patches import Ellipse
+            Ellipse = require_optional(
+                "matplotlib.patches", extra="plot", feature="Plotting"
+            ).Ellipse
 
             diameter = self._body_angular_diameter(body)
             patch_kwargs = {"fill": False}
@@ -1686,7 +1689,9 @@ class Scenario:
         ax.set_aspect("equal", adjustable="box")
         ax.set_ylabel("Elevation (deg)")
 
-        from matplotlib.patches import Ellipse
+        Ellipse = require_optional(
+            "matplotlib.patches", extra="plot", feature="Plotting"
+        ).Ellipse
 
         for body, angles in body_angles:
             color = _body_plot_color(body)

@@ -26,6 +26,11 @@ On a system supporting CUDA, install the CUDA execution profile instead:
 python -m pip install "lunarscout[cuda]"
 ```
 
+Two more extras are optional: `analysis` (pandas) for the
+`body_*_dataframe` helpers and `plot` (matplotlib) for the plotting helpers,
+for example `python -m pip install "lunarscout[cuda,plot]"`. Without them those
+helpers raise `OptionalDependencyError` with the install command.
+
 Both installations use the same import:
 
 ```python

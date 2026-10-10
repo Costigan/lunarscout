@@ -26,7 +26,7 @@ For workflows and shared contracts, see the [User Guide](USER_GUIDE.md).
 lunarscout.AlignmentError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L176).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L182).
 
 **Documentation gap:** no source docstring.
 
@@ -38,7 +38,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L176).
 lunarscout.ComputeBackendError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L96).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L102).
 
 ```text
 The requested compute backend cannot complete the operation.
@@ -66,7 +66,7 @@ Dynamic occupancy data could not be obtained or combined.
 lunarscout.CoordinateTransformError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L164).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L170).
 
 **Documentation gap:** no source docstring.
 
@@ -78,7 +78,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L164).
 lunarscout.CudaError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L102).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L108).
 
 ```text
 CUDA capability, initialization, compilation, or execution failed.
@@ -119,7 +119,7 @@ Dataclass fields (types and constructor defaults appear above):
 lunarscout.DistanceFieldError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L292).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L298).
 
 ```text
 A distance-field operation failed.
@@ -266,7 +266,7 @@ Return the same spatial grid with a different band nodata value.
 lunarscout.GeoReferenceError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L160).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L166).
 
 **Documentation gap:** no source docstring.
 
@@ -278,7 +278,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L160).
 lunarscout.GeoTiffBandError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L140).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L146).
 
 **Documentation gap:** no source docstring.
 
@@ -290,7 +290,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L140).
 lunarscout.GeoTiffDataTypeError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L144).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L150).
 
 **Documentation gap:** no source docstring.
 
@@ -302,7 +302,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L144).
 lunarscout.GeoTiffError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L132).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L138).
 
 **Documentation gap:** no source docstring.
 
@@ -314,7 +314,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L132).
 lunarscout.GeoTiffMetadataError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L148).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L154).
 
 **Documentation gap:** no source docstring.
 
@@ -326,7 +326,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L148).
 lunarscout.GeoTiffOpenError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L136).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L142).
 
 **Documentation gap:** no source docstring.
 
@@ -338,7 +338,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L136).
 lunarscout.GeoTiffWriteError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L152).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L158).
 
 **Documentation gap:** no source docstring.
 
@@ -364,7 +364,7 @@ Raster grids are invalid or incompatible for an operation.
 lunarscout.GridMismatchError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L180).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L186).
 
 **Documentation gap:** no source docstring.
 
@@ -390,7 +390,7 @@ Base class for stored-horizon and horizon-generation failures.
 lunarscout.HorizonFormatError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L84).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L90).
 
 ```text
 A stored horizon does not satisfy the public file contract.
@@ -404,7 +404,7 @@ A stored horizon does not satisfy the public file contract.
 lunarscout.HorizonGenerationError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L90).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L96).
 
 ```text
 Horizon calculation or publication failed.
@@ -432,7 +432,7 @@ An ordinary public operation argument is invalid.
 lunarscout.LonLat(longitude: 'float', latitude: 'float') -> None
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L25).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L26).
 
 ```text
 LonLat(longitude: 'float', latitude: 'float')
@@ -465,7 +465,7 @@ Base class for stable, structured Lunarscout errors.
 lunarscout.MapAlgebraDTypeError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L262).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L268).
 
 ```text
 The requested dtype is unsupported for the map-algebra operation.
@@ -479,7 +479,7 @@ The requested dtype is unsupported for the map-algebra operation.
 lunarscout.MapAlgebraError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L244).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L250).
 
 ```text
 Base class for map-algebra failures.
@@ -493,7 +493,7 @@ Base class for map-algebra failures.
 lunarscout.MapAlgebraExpressionError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L274).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L280).
 
 ```text
 A RasterExpression is invalid or cannot be planned.
@@ -507,7 +507,7 @@ A RasterExpression is invalid or cannot be planned.
 lunarscout.MapAlgebraGridError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L256).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L262).
 
 ```text
 Grids are incompatible for the requested map-algebra operation.
@@ -521,7 +521,7 @@ Grids are incompatible for the requested map-algebra operation.
 lunarscout.MapAlgebraOperationError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L280).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L286).
 
 ```text
 A map-algebra operation failed during execution.
@@ -535,7 +535,7 @@ A map-algebra operation failed during execution.
 lunarscout.MapAlgebraStorageError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L286).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L292).
 
 ```text
 Map-algebra product staging, persistence, or publication failed.
@@ -549,7 +549,7 @@ Map-algebra product staging, persistence, or publication failed.
 lunarscout.MapAlgebraUnitError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L268).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L274).
 
 ```text
 Units are incompatible or missing for the requested operation.
@@ -662,10 +662,24 @@ A caller-selected operation requires a path but none exists.
 lunarscout.OperationCancelledError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L126).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L132).
 
 ```text
 Cooperative cancellation was observed at a bounded work boundary.
+```
+
+**Parameters without explicit entries in this docstring:** `message`, `code`, `details`.
+
+### `lunarscout.OptionalDependencyError`
+
+```python
+lunarscout.OptionalDependencyError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
+```
+
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L84).
+
+```text
+A feature needs an optional dependency that is not installed.
 ```
 
 **Parameters without explicit entries in this docstring:** `message`, `code`, `details`.
@@ -676,7 +690,7 @@ Cooperative cancellation was observed at a bounded work boundary.
 lunarscout.OutputExistsError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L156).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L162).
 
 **Documentation gap:** no source docstring.
 
@@ -702,7 +716,7 @@ A trajectory planner failed to execute.
 lunarscout.ProductCalculationError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L114).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L120).
 
 ```text
 A horizon-derived scientific calculation failed.
@@ -716,7 +730,7 @@ A horizon-derived scientific calculation failed.
 lunarscout.ProductCatalogError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L196).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L202).
 
 **Documentation gap:** no source docstring.
 
@@ -728,7 +742,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L196).
 lunarscout.ProductError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L108).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L114).
 
 ```text
 Base class for horizon-derived product failures.
@@ -742,7 +756,7 @@ Base class for horizon-derived product failures.
 lunarscout.ProductStorageError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L120).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L126).
 
 ```text
 Product staging, persistence, or publication failed.
@@ -1065,7 +1079,7 @@ Source: [src/lunarscout/raster.py](../src/lunarscout/raster.py#L750).
 lunarscout.RasterValidationError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L250).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L256).
 
 ```text
 A Raster value does not satisfy the public data contract.
@@ -1079,7 +1093,7 @@ A Raster value does not satisfy the public data contract.
 lunarscout.RegionOperationError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L172).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L178).
 
 **Documentation gap:** no source docstring.
 
@@ -1091,7 +1105,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L172).
 lunarscout.Scenario(root: 'Path') -> None
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L191).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L192).
 
 ```text
 Filesystem-only access to standard paths inside one scenario root.
@@ -1111,7 +1125,7 @@ Dataclass fields (types and constructor defaults appear above):
 lunarscout.Scenario.aspect_path(self) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L266).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L267).
 
 ```text
 Return the canonical aspect product path.
@@ -1123,7 +1137,7 @@ Return the canonical aspect product path.
 lunarscout.Scenario.body_azimuth_elevation_over_horizon(self, point: 'LonLat', body: 'BodyName', times: 'Any', *, observer_height_decimeters: 'int' = 0, ensure_kernels: 'bool' = True) -> 'np.ndarray'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1324).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1325).
 
 ```text
 Return body azimuth and elevation above the horizon at ``point``.
@@ -1137,7 +1151,7 @@ Return body azimuth and elevation above the horizon at ``point``.
 lunarscout.Scenario.close_horizon_file(self) -> 'None'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1212).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1213).
 
 ```text
 Close the cached horizon tile file handle, if one is open.
@@ -1149,7 +1163,7 @@ Close the cached horizon tile file handle, if one is open.
 lunarscout.Scenario.dem_path(self) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L246).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L247).
 
 ```text
 Return the canonical primary DEM path (``dem.tif``).
@@ -1161,7 +1175,7 @@ Return the canonical primary DEM path (``dem.tif``).
 lunarscout.Scenario.earth_elevation(self, output: 'str | Path', *, times: 'TimeRange', earth_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L389).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L390).
 
 ```text
 Generate public Earth terrain-relative elevation bands.
@@ -1181,7 +1195,7 @@ return-value contract.
 lunarscout.Scenario.generate_horizons(self, *, dem_paths: 'Sequence[str | Path] | None' = None, surrounding_dems: 'Sequence[str | Path] | None' = None, observer_height_m: 'float' = 0.0, compress: 'bool' = True, overwrite: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L959).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L960).
 
 ```text
 Generate CUDA horizon tiles in the canonical horizons directory.
@@ -1206,7 +1220,7 @@ contract.
 lunarscout.Scenario.hillshade_path(self) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L256).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L257).
 
 ```text
 Return the canonical hillshade product path.
@@ -1218,7 +1232,7 @@ Return the canonical hillshade product path.
 lunarscout.Scenario.horizon_file_path(self, x: 'int', y: 'int', observer_height_decimeters: 'int') -> 'Path | None'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1066).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1067).
 
 ```text
 Return the existing horizon file path for a DEM pixel, preferring ``.cbin``.
@@ -1232,7 +1246,7 @@ Return the existing horizon file path for a DEM pixel, preferring ``.cbin``.
 lunarscout.Scenario.horizon_for_pixel(self, x: 'int', y: 'int', observer_height_decimeters: 'int') -> 'np.ndarray | None'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1194).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1195).
 
 ```text
 Fetch one DEM pixel's horizon, caching one open horizon tile file.
@@ -1246,7 +1260,7 @@ Fetch one DEM pixel's horizon, caching one open horizon tile file.
 lunarscout.Scenario.horizon_from_open_file(file_handle: 'BinaryIO', patch_x: 'int', patch_y: 'int') -> 'np.ndarray'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1127).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1128).
 
 ```text
 Read one pixel horizon from an open ``.bin`` or ``.cbin`` horizon file.
@@ -1260,7 +1274,7 @@ Read one pixel horizon from an open ``.bin`` or ``.cbin`` horizon file.
 lunarscout.Scenario.horizon_patch_pixel(self, x: 'int', y: 'int') -> 'tuple[int, int]'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1052).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1053).
 
 ```text
 Return ``(x, y)`` local coordinates within the 128x128 horizon patch.
@@ -1274,7 +1288,7 @@ Return ``(x, y)`` local coordinates within the 128x128 horizon patch.
 lunarscout.Scenario.horizon_patch_row_col(self, x: 'int', y: 'int') -> 'tuple[int, int]'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1059).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1060).
 
 ```text
 Return ``(row, col)`` of the horizon patch containing a DEM pixel.
@@ -1288,7 +1302,7 @@ Return ``(row, col)`` of the horizon patch containing a DEM pixel.
 lunarscout.Scenario.horizons_path(self) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L251).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L252).
 
 ```text
 Return the canonical horizon-tile directory path.
@@ -1300,7 +1314,7 @@ Return the canonical horizon-tile directory path.
 lunarscout.Scenario.lightmap(self, output: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, invalid_value: 'int' = 0, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L281).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L282).
 
 ```text
 Generate a public Python lightmap at a scenario-relative path.
@@ -1320,7 +1334,7 @@ return-value contract.
 lunarscout.Scenario.lonlat_to_dem_pixel(self, point: 'LonLat') -> 'tuple[float, float]'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1221).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1222).
 
 ```text
 Return the floating-point ``(x, y)`` DEM pixel position for a lon/lat.
@@ -1334,7 +1348,7 @@ Return the floating-point ``(x, y)`` DEM pixel position for a lon/lat.
 lunarscout.Scenario.mission_duration_from_sun_and_earth_elevation(self, output: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Sequence[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L887).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L888).
 
 ```text
 Generate Sun-and-Earth-elevation mission-duration bands.
@@ -1354,7 +1368,7 @@ operational, and return-value contract.
 lunarscout.Scenario.mission_duration_from_sun_elevation(self, output: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Sequence[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L759).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L760).
 
 ```text
 Generate Sun-elevation-threshold mission-duration bands.
@@ -1374,7 +1388,7 @@ and return-value contract.
 lunarscout.Scenario.mission_duration_from_sunlight(self, output: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Sequence[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L697).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L698).
 
 ```text
 Generate sunlight-threshold mission-duration bands.
@@ -1394,7 +1408,7 @@ and return-value contract.
 lunarscout.Scenario.mission_duration_from_sunlight_and_earth_elevation(self, output: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Sequence[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L821).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L822).
 
 ```text
 Generate sunlight-and-Earth-threshold mission-duration bands.
@@ -1414,7 +1428,7 @@ operational, and return-value contract.
 lunarscout.Scenario.output_path(self, relative_path: 'str | Path') -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L276).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L277).
 
 ```text
 Resolve a non-empty scenario-relative output path without creating it.
@@ -1428,7 +1442,7 @@ Resolve a non-empty scenario-relative output path without creating it.
 lunarscout.Scenario.path(self, relative_path: 'str | Path') -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L236).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L237).
 
 ```text
 Resolve a scenario-relative path without creating it.
@@ -1442,7 +1456,7 @@ Resolve a scenario-relative path without creating it.
 lunarscout.Scenario.plot_azimuth_elevation_axes(self, *, center_azimuth: 'float' = 0.0, elevation_limits: 'tuple[float, float] | None' = (-90.0, 90.0), grid: 'bool' = True)
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1253).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1254).
 
 ```text
 Create an empty azimuth/elevation plot using the horizon convention.
@@ -1456,7 +1470,7 @@ Create an empty azimuth/elevation plot using the horizon convention.
 lunarscout.Scenario.plot_body_elevations(self, point: 'LonLat', bodies: 'Sequence[BodyName]', times: 'Any', *, horizon: 'np.ndarray | None' = None, over_horizon: 'bool' = False, observer_height_decimeters: 'int' = 0, grid: 'bool' = True, ensure_kernels: 'bool' = True)
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1365).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1366).
 
 ```text
 Plot body elevations, optionally relative to the scenario horizon.
@@ -1470,7 +1484,7 @@ Plot body elevations, optionally relative to the scenario horizon.
 lunarscout.Scenario.plot_body_path(self, ax: 'Any', point: 'LonLat', body: 'BodyName', times: 'Any', *, style: 'str' = 'center', center_azimuth: 'float | None' = None, label: 'str | None' = None, ensure_kernels: 'bool' = True, **plot_kwargs: 'Any')
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1484).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1487).
 
 ```text
 Overlay center and/or limb paths of the Sun or Earth.
@@ -1484,7 +1498,7 @@ Overlay center and/or limb paths of the Sun or Earth.
 lunarscout.Scenario.plot_body_position(self, ax: 'Any', point: 'LonLat', body: 'BodyName', time: 'Any', *, style: 'str' = 'center', center_azimuth: 'float | None' = None, label: 'str | None' = None, ensure_kernels: 'bool' = True, **plot_kwargs: 'Any')
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1420).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1421).
 
 ```text
 Overlay the center point or apparent limb of the Sun or Earth.
@@ -1498,7 +1512,7 @@ Overlay the center point or apparent limb of the Sun or Earth.
 lunarscout.Scenario.plot_horizon(self, point: 'LonLat', *, observer_height_decimeters: 'int' = 0, center_azimuth: 'float' = 0.0, grid: 'bool' = True)
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1273).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1274).
 
 ```text
 Plot the stored horizon for the DEM pixel nearest a lon/lat point.
@@ -1512,7 +1526,7 @@ Plot the stored horizon for the DEM pixel nearest a lon/lat point.
 lunarscout.Scenario.plot_zoomed_body_path(self, point: 'LonLat', bodies: 'Sequence[BodyName] | BodyName', times: 'Any', *, observer_height_decimeters: 'int' = 0, grid: 'bool' = True, ensure_kernels: 'bool' = True, margin_degrees: 'float' = 1.0)
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1571).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1574).
 
 ```text
 Plot body limb paths against the local horizon in a zoomed equal-scale view.
@@ -1526,7 +1540,7 @@ Plot body limb paths against the local horizon in a zoomed equal-scale view.
 lunarscout.Scenario.psr(self, output: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, invalid_value: 'int' = 0, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1723).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1728).
 
 ```text
 Generate a public Python permanent-shadow classification product.
@@ -1546,7 +1560,7 @@ contract.
 lunarscout.Scenario.root_path(self) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L241).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L242).
 
 ```text
 Return the resolved scenario root directory.
@@ -1558,7 +1572,7 @@ Return the resolved scenario root directory.
 lunarscout.Scenario.roughness_path(self) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L271).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L272).
 
 ```text
 Return the canonical roughness product path.
@@ -1570,7 +1584,7 @@ Return the canonical roughness product path.
 lunarscout.Scenario.safe_havens(self, output: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, earth_elevation_threshold_deg: 'float' = 2.0, sunlight_fraction_threshold: 'float' = 0.2, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L443).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L444).
 
 ```text
 Generate monthly maps of low-sunlight duration during Earth outages.
@@ -1782,7 +1796,7 @@ Examples
 lunarscout.Scenario.slope_path(self) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L261).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L262).
 
 ```text
 Return the canonical slope product path.
@@ -1794,7 +1808,7 @@ Return the canonical slope product path.
 lunarscout.Scenario.sun_elevation(self, output: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L335).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L336).
 
 ```text
 Generate public Sun terrain-relative elevation bands.
@@ -1814,7 +1828,7 @@ return-value contract.
 lunarscout.ScenarioError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L184).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L190).
 
 **Documentation gap:** no source docstring.
 
@@ -1826,7 +1840,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L184).
 lunarscout.ScenarioPathError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L188).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L194).
 
 **Documentation gap:** no source docstring.
 
@@ -1838,7 +1852,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L188).
 lunarscout.ScenarioStateError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L192).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L198).
 
 **Documentation gap:** no source docstring.
 
@@ -1850,7 +1864,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L192).
 lunarscout.SpiceError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L200).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L206).
 
 **Documentation gap:** no source docstring.
 
@@ -1862,7 +1876,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L200).
 lunarscout.SpiceGeometryError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L208).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L214).
 
 **Documentation gap:** no source docstring.
 
@@ -1874,7 +1888,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L208).
 lunarscout.SpiceKernelError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L204).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L210).
 
 **Documentation gap:** no source docstring.
 
@@ -1990,7 +2004,7 @@ This member is a property.
 lunarscout.TemporalCubeError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L220).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L226).
 
 **Documentation gap:** no source docstring.
 
@@ -2002,7 +2016,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L220).
 lunarscout.TemporalError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L212).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L218).
 
 **Documentation gap:** no source docstring.
 
@@ -2014,7 +2028,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L212).
 lunarscout.TemporalGeoTiffSeries(*, root: 'Path', manifest: 'dict[str, Any]', georef: 'GeoReference', dtype: 'np.dtype[Any]', times: 'NDArray[np.datetime64]', layer_paths: 'tuple[Path, ...]', vrt_path: 'Path | None', layer_cache_bytes: 'int', max_open_datasets: 'int') -> 'None'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L773).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L783).
 
 ```text
 Safe, file-backed temporal raster series indexed by layer or UTC time.
@@ -2028,7 +2042,7 @@ Safe, file-backed temporal raster series indexed by layer or UTC time.
 lunarscout.TemporalGeoTiffSeries.close(self) -> 'None'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L979).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L989).
 
 **Documentation gap:** no source docstring.
 
@@ -2038,7 +2052,7 @@ Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L
 lunarscout.TemporalGeoTiffSeries.dimensions(self) -> 'tuple[str, str, str]'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L820).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L830).
 
 **Documentation gap:** no source docstring.
 
@@ -2050,7 +2064,7 @@ This member is a property.
 lunarscout.TemporalGeoTiffSeries.height(self) -> 'int'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L808).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L818).
 
 **Documentation gap:** no source docstring.
 
@@ -2062,7 +2076,7 @@ This member is a property.
 lunarscout.TemporalGeoTiffSeries.layer_for_time(self, time: 'TimeInput', *, method: 'TimeLookupMethod' = 'exact') -> 'int'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L858).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L868).
 
 **Documentation gap:** no source docstring.
 
@@ -2074,7 +2088,7 @@ Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L
 lunarscout.TemporalGeoTiffSeries.read_layer(self, index: 'int') -> 'tuple[NDArray[Any], GeoReference]'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L968).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L978).
 
 **Documentation gap:** no source docstring.
 
@@ -2086,7 +2100,7 @@ Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L
 lunarscout.TemporalGeoTiffSeries.read_time(self, time: 'TimeInput', *, method: 'TimeLookupMethod' = 'exact') -> 'tuple[NDArray[Any], GeoReference]'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L971).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L981).
 
 **Documentation gap:** no source docstring.
 
@@ -2098,7 +2112,7 @@ Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L
 lunarscout.TemporalGeoTiffSeries.shape(self) -> 'tuple[int, int, int]'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L816).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L826).
 
 **Documentation gap:** no source docstring.
 
@@ -2110,7 +2124,7 @@ This member is a property.
 lunarscout.TemporalGeoTiffSeries.signal_name(self) -> 'str | None'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L824).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L834).
 
 **Documentation gap:** no source docstring.
 
@@ -2122,7 +2136,7 @@ This member is a property.
 lunarscout.TemporalGeoTiffSeries.time_count(self) -> 'int'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L804).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L814).
 
 **Documentation gap:** no source docstring.
 
@@ -2134,7 +2148,7 @@ This member is a property.
 lunarscout.TemporalGeoTiffSeries.time_for_layer(self, index: 'int') -> 'np.datetime64'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L855).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L865).
 
 **Documentation gap:** no source docstring.
 
@@ -2146,7 +2160,7 @@ Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L
 lunarscout.TemporalGeoTiffSeries.units(self) -> 'str | None'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L829).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L839).
 
 **Documentation gap:** no source docstring.
 
@@ -2158,7 +2172,7 @@ This member is a property.
 lunarscout.TemporalGeoTiffSeries.width(self) -> 'int'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L812).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L822).
 
 **Documentation gap:** no source docstring.
 
@@ -2170,7 +2184,7 @@ This member is a property.
 lunarscout.TemporalGeoTiffSeriesWriter(path: 'str | Path', *, georef: 'GeoReference', dtype: 'np.dtype[Any] | type[Any] | str', signal_name: 'str | None' = None, units: 'str | None' = None, provenance: 'dict[str, Any] | None' = None, overwrite: 'bool' = False, create_vrt: 'bool' = True, progress_callback: 'ProgressCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L418).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L421).
 
 ```text
 Incrementally build a completed temporal GeoTIFF series.
@@ -2184,7 +2198,7 @@ Incrementally build a completed temporal GeoTIFF series.
 lunarscout.TemporalGeoTiffSeriesWriter.abort(self) -> 'None'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L697).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L707).
 
 ```text
 Discard an unfinished staging series; completed output is untouched.
@@ -2196,7 +2210,7 @@ Discard an unfinished staging series; completed output is untouched.
 lunarscout.TemporalGeoTiffSeriesWriter.close(self) -> 'None'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L697).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L707).
 
 ```text
 Discard an unfinished staging series; completed output is untouched.
@@ -2208,7 +2222,7 @@ Discard an unfinished staging series; completed output is untouched.
 lunarscout.TemporalGeoTiffSeriesWriter.finalize(self) -> 'TemporalGeoTiffSeries'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L632).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L636).
 
 ```text
 Publish the staged series atomically and return its open reader.
@@ -2220,7 +2234,7 @@ Publish the staged series atomically and return its open reader.
 lunarscout.TemporalGeoTiffSeriesWriter.layers_written(self) -> 'int'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L540).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L543).
 
 **Documentation gap:** no source docstring.
 
@@ -2232,7 +2246,7 @@ This member is a property.
 lunarscout.TemporalGeoTiffSeriesWriter.result(self) -> 'TemporalGeoTiffSeries | None'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L544).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L547).
 
 **Documentation gap:** no source docstring.
 
@@ -2244,7 +2258,7 @@ This member is a property.
 lunarscout.TemporalGeoTiffSeriesWriter.write_layer(self, time: 'TimeInput', array: 'NDArray[Any]') -> 'Path'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L565).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L568).
 
 ```text
 Write one strictly increasing UTC layer to the staging series.
@@ -2258,7 +2272,7 @@ Write one strictly increasing UTC layer to the staging series.
 lunarscout.TemporalLookupError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L240).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L246).
 
 **Documentation gap:** no source docstring.
 
@@ -2270,7 +2284,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L240).
 lunarscout.TemporalOperationError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L224).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L230).
 
 **Documentation gap:** no source docstring.
 
@@ -2574,7 +2588,7 @@ Source: [src/lunarscout/map_algebra/_temporal_model.py](../src/lunarscout/map_al
 lunarscout.TemporalSeriesError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L228).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L234).
 
 **Documentation gap:** no source docstring.
 
@@ -2586,7 +2600,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L228).
 lunarscout.TemporalSeriesOpenError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L232).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L238).
 
 **Documentation gap:** no source docstring.
 
@@ -2598,7 +2612,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L232).
 lunarscout.TemporalSeriesWriteError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L236).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L242).
 
 **Documentation gap:** no source docstring.
 
@@ -2610,7 +2624,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L236).
 lunarscout.TemporalWriteProgress(layers_written: 'int', last_index: 'int', last_time: 'np.datetime64', layer_path: 'Path') -> None
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L405).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L408).
 
 ```text
 Progress emitted after one temporal GeoTIFF layer is durable.
@@ -2631,7 +2645,7 @@ Dataclass fields (types and constructor defaults appear above):
 lunarscout.TerrainOperationError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L168).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L174).
 
 **Documentation gap:** no source docstring.
 
@@ -2688,7 +2702,7 @@ This member is a property.
 lunarscout.TimeRangeError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L216).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L222).
 
 **Documentation gap:** no source docstring.
 
@@ -2756,7 +2770,7 @@ Explicitly reproject/resample an array onto an exact destination grid.
 lunarscout.aspect(array: 'NDArray[Any]', georef: 'GeoReference', *, output_nodata: 'int | float', compute_edges: 'bool' = False) -> 'tuple[NDArray[np.float32], GeoReference]'
 ```
 
-Source: [src/lunarscout/terrain.py](../src/lunarscout/terrain.py#L188).
+Source: [src/lunarscout/terrain.py](../src/lunarscout/terrain.py#L265).
 
 ```text
 Calculate GDAL-compatible Horn aspect in azimuth degrees.
@@ -2782,7 +2796,7 @@ Return the alignment algorithms supported by Rasterio.
 lunarscout.body_azimuth_elevation(point: 'LonLat', body: 'BodyName', times: 'Iterable[datetime] | TimeRange', *, ensure_kernels: 'bool' = True) -> 'NDArray[np.float64]'
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L325).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L326).
 
 **Documentation gap:** no source docstring.
 
@@ -2794,7 +2808,7 @@ Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L
 lunarscout.body_azimuth_elevation_dataframe(point: 'LonLat', body: 'BodyName', times: 'Iterable[datetime] | TimeRange', *, ensure_kernels: 'bool' = True)
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L426).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L427).
 
 **Documentation gap:** no source docstring.
 
@@ -2806,7 +2820,7 @@ Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L
 lunarscout.body_azimuth_elevation_over_horizon(point: 'LonLat', body: 'BodyName', times: 'Iterable[datetime] | TimeRange', horizon: 'NDArray[np.floating]', *, ensure_kernels: 'bool' = True) -> 'NDArray[np.float64]'
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L341).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L342).
 
 ```text
 Return body azimuth and elevation above the interpolated local horizon.
@@ -2820,7 +2834,7 @@ Return body azimuth and elevation above the interpolated local horizon.
 lunarscout.body_vectors_moon_me(body: 'BodyName', times: 'Iterable[TimeInput] | TimeRange', *, ensure_kernels: 'bool' = True) -> 'NDArray[np.float64]'
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L149).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L150).
 
 ```text
 Return geometric Moon-to-body vectors in Moon-ME, in meters.
@@ -2838,7 +2852,7 @@ Every UTC timestamp is converted independently to ephemeris time.
 lunarscout.body_vectors_ned(point: 'LonLat', body: 'BodyName', times: 'Iterable[datetime] | TimeRange', *, ensure_kernels: 'bool' = True) -> 'NDArray[np.float64]'
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L248).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L249).
 
 **Documentation gap:** no source docstring.
 
@@ -2850,7 +2864,7 @@ Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L
 lunarscout.body_vectors_ned_dataframe(point: 'LonLat', body: 'BodyName', times: 'Iterable[datetime] | TimeRange', *, ensure_kernels: 'bool' = True)
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L299).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L300).
 
 **Documentation gap:** no source docstring.
 
@@ -2914,7 +2928,7 @@ Return the connectivity-defined internal border of true mask regions.
 lunarscout.generate_earth_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, times: 'TimeRange', earth_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1014).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1029).
 
 ```text
 Generate Earth-center elevation relative to the terrain horizon.
@@ -2967,7 +2981,7 @@ automatically.
 lunarscout.generate_horizons(output_directory: 'str | Path', dem_paths: 'Sequence[str | Path]', *, observer_height_m: 'float' = 0.0, compress: 'bool' = True, overwrite: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None, patch_offset: 'int' = 0, patch_stride: 'int' = 1) -> 'Path'
 ```
 
-Source: [src/lunarscout/horizon.py](../src/lunarscout/horizon.py#L255).
+Source: [src/lunarscout/horizon.py](../src/lunarscout/horizon.py#L254).
 
 ```text
 Generate compatible 128-pixel horizon tiles with NVIDIA CUDA.
@@ -3045,7 +3059,7 @@ run; nothing is written beside the DEMs.
 lunarscout.generate_lightmap(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, invalid_value: 'int' = 0, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L371).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L380).
 
 ```text
 Generate a timestamped, tiled uint8 visible-solar-fraction BigTIFF.
@@ -3134,7 +3148,7 @@ are converted to elevation-from-sphere automatically.
 lunarscout.generate_psr(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, invalid_value: 'int' = 0, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L588).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L599).
 
 ```text
 Generate a single-band tiled permanent-shadow classification GeoTIFF.
@@ -3201,7 +3215,7 @@ elevation-from-sphere automatically.
 lunarscout.generate_safe_havens(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, earth_elevation_threshold_deg: 'float' = 2.0, sunlight_fraction_threshold: 'float' = 0.2, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1102).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1117).
 
 ```text
 Generate monthly maps of low-sunlight duration during Earth outages.
@@ -3403,7 +3417,7 @@ instead written as invalid patches filled with ``nodata``.
 lunarscout.generate_sun_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L923).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L938).
 
 ```text
 Generate Sun-center elevation relative to the terrain horizon.
@@ -3459,7 +3473,7 @@ elevation-from-sphere automatically.
 lunarscout.hillshade(array: 'NDArray[Any]', georef: 'GeoReference', *, output_nodata: 'int | float', azimuth: 'float' = 315.0, altitude: 'float' = 45.0, compute_edges: 'bool' = False, scale: 'float' = 1.0, z_factor: 'float' = 1.0) -> 'tuple[NDArray[np.uint8], GeoReference]'
 ```
 
-Source: [src/lunarscout/terrain.py](../src/lunarscout/terrain.py#L214).
+Source: [src/lunarscout/terrain.py](../src/lunarscout/terrain.py#L292).
 
 ```text
 Calculate GDAL-compatible single-direction hillshade.
@@ -3473,7 +3487,7 @@ Calculate GDAL-compatible single-direction hillshade.
 lunarscout.iter_times(start: 'TimeInput', stop: 'TimeInput', step: 'timedelta') -> 'Iterator[datetime]'
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L56).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L57).
 
 **Documentation gap:** no source docstring.
 
@@ -3535,7 +3549,7 @@ Source: [src/lunarscout/map_products.py](../src/lunarscout/map_products.py#L148)
 lunarscout.mission_duration_from_sun_and_earth_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1891).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1910).
 
 ```text
 Longest duration meeting inclusive Sun and Earth elevation thresholds.
@@ -3557,7 +3571,7 @@ output lifecycle contract.
 lunarscout.mission_duration_from_sun_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1767).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1786).
 
 ```text
 Longest inclusive Sun terrain-relative elevation duration.
@@ -3579,7 +3593,7 @@ output lifecycle contract.
 lunarscout.mission_duration_from_sunlight(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1664).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1683).
 
 ```text
 Longest inclusive sunlight-fraction duration for each start interval.
@@ -3645,7 +3659,7 @@ are converted to elevation-from-sphere automatically.
 lunarscout.mission_duration_from_sunlight_and_earth_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1828).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1847).
 
 ```text
 Longest duration meeting inclusive sunlight and Earth thresholds.
@@ -3668,7 +3682,7 @@ output lifecycle contract.
 lunarscout.open_scenario(path: 'str | Path', *, state: 'Any | None' = None) -> 'Scenario'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1778).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1783).
 
 ```text
 Open an existing scenario directory in filesystem-only mode.
@@ -3682,7 +3696,7 @@ Open an existing scenario directory in filesystem-only mode.
 lunarscout.open_temporal_cube(path: 'str | Path', *, layer_cache_bytes: 'int' = 268435456, max_open_datasets: 'int' = 32, validate_layers: 'bool' = True) -> 'TemporalGeoTiffSeries'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L1131).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L1141).
 
 ```text
 Open and validate a completed timestamped GeoTIFF temporal series.
@@ -3696,7 +3710,7 @@ Open and validate a completed timestamped GeoTIFF temporal series.
 lunarscout.plot_body_elevation(point: 'LonLat', body: 'BodyName', times: 'Iterable[datetime] | TimeRange', *, grid: 'bool' = True, ensure_kernels: 'bool' = True)
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L451).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L452).
 
 **Documentation gap:** no source docstring.
 
@@ -3708,7 +3722,7 @@ Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L
 lunarscout.plot_body_elevations(point: 'LonLat', bodies: 'Sequence[BodyName]', times: 'Iterable[datetime] | TimeRange', *, horizon: 'NDArray[np.floating] | None' = None, grid: 'bool' = True, ensure_kernels: 'bool' = True)
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L476).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L477).
 
 **Documentation gap:** no source docstring.
 
@@ -3796,7 +3810,7 @@ Source: [src/lunarscout/map_products.py](../src/lunarscout/map_products.py#L126)
 lunarscout.slope(array: 'NDArray[Any]', georef: 'GeoReference', *, output_nodata: 'int | float', units: "Literal['degrees', 'percent']" = 'degrees', compute_edges: 'bool' = False, scale: 'float' = 1.0) -> 'tuple[NDArray[np.float32], GeoReference]'
 ```
 
-Source: [src/lunarscout/terrain.py](../src/lunarscout/terrain.py#L153).
+Source: [src/lunarscout/terrain.py](../src/lunarscout/terrain.py#L228).
 
 ```text
 Calculate GDAL-compatible Horn slope from an elevation array.
@@ -3810,7 +3824,7 @@ Calculate GDAL-compatible Horn slope from an elevation array.
 lunarscout.sunlight_fraction(point: 'LonLat', times: 'Iterable[datetime] | TimeRange', horizon: 'NDArray[np.floating]', *, ensure_kernels: 'bool' = True) -> 'NDArray[np.float64]'
 ```
 
-Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L363).
+Source: [src/lunarscout/spice_geometry.py](../src/lunarscout/spice_geometry.py#L364).
 
 ```text
 Return the visible solar fraction at *point* across *times*.
@@ -3936,7 +3950,7 @@ Atomically write one NumPy array band as a tiled GeoTIFF.
 lunarscout.write_temporal_cube(path: 'str | Path', cube: 'TemporalCube', *, signal_name: 'str | None' = None, units: 'str | None' = None, provenance: 'dict[str, Any] | None' = None, overwrite: 'bool' = False, create_vrt: 'bool' = True, progress_callback: 'ProgressCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'TemporalGeoTiffSeries'
 ```
 
-Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L720).
+Source: [src/lunarscout/temporal_store.py](../src/lunarscout/temporal_store.py#L730).
 
 ```text
 Persist an in-memory cube as a completed timestamped GeoTIFF series.
@@ -4017,7 +4031,7 @@ Return lazy CUDA capability details without raising probe failures.
 lunarscout.spice.SpiceKernelError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L204).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L210).
 
 **Documentation gap:** no source docstring.
 
@@ -5493,7 +5507,7 @@ Return the same spatial grid with a different band nodata value.
 lunarscout.map_algebra.GeoTiffOpenError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L136).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L142).
 
 **Documentation gap:** no source docstring.
 
@@ -5505,7 +5519,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L136).
 lunarscout.map_algebra.MapAlgebraError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L244).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L250).
 
 ```text
 Base class for map-algebra failures.
@@ -5954,7 +5968,7 @@ Source: [src/lunarscout/map_algebra/reductions.py](../src/lunarscout/map_algebra
 lunarscout.map_algebra.RasterValidationError(message: 'str', *, code: 'str | None' = None, details: 'Mapping[str, Any] | None' = None) -> 'None'
 ```
 
-Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L250).
+Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L256).
 
 ```text
 A Raster value does not satisfy the public data contract.
@@ -6490,7 +6504,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.align(raster: 'Raster', *, to: 'GeoReference', resampling: 'str' = 'nearest', output_nodata: "int | float | None | Literal['auto']" = 'auto', output_dtype: 'Any' = None, validity_coverage_threshold: 'float | None' = None, categorical: 'bool | None' = None, allow_unsafe: 'bool' = False) -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1489).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1494).
 
 ```text
 Eagerly resample a ``Raster`` onto a destination grid.
@@ -6560,7 +6574,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 ### `lunarscout.map_algebra.arctan2`
 
 ```python
-lunarscout.map_algebra.arctan2(a: 'Raster', b: 'Raster', *, numeric_errors: 'NumericErrorsPolicy' = 'invalid') -> 'Raster'
+lunarscout.map_algebra.arctan2(a: 'Raster | int | float', b: 'Raster | int | float', *, numeric_errors: 'NumericErrorsPolicy' = 'invalid') -> 'Raster'
 ```
 
 Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1225).
@@ -6575,7 +6589,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.aspect(raster: 'Raster | RasterExpression', *, output_nodata: 'int | float' = nan, compute_edges: 'bool' = False) -> 'Raster | RasterExpression'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1182).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1187).
 
 ```text
 Calculate terrain aspect (azimuth) from an elevation raster.
@@ -6599,7 +6613,7 @@ compute_edges:
 lunarscout.map_algebra.cast(raster: 'Any', dtype: 'Any', *, casting: 'str' = 'safe', overflow: "Literal['raise', 'wrap']" = 'raise') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L604).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L609).
 
 **Documentation gap:** no source docstring.
 
@@ -6611,7 +6625,7 @@ Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/_
 lunarscout.map_algebra.ceil(a: 'Raster', *, numeric_errors: 'NumericErrorsPolicy' = 'invalid') -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1294).
+Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1321).
 
 **Documentation gap:** no source docstring.
 
@@ -6623,7 +6637,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.clip(raster: 'Any', *, lower: 'Any' = None, upper: 'Any' = None) -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L594).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L599).
 
 **Documentation gap:** no source docstring.
 
@@ -6647,7 +6661,7 @@ Source: [src/lunarscout/map_algebra/focal.py](../src/lunarscout/map_algebra/foca
 lunarscout.map_algebra.coalesce(*operands: 'Any') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L509).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L514).
 
 ```text
 Select each cell's first valid operand without FP64 intermediates.
@@ -6724,7 +6738,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.degrees(a: 'Raster', *, numeric_errors: 'NumericErrorsPolicy' = 'invalid') -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1238).
+Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1252).
 
 **Documentation gap:** no source docstring.
 
@@ -6748,7 +6762,7 @@ Source: [src/lunarscout/map_algebra/_registry.py](../src/lunarscout/map_algebra/
 lunarscout.map_algebra.digitize(raster: 'Any', bins: 'Any', *, right: 'bool' = False) -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L737).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L742).
 
 **Documentation gap:** no source docstring.
 
@@ -6871,7 +6885,7 @@ Source: [src/lunarscout/map_algebra/temporal.py](../src/lunarscout/map_algebra/t
 lunarscout.map_algebra.fill_invalid(raster: 'Any', value: 'Any') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L582).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L587).
 
 ```text
 Fill invalid cells with an exactly representable value.
@@ -6913,7 +6927,7 @@ Return the internal border cells of valid true regions.
 lunarscout.map_algebra.floor(a: 'Raster', *, numeric_errors: 'NumericErrorsPolicy' = 'invalid') -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1290).
+Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1317).
 
 **Documentation gap:** no source docstring.
 
@@ -7033,7 +7047,7 @@ Source: [src/lunarscout/map_algebra/focal.py](../src/lunarscout/map_algebra/foca
 lunarscout.map_algebra.from_existing(values: 'NDArray[Any]', georef: 'GeoReference', *, units: 'str | None' = None, name: 'str | None' = None) -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1005).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1010).
 
 ```text
 Wrap existing bare ``(values, georef)`` results in a ``Raster``.
@@ -7049,7 +7063,7 @@ Validity is derived from ``georef.nodata``.
 lunarscout.map_algebra.from_masked_array(values: 'np.ma.MaskedArray[Any, Any]', georef: 'GeoReference', *, units: 'str | None' = None, name: 'str | None' = None) -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L975).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L980).
 
 ```text
 Construct a ``Raster`` from a NumPy masked array.
@@ -7101,7 +7115,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.hillshade(raster: 'Raster | RasterExpression', *, output_nodata: 'int | float' = 0, azimuth: 'float' = 315.0, altitude: 'float' = 45.0, compute_edges: 'bool' = False, scale: 'float' = 1.0, z_factor: 'float' = 1.0) -> 'Raster | RasterExpression'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1208).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1213).
 
 ```text
 Calculate a shaded relief raster from an elevation raster.
@@ -7142,10 +7156,10 @@ Source: [src/lunarscout/map_algebra/reductions.py](../src/lunarscout/map_algebra
 ### `lunarscout.map_algebra.hypot`
 
 ```python
-lunarscout.map_algebra.hypot(a: 'Raster', b: 'Raster', *, numeric_errors: 'NumericErrorsPolicy' = 'invalid') -> 'Raster'
+lunarscout.map_algebra.hypot(a: 'Raster | int | float', b: 'Raster | int | float', *, numeric_errors: 'NumericErrorsPolicy' = 'invalid') -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1252).
+Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1266).
 
 **Documentation gap:** no source docstring.
 
@@ -7157,7 +7171,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.is_invalid(raster: 'Any') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L557).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L562).
 
 **Documentation gap:** no source docstring.
 
@@ -7169,7 +7183,7 @@ Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/_
 lunarscout.map_algebra.is_valid(raster: 'Any') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L547).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L552).
 
 **Documentation gap:** no source docstring.
 
@@ -7181,7 +7195,7 @@ Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/_
 lunarscout.map_algebra.isclose(a: 'Any', b: 'Any', *, rtol: 'float' = 1e-05, atol: 'float' = 1e-08, equal_nan: 'bool' = False) -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L398).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L403).
 
 **Documentation gap:** no source docstring.
 
@@ -7351,7 +7365,7 @@ Source: [src/lunarscout/map_algebra/focal.py](../src/lunarscout/map_algebra/foca
 lunarscout.map_algebra.make_resample_expression(raster: 'RasterExpression', grid: 'GeoReference', *, resampling: 'str' = 'nearest', output_dtype: 'Any' = None, validity_coverage_threshold: 'float | None' = None) -> 'RasterExpression'
 ```
 
-Source: [src/lunarscout/map_algebra/_spatial.py](../src/lunarscout/map_algebra/_spatial.py#L102).
+Source: [src/lunarscout/map_algebra/_spatial.py](../src/lunarscout/map_algebra/_spatial.py#L105).
 
 ```text
 Construct a validated, explicit cross-grid resampling expression.
@@ -7365,7 +7379,7 @@ Construct a validated, explicit cross-grid resampling expression.
 lunarscout.map_algebra.make_terrain_expression(operation_id: 'str', raster: 'RasterExpression', **parameters: 'Any') -> 'RasterExpression'
 ```
 
-Source: [src/lunarscout/map_algebra/_spatial.py](../src/lunarscout/map_algebra/_spatial.py#L45).
+Source: [src/lunarscout/map_algebra/_spatial.py](../src/lunarscout/map_algebra/_spatial.py#L48).
 
 ```text
 Construct a validated terrain expression for public dispatch wrappers.
@@ -7379,7 +7393,7 @@ Construct a validated terrain expression for public dispatch wrappers.
 lunarscout.map_algebra.max_layers(*layers: 'Any', numeric_errors: "Literal['invalid', 'keep', 'raise']" = 'invalid') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L380).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L385).
 
 **Documentation gap:** no source docstring.
 
@@ -7403,7 +7417,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.mean_layers(*layers: 'Any', overflow: "Literal['raise', 'wrap', 'promote']" = 'raise', numeric_errors: "Literal['invalid', 'keep', 'raise']" = 'invalid') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L349).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L354).
 
 **Documentation gap:** no source docstring.
 
@@ -7415,7 +7429,7 @@ Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/_
 lunarscout.map_algebra.min_layers(*layers: 'Any', numeric_errors: "Literal['invalid', 'keep', 'raise']" = 'invalid') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L365).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L370).
 
 **Documentation gap:** no source docstring.
 
@@ -7463,7 +7477,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.normalize_minmax(raster: 'Any', *, minimum: 'Any' = None, maximum: 'Any' = None) -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L790).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L795).
 
 ```text
 Normalize valid values to [0, 1] using the shared precision policy.
@@ -7489,7 +7503,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.one_hot(raster: 'Any', classes: 'Any') -> 'tuple[Any, ...]'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L764).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L769).
 
 **Documentation gap:** no source docstring.
 
@@ -7549,7 +7563,7 @@ Source: [src/lunarscout/map_algebra/expression.py](../src/lunarscout/map_algebra
 lunarscout.map_algebra.positive(a: 'Any') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L254).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L252).
 
 **Documentation gap:** no source docstring.
 
@@ -7602,7 +7616,7 @@ Source: [src/lunarscout/map_algebra/coordinates.py](../src/lunarscout/map_algebr
 lunarscout.map_algebra.radians(a: 'Raster', *, numeric_errors: 'NumericErrorsPolicy' = 'invalid') -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1245).
+Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1259).
 
 **Documentation gap:** no source docstring.
 
@@ -7614,7 +7628,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.raster(values: 'NDArray[Any]', georef: 'GeoReference', *, valid: 'NDArray[np.bool_] | None' = None, nodata: "int | float | None | Literal['auto']" = 'auto', units: 'str | None' = None, name: 'str | None' = None, validity_provenance: 'str | None' = None) -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L910).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L915).
 
 ```text
 Construct a ``Raster`` from explicit values and georeferencing.
@@ -7633,7 +7647,7 @@ pixel valid.
 lunarscout.map_algebra.read(path: 'str | Path', *, band: 'int' = 1, units: 'str | None' = None, name: 'str | None' = None) -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1081).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1086).
 
 ```text
 Read a single-band GeoTIFF as a ``Raster``.
@@ -7650,7 +7664,7 @@ into a canonical validity mask and preserves the native band values.
 lunarscout.map_algebra.reclassify_ranges(raster: 'Any', ranges: 'Any', *, default: 'Any' = 'invalidate') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L697).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L702).
 
 ```text
 Map half-open ranges with an exact common output dtype.
@@ -7667,7 +7681,7 @@ inferring the result, rather than inspecting one payload value.
 lunarscout.map_algebra.reclassify_values(raster: 'Any', mapping: 'Any', *, default: 'Any' = 'invalidate') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L665).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L670).
 
 ```text
 Map exact input values with an exact common output dtype.
@@ -7710,7 +7724,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.resample_to(raster: 'Raster | RasterExpression', grid: 'GeoReference', *, resampling: 'str' = 'nearest', output_dtype: 'Any' = None, validity_coverage_threshold: 'float | None' = None, categorical: 'bool | None' = None, allow_unsafe: 'bool' = False) -> 'Raster | RasterExpression'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1277).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1282).
 
 ```text
 Resample a raster or expression onto an explicit destination grid.
@@ -7748,7 +7762,7 @@ allow_unsafe:
 lunarscout.map_algebra.round(a: 'Any', ndigits: 'int' = 0, *, numeric_errors: "Literal['invalid', 'keep', 'raise']" = 'invalid') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L226).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L224).
 
 **Documentation gap:** no source docstring.
 
@@ -7772,7 +7786,7 @@ Source: [src/lunarscout/map_algebra/coordinates.py](../src/lunarscout/map_algebr
 lunarscout.map_algebra.set_invalid(raster: 'Any', mask: 'Any') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L567).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L572).
 
 **Documentation gap:** no source docstring.
 
@@ -7819,7 +7833,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.slope(raster: 'Raster | RasterExpression', *, output_nodata: 'int | float' = nan, units: 'str' = 'degrees', compute_edges: 'bool' = False, scale: 'float' = 1.0) -> 'Raster | RasterExpression'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1148).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1153).
 
 ```text
 Calculate terrain slope from an elevation raster.
@@ -7885,7 +7899,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.standardize(raster: 'Any', *, mean: 'Any' = None, std: 'Any' = None, ddof: 'float' = 0) -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L817).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L822).
 
 ```text
 Center and scale valid values using the shared precision policy.
@@ -7925,7 +7939,7 @@ Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/loca
 lunarscout.map_algebra.sum_layers(*layers: 'Any', overflow: "Literal['raise', 'wrap', 'promote']" = 'raise', numeric_errors: "Literal['invalid', 'keep', 'raise']" = 'invalid') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L329).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L334).
 
 **Documentation gap:** no source docstring.
 
@@ -8033,7 +8047,7 @@ Source: [src/lunarscout/map_algebra/temporal.py](../src/lunarscout/map_algebra/t
 lunarscout.map_algebra.to_existing(raster_obj: 'Raster', *, nodata: 'int | float | None' = None) -> 'tuple[NDArray[Any], GeoReference]'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1030).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L1035).
 
 ```text
 Convert a ``Raster`` back to a bare ``(values, georef)`` tuple.
@@ -8050,7 +8064,7 @@ returned ``GeoReference`` carries its normalized encoding value.
 lunarscout.map_algebra.trunc(a: 'Raster', *, numeric_errors: 'NumericErrorsPolicy' = 'invalid') -> 'Raster'
 ```
 
-Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1298).
+Source: [src/lunarscout/map_algebra/local.py](../src/lunarscout/map_algebra/local.py#L1325).
 
 **Documentation gap:** no source docstring.
 
@@ -8074,7 +8088,7 @@ Source: [src/lunarscout/map_algebra/reductions.py](../src/lunarscout/map_algebra
 lunarscout.map_algebra.where(condition: 'Any', x: 'Any', y: 'Any') -> 'Any'
 ```
 
-Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L445).
+Source: [src/lunarscout/map_algebra/__init__.py](../src/lunarscout/map_algebra/__init__.py#L450).
 
 ```text
 Select branch values with selected-branch validity.
@@ -8092,7 +8106,7 @@ Python integer branch.
 lunarscout.map_algebra.write(path: 'str | Path', expression: 'RasterExpression', *, overwrite: 'bool' = False, start_fresh: 'bool' = False, dtype: 'np.dtype[Any] | str | None' = None, invalid_value: 'int | float | None' = None, window_width: 'int' = 128, window_height: 'int' = 128, progress_callback: 'ProgressCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None, checkpoint_interval: 'int' = 16) -> 'Path'
 ```
 
-Source: [src/lunarscout/map_algebra/_writer.py](../src/lunarscout/map_algebra/_writer.py#L337).
+Source: [src/lunarscout/map_algebra/_writer.py](../src/lunarscout/map_algebra/_writer.py#L338).
 
 ```text
 Evaluate *expression* in bounded windows and publish a GeoTIFF.

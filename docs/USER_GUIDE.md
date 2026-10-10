@@ -214,6 +214,13 @@ Both profiles are imported as `import lunarscout as ls`. The `cuda` extra
 installs the validated Numba-CUDA CUDA 12 user-space runtime; it does not
 install an NVIDIA driver.
 
+The `analysis` extra (pandas) enables `ls.body_vectors_ned_dataframe` and
+`ls.body_azimuth_elevation_dataframe`; the `plot` extra (matplotlib) enables
+`ls.plot_body_elevation(s)` and the `Scenario` plotting helpers. Without them,
+those functions raise `ls.OptionalDependencyError` (code
+`optional_dependency_missing`, also an `ImportError`) naming the extra to
+install.
+
 For development tools:
 
 ```bash
