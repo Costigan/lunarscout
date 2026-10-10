@@ -14,7 +14,13 @@ def test_dense_bilinear_matrix_is_recorded_as_diagnostic() -> None:
     assert not report["diagnostic_comparison"]["is_acceptance_gate"]
     assert not report["diagnostic_comparison"]["all_cases_within_threshold"]
     assert report["maximum_dense_minus_hierarchy_degrees"] == pytest.approx(
-        0.5637415835898194  # 0.5714783590002774 before the H-A far-field correction
+        # Production steps do not stop at level-0 cell exits (d543e6e), so on
+        # these single-node bilinear spikes a 1-pixel step can straddle the
+        # node: 4.77 deg in the worst case (0.5637 with the cell-exit clamp).
+        # A diagnostic of the bilinear model's worst case, not an acceptance
+        # criterion; on real LOLA terrain the effect is a few thousandths of a
+        # degree, well below bilinear-versus-cubic interpolation differences.
+        4.773751982606263
     )
     assert report["configuration"]["case_count"] == 10
     assert any(

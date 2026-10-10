@@ -636,11 +636,8 @@ def _build_kernels(cuda):
                         else minimum_step
                     )
                     advance = float32(max(advance, floor))
-                    boundary_advance = float32(
-                        distance_to_exit + float32(0.000001)
-                        if distance_to_exit > float32(0.0) else fallback
-                    )
-                    advance = float32(min(advance, boundary_advance))
+                    # Like production (hierarchy_maximum), advance by the adaptive
+                    # step without stopping at the level-0 cell exit (d543e6e).
                     traces[index, count, 10] = advance
                     traces[index, count, 11] = 4.0
                     count += 1

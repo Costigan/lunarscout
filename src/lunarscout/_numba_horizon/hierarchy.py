@@ -270,11 +270,8 @@ def traverse_hierarchy(
                     if pass_index == 0 and true_m >= 100.0 else minimum_step
                 )
                 advance = max(advance, floor)
-                boundary_advance = (
-                    distance_to_exit + np.float32(0.000001)
-                    if distance_to_exit > 0 else fallback
-                )
-                advance = min(advance, boundary_advance)
+                # Like the production CUDA kernel, advance by the adaptive step
+                # without stopping at the level-0 cell exit (d543e6e).
                 row[10], row[11] = advance, 4.0
                 trace.append(row)
                 s += advance

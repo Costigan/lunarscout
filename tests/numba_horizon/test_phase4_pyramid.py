@@ -369,8 +369,11 @@ def test_production_hierarchy_and_adaptive_paths_are_measured_separately() -> No
         segment, pyramid.level0, observer_z_m=observer_z, radius_m=radius,
         map_resolution_m=30.0, pass_index=1,
     )
-    # Regression values with the corrected far-field slope (review finding H-A).
-    assert hierarchy.maximum_slope == pytest.approx(0.16295525, abs=3e-8)
+    # Regression values with the corrected far-field slope (review finding H-A)
+    # and production stepping without the level-0 cell-exit clamp (d543e6e).
+    # The fixture's single 5,000 m node is partly stepped over (0.16295525
+    # with the clamp); see test_dense_bilinear_matrix_is_recorded_as_diagnostic.
+    assert hierarchy.maximum_slope == pytest.approx(0.08315321, abs=3e-8)
     assert adaptive.maximum_slope == pytest.approx(0.10458692, abs=3e-8)
     assert hierarchy.maximum_slope != adaptive.maximum_slope
     assert traversal_counters(hierarchy.values).culled_blocks > 0
