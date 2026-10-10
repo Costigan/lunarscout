@@ -14,7 +14,7 @@ import numpy.typing as npt
 
 from lunarscout.georeference import GeoReference
 
-from .file_format import HorizonTileStore
+from .file_format import HorizonTileStore, read_patch_horizons
 from .geometry import DemGrid
 from .mission_duration import (
     CandidateStartInterval,
@@ -46,6 +46,7 @@ class MissionDurationProgress:
     tile_x: int | None
     state: str
     backend: Literal["cpu", "cuda"] | None = None
+    invalid_patches: int | None = None
 
 
 def _vector_hash(vectors: npt.NDArray[np.float64]) -> str:
@@ -242,7 +243,9 @@ def _run_duration_product(
 
     completed = len(product.completed_patches)
 
-    def report(patch: PatchDescriptor | None, state: str) -> None:
+    def report(
+        patch: PatchDescriptor | None, state: str, invalid_patches: int | None = None
+    ) -> None:
         event = MissionDurationProgress(
             completed,
             len(patches),
@@ -250,6 +253,7 @@ def _run_duration_product(
             None if patch is None else patch.tile_x,
             state,
             selected_backend,
+            invalid_patches,
         )
         if progress_callback is not None:
             progress_callback(event)
@@ -270,12 +274,11 @@ def _run_duration_product(
                 "mission-duration generation was cancelled"
             )
         report(patch, "read")
-        try:
-            horizons = horizon_store.read(
-                patch.tile_y, patch.tile_x, observer_elevation_m
-            )
-        except (OSError, ValueError):
-            horizons = None
+        # A missing tile is an invalid patch; an existing tile that cannot be
+        # read raises HorizonFormatError.
+        horizons = read_patch_horizons(
+            horizon_store, patch.tile_y, patch.tile_x, observer_elevation_m
+        )
         if horizons is None:
             product.write_invalid_patch(patch.tile_y, patch.tile_x)
             state = "invalid"
@@ -347,7 +350,11 @@ def _run_duration_product(
             "mission-duration generation was cancelled"
         )
     result = product.finalize()
-    report(None, "complete")
+    report(
+        None,
+        "complete",
+        sum(state == "invalid" for state in product.completed_patches.values()),
+    )
     return result
 
 

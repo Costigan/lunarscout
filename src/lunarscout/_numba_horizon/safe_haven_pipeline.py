@@ -14,7 +14,7 @@ import numpy.typing as npt
 
 from lunarscout.georeference import GeoReference
 
-from .file_format import HorizonTileStore
+from .file_format import HorizonTileStore, read_patch_horizons
 from .geometry import DemGrid
 from .lightmap_cpu import LightmapCpuSession
 from .pipeline import PatchDescriptor, enumerate_patches
@@ -44,6 +44,7 @@ class SafeHavenProgress:
     tile_x: int | None
     state: str
     backend: Literal["cpu", "cuda"] | None = None
+    invalid_patches: int | None = None
 
 
 def run_safe_haven_product(
@@ -197,7 +198,9 @@ def run_safe_haven_product(
 
     completed = len(product.completed_patches)
 
-    def report(patch: PatchDescriptor | None, state: str) -> None:
+    def report(
+        patch: PatchDescriptor | None, state: str, invalid_patches: int | None = None
+    ) -> None:
         event = SafeHavenProgress(
             completed,
             len(patches),
@@ -205,6 +208,7 @@ def run_safe_haven_product(
             None if patch is None else patch.tile_x,
             state,
             selected_backend,
+            invalid_patches,
         )
         if progress_callback is not None:
             progress_callback(event)
@@ -225,12 +229,11 @@ def run_safe_haven_product(
                 "safe-haven generation was cancelled"
             )
         report(patch, "read")
-        try:
-            horizons = horizon_store.read(
-                patch.tile_y, patch.tile_x, observer_elevation_m
-            )
-        except (OSError, ValueError):
-            horizons = None
+        # A missing tile is an invalid patch; an existing tile that cannot be
+        # read raises HorizonFormatError.
+        horizons = read_patch_horizons(
+            horizon_store, patch.tile_y, patch.tile_x, observer_elevation_m
+        )
         if cancelled():
             raise SafeHavenPipelineCancelled(
                 "safe-haven generation was cancelled"
@@ -299,7 +302,11 @@ def run_safe_haven_product(
     if cancelled():
         raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
     result = product.finalize()
-    report(None, "complete")
+    report(
+        None,
+        "complete",
+        sum(state == "invalid" for state in product.completed_patches.values()),
+    )
     return result
 
 

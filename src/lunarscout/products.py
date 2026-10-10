@@ -16,6 +16,7 @@ from pyproj import CRS
 from .errors import (
     CudaError,
     GridError,
+    HorizonFormatError,
     InputError,
     OperationCancelledError,
     ProductCalculationError,
@@ -324,6 +325,9 @@ class _ProgressAdapter:
         state = str(private_event.state)
         backend = getattr(private_event, "backend", None)
         message = f"{self.operation} {state}"
+        invalid_patches = getattr(private_event, "invalid_patches", None)
+        if state == "complete" and invalid_patches is not None:
+            message += f" ({invalid_patches} invalid patches)"
         event = ProgressEvent(
             operation=self.operation,
             stage=state,
@@ -345,8 +349,13 @@ class _ProgressAdapter:
                     flush=True,
                 )
             elif state in ("valid", "invalid", "complete"):
+                suffix = (
+                    f" ({invalid_patches} invalid patches)"
+                    if state == "complete" and invalid_patches is not None
+                    else ""
+                )
                 print(
-                    f"{self.operation}: {state} {completed}/{total}",
+                    f"{self.operation}: {state} {completed}/{total}{suffix}",
                     file=sys.stdout,
                     flush=True,
                 )
@@ -549,6 +558,8 @@ def generate_lightmap(
             code="cuda_lightmap_unavailable",
             details={"error": str(exc)},
         ) from exc
+    except HorizonFormatError:
+        raise
     except ProductStoreError as exc:
         raise ProductStorageError(
             "Lightmap storage failed.",
@@ -736,6 +747,8 @@ def generate_psr(
             code="cuda_psr_unavailable",
             details={"error": str(exc)},
         ) from exc
+    except HorizonFormatError:
+        raise
     except ProductStoreError as exc:
         raise ProductStorageError(
             "PSR storage failed.",
@@ -884,6 +897,8 @@ def _generate_body_elevation(
             code=f"cuda_{body}_elevation_unavailable",
             details={"error": str(exc)},
         ) from exc
+    except HorizonFormatError:
+        raise
     except ProductStoreError as exc:
         raise ProductStorageError(
             f"{body.title()} elevation storage failed.",
@@ -1428,6 +1443,8 @@ def generate_safe_havens(
             code="cuda_safe_haven_unavailable",
             details={"error": str(exc)},
         ) from exc
+    except HorizonFormatError:
+        raise
     except ProductStoreError as exc:
         raise ProductStorageError(
             "Safe-haven storage failed.",
@@ -1625,6 +1642,8 @@ def _generate_mission_duration(
             code="cuda_mission_duration_unavailable",
             details={"error": str(exc), "mode": mode},
         ) from exc
+    except HorizonFormatError:
+        raise
     except ProductStoreError as exc:
         raise ProductStorageError(
             "Mission-duration storage failed.",

@@ -19,7 +19,11 @@ import numpy.typing as npt
 
 from lunarscout.georeference import GeoReference
 
-from .file_format import HorizonTileStore, read_horizon_tile_with_timings
+from .file_format import (
+    HorizonTileStore,
+    read_horizon_tile_with_timings,
+    unreadable_tile_error,
+)
 from .geometry import DemGrid
 from .pipeline import PatchDescriptor, enumerate_patches
 from .product_store import (
@@ -44,6 +48,7 @@ class PsrProgress:
     tile_x: int | None
     state: str
     backend: Literal["cpu", "cuda"] | None = None
+    invalid_patches: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,7 +315,9 @@ def run_psr_product(
     elif selected_host_horizon_buffers == "pinned" and cuda_session is None:
         selected_host_horizon_buffers = "allocated"
 
-    def report(patch: PatchDescriptor | None, state: str) -> None:
+    def report(
+        patch: PatchDescriptor | None, state: str, invalid_patches: int | None = None
+    ) -> None:
         event = PsrProgress(
             completed,
             len(patches),
@@ -318,6 +325,7 @@ def run_psr_product(
             None if patch is None else patch.tile_x,
             state,
             selected_backend,
+            invalid_patches,
         )
         with callback_lock:
             if progress_event_callback is not None:
@@ -355,8 +363,10 @@ def run_psr_product(
                 observer_elevation_m,
                 require_complete=False,
             )
-        except (OSError, ValueError):
-            horizon_path = None
+        except (OSError, ValueError) as exc:
+            raise unreadable_tile_error(
+                horizon_store, patch.tile_y, patch.tile_x, observer_elevation_m, exc
+            ) from exc
         timing("horizon_lookup", time.perf_counter() - lookup_started, patch)
         owns_decoded_slot = False
         decode_output = None
@@ -384,12 +394,14 @@ def run_psr_product(
                     read_timings.decompression_seconds,
                     patch,
                 )
-            except (OSError, ValueError):
+            except (OSError, ValueError) as exc:
                 if owns_decoded_slot:
                     assert release_decoded_slot is not None
                     release_decoded_slot(decode_output)
                     owns_decoded_slot = False
-                horizons = None
+                raise unreadable_tile_error(
+                    horizon_store, patch.tile_y, patch.tile_x, observer_elevation_m, exc
+                ) from exc
         return _ReadPatch(patch, horizons, patch_started, owns_decoded_slot)
 
     def compute_patch(item: _ReadPatch) -> _ComputedPatch:
@@ -809,5 +821,9 @@ def run_psr_product(
     result = product.finalize()
     timing("finalize", time.perf_counter() - finalize_started)
     timing("pipeline_total", time.perf_counter() - pipeline_started)
-    report(None, "complete")
+    report(
+        None,
+        "complete",
+        sum(state == "invalid" for state in product.completed_patches.values()),
+    )
     return result

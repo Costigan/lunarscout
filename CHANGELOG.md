@@ -22,6 +22,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     -50 deg floor, so such pixels are lit, not dark (H-D). Pixels whose DEM
     node is invalid are written as nodata in every product; the new
     `skip_dem_nodata_check=True` option skips the per-patch check (M-I).
+  - *Unreadable horizon tiles (behaviour change).* A product run no longer
+    masks an existing horizon tile it cannot read: a truncated, undecodable,
+    or NaN-bearing tile raises `HorizonFormatError` with code
+    `horizon_tile_unreadable` (H-H). Only a missing tile becomes an invalid
+    patch, and the final progress event reports the invalid-patch count.
   - *Safety.* Each production horizon ray is capped at 16 steps per pixel of
     range; a capped ray raises `HorizonGenerationError` with code
     `horizon_step_limit_exceeded` instead of keeping the GPU busy (M-G). A PSR

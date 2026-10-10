@@ -62,7 +62,7 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path]:
 # ---------------------------------------------------------------------------
 
 
-def test_truncated_cbin_tile_is_handled_as_invalid_and_mask_is_zero(
+def test_truncated_cbin_tile_raises_horizon_format_error(
     tmp_path: Path,
 ) -> None:
     dem_path = tmp_path / "dem.tif"
@@ -80,23 +80,24 @@ def test_truncated_cbin_tile_is_handled_as_invalid_and_mask_is_zero(
     cbin_path = horizons / "horizon_00000_00000_000.cbin"
     cbin_path.write_bytes(b"\x05")
 
+    # Review finding H-H: an existing but unreadable tile is an error, not a
+    # masked invalid patch, and no output is published.
     output = tmp_path / "trunc.tif"
-    result = ls.generate_lightmap(
-        dem_path, horizons, output,
-        times=("2027-01-01T00:00:00Z",),
-        sun_vectors_m=np.ascontiguousarray(
-            _sun_vector(1.0)[None, :], dtype=np.float64
-        ),
-        backend="cpu",
-    )
+    with pytest.raises(ls.HorizonFormatError) as error:
+        ls.generate_lightmap(
+            dem_path, horizons, output,
+            times=("2027-01-01T00:00:00Z",),
+            sun_vectors_m=np.ascontiguousarray(
+                _sun_vector(1.0)[None, :], dtype=np.float64
+            ),
+            backend="cpu",
+        )
+    assert error.value.code == "horizon_tile_unreadable"
+    assert error.value.details["path"] == str(cbin_path)
+    assert not output.exists()
 
-    with rasterio.open(result) as ds:
-        full_mask = ds.dataset_mask()
-        assert full_mask.shape == (128, 128)
-        assert np.all(full_mask == 0)
 
-
-def test_invalid_cbin_block_length_is_handled_as_invalid(
+def test_invalid_cbin_block_length_raises_horizon_format_error(
     tmp_path: Path,
 ) -> None:
     dem_path = tmp_path / "dem.tif"
@@ -110,17 +111,17 @@ def test_invalid_cbin_block_length_is_handled_as_invalid(
     cbin_path.write_bytes(content)
 
     output = tmp_path / "bad.tif"
-    result = ls.generate_lightmap(
-        dem_path, horizons, output,
-        times=("2027-01-01T00:00:00Z",),
-        sun_vectors_m=np.ascontiguousarray(
-            _sun_vector(1.0)[None, :], dtype=np.float64
-        ),
-        backend="cpu",
-    )
-
-    with rasterio.open(result) as ds:
-        assert ds.dataset_mask().item() == 0
+    with pytest.raises(ls.HorizonFormatError) as error:
+        ls.generate_lightmap(
+            dem_path, horizons, output,
+            times=("2027-01-01T00:00:00Z",),
+            sun_vectors_m=np.ascontiguousarray(
+                _sun_vector(1.0)[None, :], dtype=np.float64
+            ),
+            backend="cpu",
+        )
+    assert error.value.code == "horizon_tile_unreadable"
+    assert not output.exists()
 
 
 def test_missing_horizon_tile_produces_invalid_patch_with_mask_zero(

@@ -1560,3 +1560,90 @@ def test_scenario_forwards_skip_dem_nodata_check(
     ]
     bound(*(["out.tif"] * len(positional)), **required, skip_dem_nodata_check=True)
     assert captured["skip_dem_nodata_check"] is True
+
+
+# Review finding H-H: an existing horizon tile that could not be read or
+# decoded used to become a masked "invalid" patch and the run reported
+# success. Only a missing tile is an invalid patch now.
+
+_TIMES = ("2027-01-01T00:00:00Z", "2027-01-01T06:00:00Z")
+
+
+def _run_product(name: str, dem_path: Path, horizons_path: Path, output: Path):
+    sun = np.stack((_sun_vector(1.0), _sun_vector(1.0)))
+    common = dict(backend="cpu", overwrite=True)
+    if name == "lightmap":
+        return ls.generate_lightmap(dem_path, horizons_path, output, times=_TIMES, sun_vectors_m=sun, **common)
+    if name == "psr":
+        return ls.generate_psr(dem_path, horizons_path, output, times=_TIMES, sun_vectors_m=sun, **common)
+    if name == "sun_elevation":
+        return ls.generate_sun_elevation(dem_path, horizons_path, output, times=_TIMES, sun_vectors_m=sun, **common)
+    if name == "earth_elevation":
+        return ls.generate_earth_elevation(dem_path, horizons_path, output, times=_TIMES, earth_vectors_m=sun, **common)
+    if name == "safe_havens":
+        return ls.generate_safe_havens(
+            dem_path, horizons_path, output, times=_TIMES, sun_vectors_m=sun, earth_vectors_m=sun,
+            earth_elevation_threshold_deg=2.0, sunlight_fraction_threshold=0.2, **common,
+        )
+    return ls.mission_duration_from_sunlight(
+        dem_path, horizons_path, output, evaluation_start=_TIMES[0], evaluation_stop=_TIMES[1],
+        step=timedelta(hours=6), candidate_start_intervals=((_TIMES[0], _TIMES[1]),),
+        sunlight_fraction_threshold=0.5, sun_vectors_m=sun, **common,
+    )
+
+
+_PRODUCTS = ("lightmap", "psr", "sun_elevation", "earth_elevation", "safe_havens", "mission_duration")
+
+
+def _raw_tile_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
+    dem_path = tmp_path / "dem.tif"
+    ls.write_geotiff(dem_path, np.zeros((1, 1), dtype=np.float32), _georef())
+    horizons_path = tmp_path / "horizons"
+    tile = HorizonTileStore(horizons_path).write(
+        0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32),
+        compress=False, valid_width=1, valid_height=1,
+    )
+    return dem_path, horizons_path, Path(tile)
+
+
+@pytest.mark.parametrize("product", _PRODUCTS)
+def test_corrupt_horizon_tile_raises_instead_of_masking(tmp_path: Path, product: str) -> None:
+    dem_path, horizons_path, tile = _raw_tile_inputs(tmp_path)
+    values = np.fromfile(tile, dtype="<f4")
+    values[:] = np.nan
+    values.tofile(tile)
+
+    with pytest.raises(ls.HorizonFormatError) as error:
+        _run_product(product, dem_path, horizons_path, tmp_path / f"{product}.tif")
+    assert error.value.code == "horizon_tile_unreadable"
+    assert error.value.details["path"] == str(tile)
+    assert (error.value.details["tile_y"], error.value.details["tile_x"]) == (0, 0)
+    assert "NaN" in error.value.details["error"]
+    assert not (tmp_path / f"{product}.tif").exists()
+
+
+@pytest.mark.parametrize("product", _PRODUCTS)
+def test_truncated_horizon_tile_raises_instead_of_masking(tmp_path: Path, product: str) -> None:
+    dem_path, horizons_path, tile = _raw_tile_inputs(tmp_path)
+    with tile.open("r+b") as stream:
+        stream.truncate(tile.stat().st_size // 2)
+    with pytest.raises(ls.HorizonFormatError) as error:
+        _run_product(product, dem_path, horizons_path, tmp_path / f"{product}.tif")
+    assert error.value.code == "horizon_tile_unreadable"
+    assert error.value.details["path"] == str(tile)
+
+
+def test_missing_horizon_tile_is_an_invalid_patch_and_is_counted(tmp_path: Path) -> None:
+    dem_path = tmp_path / "dem.tif"
+    ls.write_geotiff(dem_path, np.zeros((1, 1), dtype=np.float32), _georef())
+    (tmp_path / "horizons").mkdir()
+    events: list[ls.ProgressEvent] = []
+    output = ls.generate_lightmap(
+        dem_path, tmp_path / "horizons", tmp_path / "lightmap.tif", times=_TIMES,
+        sun_vectors_m=np.stack((_sun_vector(1.0), _sun_vector(1.0))), backend="cpu",
+        progress_event_callback=events.append,
+    )
+    with rasterio.open(output) as dataset:
+        assert dataset.dataset_mask().item() == 0
+    assert events[-1].stage == "complete"
+    assert events[-1].message == "lightmap complete (1 invalid patches)"

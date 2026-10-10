@@ -1035,9 +1035,12 @@ to that tile. The shared pipeline follows this pattern:
 3. write the corresponding compressed GeoTIFF tile or tiles.
 
 Outputs cover the full DEM grid and use compressed 128 by 128 tiles by default;
-`compress=True` is the default on every downstream operation. Missing,
-unreadable, and out-of-DEM horizon pixels are marked invalid with the dataset
-mask. Byte products physically store zero at invalid pixels by default (or the
+`compress=True` is the default on every downstream operation. Pixels with no
+horizon tile, and out-of-DEM pixels, are marked invalid with the dataset mask;
+the final progress event reports the number of invalid patches. A horizon tile
+that exists but cannot be read (truncated, undecodable, or containing NaN)
+raises `HorizonFormatError` with code `horizon_tile_unreadable`, naming the
+tile, instead of becoming an invalid patch. Byte products physically store zero at invalid pixels by default (or the
 caller's explicit `invalid_value`), but that payload remains a potentially
 valid science value and is not a nodata sentinel. Float products physically
 store and declare `nodata=np.nan` by default. Consumers should use the dataset

@@ -15,6 +15,8 @@ from uuid import uuid4
 import numpy as np
 import numpy.typing as npt
 
+from ..errors import HorizonFormatError
+
 
 PATCH_SIZE = 128
 AZIMUTH_COUNT = 1440
@@ -281,6 +283,10 @@ def read_horizon_tile_with_timings(
         # floor so raw and compressed tiles decode alike; NaN (a corrupt tile)
         # is left for the product validation to reject.
         np.maximum(values, np.float32(HORIZON_FLOOR_DEG), out=values)
+        # NaN is never a legal horizon value (the writer refuses it), so a raw
+        # tile containing one is corrupt. Compressed tiles cannot encode NaN.
+        if np.isnan(values).any():
+            raise ValueError(f"horizon tile contains NaN values: {candidate}")
     decompression_seconds = time.perf_counter() - decode_started
     result = values.reshape(PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT)
     return result, HorizonReadTimings(
@@ -513,3 +519,58 @@ class HorizonTileStore:
                 pass
             raise
         return final_path
+
+
+def unreadable_tile_error(
+    store: HorizonTileStore,
+    tile_y: int,
+    tile_x: int,
+    observer_elevation_m: float,
+    error: BaseException,
+) -> HorizonFormatError:
+    """Structured error for a horizon tile that exists but cannot be used.
+
+    Product pipelines treat a missing tile as an invalid patch; an existing
+    tile that cannot be found unambiguously, read, or decoded is an error,
+    not a hole in the product.
+    """
+    try:
+        path = store.find_existing_path(
+            tile_y, tile_x, observer_elevation_m, require_complete=False
+        )
+    except (OSError, ValueError):
+        path = None
+    return HorizonFormatError(
+        "A horizon tile exists but cannot be read.",
+        code="horizon_tile_unreadable",
+        details={
+            "tile_y": int(tile_y),
+            "tile_x": int(tile_x),
+            "observer_elevation_m": float(observer_elevation_m),
+            "path": None if path is None else str(path),
+            "error": str(error),
+        },
+    )
+
+
+def read_patch_horizons(
+    store: HorizonTileStore,
+    tile_y: int,
+    tile_x: int,
+    observer_elevation_m: float,
+) -> npt.NDArray[np.float32] | None:
+    """Horizons for one product patch, or ``None`` when no tile file exists.
+
+    Any existing tile file is read, complete or not, so a truncated, corrupt,
+    or NaN-bearing tile raises :class:`HorizonFormatError` (code
+    ``horizon_tile_unreadable``) instead of becoming an invalid patch.
+    """
+    try:
+        path = store.find_existing_path(
+            tile_y, tile_x, observer_elevation_m, require_complete=False
+        )
+        return None if path is None else read_horizon_tile(path)
+    except (OSError, ValueError) as exc:
+        raise unreadable_tile_error(
+            store, tile_y, tile_x, observer_elevation_m, exc
+        ) from exc
