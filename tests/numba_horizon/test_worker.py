@@ -84,3 +84,93 @@ def test_run_horizon_partition_is_verbose_and_partitions(
     assert captured["kwargs"]["patch_stride"] == 4
     assert captured["kwargs"]["observer_height_m"] == 1.5
     assert captured["kwargs"]["compress"] is True
+
+
+def test_main_rejects_an_index_outside_pod_count(tmp_path) -> None:
+    with pytest.raises(SystemExit) as raised:
+        worker_module.main([
+            "--primary-dem", str(tmp_path / "dem.tif"),
+            "--output", str(tmp_path / "out"),
+            "--pod-count", "2",
+            "--pod-nth", "2",
+        ])
+    assert raised.value.code == 2
+
+
+def test_main_stops_between_patches_on_sigterm(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    import os
+    import signal
+
+    from lunarscout.errors import OperationCancelledError
+
+    seen = {}
+
+    def fake_generate_horizons(output, dem_paths, **kwargs):
+        os.kill(os.getpid(), signal.SIGTERM)
+        seen["cancelled"] = kwargs["cancellation_requested"]()
+        seen["skip"] = kwargs["skip_failed_patches"]
+        raise OperationCancelledError("cancelled", code="horizon_generation_cancelled")
+
+    monkeypatch.setattr(worker_module, "generate_horizons", fake_generate_horizons)
+    original = signal.getsignal(signal.SIGTERM)
+    try:
+        status = worker_module.main([
+            "--primary-dem", str(tmp_path / "dem.tif"),
+            "--output", str(tmp_path / "out"),
+            "--pod-count", "1",
+            "--pod-nth", "0",
+        ])
+    finally:
+        signal.signal(signal.SIGTERM, original)
+
+    assert status == worker_module.EXIT_TERMINATED == 143
+    assert seen == {"cancelled": True, "skip": True}
+    assert "TERMINATED: pod 0/1" in capsys.readouterr().out
+
+
+def test_main_removes_orphaned_staging_files_and_reports_coverage(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    import os
+    import signal
+
+    import numpy as np
+    import rasterio
+
+    from lunarscout._numba_horizon.file_format import AZIMUTH_COUNT, HorizonTileStore
+
+    dem = tmp_path / "dem.tif"
+    with rasterio.open(
+        dem, "w", driver="GTiff", width=200, height=100, count=1, dtype="float32"
+    ) as dataset:
+        dataset.write(np.zeros((1, 100, 200), dtype=np.float32))
+    output = tmp_path / "out"
+    store = HorizonTileStore(output)
+    store.write(0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), np.float32),
+                compress=True, valid_width=1, valid_height=1)
+    row = output / "00000"
+    old = row / f"horizon_00000_00128_000.{'a' * 32}.tmp.cbin"
+    fresh = row / f"horizon_00000_00128_000.{'b' * 32}.tmp.bin"
+    unrelated = row / "notes.tmp.cbin"
+    for path in (old, fresh, unrelated):
+        path.write_bytes(b"partial")
+    os.utime(old, (0, 0))
+    os.utime(unrelated, (0, 0))
+    monkeypatch.setattr(worker_module, "generate_horizons", lambda output, *_a, **_k: output)
+    original = signal.getsignal(signal.SIGTERM)
+    try:
+        status = worker_module.main([
+            "--primary-dem", str(dem), "--output", str(output),
+            "--pod-count", "2", "--pod-nth", "0",
+        ])
+    finally:
+        signal.signal(signal.SIGTERM, original)
+
+    out = capsys.readouterr().out
+    assert status == 0
+    assert not old.exists() and fresh.exists() and unrelated.exists()
+    assert "removed 1 orphaned staging files" in out
+    assert "coverage: 1 of 2 tiles present" in out
+    assert "check POD_COUNT" in out

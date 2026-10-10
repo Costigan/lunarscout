@@ -177,6 +177,7 @@ def _run_horizon_pipeline(
     patch_offset: int = 0,
     patch_stride: int = 1,
     verbose: bool = False,
+    skip_failed_patches: bool = False,
 ) -> None:
     """Bind validated public inputs to the selected private production pipeline."""
     from ._numba_horizon.contract import (
@@ -192,6 +193,7 @@ def _run_horizon_pipeline(
         build_subpatch_segments_numba,
     )
     from ._numba_horizon.pipeline import (
+        HorizonPipelineCancelled,
         enumerate_patches,
         partition_patches,
         run_bounded_pipeline,
@@ -270,7 +272,15 @@ def _run_horizon_pipeline(
             tile_row=patches[0].tile_y,
             observer_elevation_m=observer_height_m,
         )
-    run_bounded_pipeline(
+    def skippable(error: BaseException) -> bool:
+        # A CUDA fault poisons the context for every later patch.
+        return (
+            skip_failed_patches
+            and not isinstance(error, HorizonPipelineCancelled)
+            and not _is_cuda_runtime_failure(error)
+        )
+
+    result = run_bounded_pipeline(
         patches,
         store=HorizonTileStore(output_directory),
         prepare_patch=prepare,
@@ -285,7 +295,22 @@ def _run_horizon_pipeline(
         progress_callback=progress_callback,
         cancellation_requested=cancellation_requested,
         timing_stream=sys.stdout if verbose else None,
+        patch_error_filter=skippable,
     )
+    if result.failed_patches:
+        failures = [
+            {
+                "tile_x": patch.tile_x,
+                "tile_y": patch.tile_y,
+                "error": f"{type(error).__name__}: {error}",
+            }
+            for patch, error in result.failed_patches
+        ]
+        raise HorizonGenerationError(
+            f"{len(failures)} horizon patches failed; the others were generated.",
+            code="horizon_patches_failed",
+            details={"patches": failures},
+        ) from result.failed_patches[0][1]
 
 
 def generate_horizons(
@@ -301,6 +326,7 @@ def generate_horizons(
     cancellation_requested: CancellationCheck | None = None,
     patch_offset: int = 0,
     patch_stride: int = 1,
+    skip_failed_patches: bool = False,
 ) -> Path:
     """Generate compatible 128-pixel horizon tiles with NVIDIA CUDA.
 
@@ -350,6 +376,14 @@ def generate_horizons(
     patch_stride:
         Number of workers sharing the patch list (see ``patch_offset``).  Must
         be a positive integer; the default ``1`` processes all patches.
+    skip_failed_patches:
+        If true, a patch whose own calculation raises an ordinary error is
+        recorded and the run continues with the remaining patches; at the end
+        :class:`~lunarscout.HorizonGenerationError` with code
+        ``horizon_patches_failed`` lists the failed patches.  CUDA faults,
+        cancellation and storage errors still stop the run at once.  Batch
+        workers use this so one deterministic bad patch does not block the
+        rest of its partition on every retry.
 
     Returns
     -------
@@ -440,6 +474,12 @@ def generate_horizons(
             code="horizon_patch_stride_invalid",
             details={"patch_stride": patch_stride},
         )
+    if not isinstance(skip_failed_patches, bool):
+        raise InputError(
+            "skip_failed_patches must be a boolean.",
+            code="horizon_skip_failed_patches_invalid",
+            details={"skip_failed_patches": skip_failed_patches},
+        )
     if (
         isinstance(patch_offset, bool)
         or not isinstance(patch_offset, int)
@@ -502,6 +542,7 @@ def generate_horizons(
             patch_offset=patch_offset,
             patch_stride=patch_stride,
             verbose=verbose,
+            skip_failed_patches=skip_failed_patches,
         )
         return output
     except Exception as exc:

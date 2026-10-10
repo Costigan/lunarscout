@@ -672,7 +672,11 @@ horizons = scenario.generate_horizons(
 ```
 
 Valid existing tiles are structurally checked and skipped by default.
-`overwrite=True` regenerates all tiles. Explicit cancellation and both progress
+`overwrite=True` regenerates all tiles. `skip_failed_patches=True` records a
+patch whose own calculation fails, finishes the remaining patches, and then
+raises `ls.HorizonGenerationError` with code `horizon_patches_failed` listing
+the failed patches; CUDA faults, cancellation and storage errors still stop
+the run at once. Explicit cancellation and both progress
 callback forms use the same contracts as downstream products. If a compatible
 NVIDIA CUDA device cannot be initialized, the call raises `ls.CudaError` and
 does not fall back to a CPU generator.

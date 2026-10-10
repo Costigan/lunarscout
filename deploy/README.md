@@ -41,7 +41,8 @@ does not change when the code changes.
 ## Run a batch
 
 Edit the scenario values at the top of `deploy/horizon-job.yaml` (DEM paths,
-output/log directories, pod count), then:
+output/log directories) and the Job's `completions` with the matching
+`POD_COUNT` in its container env, then:
 
 ```bash
 kubectl apply  -f deploy/horizon-job.yaml -n <namespace>

@@ -122,7 +122,9 @@ def test_public_horizon_routes_verbose_timings_to_stdout(
     # facade and its production pipeline binding.
     monkeypatch.setattr(pipeline, "enumerate_patches", lambda *_args: [])
     monkeypatch.setattr(
-        pipeline, "run_bounded_pipeline", lambda *_args, **kwargs: calls.append(kwargs)
+        pipeline,
+        "run_bounded_pipeline",
+        lambda *_args, **kwargs: calls.append(kwargs) or SimpleNamespace(failed_patches=()),
     )
     ls.generate_horizons(tmp_path / "horizons", [dem], verbose=verbose)
     assert len(calls) == 1
@@ -487,3 +489,74 @@ def test_public_horizon_is_exact_around_the_pole(tmp_path: Path) -> None:
             (tile[64, 64 + k], tile[64, 64 - k], tile[64 + k, 64], tile[64 - k, 64])
         )
         assert np.max(np.ptp(profiles, axis=0)) < 0.05, k
+
+
+def _fake_gpu_failing_at(monkeypatch: pytest.MonkeyPatch, failing_tile_x: int, error):
+    from lunarscout._numba_horizon import cuda_backend, generator
+
+    monkeypatch.setattr(
+        cuda_backend, "CudaSession",
+        lambda **_kwargs: SimpleNamespace(build_max_pyramid=lambda _dem: object()),
+    )
+
+    def fake_generate(_session, _segments, _pyramids, *, tile_column, tile_row, **_kwargs):
+        if tile_column == failing_tile_x:
+            raise error
+        return SimpleNamespace(slopes=np.zeros((128 * 128, 1440), dtype=np.float32))
+
+    monkeypatch.setattr(generator, "generate_patch_horizons", fake_generate)
+
+
+def test_public_horizon_can_finish_other_patches_after_a_patch_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_gpu_failing_at(monkeypatch, 128, ValueError("bad terrain"))
+    dem = _write_polar_dem(
+        tmp_path / "dem.tif", np.zeros((16, 300)), origin_x=50_000.0, origin_y=-50_000.0
+    )
+
+    with pytest.raises(ls.HorizonGenerationError) as raised:
+        ls.generate_horizons(tmp_path / "out", [dem], skip_failed_patches=True)
+
+    assert raised.value.code == "horizon_patches_failed"
+    assert raised.value.details["patches"] == [
+        {"tile_x": 128, "tile_y": 0, "error": "ValueError: bad terrain"}
+    ]
+    store = HorizonTileStore(tmp_path / "out")
+    assert store.list_existing_tiles(0.0) == {(0, 0), (0, 256)}
+
+    _fake_gpu_failing_at(monkeypatch, -1, ValueError("unused"))
+    ls.generate_horizons(tmp_path / "out", [dem], skip_failed_patches=True)
+    assert store.list_existing_tiles(0.0) == {(0, 0), (0, 128), (0, 256)}
+
+
+def test_public_horizon_stops_at_the_first_failure_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_gpu_failing_at(monkeypatch, 0, ValueError("bad terrain"))
+    dem = _write_polar_dem(
+        tmp_path / "dem.tif", np.zeros((16, 300)), origin_x=50_000.0, origin_y=-50_000.0
+    )
+
+    with pytest.raises(ls.HorizonGenerationError) as raised:
+        ls.generate_horizons(tmp_path / "out", [dem])
+
+    assert raised.value.code != "horizon_patches_failed"
+
+
+def test_public_horizon_never_skips_cuda_faults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeCudaApiError(Exception):
+        pass
+
+    FakeCudaApiError.__module__ = "numba.cuda.cudadrv.driver"
+    _fake_gpu_failing_at(monkeypatch, 128, FakeCudaApiError("illegal address"))
+    dem = _write_polar_dem(
+        tmp_path / "dem.tif", np.zeros((16, 300)), origin_x=50_000.0, origin_y=-50_000.0
+    )
+
+    with pytest.raises(ls.CudaError) as raised:
+        ls.generate_horizons(tmp_path / "out", [dem], skip_failed_patches=True)
+
+    assert raised.value.code == "cuda_horizon_execution_failed"

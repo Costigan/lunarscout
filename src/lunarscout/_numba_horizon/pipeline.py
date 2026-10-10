@@ -69,6 +69,9 @@ class PipelineResult:
     consumer_dequeue_wait_seconds: tuple[float, ...]
     writer_enqueue_wait_seconds: tuple[float, ...]
     writer_dequeue_wait_seconds: tuple[float, ...]
+    # Patches whose own preparation, computation or finalization raised an
+    # error that ``patch_error_filter`` accepted; the run continued past them.
+    failed_patches: tuple[tuple[PatchDescriptor, BaseException], ...] = ()
 
 
 @dataclass(slots=True)
@@ -172,12 +175,18 @@ def run_bounded_pipeline(
     cancellation_requested: CancellationCheck | None = None,
     progress_stream: TextIO | None = None,
     timing_stream: TextIO | None = None,
+    patch_error_filter: Callable[[BaseException], bool] | None = None,
 ) -> PipelineResult:
     """Prepare, compute, and immediately stage/write patches with bounded memory.
 
     Timing diagnostics use ``timing_stream`` when supplied, otherwise
     ``progress_stream``. A separate timing stream lets callers that already
     render progress callbacks receive timings without duplicate progress lines.
+
+    When ``patch_error_filter`` returns true for an error raised while one
+    patch is prepared, computed or finalized, that patch is recorded in
+    ``PipelineResult.failed_patches`` and the run continues; other errors,
+    and every write error, stop the run.
     """
     if prepared_queue_capacity < 1:
         raise ValueError("prepared_queue_capacity must be positive")
@@ -282,6 +291,14 @@ def run_bounded_pipeline(
     stop = threading.Event()
     error_lock = threading.Lock()
     errors: list[BaseException] = []
+    failed_patches: list[tuple[PatchDescriptor, BaseException]] = []
+
+    def skip_failed(patch: PatchDescriptor, error: BaseException) -> bool:
+        if patch_error_filter is None or not patch_error_filter(error):
+            return False
+        with error_lock:
+            failed_patches.append((patch, error))
+        return True
 
     def fail(error: BaseException) -> None:
         with error_lock:
@@ -347,7 +364,12 @@ def run_bounded_pipeline(
                 if cancellation_requested():
                     raise HorizonPipelineCancelled("Horizon generation was cancelled.")
                 item_started = time.perf_counter()
-                payload = prepare_patch(patch)
+                try:
+                    payload = prepare_patch(patch)
+                except Exception as error:
+                    if not skip_failed(patch, error):
+                        raise
+                    continue
                 elapsed = time.perf_counter() - item_started
                 with metrics_lock:
                     preparation_seconds += elapsed
@@ -388,7 +410,12 @@ def run_bounded_pipeline(
                     if cancellation_requested():
                         raise HorizonPipelineCancelled("Horizon generation was cancelled.")
                     compute_started = time.perf_counter()
-                    computed = processor(item.patch, item.payload)
+                    try:
+                        computed = processor(item.patch, item.payload)
+                    except Exception as error:
+                        if not skip_failed(item.patch, error):
+                            raise
+                        continue
                     compute_elapsed = time.perf_counter() - compute_started
                     with metrics_lock:
                         compute_seconds += compute_elapsed
@@ -402,7 +429,12 @@ def run_bounded_pipeline(
                             continue
                         continue
                     finalize_started = time.perf_counter()
-                    degrees = finalize_patch(item.patch, computed)
+                    try:
+                        degrees = finalize_patch(item.patch, computed)
+                    except Exception as error:
+                        if not skip_failed(item.patch, error):
+                            raise
+                        continue
                     finalize_elapsed = time.perf_counter() - finalize_started
                     with metrics_lock:
                         finalization_seconds += finalize_elapsed
@@ -460,7 +492,12 @@ def run_bounded_pipeline(
                     if cancellation_requested():
                         raise HorizonPipelineCancelled("Horizon generation was cancelled.")
                     finalize_started = time.perf_counter()
-                    degrees = finalize_patch(item.patch, item.payload)
+                    try:
+                        degrees = finalize_patch(item.patch, item.payload)
+                    except Exception as error:
+                        if not skip_failed(item.patch, error):
+                            raise
+                        continue
                     finalize_elapsed = time.perf_counter() - finalize_started
                     with metrics_lock:
                         finalization_seconds += finalize_elapsed
@@ -531,7 +568,8 @@ def run_bounded_pipeline(
                     f"{type(other).__name__}: {other}"
                 )
         raise first
-    emit(HorizonProgress(total, total, 100.0, "complete", "Horizons generation complete."))
+    if not failed_patches:
+        emit(HorizonProgress(total, total, 100.0, "complete", "Horizons generation complete."))
     return PipelineResult(
         tuple(output_paths), skipped, time.perf_counter() - started,
         preparation_seconds, compute_seconds, finalization_seconds, write_seconds,
@@ -540,6 +578,7 @@ def run_bounded_pipeline(
         tuple(consumer_dequeue_wait_seconds),
         tuple(writer_enqueue_wait_seconds),
         tuple(writer_dequeue_wait_seconds),
+        tuple(failed_patches),
     )
 
 

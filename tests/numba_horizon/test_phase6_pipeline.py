@@ -673,3 +673,47 @@ def test_pipeline_reports_later_worker_failures_as_notes() -> None:
     assert raised.value.__notes__ == [
         "Another pipeline thread also failed: RuntimeError: context is poisoned"
     ]
+
+
+def test_pipeline_continues_past_patches_the_filter_accepts() -> None:
+    patches = enumerate_patches(384, 128)
+    store = _FakeStore()
+
+    def factory(_worker_id):
+        def process(patch, _payload):
+            if patch.tile_x == 128:
+                raise ValueError("bad terrain")
+            return np.zeros((1, AZIMUTH_COUNT), dtype=np.float32)
+
+        return process
+
+    result = run_bounded_pipeline(
+        patches,
+        store=store,
+        prepare_patch=lambda item: item.index,
+        processor_factory=factory,
+        finalize_patch=lambda _patch, computed: computed,
+        patch_error_filter=lambda error: isinstance(error, ValueError),
+    )
+
+    assert [(patch.tile_x, str(error)) for patch, error in result.failed_patches] == [
+        (128, "bad terrain")
+    ]
+    assert sorted(write[1] for write in store.writes) == [0, 256]
+
+
+def test_pipeline_stops_on_errors_the_filter_rejects() -> None:
+    def factory(_worker_id):
+        def process(_patch, _payload):
+            raise RuntimeError("illegal address")
+
+        return process
+
+    with pytest.raises(RuntimeError, match="illegal address"):
+        run_bounded_pipeline(
+            enumerate_patches(384, 128),
+            store=_FakeStore(),
+            prepare_patch=lambda item: item.index,
+            processor_factory=factory,
+            patch_error_filter=lambda error: isinstance(error, ValueError),
+        )

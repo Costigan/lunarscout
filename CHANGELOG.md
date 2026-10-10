@@ -31,6 +31,13 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     or NaN-bearing tile raises `HorizonFormatError` with code
     `horizon_tile_unreadable` (H-H). Only a missing tile becomes an invalid
     patch, and the final progress event reports the invalid-patch count.
+  - *Batch workers.* `generate_horizons(skip_failed_patches=True)` finishes
+    the remaining patches after one patch fails, then raises
+    `horizon_patches_failed`. The NRP worker uses it, stops between patches
+    on SIGTERM (exit 143), removes orphaned staging files, rejects an index
+    outside `POD_COUNT`, and reports whole-grid coverage. The Job manifest
+    retries per index and ignores preemption; it needs Kubernetes 1.29+
+    (M-L).
   - *Near-field horizon slope.* Terrain within 0.5 km now uses the same
     curved-Moon slope as farther terrain; the flat slope was too high by up
     to 0.008 deg and jumped at 0.5 km (M-B).

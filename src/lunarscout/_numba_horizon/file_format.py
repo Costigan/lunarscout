@@ -34,6 +34,10 @@ _COMPILED_DECODER_LOCK = threading.Lock()
 
 _TILE_FILE_PATTERN = re.compile(r"\Ahorizon_(\d{5})_(\d{5})_(\d{3})\.(cbin|bin)\Z")
 _TILE_DIRECTORY_PATTERN = re.compile(r"\A\d{5}\Z")
+# Staging names written by HorizonTileStore.write: <tile stem>.<uuid hex>.tmp.<ext>.
+_STAGING_FILE_PATTERN = re.compile(
+    r"\Ahorizon_\d{5}_\d{5}_\d{3}\.[0-9a-f]{32}\.tmp\.(cbin|bin)\Z"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -463,6 +467,44 @@ class HorizonTileStore:
             except OSError:
                 continue
         return inventory
+
+    def remove_stale_staging_files(self, older_than_seconds: float) -> int:
+        """Delete staging files left by killed writers; return the count.
+
+        A writer holds its staging file for seconds, so only files whose
+        modification time is older than ``older_than_seconds`` are removed;
+        a concurrent writer's live staging file is never touched.
+        """
+        cutoff = time.time() - older_than_seconds
+        removed = 0
+        directories = [self.root]
+        try:
+            with os.scandir(self.root) as entries:
+                directories += [
+                    self.root / entry.name
+                    for entry in entries
+                    if _TILE_DIRECTORY_PATTERN.match(entry.name)
+                ]
+        except OSError:
+            return 0
+        for directory in directories:
+            try:
+                with os.scandir(directory) as entries:
+                    candidates = [
+                        entry
+                        for entry in entries
+                        if _STAGING_FILE_PATTERN.match(entry.name)
+                    ]
+            except OSError:
+                continue
+            for entry in candidates:
+                try:
+                    if entry.stat().st_mtime < cutoff:
+                        os.unlink(entry.path)
+                        removed += 1
+                except FileNotFoundError:
+                    continue
+        return removed
 
     def list_existing_tiles(
         self, observer_elevation_m: float

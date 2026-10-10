@@ -11,12 +11,22 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import sys
+import threading
 import traceback
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..errors import OperationCancelledError
 from ..horizon import generate_horizons
+
+# Exit status for a pod stopped by SIGTERM (128 + 15), as a shell reports it.
+EXIT_TERMINATED = 143
+# Staging files older than this are orphans of killed writers; a live
+# writer holds its staging file for seconds.
+STALE_STAGING_SECONDS = 3600.0
 
 
 class _Tee:
@@ -45,6 +55,7 @@ def run_horizon_partition(
     compress: bool = False,
     pod_count: int,
     pod_nth: int,
+    cancellation_requested: Callable[[], bool] | None = None,
 ) -> Path:
     """Generate the horizon patches assigned to one partition of a batch.
 
@@ -53,6 +64,9 @@ def run_horizon_partition(
     pods cover every patch exactly once.  The first DEM in ``primary_dem`` plus
     ``surrounding_dems`` defines the output grid and extended terrain, exactly
     as in :func:`lunarscout.generate_horizons`.
+
+    A patch whose own calculation fails is reported after the rest of the
+    partition has been generated, so a retry repeats only that patch.
     """
     dem_paths = [str(primary_dem)] + [str(path) for path in (surrounding_dems or [])]
     return generate_horizons(
@@ -63,6 +77,8 @@ def run_horizon_partition(
         patch_offset=pod_nth,
         patch_stride=pod_count,
         verbose=True,
+        cancellation_requested=cancellation_requested,
+        skip_failed_patches=True,
     )
 
 
@@ -115,6 +131,43 @@ def _describe_gpu() -> str:
     return (
         f"gpu: {result.device_name} ({capability}) "
         f"driver {driver} memory {memory}"
+    )
+
+
+def _install_sigterm_handler() -> threading.Event:
+    """Turn SIGTERM into a cancellation request checked between patches.
+
+    As PID 1 in a container, Python would otherwise ignore SIGTERM and be
+    killed only when the grace period ends, possibly mid-write.
+    """
+    terminated = threading.Event()
+
+    def handle(_signum, _frame) -> None:
+        terminated.set()
+
+    signal.signal(signal.SIGTERM, handle)
+    return terminated
+
+
+def _coverage(primary_dem: str | Path, output: str | Path, observer_height_m: float) -> str:
+    """Report how many of the primary DEM's tiles exist, across all partitions."""
+    import rasterio
+
+    from .file_format import HorizonTileStore
+    from .pipeline import enumerate_patches
+
+    try:
+        with rasterio.open(primary_dem) as dataset:
+            width, height = dataset.width, dataset.height
+        expected = {(patch.tile_y, patch.tile_x) for patch in enumerate_patches(width, height)}
+        present = HorizonTileStore(output).list_existing_tiles(observer_height_m)
+    except Exception as exc:  # the report must never mask the run's own result
+        return f"coverage: unavailable ({exc})"
+    found = len(expected & present)
+    return (
+        f"coverage: {found} of {len(expected)} tiles present across all partitions"
+        + ("" if found == len(expected) else
+           "; if every pod has finished, check POD_COUNT against the Job's completions")
     )
 
 
@@ -171,6 +224,13 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--pod-count or $POD_COUNT is required")
 
     pod_nth = args.pod_nth if args.pod_nth is not None else _pod_nth_from_env()
+    if args.pod_count < 1 or not 0 <= pod_nth < args.pod_count:
+        # Kubernetes cannot pass the Job's completions to the pod, so an
+        # index outside POD_COUNT is the only mismatch a pod can detect.
+        parser.error(
+            f"pod index {pod_nth} is outside 0..POD_COUNT-1 (POD_COUNT={args.pod_count}); "
+            "POD_COUNT must equal the Job's completions"
+        )
     surrounding = [p for p in args.surrounding_dems.split(",") if p.strip()]
 
     original_stdout = sys.stdout
@@ -189,6 +249,14 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"worker: {_node_label()}")
     print(_describe_gpu())
+    terminated = _install_sigterm_handler()
+    from .file_format import HorizonTileStore
+
+    removed = HorizonTileStore(args.output).remove_stale_staging_files(
+        STALE_STAGING_SECONDS
+    )
+    if removed:
+        print(f"removed {removed} orphaned staging files older than one hour")
 
     try:
         result = run_horizon_partition(
@@ -199,9 +267,15 @@ def main(argv: list[str] | None = None) -> int:
             compress=args.compress,
             pod_count=args.pod_count,
             pod_nth=pod_nth,
+            cancellation_requested=terminated.is_set,
         )
         print(f"SUCCESS: pod {pod_nth}/{args.pod_count} finished; horizons in {result}")
+        print(_coverage(args.primary_dem, args.output, args.observer_height_m))
         return 0
+    except OperationCancelledError:
+        # SIGTERM is the worker's only cancellation source.
+        print(f"TERMINATED: pod {pod_nth}/{args.pod_count} stopped by SIGTERM between patches")
+        return EXIT_TERMINATED
     except BaseException:
         print(f"FAILED: pod {pod_nth}/{args.pod_count} raised the following:")
         traceback.print_exc()
