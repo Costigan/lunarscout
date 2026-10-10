@@ -1077,3 +1077,37 @@ class TestStartFreshNeverDeletesOutputs:
         assert error.value.code == "map_algebra_output_is_source"
         assert p.read_bytes() == original
         assert sorted(x.name for x in tmp_path.iterdir()) == ["src.tif"]
+
+
+def test_staged_tiff_is_flushed_before_each_journal_checkpoint(tmp_path, monkeypatch):
+    # Review finding H7: only the JSON journal was fsynced, so after power
+    # loss a durable journal could claim windows whose pixels were lost.
+    p = _write_tiff(tmp_path, "src.tif", np.ones((8, 8), dtype=np.float32))
+    out = tmp_path / "out.tif"
+    events: list[tuple[str, str]] = []
+    original_fsync, original_journal = writer_module.fsync_file, writer_module._write_journal
+    original_directory = writer_module.fsync_directory
+
+    def fsync(path):
+        events.append(("fsync", Path(path).name))
+        original_fsync(path)
+
+    def journal(*args, **kwargs):
+        events.append(("journal", ""))
+        return original_journal(*args, **kwargs)
+
+    def directory(path):
+        events.append(("directory", Path(path).name))
+        original_directory(path)
+
+    monkeypatch.setattr(writer_module, "fsync_file", fsync)
+    monkeypatch.setattr(writer_module, "_write_journal", journal)
+    monkeypatch.setattr(writer_module, "fsync_directory", directory)
+    write(out, source(p) + 1, window_width=4, window_height=4, checkpoint_interval=1)
+
+    staged = ".out.tif.lunarscout-partial.tif"
+    journals = [i for i, event in enumerate(events) if event[0] == "journal"]
+    assert len(journals) == 4
+    for index in journals:
+        assert events[index - 1] == ("fsync", staged)
+    assert events[-1] == ("directory", tmp_path.name)

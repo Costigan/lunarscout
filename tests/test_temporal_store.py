@@ -387,3 +387,36 @@ def test_commit_rechecks_the_destination_before_replacing_it(
         ls.write_temporal_cube(root, _cube(), overwrite=True)
     assert error.value.code == "temporal_series_destination_not_series"
     assert json.loads((root / "manifest.json").read_text()) == {"format": "something else"}
+
+
+def test_series_data_is_flushed_before_completion_and_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review finding H7: layers, manifest and COMPLETE were never fsynced, so
+    # a durable COMPLETE marker could describe missing layers.
+    events: list[tuple[str, str]] = []
+    for name in ("fsync_file", "fsync_directory", "write_bytes_durably"):
+        original = getattr(temporal_store, name)
+
+        def record(path, *args, _name=name, _original=original):
+            events.append((_name, Path(path).name))
+            return _original(path, *args)
+
+        monkeypatch.setattr(temporal_store, name, record)
+    original_replace = temporal_store.os.replace
+
+    def replace(source, destination):
+        events.append(("replace", Path(destination).name))
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(temporal_store.os, "replace", replace)
+    ls.write_temporal_cube(tmp_path / "series", _cube()).close()
+
+    layer_syncs = [e for e in events if e[0] == "fsync_file" and e[1].endswith(".tif")]
+    assert len(layer_syncs) == len(_cube().times)
+    order = [e for e in events if e[0] != "fsync_file" or not e[1].endswith(".tif")]
+    position = {event: index for index, event in enumerate(order)}
+    assert position[("write_bytes_durably", "manifest.json")] < position[("fsync_directory", "layers")]
+    assert position[("fsync_directory", "layers")] < position[("write_bytes_durably", "COMPLETE")]
+    assert position[("write_bytes_durably", "COMPLETE")] < position[("replace", "series")]
+    assert position[("replace", "series")] < position[("fsync_directory", tmp_path.name)]

@@ -48,6 +48,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     source windows were padded by a fixed 1-3 pixels although GDAL widens
     these kernels by the downsampling ratio, leaving seams at window edges
     (H3).
+  - *Durability.* `ma.write` flushes the staged GeoTIFF before each journal
+    checkpoint and the output directory after publishing; temporal series
+    flush every layer, the manifest and the layer directory before writing
+    `COMPLETE`. A durable journal or marker no longer outlives its data after
+    power loss (H7).
   - *Alignment.* `align()` across coordinate systems no longer overwrites
     covered pixels with nodata: the coverage mask now transforms destination
     coordinates into the source CRS (H1).

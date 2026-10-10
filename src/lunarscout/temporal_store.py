@@ -21,6 +21,7 @@ from numpy.typing import NDArray
 import rasterio
 
 from .alignment import same_grid
+from ._durability import fsync_directory, fsync_file, write_bytes_durably
 from .errors import (
     GeoTiffDataTypeError,
     TemporalLookupError,
@@ -389,6 +390,7 @@ def _commit_staging_directory(
         )
     if not destination.exists():
         os.replace(staging, destination)
+        fsync_directory(destination.parent)
         return
     _require_replaceable_series(destination)
 
@@ -399,6 +401,7 @@ def _commit_staging_directory(
     except Exception:
         os.replace(backup, destination)
         raise
+    fsync_directory(destination.parent)
     shutil.rmtree(backup, ignore_errors=True)
 
 
@@ -601,6 +604,7 @@ class TemporalGeoTiffSeriesWriter:
             relative_path = Path("layers") / _time_filename(time_value)
             staged_path = staging / relative_path
             write_geotiff(staged_path, values, self.georef)
+            fsync_file(staged_path)
             entry = {
                 "index": index,
                 "time_utc": _time_text(time_value),
@@ -668,13 +672,19 @@ class TemporalGeoTiffSeriesWriter:
                 "vrt_relative_path": vrt_relative_path,
                 "provenance": self.provenance,
             }
+            if vrt_relative_path is not None:
+                fsync_file(staging / vrt_relative_path)
             manifest_bytes = _canonical_json(manifest)
-            (staging / _MANIFEST_NAME).write_bytes(manifest_bytes)
+            write_bytes_durably(staging / _MANIFEST_NAME, manifest_bytes)
+            # Layers and manifest are on storage before COMPLETE claims them
+            # (review finding H7).
+            fsync_directory(staging / "layers")
             completion = {
                 "format_version": _FORMAT_VERSION,
                 "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
             }
-            (staging / _COMPLETE_NAME).write_bytes(_canonical_json(completion))
+            write_bytes_durably(staging / _COMPLETE_NAME, _canonical_json(completion))
+            fsync_directory(staging)
             self._check_cancelled()
             _commit_staging_directory(
                 staging, self.destination, overwrite=self.overwrite

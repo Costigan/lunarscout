@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from .._durability import fsync_directory, fsync_file
 from ..errors import (
     MapAlgebraExpressionError,
     MapAlgebraStorageError,
@@ -575,6 +576,12 @@ def write(
             if ds is not None:
                 ds.close()
                 ds = None
+            # The journal may only claim windows whose pixels are on storage
+            # (review finding H7).
+            fsync_file(staging_tiff)
+            mask_sidecar = Path(f"{staging_tiff}.msk")
+            if mask_sidecar.exists():
+                fsync_file(mask_sidecar)
             _write_journal(
                 staging_journal,
                 journal_id_str,
@@ -683,6 +690,7 @@ def write(
                 os.replace(backup_tiff, output_path)
             raise
 
+        fsync_directory(output_path.parent)
         backup_tiff.unlink(missing_ok=True)
         backup_manifest.unlink(missing_ok=True)
         staging_journal.unlink(missing_ok=True)
