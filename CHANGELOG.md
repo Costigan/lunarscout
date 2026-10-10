@@ -31,6 +31,13 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     or NaN-bearing tile raises `HorizonFormatError` with code
     `horizon_tile_unreadable` (H-H). Only a missing tile becomes an invalid
     patch, and the final progress event reports the invalid-patch count.
+  - *Robustness.* Interleaving two CUDA lightmap iterators on one session no
+    longer deadlocks; Ctrl-C stops the horizon pipeline's threads instead of
+    leaving them running; `is_complete` rejects tiles the decoder rejects;
+    the Phase 1 fixture script verifies its download before publishing it.
+    The user guide documents the sampling limits (0.25 deg azimuth spacing,
+    the DEM's outermost cell, the -50..+50 deg `.cbin` range) and device 0
+    (Part 2 low findings).
   - *Batch workers.* `generate_horizons(skip_failed_patches=True)` finishes
     the remaining patches after one patch fails, then raises
     `horizon_patches_failed`. The NRP worker uses it, stops between patches

@@ -347,8 +347,9 @@ def generate_horizons(
         Observer height above the DEM surface, in meters.  Must be finite
         and in ``[0, 100)``.
     compress:
-        When ``True`` (the default) tiles are written as ``.cbin``;
-        ``compress=False`` writes uncompressed ``.bin``.
+        When ``True`` (the default) tiles are written as ``.cbin``, which
+        stores horizons as 16-bit integers clamped to -50..+50 degrees;
+        ``compress=False`` writes uncompressed 32-bit ``.bin``.
     overwrite:
         When ``False`` (the default), structurally complete existing tiles
         are skipped.  ``overwrite=True`` regenerates every tile.

@@ -247,6 +247,11 @@ Missing runtimes and devices use stable `CudaError` codes, while driver, PTX,
 JIT, and kernel-execution failures are reported as structured CUDA execution
 errors and never trigger a silent CPU retry.
 
+Lunarscout uses CUDA device 0 and has no device argument. To run on another
+GPU, select it with `CUDA_VISIBLE_DEVICES` before Python starts, for example
+`CUDA_VISIBLE_DEVICES=1 python run.py`; that GPU then appears as device 0 to
+every thread.
+
 ## Quick Start
 
 ```python
@@ -1022,6 +1027,22 @@ grid), level-0 ray steps grow longer than a pixel. The step length is chosen
 so that it cannot jump over terrain rising more slowly than about 30 degrees
 relative to the ray; steeper distant terrain can be missed, which biases
 horizons low.
+
+Other known sampling limits:
+
+- Each pixel's horizon is sampled along 1,440 rays, 0.25 degrees apart. Rays
+  are 87 m apart at 20 km and 436 m apart at 100 km, so a narrow ridge or
+  peak can fall between rays.
+- A ray stops once it reaches the last row or column of a DEM, so terrain
+  within the outermost cell is undersampled (a 200 m wall in the last
+  column of a 300-column DEM read 42.2 degrees instead of 46.9). Where this
+  matters, supply an outer DEM that extends past the primary DEM.
+- Compressed `.cbin` tiles store horizons as 16-bit integers spanning -50 to
+  +50 degrees, so a horizon steeper than +50 degrees is stored as +50 and an
+  unobstructed direction as -50. Near the poles the Sun never rises high
+  enough for this to change a product; at lower latitudes, use
+  `compress=False` (`.bin`, 32-bit floats) if horizons above 50 degrees
+  matter.
 
 ### Scientific Algorithm Identifiers
 
