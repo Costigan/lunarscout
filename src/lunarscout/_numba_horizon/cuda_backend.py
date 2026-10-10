@@ -352,15 +352,14 @@ def _build_kernels(cuda):
             height = bilinear(elevation, pixel_x, pixel_y)
             slope = -1e30
             if valid_elevation(height):
-                if s < 0.5:
-                    slope = (
-                        (height - observer_z[index]) / true_m
-                        if true_m > 1e-6 else -1e30
-                    )
-                else:
-                    slope = far_field_slope(
+                # Curved at every range; the flat near-field slope jumped by
+                # d / 2R (0.008 deg) at 0.5 km (review finding M-B).
+                slope = (
+                    far_field_slope(
                         true_m, observer_z[index], radius[index], height
                     )
+                    if true_m > 1e-6 else -1e30
+                )
                 if slope > current:
                     current = slope
             traces[index, count, 0] = s
@@ -419,15 +418,14 @@ def _build_kernels(cuda):
             height = bilinear(elevation, pixel_x, pixel_y)
             slope = -1e30
             if valid_elevation(height):
-                if s < 0.5:
-                    slope = (
-                        (height - observer_z[index]) / true_m
-                        if true_m > 1e-6 else -1e30
-                    )
-                else:
-                    slope = far_field_slope(
+                # Curved at every range; the flat near-field slope jumped by
+                # d / 2R (0.008 deg) at 0.5 km (review finding M-B).
+                slope = (
+                    far_field_slope(
                         true_m, observer_z[index], radius[index], height
                     )
+                    if true_m > 1e-6 else -1e30
+                )
                 if slope > current:
                     current = slope
             dx = tangent(segment[4], segment[5], segment[6], segment[7], delta)
@@ -621,14 +619,11 @@ def _build_kernels(cuda):
                     height = bilinear(level0, pixel_x, pixel_y)
                     slope = float32(-1e30)
                     if valid_elevation(height):
-                        if s < float32(0.5):
-                            slope = float32(
-                                float32(height - observer_z[index]) / true_m
-                            )
-                        else:
-                            slope = far_field_slope(
-                                true_m, observer_z[index], radius[index], height
-                            )
+                        # Curved at every range; the flat near-field slope jumped by
+                        # d / 2R (0.008 deg) at 0.5 km (review finding M-B).
+                        slope = far_field_slope(
+                            true_m, observer_z[index], radius[index], height
+                        )
                         if slope > current:
                             current = slope
                     traces[index, count, 8] = height
@@ -827,14 +822,11 @@ def _build_kernels(cuda):
                     height = bilinear(level0, pixel_x, pixel_y)
                     slope = float32(-1e30)
                     if valid_elevation(height):
-                        if s < float32(0.5):
-                            slope = float32(
-                                float32(height - observer_z) / true_m
-                            )
-                        else:
-                            slope = far_field_slope(
-                                true_m, observer_z, radius, height
-                            )
+                        # Curved at every range; the flat near-field slope jumped by
+                        # d / 2R (0.008 deg) at 0.5 km (review finding M-B).
+                        slope = far_field_slope(
+                            true_m, observer_z, radius, height
+                        )
                         if slope > current:
                             current = slope
                     magnitude = float32(math.sqrt(float32(

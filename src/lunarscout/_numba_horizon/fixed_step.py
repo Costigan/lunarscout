@@ -71,15 +71,14 @@ def traverse_level0_fixed_step(
         height = sample_bilinear(elevation_m, float(pixel_x), float(pixel_y))
         slope = np.float32(-1e30)
         if is_valid_elevation(float(height)):
-            if s < np.float32(0.5):
-                slope = (
-                    (height - np.float32(observer_z_m)) / true_m
-                    if true_m > np.float32(1e-6) else np.float32(-1e30)
-                )
-            else:
-                slope = far_field_slope(
+            # Curved at every range; the flat near-field slope jumped by
+            # d / 2R (0.008 deg) at 0.5 km (review finding M-B).
+            slope = (
+                far_field_slope(
                     true_m, observer_z_m, radius_m, height
                 )
+                if true_m > np.float32(1e-6) else np.float32(-1e30)
+            )
             current = max(current, slope)
         trace.append((s, true_m, pixel_x, pixel_y, height, slope, current))
         s += step
@@ -129,15 +128,14 @@ def traverse_level0_adaptive(
         height = sample_bilinear(elevation_m, float(pixel_x), float(pixel_y))
         slope = np.float32(-1e30)
         if is_valid_elevation(float(height)):
-            if s < np.float32(0.5):
-                slope = (
-                    (height - np.float32(observer_z_m)) / true_m
-                    if true_m > np.float32(1e-6) else np.float32(-1e30)
-                )
-            else:
-                slope = far_field_slope(
+            # Curved at every range; the flat near-field slope jumped by
+            # d / 2R (0.008 deg) at 0.5 km (review finding M-B).
+            slope = (
+                far_field_slope(
                     true_m, observer_z_m, radius_m, height
                 )
+                if true_m > np.float32(1e-6) else np.float32(-1e30)
+            )
             current = max(current, slope)
         dx, dy = evaluate_tangent(segment[4:8], segment[8:12], delta)
         magnitude = np.sqrt(dx * dx + dy * dy).astype(np.float32)

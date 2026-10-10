@@ -16,7 +16,7 @@ def is_valid_elevation(value: float) -> bool:
 def far_field_slope(
     chord_m: float, observer_z_m: float, radius_m: float, height_m: float
 ) -> np.float32:
-    """Slope from the observer to terrain at ``height_m`` beyond 0.5 km.
+    """Slope from the observer to terrain at ``height_m``, at any range.
 
     ``chord_m`` is the distance from the observer (radius
     ``R0 = radius_m + observer_z_m``) to the ground-sphere point below the

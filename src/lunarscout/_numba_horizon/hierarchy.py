@@ -243,12 +243,11 @@ def traverse_hierarchy(
                 )
                 slope = np.float32(-1e30)
                 if is_valid_elevation(float(height_value)):
-                    if s < np.float32(0.5):
-                        slope = (height_value - observer_z) / true_m
-                    else:
-                        slope = far_field_slope(
-                            true_m, observer_z, radius, height_value
-                        )
+                    # Curved at every range; the flat near-field slope jumped by
+                    # d / 2R (0.008 deg) at 0.5 km (review finding M-B).
+                    slope = far_field_slope(
+                        true_m, observer_z, radius, height_value
+                    )
                     current = max(current, slope)
                 row[8], row[9] = height_value, slope
                 magnitude = np.sqrt(dx * dx + dy * dy).astype(np.float32)

@@ -125,12 +125,13 @@ def test_fixed_step_cpu_oracle_exposes_near_and_far_behavior() -> None:
         map_resolution_m=fit["map_resolution_m"],
     )
     assert len(trace.values) == 832
-    near = trace.values[:, 0] < 0.5
-    assert np.all(trace.values[near, 5] == 0.0)
-    assert np.all(trace.values[~near, 5] < 0.0)
-    # The production kernel's documented near-field flat approximation is zero;
-    # the independent C# reference uses spherical geometry at every distance.
-    assert trace.maximum_slope == 0.0
+    # Flat terrain at the observer's height falls away as -d / 2R at every
+    # range, like the C# spherical reference; before review finding M-B the
+    # near field (< 0.5 km) used a flat slope of exactly 0.
+    distance_m, slope = trace.values[:, 1], trace.values[:, 5]
+    np.testing.assert_allclose(slope, -distance_m / (2.0 * radius), rtol=1e-3, atol=1e-9)
+    assert np.max(np.abs(np.diff(slope))) < 1e-6
+    assert trace.maximum_slope == slope[0]
     assert flat_case["result"]["maximum_slope"] < 0.0
 
     obstacle_case, elevation, segment, fit, observer_z, radius = _fixed_step_case(
