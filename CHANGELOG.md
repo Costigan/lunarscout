@@ -43,6 +43,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     and the hillshade value scale (1-255); they previously used two-point
     central differences (H2). Aspect is correct on south-up grids; rotated
     grids, and geographic grids without `scale`, are rejected.
+  - *Resampling.* Windowed `write()` of a downsampling `resample_to` with
+    bilinear, cubic, cubic spline or Lanczos kernels now matches `compute()`;
+    source windows were padded by a fixed 1-3 pixels although GDAL widens
+    these kernels by the downsampling ratio, leaving seams at window edges
+    (H3).
   - *Alignment.* `align()` across coordinate systems no longer overwrites
     covered pixels with nodata: the coverage mask now transforms destination
     coordinates into the source CRS (H1).

@@ -24,6 +24,9 @@ _TERRAIN_OPERATION_IDS = frozenset({
     "terrain.hillshade",
 })
 
+# Convolution kernels whose radius GDAL scales with the downsampling ratio.
+_SCALED_KERNEL_RESAMPLING = frozenset({"bilinear", "cubic", "cubicspline", "lanczos"})
+
 _RESAMPLING_SUPPORT = {
     "nearest": 1,
     "bilinear": 1,
@@ -389,6 +392,16 @@ def source_window_for_resampling(
     columns = np.asarray(columns, dtype=np.float64)
     rows = np.asarray(rows, dtype=np.float64)
     support = _RESAMPLING_SUPPORT[resampling]
+    if resampling in _SCALED_KERNEL_RESAMPLING:
+        # When downsampling, GDAL widens convolution kernels by the
+        # source-to-destination pixel ratio, so the padding must widen too or
+        # each window sees a truncated kernel at its edge (review finding H3).
+        ratio = max(
+            (float(np.max(columns)) - float(np.min(columns))) / max(width, 1),
+            (float(np.max(rows)) - float(np.min(rows))) / max(height, 1),
+        )
+        if ratio > 1.0 + 1e-6:  # downsampling; equal resolution keeps support
+            support = int(np.ceil(support * np.ceil(ratio - 1e-6))) + 1
     request_x0 = int(np.floor(np.min(columns))) - support
     request_y0 = int(np.floor(np.min(rows))) - support
     request_x1 = int(np.ceil(np.max(columns))) + support

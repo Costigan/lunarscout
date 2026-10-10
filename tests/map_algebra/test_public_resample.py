@@ -627,3 +627,53 @@ class TestRegistryFiltering:
         signature_parameters = set(inspect.signature(getattr(ma, function_name)).parameters)
         signature_parameters.difference_update({"raster", "grid"})
         assert registry_parameters == signature_parameters
+
+
+# Review finding H3: GDAL widens bilinear/cubic/lanczos kernels when
+# downsampling, but the windowed writer padded each source window by a
+# fixed 1-3 source pixels, so write() differed from compute() with seams at
+# window edges.
+
+_DOWNSAMPLING_METHODS = [
+    "nearest", "bilinear", "cubic", "cubicspline", "lanczos", "average",
+    "mode", "max", "min", "median", "q1", "q3", "sum", "rms",
+]
+
+
+@pytest.mark.parametrize("resampling", _DOWNSAMPLING_METHODS)
+@pytest.mark.parametrize("factor", [4, 7])
+@pytest.mark.parametrize("window", [4, 16, 64])
+def test_downsampling_write_matches_compute(tmp_path, resampling, factor, window):
+    width = height = 112
+    grid = _grid(width, height)
+    rows, cols = np.indices((height, width), dtype=np.float32)
+    rng = np.random.default_rng(1)
+    values = (50 + 30 * np.sin(cols / 6.0) * np.cos(rows / 9.0)
+              + rng.uniform(0, 20, (height, width))).astype(np.float32)
+    if resampling == "mode":  # categorical by design; use class labels
+        values = (values // 10).astype(np.uint8)
+    path = _write_source(tmp_path, "src.tif", values, grid)
+    coarse = 20.0 * factor
+    destination = _grid(
+        width // factor, height // factor,
+        affine=(1000.0, coarse, 0.0, 2000.0, 0.0, -coarse),
+    )
+    extra = {"categorical": True} if resampling == "mode" else {}
+    expression = resample_to(source(path), destination, resampling=resampling, **extra)
+    expected = compute(expression)
+    _, actual = _execute_windowed(expression, window_width=window, window_height=window)
+    _assert_parity(actual, expected, atol=1e-4)
+
+
+def test_public_write_downsampling_matches_compute(tmp_path):
+    grid = _grid(96, 96)
+    rows, cols = np.indices((96, 96), dtype=np.float32)
+    values = (np.sin(cols / 5.0) * np.cos(rows / 7.0) * 50 + 50).astype(np.float32)
+    path = _write_source(tmp_path, "src.tif", values, grid)
+    destination = _grid(24, 24, affine=(1000.0, 80.0, 0.0, 2000.0, 0.0, -80.0))
+    expression = resample_to(source(path), destination, resampling="cubic")
+    expected = compute(expression)
+    output = tmp_path / "downsampled.tif"
+    write(output, expression, window_width=8, window_height=8)
+    from lunarscout.map_algebra import read
+    _assert_parity(read(output), expected, atol=1e-4)
