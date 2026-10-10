@@ -383,7 +383,7 @@ class HorizonTileStore:
                     if len(prefix) != 2:
                         return False
                     length = int.from_bytes(prefix, "little")
-                    if not 1 <= length <= MAX_COMPRESSED_BLOCK_BYTES:
+                    if not 2 <= length <= MAX_COMPRESSED_BLOCK_BYTES:
                         return False
                     if len(handle.read(length)) != length:
                         return False

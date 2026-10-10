@@ -717,3 +717,14 @@ def test_pipeline_stops_on_errors_the_filter_rejects() -> None:
             processor_factory=factory,
             patch_error_filter=lambda error: isinstance(error, ValueError),
         )
+
+
+def test_completeness_check_rejects_blocks_the_decoder_rejects(tmp_path: Path) -> None:
+    path = tmp_path / "00000" / "horizon_00000_00000_000.cbin"
+    path.parent.mkdir()
+    # Every block is one byte long: structurally sized, but undecodable.
+    path.write_bytes((b"\x01\x00" + b"\x00") * PIXEL_COUNT)
+
+    assert not HorizonTileStore.is_complete(path)
+    with pytest.raises(ValueError, match="block length is invalid"):
+        read_horizon_tile(path)
