@@ -107,6 +107,27 @@ Ordinary tests remain CPU-only. Real CUDA tests must be explicitly gated with
 Do not treat sandbox GPU visibility failures as evidence that the host lacks a
 GPU.
 
+### GPU safety
+
+A host-side timeout or killing the Python process does not stop a kernel that
+is already running, and does not guarantee the driver recovers. Twice, agent
+experiments left a workstation GPU at 100% utilization with no owning process
+until the machine was rebooted: a kernel whose ray loop stalled, and a kernel
+that deliberately wrote out of bounds to check that `compute-sanitizer` works.
+
+- Run only the test suite and production code paths on a real GPU without
+  asking. Describe any other GPU experiment, and how it is bounded, to the
+  user first.
+- Give every experimental kernel an in-kernel iteration cap; never rely on
+  `timeout` alone.
+- Never launch a deliberately faulting or invalid kernel (out-of-bounds
+  access, uninitialized reads, unbounded loops). Check tools such as
+  `compute-sanitizer` on known-good kernels or under
+  `NUMBA_ENABLE_CUDASIM=1`.
+- Before and after each GPU run, check utilization, power draw and P-state
+  with `nvidia-smi`, not only the process list. On any sign that the GPU is
+  busy with no owner, stop all GPU work and tell the user.
+
 ## Completion Discipline
 
 When a request contains an inventory, checklist, implementation plan, review
