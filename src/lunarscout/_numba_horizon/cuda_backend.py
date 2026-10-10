@@ -7,6 +7,7 @@ device.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import math
 from queue import Queue
@@ -18,6 +19,31 @@ import numpy as np
 
 class CudaBackendError(RuntimeError):
     """Raised when the explicitly requested prototype CUDA backend is unavailable."""
+
+
+def _is_cuda_stack_error(error: BaseException) -> bool:
+    """Recognize Numba CUDA / CUDA binding exceptions without importing them."""
+    module = type(error).__module__.lower()
+    return module == "cuda" or module.startswith(("cuda.", "numba.cuda"))
+
+
+@contextmanager
+def cuda_session_setup(description: str):
+    """Report CUDA failures while a session allocates or compiles as unavailable.
+
+    Out-of-memory and driver errors during construction then let
+    ``backend="auto"`` fall back to the CPU (review finding M-H).
+    """
+    try:
+        yield
+    except CudaBackendError:
+        raise
+    except Exception as error:
+        if not _is_cuda_stack_error(error):
+            raise
+        raise CudaBackendError(
+            f"{description} setup failed: {type(error).__name__}: {error}"
+        ) from error
 
 
 _KERNELS = None

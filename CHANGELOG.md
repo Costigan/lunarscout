@@ -31,6 +31,12 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     or NaN-bearing tile raises `HorizonFormatError` with code
     `horizon_tile_unreadable` (H-H). Only a missing tile becomes an invalid
     patch, and the final progress event reports the invalid-patch count.
+  - *CUDA setup failures.* An out-of-memory or driver error while a
+    lightmap, PSR or safe-haven CUDA session is set up now counts as CUDA
+    being unavailable: `backend="auto"` falls back to the CPU and
+    `backend="cuda"` raises `CudaError` with the product's `..._unavailable`
+    code. When several pipeline threads fail, the first error is raised with
+    the others attached as notes (M-H, part).
   - *Horizon DEMs.* `generate_horizons` rejects DEMs whose reference
     sphere radii differ, with `GridError` code `horizon_dem_radius_mismatch`
     (M-J).

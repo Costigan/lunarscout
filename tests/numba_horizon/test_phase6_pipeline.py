@@ -644,3 +644,32 @@ def test_pipeline_worker_failure_drains_bounded_queue_without_writing() -> None:
         )
 
     assert store.writes == []
+
+
+def test_pipeline_reports_later_worker_failures_as_notes() -> None:
+    patches = enumerate_patches(256, 128)
+    both_started = threading.Barrier(2)
+
+    def factory(worker_id):
+        def process(_patch, _payload):
+            both_started.wait(timeout=5)
+            if worker_id == 0:
+                raise RuntimeError("illegal address")
+            time.sleep(0.05)
+            raise RuntimeError("context is poisoned")
+
+        return process
+
+    with pytest.raises(RuntimeError, match="illegal address") as raised:
+        run_bounded_pipeline(
+            patches,
+            store=_FakeStore(),
+            prepare_patch=lambda item: item.index,
+            processor_factory=factory,
+            prepared_queue_capacity=2,
+            worker_count=2,
+        )
+
+    assert raised.value.__notes__ == [
+        "Another pipeline thread also failed: RuntimeError: context is poisoned"
+    ]

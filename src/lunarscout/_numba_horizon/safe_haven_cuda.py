@@ -10,6 +10,7 @@ from datetime import datetime
 import numpy as np
 import numpy.typing as npt
 
+from .cuda_backend import cuda_session_setup
 from .file_format import AZIMUTH_COUNT, PATCH_SIZE
 from .lightmap_cuda import LightmapCudaSession
 
@@ -110,27 +111,28 @@ class SafeHavenCudaSession(LightmapCudaSession):
     def __init__(self, *, device_id: int = 0, time_batch_size: int = 32) -> None:
         super().__init__(device_id=device_id, time_batch_size=time_batch_size)
         global _REDUCER, _FINALIZER
-        with _REDUCER_LOCK:
-            if _REDUCER is None:
-                _REDUCER = _build_reducer(self._cuda)
-            if _FINALIZER is None:
-                _FINALIZER = _build_finalizer(self._cuda)
-        self._reducer = _REDUCER
-        self._finalizer = _FINALIZER
-        n = PATCH_SIZE * PATCH_SIZE
-        self._month_map = None
-        self._month_map_key = None
-        self._sun_vectors = None
-        self._sun_vectors_key = None
-        self._earth_vectors = None
-        self._earth_vectors_key = None
-        self._state_months = 0
-        self._error_flag = self._cuda.device_array(1, dtype=np.int32)
-        self._duration_output = None
-        self._duration_months = 0
-        self._run_length = self._cuda.device_array(n, dtype=np.int32)
-        self._min_month = self._cuda.device_array(n, dtype=np.int32)
-        self._max_month = self._cuda.device_array(n, dtype=np.int32)
+        with cuda_session_setup("Safe-haven CUDA session"):
+            with _REDUCER_LOCK:
+                if _REDUCER is None:
+                    _REDUCER = _build_reducer(self._cuda)
+                if _FINALIZER is None:
+                    _FINALIZER = _build_finalizer(self._cuda)
+            self._reducer = _REDUCER
+            self._finalizer = _FINALIZER
+            n = PATCH_SIZE * PATCH_SIZE
+            self._month_map = None
+            self._month_map_key = None
+            self._sun_vectors = None
+            self._sun_vectors_key = None
+            self._earth_vectors = None
+            self._earth_vectors_key = None
+            self._state_months = 0
+            self._error_flag = self._cuda.device_array(1, dtype=np.int32)
+            self._duration_output = None
+            self._duration_months = 0
+            self._run_length = self._cuda.device_array(n, dtype=np.int32)
+            self._min_month = self._cuda.device_array(n, dtype=np.int32)
+            self._max_month = self._cuda.device_array(n, dtype=np.int32)
 
     def reduce_patch(
         self, dem, horizons_deg, sun_vectors_m, earth_vectors_m, *,

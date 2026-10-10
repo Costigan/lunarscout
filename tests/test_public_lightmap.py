@@ -201,6 +201,79 @@ def test_public_lightmap_default_auto_reports_cpu_fallback(
         assert dataset.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
 
 
+class _FakeCudaApiError(Exception):
+    """Stands in for numba's CudaAPIError, e.g. CUDA_ERROR_OUT_OF_MEMORY."""
+
+
+_FakeCudaApiError.__module__ = "numba.cuda.cudadrv.driver"
+
+
+def _cuda_that_cannot_allocate(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lunarscout import _cuda_runtime
+    from lunarscout._numba_horizon import lightmap_cuda, psr_cuda
+
+    class FakeCuda:
+        @staticmethod
+        def is_available() -> bool:
+            return True
+
+        @staticmethod
+        def select_device(_device_id: int) -> None:
+            return None
+
+        @staticmethod
+        def device_array(*_args, **_kwargs):
+            raise _FakeCudaApiError("[2] Call to cuMemAlloc results in CUDA_ERROR_OUT_OF_MEMORY")
+
+    monkeypatch.setattr(_cuda_runtime, "import_numba_cuda", lambda: (None, FakeCuda))
+    monkeypatch.setattr(lightmap_cuda, "_LIGHTMAP_KERNEL", object())
+    monkeypatch.setattr(psr_cuda, "_PSR_KERNEL", object())
+
+
+@pytest.mark.parametrize(
+    ("function", "name"), [(ls.generate_lightmap, "lightmap"), (ls.generate_psr, "psr")]
+)
+def test_public_auto_falls_back_when_cuda_setup_runs_out_of_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, function, name: str
+) -> None:
+    _cuda_that_cannot_allocate(monkeypatch)
+    dem_path, horizons_path = _inputs(tmp_path)
+    events: list[ls.ProgressEvent] = []
+
+    output = function(
+        dem_path,
+        horizons_path,
+        tmp_path / f"{name}.tif",
+        times=("2027-01-01T00:00:00Z",),
+        sun_vectors_m=_sun_vector(1.0)[None, :],
+        progress_event_callback=events.append,
+    )
+
+    assert events[0].backend == "cpu"
+    with rasterio.open(output) as dataset:
+        assert dataset.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
+
+
+def test_public_explicit_cuda_setup_out_of_memory_is_structured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _cuda_that_cannot_allocate(monkeypatch)
+    dem_path, horizons_path = _inputs(tmp_path)
+
+    with pytest.raises(ls.CudaError) as raised:
+        ls.generate_lightmap(
+            dem_path,
+            horizons_path,
+            tmp_path / "cuda.tif",
+            times=("2027-01-01T00:00:00Z",),
+            sun_vectors_m=_sun_vector(1.0)[None, :],
+            backend="cuda",
+        )
+
+    assert raised.value.code == "cuda_lightmap_unavailable"
+    assert "CUDA_ERROR_OUT_OF_MEMORY" in raised.value.details["error"]
+
+
 def test_public_lightmap_can_disable_tile_compression(tmp_path: Path) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
     output = ls.generate_lightmap(

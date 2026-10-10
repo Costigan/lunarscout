@@ -11,7 +11,7 @@ import time
 import numpy as np
 import numpy.typing as npt
 
-from .cuda_backend import CudaBackendError
+from .cuda_backend import CudaBackendError, cuda_session_setup
 from .file_format import AZIMUTH_COUNT, PATCH_SIZE
 from .geometry import DemGrid
 
@@ -210,24 +210,25 @@ class PsrCudaSession:
             cuda.select_device(device_id)
         except Exception as error:
             raise CudaBackendError(f"cannot select CUDA device {device_id}") from error
-        with _PSR_KERNEL_LOCK:
-            if _PSR_KERNEL is None:
-                _PSR_KERNEL = _build_psr_kernel(cuda)
-        self._cuda = cuda
-        self._kernel = _PSR_KERNEL
-        self._lock = threading.Lock()
-        self._device_dem = cuda.device_array((PATCH_SIZE, PATCH_SIZE), dtype=np.float32)
-        self._device_geotransform = cuda.device_array(6, dtype=np.float64)
-        self._device_projection = cuda.device_array(6, dtype=np.float64)
-        self._device_horizons = cuda.device_array(
-            (PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), dtype=np.float32
-        )
-        self._device_output = cuda.device_array(PATCH_SIZE * PATCH_SIZE, dtype=np.uint8)
-        self._device_vectors = None
-        self._vector_capacity = 0
-        self._resident_vectors: npt.NDArray[np.float32] | None = None
-        self._resident_metadata_key: tuple[float, ...] | None = None
-        self._timing_callback = timing_callback
+        with cuda_session_setup("PSR CUDA session"):
+            with _PSR_KERNEL_LOCK:
+                if _PSR_KERNEL is None:
+                    _PSR_KERNEL = _build_psr_kernel(cuda)
+            self._cuda = cuda
+            self._kernel = _PSR_KERNEL
+            self._lock = threading.Lock()
+            self._device_dem = cuda.device_array((PATCH_SIZE, PATCH_SIZE), dtype=np.float32)
+            self._device_geotransform = cuda.device_array(6, dtype=np.float64)
+            self._device_projection = cuda.device_array(6, dtype=np.float64)
+            self._device_horizons = cuda.device_array(
+                (PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), dtype=np.float32
+            )
+            self._device_output = cuda.device_array(PATCH_SIZE * PATCH_SIZE, dtype=np.uint8)
+            self._device_vectors = None
+            self._vector_capacity = 0
+            self._resident_vectors: npt.NDArray[np.float32] | None = None
+            self._resident_metadata_key: tuple[float, ...] | None = None
+            self._timing_callback = timing_callback
 
     def allocate_pinned_horizon_buffer(self) -> npt.NDArray[np.float32]:
         """Allocate one fixed-shape host buffer suitable for direct decode/H2D."""

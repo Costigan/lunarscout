@@ -10,7 +10,7 @@ from collections.abc import Iterator
 import numpy as np
 import numpy.typing as npt
 
-from .cuda_backend import CudaBackendError
+from .cuda_backend import CudaBackendError, cuda_session_setup
 from .file_format import AZIMUTH_COUNT, PATCH_SIZE
 from .geometry import DemGrid
 from .lightmap import _HALF_CIRCLE, _MAX_PHOTONS
@@ -203,26 +203,27 @@ class LightmapCudaSession:
             cuda.select_device(device_id)
         except Exception as error:
             raise CudaBackendError(f"cannot select CUDA device {device_id}") from error
-        with _LIGHTMAP_KERNEL_LOCK:
-            if _LIGHTMAP_KERNEL is None:
-                _LIGHTMAP_KERNEL = _build_lightmap_kernel(cuda)
-        self._cuda = cuda
-        self._kernel = _LIGHTMAP_KERNEL
-        self.time_batch_size = int(time_batch_size)
-        self._lock = threading.Lock()
-        self._dem = cuda.device_array((PATCH_SIZE, PATCH_SIZE), dtype=np.float32)
-        self._geotransform = cuda.device_array(6, dtype=np.float64)
-        self._projection = cuda.device_array(6, dtype=np.float64)
-        self._horizons = cuda.device_array((PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), dtype=np.float32)
-        self._output = cuda.device_array((self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.uint8)
-        self._fraction_output = cuda.device_array(
-            (self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.float32
-        )
-        self._margin_output = cuda.device_array(
-            (self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.float32
-        )
-        self._vectors = None
-        self._vector_key = None
+        with cuda_session_setup("Lightmap CUDA session"):
+            with _LIGHTMAP_KERNEL_LOCK:
+                if _LIGHTMAP_KERNEL is None:
+                    _LIGHTMAP_KERNEL = _build_lightmap_kernel(cuda)
+            self._cuda = cuda
+            self._kernel = _LIGHTMAP_KERNEL
+            self.time_batch_size = int(time_batch_size)
+            self._lock = threading.Lock()
+            self._dem = cuda.device_array((PATCH_SIZE, PATCH_SIZE), dtype=np.float32)
+            self._geotransform = cuda.device_array(6, dtype=np.float64)
+            self._projection = cuda.device_array(6, dtype=np.float64)
+            self._horizons = cuda.device_array((PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT), dtype=np.float32)
+            self._output = cuda.device_array((self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.uint8)
+            self._fraction_output = cuda.device_array(
+                (self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.float32
+            )
+            self._margin_output = cuda.device_array(
+                (self.time_batch_size, PATCH_SIZE * PATCH_SIZE), dtype=np.float32
+            )
+            self._vectors = None
+            self._vector_key = None
 
     def _iter_patch_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int, valid_width: int, signal: str):
         vectors64 = _validate_vectors(body_vectors_m)

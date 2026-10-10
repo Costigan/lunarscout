@@ -285,8 +285,7 @@ def run_bounded_pipeline(
 
     def fail(error: BaseException) -> None:
         with error_lock:
-            if not errors:
-                errors.append(error)
+            errors.append(error)
         stop.set()
 
     def put(item: _PreparedPatch | object) -> tuple[bool, float]:
@@ -521,7 +520,17 @@ def run_bounded_pipeline(
         assert writer_thread is not None
         writer_thread.join()
     if errors:
-        raise errors[0]
+        # Raise the first failure, but keep the others visible: after a CUDA
+        # fault in one worker, another worker can fail first on the poisoned
+        # context (review finding M-H).
+        first = errors[0]
+        for other in errors[1:]:
+            if other is not first and not isinstance(other, HorizonPipelineCancelled):
+                first.add_note(
+                    f"Another pipeline thread also failed: "
+                    f"{type(other).__name__}: {other}"
+                )
+        raise first
     emit(HorizonProgress(total, total, 100.0, "complete", "Horizons generation complete."))
     return PipelineResult(
         tuple(output_paths), skipped, time.perf_counter() - started,
