@@ -639,7 +639,12 @@ protects an existing completed output until replacement publication.
 
 Horizon generation is CUDA-only and therefore has no `backend` argument. The
 first DEM supplies the output grid; later DEMs extend the terrain coverage in
-the order supplied. The root function returns the resolved output directory:
+the order supplied. Each DEM continues a ray where the previous DEM's coverage
+ended, so the DEMs may differ in extent, resolution and projection, but all
+must share one reference sphere radius; otherwise the call raises
+`ls.GridError` with code `horizon_dem_radius_mismatch`. Lunarscout cannot
+check that the DEMs' elevations use the same vertical datum beyond that
+radius. The root function returns the resolved output directory:
 
 ```python
 horizons = ls.generate_horizons(

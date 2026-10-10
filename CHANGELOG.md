@@ -31,6 +31,9 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     or NaN-bearing tile raises `HorizonFormatError` with code
     `horizon_tile_unreadable` (H-H). Only a missing tile becomes an invalid
     patch, and the final progress event reports the invalid-patch count.
+  - *Horizon DEMs.* `generate_horizons` rejects DEMs whose reference
+    sphere radii differ, with `GridError` code `horizon_dem_radius_mismatch`
+    (M-J).
   - *Horizon tiles.* Rewriting a tile with the other `compress` setting
     removes the old `.bin` or `.cbin` copy once the new file is published;
     before, a stale `.cbin` shadowed a fresh `.bin` on read (M-K).

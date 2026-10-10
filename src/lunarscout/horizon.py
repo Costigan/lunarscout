@@ -14,6 +14,7 @@ import numpy as np
 
 from .errors import (
     CudaError,
+    GridError,
     HorizonGenerationError,
     InputError,
     OperationCancelledError,
@@ -460,6 +461,20 @@ def generate_horizons(
 
     dems = tuple(_load_dem(path)[0] for path in resolved_dems)
     primary = dems[0]
+    # Observer heights are measured from the primary DEM's sphere, and each
+    # pass measures its own terrain from its DEM's sphere, so the spheres must
+    # agree (review finding M-J).  Extents and resolutions may differ: each
+    # DEM continues the ray where the previous DEM's pass ended.
+    radii = [dem.projection.radius_m for dem in dems]
+    if any(abs(radius - radii[0]) > 1e-3 for radius in radii[1:]):
+        raise GridError(
+            "All horizon DEMs must use the same reference sphere radius.",
+            code="horizon_dem_radius_mismatch",
+            details={
+                "paths": [str(path) for path in resolved_dems],
+                "radii_m": radii,
+            },
+        )
     last_tile_x = ((primary.width - 1) // 128) * 128
     last_tile_y = ((primary.height - 1) // 128) * 128
     if last_tile_x > 99_999 or last_tile_y > 99_999:

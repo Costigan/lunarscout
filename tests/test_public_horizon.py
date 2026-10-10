@@ -232,6 +232,58 @@ def test_public_horizon_validates_paths_before_pipeline(
     assert called is False
 
 
+def test_public_horizon_rejects_dems_on_different_spheres(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called = False
+
+    def fail_if_called(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(horizon_module, "_run_horizon_pipeline", fail_if_called)
+    primary = _write_dem(tmp_path / "primary.tif", width=4, height=4)
+    georef = ls.GeoReference(
+        projection_wkt=_WKT.replace("1737400", "1737150"),
+        projection_proj4="+proj=stere +lat_0=-90 +lon_0=0 +k=1 +R=1737150 +units=m",
+        affine_transform=(0.0, 100.0, 0.0, 0.0, 0.0, -100.0),
+        width=4,
+        height=4,
+        pixel_size_x=100.0,
+        pixel_size_y=-100.0,
+        nodata=None,
+    )
+    outer = ls.write_geotiff(
+        tmp_path / "outer.tif", np.zeros((4, 4), dtype=np.float32), georef
+    )
+
+    with pytest.raises(ls.GridError) as raised:
+        ls.generate_horizons(tmp_path / "horizons", [primary, outer])
+
+    assert raised.value.code == "horizon_dem_radius_mismatch"
+    assert raised.value.details["radii_m"] == [1737400.0, 1737150.0]
+    assert called is False
+
+
+def test_public_horizon_accepts_dems_of_different_extent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    received = []
+    monkeypatch.setattr(
+        horizon_module,
+        "_run_horizon_pipeline",
+        lambda dems, *_args, **_kwargs: received.append(dems),
+    )
+    primary = _write_dem(tmp_path / "primary.tif", width=4, height=4)
+    outer = _write_polar_dem(
+        tmp_path / "outer.tif", np.zeros((8, 6)), origin_x=-500.0, origin_y=900.0
+    )
+
+    ls.generate_horizons(tmp_path / "horizons", [primary, outer])
+
+    assert [dem.width for dem in received[0]] == [4, 6]
+
+
 def test_public_horizon_cancellation_is_structured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
