@@ -239,35 +239,62 @@ def _output_dtype(source_dtype: np.dtype[Any], operation: str) -> np.dtype[Any]:
     return src
 
 
-def _neighborhood_windows(
+# Largest temporary a focal strip may materialize. Window views are free, but
+# masks, selections and reductions over them allocate (rows x width x
+# footprint) elements; whole-raster processing needed ~100x the raster
+# (review finding H10).
+_STRIP_BUDGET_BYTES = 32 * 1024 * 1024
+_STRIP_BYTES_PER_ELEMENT = 25  # bool mask + float64 selection + reduction scratch
+
+
+def _neighborhood_strips(
     raster: Raster,
     footprint: np.ndarray,
     *,
     edge: EdgeMode,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return source-precision value windows and active validity windows."""
+):
+    """Yield (rows, value windows, active windows) over horizontal output strips.
+
+    The raster is padded once; each strip slices the padded arrays, so edge
+    modes apply only at the true raster boundary and results equal a
+    whole-raster computation.
+    """
     halo = (footprint.shape[0] // 2, footprint.shape[1] // 2)
     # Constant/invalid padding is canonically invalid in the established focal
     # contract, so its payload is deliberately zero and never participates.
     padded, padded_valid, _ = _pad_array(
         raster.values, raster.valid, halo, edge, cval=0.0,
     )
-    windows = sliding_window_view(padded, footprint.shape)
-    valid_windows = sliding_window_view(padded_valid, footprint.shape)
-    return windows, valid_windows & footprint
+    height, width = raster.shape
+    per_row = max(1, width * footprint.size * _STRIP_BYTES_PER_ELEMENT)
+    rows_per_strip = max(1, _STRIP_BUDGET_BYTES // per_row)
+    for start in range(0, height, rows_per_strip):
+        stop = min(height, start + rows_per_strip)
+        window_rows = slice(start, stop + 2 * halo[0])
+        windows = sliding_window_view(padded[window_rows], footprint.shape)
+        valid_windows = sliding_window_view(padded_valid[window_rows], footprint.shape)
+        yield slice(start, stop), windows, valid_windows & footprint
+
+
+def _neighborhood_counts(
+    raster: Raster, footprint: np.ndarray, *, edge: EdgeMode,
+) -> np.ndarray:
+    count = np.zeros(raster.shape, dtype=np.uint32)
+    for rows, _, active in _neighborhood_strips(raster, footprint, edge=edge):
+        count[rows] = np.sum(active, axis=(-2, -1), dtype=np.uint32)
+    return count
 
 
 def _neighborhood_validity(
     raster: Raster,
     footprint: np.ndarray,
-    active: np.ndarray,
+    count: np.ndarray,
     *,
     edge: EdgeMode,
     valid_neighbor: ValidNeighbor,
     min_valid_count: int | None,
     ddof: int = -1,
 ) -> tuple[np.ndarray, np.ndarray]:
-    count = np.sum(active, axis=(-2, -1), dtype=np.uint32)
     footprint_count = int(np.count_nonzero(footprint))
     if valid_neighbor == "ignore_invalid":
         threshold = 1 if min_valid_count is None else min_valid_count
@@ -322,40 +349,43 @@ def _focal_reduction(
     min_valid_count: int | None,
     ddof: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    windows, active = _neighborhood_windows(raster, footprint, edge=edge)
+    output_dtype = _output_dtype(raster.dtype, operation)
+    exact_integer = operation != "sum" and raster.dtype.kind in "biu"
+    count = np.zeros(raster.shape, dtype=np.uint32)
+    result = np.zeros(raster.shape, dtype=np.float64 if exact_integer else output_dtype)
+    for rows, windows, active in _neighborhood_strips(raster, footprint, edge=edge):
+        strip_count = np.sum(active, axis=(-2, -1), dtype=np.uint32)
+        count[rows] = strip_count
+        if exact_integer:
+            continue  # reduced below, once validity is known
+        if operation == "sum":
+            selected = np.where(active, windows, raster.dtype.type(0))
+            result[rows] = np.sum(selected, axis=(-2, -1), dtype=output_dtype)
+        elif operation == "mean":
+            selected = np.where(active, windows, output_dtype.type(0))
+            total = np.sum(selected, axis=(-2, -1), dtype=output_dtype)
+            np.divide(
+                total, strip_count.astype(output_dtype), out=result[rows],
+                where=strip_count > 0,
+            )
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                result[rows] = np.std(
+                    windows, axis=(-2, -1), dtype=output_dtype, ddof=ddof,
+                    where=active,
+                )
     _, result_valid = _neighborhood_validity(
-        raster, footprint, active, edge=edge,
+        raster, footprint, count, edge=edge,
         valid_neighbor=valid_neighbor, min_valid_count=min_valid_count,
         ddof=ddof if operation == "std" else -1,
     )
-    output_dtype = _output_dtype(raster.dtype, operation)
-    if operation == "sum":
-        selected = np.where(active, windows, raster.dtype.type(0))
-        return (
-            np.sum(selected, axis=(-2, -1), dtype=output_dtype),
-            result_valid,
-        )
-    if raster.dtype.kind in "biu":
-        return (
-            _integer_fractional_reduction(
-                windows, active, result_valid, operation=operation, ddof=ddof,
-            ),
-            result_valid,
-        )
-    selected = np.where(active, windows, output_dtype.type(0))
-    count = np.sum(active, axis=(-2, -1), dtype=np.uint32)
-    if operation == "mean":
-        total = np.sum(selected, axis=(-2, -1), dtype=output_dtype)
-        result = np.zeros(total.shape, dtype=output_dtype)
-        np.divide(total, count.astype(output_dtype), out=result, where=count > 0)
-        return result, result_valid
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        result = np.std(
-            windows, axis=(-2, -1), dtype=output_dtype, ddof=ddof,
-            where=active,
-        )
-    return result.astype(output_dtype, copy=False), result_valid
+    if exact_integer:
+        for rows, windows, active in _neighborhood_strips(raster, footprint, edge=edge):
+            result[rows] = _integer_fractional_reduction(
+                windows, active, result_valid[rows], operation=operation, ddof=ddof,
+            )
+    return result, result_valid
 
 
 def _focal_extreme(
@@ -367,11 +397,6 @@ def _focal_extreme(
     valid_neighbor: ValidNeighbor,
     min_valid_count: int | None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    windows, active = _neighborhood_windows(raster, footprint, edge=edge)
-    _, result_valid = _neighborhood_validity(
-        raster, footprint, active, edge=edge,
-        valid_neighbor=valid_neighbor, min_valid_count=min_valid_count,
-    )
     if raster.dtype.kind == "f":
         initial = np.inf if operation == "min" else -np.inf
     elif raster.dtype.kind in "iu":
@@ -380,10 +405,18 @@ def _focal_extreme(
     else:
         initial = True if operation == "min" else False
     reducer = np.min if operation == "min" else np.max
-    result = reducer(
-        windows, axis=(-2, -1), where=active, initial=initial,
+    count = np.zeros(raster.shape, dtype=np.uint32)
+    result = np.empty(raster.shape, dtype=raster.dtype)
+    for rows, windows, active in _neighborhood_strips(raster, footprint, edge=edge):
+        count[rows] = np.sum(active, axis=(-2, -1), dtype=np.uint32)
+        result[rows] = reducer(
+            windows, axis=(-2, -1), where=active, initial=initial,
+        ).astype(raster.dtype, copy=False)
+    _, result_valid = _neighborhood_validity(
+        raster, footprint, count, edge=edge,
+        valid_neighbor=valid_neighbor, min_valid_count=min_valid_count,
     )
-    return result.astype(raster.dtype, copy=False), result_valid
+    return result, result_valid
 
 
 # ---------------------------------------------------------------------------
@@ -703,10 +736,9 @@ def focal_count(
         valid_neighbor=vn,
         footprint_count=int(np.count_nonzero(fp)),
     )
-    _, active = _neighborhood_windows(raster, fp, edge=e)
     count, result_valid = _neighborhood_validity(
-        raster, fp, active, edge=e, valid_neighbor=vn,
-        min_valid_count=minimum,
+        raster, fp, _neighborhood_counts(raster, fp, edge=e), edge=e,
+        valid_neighbor=vn, min_valid_count=minimum,
     )
     if vn == "ignore_invalid" and minimum is None:
         result_valid = np.ones(raster.shape, dtype=np.bool_)
@@ -731,29 +763,30 @@ def focal_median(
         size, footprint, edge, valid_neighbor, cval,
         min_valid_count=min_valid_count,
     )
-    windows, active = _neighborhood_windows(raster, fp, edge=e)
     _, mask = _neighborhood_validity(
-        raster, fp, active, edge=e, valid_neighbor=vn,
-        min_valid_count=minimum,
+        raster, fp, _neighborhood_counts(raster, fp, edge=e), edge=e,
+        valid_neighbor=vn, min_valid_count=minimum,
     )
     output_dtype = _output_dtype(raster.dtype, "median")
     vals = np.zeros(raster.shape, dtype=output_dtype)
-    for index in np.ndindex(raster.shape):
-        if not mask[index]:
-            continue
-        selected = windows[index][active[index]]
-        if selected.size == 0:
-            continue
-        if raster.dtype.kind in "biu":
-            ordered = sorted(int(value) for value in selected)
-            middle = len(ordered) // 2
-            if len(ordered) % 2:
-                value = float(ordered[middle])
+    for rows, windows, active in _neighborhood_strips(raster, fp, edge=e):
+        for local in np.ndindex(windows.shape[:2]):
+            index = (rows.start + local[0], local[1])
+            if not mask[index]:
+                continue
+            selected = windows[local][active[local]]
+            if selected.size == 0:
+                continue
+            if raster.dtype.kind in "biu":
+                ordered = sorted(int(value) for value in selected)
+                middle = len(ordered) // 2
+                if len(ordered) % 2:
+                    value = float(ordered[middle])
+                else:
+                    value = float(Fraction(ordered[middle - 1] + ordered[middle], 2))
+                vals[index] = value
             else:
-                value = float(Fraction(ordered[middle - 1] + ordered[middle], 2))
-            vals[index] = value
-        else:
-            vals[index] = np.median(selected)
+                vals[index] = np.median(selected)
     return Raster(values=vals, georef=raster.georef, valid=mask,
                   units=raster.units, name=raster.name)
 

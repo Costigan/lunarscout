@@ -2177,6 +2177,12 @@ neighbor, while `focal_count` and convolution retain a meaningful valid zero.
 `ma.focal_max`, `ma.focal_range`, `ma.focal_std` (with `ddof`),
 `ma.focal_count`, `ma.focal_median`.
 
+Eager statistics process the raster in horizontal strips, so working memory
+beyond the input and output stays near 32 MiB whatever the footprint (an
+800 x 800 float32 `focal_mean` with a 9 x 9 footprint peaks below 96 MiB).
+Integer mean, standard deviation and median use an exact per-pixel path that
+is slow on large rasters; prefer `ma.write()` windows for those.
+
 Eager focal sum, mean, standard deviation, count, minimum, and maximum use the
 same source-sensitive reduction dtype rule during eager execution, expression
 construction, and explicit whole-raster `compute()`. FP32 sum/mean/std work and

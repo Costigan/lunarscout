@@ -42,7 +42,7 @@ Date: 2026-10-08. Mode: read-only. Scope: public API and root namespace, map alg
 
 **H9. Undeclared runtime dependencies.** **[FIXED, 2026-10-09: `analysis` (pandas) and `plot` (matplotlib) extras; missing modules raise OptionalDependencyError with the install command]** `pandas` (`spice_geometry.py:306, 433`) and `matplotlib` (`spice_geometry.py:459, 485`; `scenario.py:1243, 1442, 1670`) are imported lazily but not declared in dependencies or extras. Root-exported `body_azimuth_elevation_dataframe`, `body_vectors_ned_dataframe`, and `plot_body_elevation(s)` raise raw `ModuleNotFoundError` after a plain `pip install`. Fix: add a `plot`/`analysis` extra and raise a structured error with an install hint.
 
-**H10. Focal ops allocate a full `(H, W, fh, fw)` array.** `focal.py:257, 333, 345`. **[reproduced]** `focal_mean` on a 2000×2000 float32 raster with a 9×9 footprint peaked at 1.79 GB RSS (~100× the raster). A 10k×10k raster would need ~40 GB. Fix: strip processing or scipy/cumulative-sum implementations; document memory.
+**H10. Focal ops allocate a full `(H, W, fh, fw)` array.** **[FIXED, 2026-10-09: sum/mean/std/min/max/count/median/range reduce over horizontal strips with a 32 MiB temporary budget; results bit-identical across 1,200 configurations; 800x800 9x9 peak 472 -> <96 MiB]** `focal.py:257, 333, 345`. **[reproduced]** `focal_mean` on a 2000×2000 float32 raster with a 9×9 footprint peaked at 1.79 GB RSS (~100× the raster). A 10k×10k raster would need ~40 GB. Fix: strip processing or scipy/cumulative-sum implementations; document memory.
 
 ### MEDIUM
 

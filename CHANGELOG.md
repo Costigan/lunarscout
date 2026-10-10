@@ -57,6 +57,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     (matplotlib) extras. The DataFrame and plotting helpers raise
     `OptionalDependencyError` (also an `ImportError`) naming the extra,
     instead of a bare `ModuleNotFoundError` (H9).
+  - *Focal memory.* Focal statistics reduce over bounded horizontal strips
+    instead of materializing (height, width, footprint) temporaries: an
+    800 x 800 float32 `focal_mean` with a 9 x 9 footprint peaked at 263 MiB
+    and `focal_std` at 472 MiB; both now stay below 96 MiB, with identical
+    results (H10).
   - *Alignment.* `align()` across coordinate systems no longer overwrites
     covered pixels with nodata: the coverage mask now transforms destination
     coordinates into the source CRS (H1).
