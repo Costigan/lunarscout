@@ -402,8 +402,8 @@ def test_pole_patch_selection_covers_patches_near_the_pole(tmp_path: Path) -> No
     path = _write_polar_dem(
         tmp_path / "dem.tif",
         np.zeros((1024, 1024)),
-        origin_x=-128 * 20.0,
-        origin_y=384 * 20.0,
+        origin_x=-128.5 * 20.0,
+        origin_y=384.5 * 20.0,
     )
     dem = _load_dem(path)[0]
     patches = enumerate_patches(dem.width, dem.height)
@@ -427,8 +427,8 @@ def test_pole_patch_selection_includes_pole_just_outside_the_dem(
     path = _write_polar_dem(
         tmp_path / "dem.tif",
         np.zeros((300, 100)),
-        origin_x=100 * 20.0,
-        origin_y=64 * 20.0,
+        origin_x=99.5 * 20.0,
+        origin_y=64.5 * 20.0,
     )
     dem = _load_dem(path)[0]
     patches = enumerate_patches(dem.width, dem.height)
@@ -468,8 +468,8 @@ def test_public_horizon_is_exact_around_the_pole(tmp_path: Path) -> None:
     path = _write_polar_dem(
         tmp_path / "bowl.tif",
         rim_height_m * (r / rim_m) ** 2,
-        origin_x=-64 * 20.0,
-        origin_y=64 * 20.0,
+        origin_x=-64.5 * 20.0,
+        origin_y=64.5 * 20.0,
     )
 
     output = ls.generate_horizons(tmp_path / "horizons", [path], compress=False)

@@ -43,8 +43,9 @@ def _build_cpu_function():
             line = index // PATCH_SIZE
             if sample >= valid_width or line >= valid_height:
                 continue
-            absolute_sample = tile_x + sample
-            absolute_line = tile_y + line
+            # Cell centre (pixel-is-area); see DemGrid.pixel_to_crs.
+            absolute_sample = tile_x + sample + 0.5
+            absolute_line = tile_y + line + 0.5
             crs_x = (
                 geotransform[0]
                 + geotransform[1] * absolute_sample

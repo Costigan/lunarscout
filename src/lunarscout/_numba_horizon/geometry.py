@@ -95,8 +95,13 @@ class DemGrid:
         row = np.hypot(transform[2], transform[5])
         return float((column + row) * 0.5)
 
+    # Pixels are areas: ``geo_transform`` is GDAL's transform of the pixel
+    # corner, and the value at integer index (row, column) lies at the cell
+    # centre, half a pixel in from that corner (review finding M-D).  GDAL
+    # already converts point-registered rasters to a corner transform.
     def pixel_to_crs(self, column: float, row: float) -> tuple[float, float]:
         transform = self.geo_transform
+        column, row = column + 0.5, row + 0.5
         return (
             float(transform[0] + transform[1] * column + transform[2] * row),
             float(transform[3] + transform[4] * column + transform[5] * row),
@@ -108,7 +113,7 @@ class DemGrid:
         dx, dy = x - transform[0], y - transform[3]
         column = (transform[5] * dx - transform[2] * dy) / determinant
         row = (-transform[4] * dx + transform[1] * dy) / determinant
-        return float(column), float(row)
+        return float(column - 0.5), float(row - 0.5)
 
     def lon_lat_to_pixel(self, longitude_rad: float, latitude_rad: float) -> tuple[float, float]:
         x, y = project_stereographic(latitude_rad, longitude_rad, self.projection)

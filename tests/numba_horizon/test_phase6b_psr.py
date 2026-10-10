@@ -114,6 +114,19 @@ def test_psr_vector_reduction_keeps_highest_elevation_per_viewpoint_bin() -> Non
     np.testing.assert_array_equal(reduced, vectors[indices])
 
 
+def _csharp_node_transform(transform) -> np.ndarray:
+    """Return a fixture transform that places samples where the C# code did.
+
+    The C# captures put pixel index i at the transform's corner position;
+    Lunarscout puts it at the cell centre, half a pixel further in.  Shifting
+    the transform back by half a pixel compares like with like.
+    """
+    shifted = np.array(transform, dtype=np.float64)
+    shifted[0] -= 0.5 * (shifted[1] + shifted[2])
+    shifted[3] -= 0.5 * (shifted[4] + shifted[5])
+    return shifted
+
+
 def test_psr_reference_matches_actual_csharp_ilgpu_kernel_fixture() -> None:
     fixture_path = (
         Path(__file__).parents[1]
@@ -127,7 +140,7 @@ def test_psr_reference_matches_actual_csharp_ilgpu_kernel_fixture() -> None:
     y = np.arange(128, dtype=np.float64)[:, None]
     dem = DemGrid(
         np.ascontiguousarray((x - y) * 0.1, dtype=np.float32),
-        np.asarray(artifact["geotransform"], dtype=np.float64),
+        _csharp_node_transform(artifact["geotransform"]),
         ProjectionParameters(
             radius_m=projection["radius_m"],
             latitude_origin_rad=projection["latitude_origin_rad"],
@@ -186,7 +199,7 @@ def test_numba_cuda_psr_matches_actual_csharp_ilgpu_kernel_fixture() -> None:
     y = np.arange(128, dtype=np.float64)[:, None]
     dem = DemGrid(
         np.ascontiguousarray((x - y) * 0.1, dtype=np.float32),
-        np.asarray(artifact["geotransform"], dtype=np.float64),
+        _csharp_node_transform(artifact["geotransform"]),
         ProjectionParameters(
             radius_m=projection["radius_m"],
             latitude_origin_rad=projection["latitude_origin_rad"],

@@ -31,6 +31,12 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     or NaN-bearing tile raises `HorizonFormatError` with code
     `horizon_tile_unreadable` (H-H). Only a missing tile becomes an invalid
     patch, and the final progress event reports the invalid-patch count.
+  - *Pixel registration (behaviour change).* Horizon generation and the
+    horizon-derived products place each DEM value at its cell centre
+    (pixel-is-area), matching `GeoReference.pixel_to_projected`; they used
+    the cell corner. Mixed-resolution DEM sets were misregistered by the
+    difference of their half-pixels (M-D). Horizons and products made before
+    this change should be regenerated.
   - *CUDA setup failures.* An out-of-memory or driver error while a
     lightmap, PSR or safe-haven CUDA session is set up now counts as CUDA
     being unavailable: `backend="auto"` falls back to the CPU and

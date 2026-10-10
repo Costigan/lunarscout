@@ -64,10 +64,11 @@ def stereo_inv(x, y, p):
 
 
 def crs_to_pixel_vec(dem, X, Y):
+    """CRS to cell-centre pixel indices (pixel-is-area, as production since M-D)."""
     t = dem.geo_transform
     det = t[1] * t[5] - t[2] * t[4]
     dx, dy = X - t[0], Y - t[3]
-    return (t[5] * dx - t[2] * dy) / det, (-t[4] * dx + t[1] * dy) / det
+    return (t[5] * dx - t[2] * dy) / det - 0.5, (-t[4] * dx + t[1] * dy) / det - 0.5
 
 
 def bilinear_vec(elev, c, r):
@@ -91,7 +92,7 @@ def brute_horizon_deg(dems, col, row, az_deg, obs_h=0.0, max_range_m=1.0e6, step
     """Independent float64 horizon: returns (elevation angle deg, distance m to the limiting terrain point)."""
     d0 = dems[0]
     p = d0.projection
-    x, y = d0.pixel_to_crs(col, row)  # production's pixel->crs convention (integer index = grid node)
+    x, y = d0.pixel_to_crs(col, row)  # production's pixel->crs convention (integer index = cell centre)
     lat, lon = stereo_inv(x, y, p)
     h0 = float(bilinear_vec(d0.elevation_m, np.array([float(col)]), np.array([float(row)]))[0])
     if not np.isfinite(h0):

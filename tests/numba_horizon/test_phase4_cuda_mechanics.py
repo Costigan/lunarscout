@@ -180,6 +180,19 @@ def test_adaptive_cpu_oracle_exposes_step_floors_and_skipped_terrain() -> None:
     assert 0.03 < missed_peak < 0.04
 
 
+def _csharp_node_transform(transform) -> np.ndarray:
+    """Return a fixture transform that places samples where the C# code did.
+
+    The C# captures put pixel index i at the transform's corner position;
+    Lunarscout puts it at the cell centre, half a pixel further in.  Shifting
+    the transform back by half a pixel compares like with like.
+    """
+    shifted = np.array(transform, dtype=np.float64)
+    shifted[0] -= 0.5 * (shifted[1] + shifted[2])
+    shifted[3] -= 0.5 * (shifted[4] + shifted[5])
+    return shifted
+
+
 def test_direct_reference_geometry_matches_csharp_trace_sample_by_sample() -> None:
     data = Path(__file__).resolve().parents[1] / "data" / "numba_horizon"
     artifact = load_reference_artifact(
@@ -190,7 +203,7 @@ def test_direct_reference_geometry_matches_csharp_trace_sample_by_sample() -> No
         prefix = f"{case_id}__dem_0"
         dem = DemGrid(
             artifact.arrays[f"{prefix}__elevation_m"],
-            artifact.arrays[f"{prefix}__geo_transform"],
+            _csharp_node_transform(artifact.arrays[f"{prefix}__geo_transform"]),
             ProjectionParameters.from_array(
                 artifact.arrays[f"{prefix}__pyramid__projection_parameters"]
             ),

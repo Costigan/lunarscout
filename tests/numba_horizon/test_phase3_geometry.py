@@ -44,11 +44,24 @@ def artifact():
     )
 
 
+def _csharp_node_transform(transform) -> np.ndarray:
+    """Return a fixture transform that places samples where the C# code did.
+
+    The C# captures put pixel index i at the transform's corner position;
+    Lunarscout puts it at the cell centre, half a pixel further in.  Shifting
+    the transform back by half a pixel compares like with like.
+    """
+    shifted = np.array(transform, dtype=np.float64)
+    shifted[0] -= 0.5 * (shifted[1] + shifted[2])
+    shifted[3] -= 0.5 * (shifted[4] + shifted[5])
+    return shifted
+
+
 def _dem(artifact, case: dict, dem_index: int) -> DemGrid:
     prefix = f"{case['id']}__dem_{dem_index}"
     return DemGrid(
         artifact.arrays[f"{prefix}__elevation_m"],
-        artifact.arrays[f"{prefix}__geo_transform"],
+        _csharp_node_transform(artifact.arrays[f"{prefix}__geo_transform"]),
         ProjectionParameters.from_array(
             artifact.arrays[f"{prefix}__pyramid__projection_parameters"]
         ),
@@ -196,7 +209,9 @@ def test_complete_subpatch_generation_matches_csharp_and_reuses_cache(artifact) 
         dtype=np.int64,
     )
     np.testing.assert_array_equal(center_values, artifact.arrays[f"{prefix}__centers"])
-    np.testing.assert_allclose(actual, expected, rtol=0, atol=6e-8)
+    # 1e-7 rather than 6e-8: the half-pixel transform shift changes float64
+    # rounding, which moves 6 of 9216 float32 values by up to 9e-8.
+    np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-7)
     assert returned_convergence is convergence
 
     compiled_serial, _, _ = build_subpatch_segments_numba(

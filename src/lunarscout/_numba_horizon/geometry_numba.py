@@ -200,8 +200,9 @@ def _sample_chord(observer, direction, distance, elevation, transform, projectio
     determinant = transform[1] * transform[5] - transform[2] * transform[4]
     dx = projected_x - transform[0]
     dy = projected_y - transform[3]
-    column = (transform[5] * dx - transform[2] * dy) / determinant
-    row = (-transform[4] * dx + transform[1] * dy) / determinant
+    # Cell-centre (pixel-is-area) indices; see DemGrid.pixel_to_crs.
+    column = (transform[5] * dx - transform[2] * dy) / determinant - 0.5
+    row = (-transform[4] * dx + transform[1] * dy) / determinant - 0.5
     inside = 0.0 <= column < elevation.shape[1] and 0.0 <= row < elevation.shape[0]
     terrain = 0.0
     if inside:

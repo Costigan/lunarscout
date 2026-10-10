@@ -644,7 +644,10 @@ ended, so the DEMs may differ in extent, resolution and projection, but all
 must share one reference sphere radius; otherwise the call raises
 `ls.GridError` with code `horizon_dem_radius_mismatch`. Lunarscout cannot
 check that the DEMs' elevations use the same vertical datum beyond that
-radius. The root function returns the resolved output directory:
+radius. Every DEM value, horizon and product pixel describes its cell centre
+(pixel-is-area), as `GeoReference.pixel_to_projected` does by default; GDAL
+converts point-registered rasters to this convention when they are read.
+The root function returns the resolved output directory:
 
 ```python
 horizons = ls.generate_horizons(
