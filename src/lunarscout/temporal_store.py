@@ -343,6 +343,26 @@ def _write_vrt(
     tree.write(path, encoding="utf-8", xml_declaration=True)
 
 
+def _require_replaceable_series(destination: Path) -> None:
+    """Allow overwrite only of an empty directory or a Lunarscout temporal series."""
+    try:
+        if not any(destination.iterdir()):
+            return
+        manifest = json.loads(
+            (destination / _MANIFEST_NAME).read_bytes(),
+            parse_constant=_reject_nonstandard_json,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        manifest = None
+    if not isinstance(manifest, dict) or manifest.get("format") != _FORMAT:
+        raise TemporalSeriesWriteError(
+            "Temporal series destination exists and is not a Lunarscout temporal "
+            "series; overwrite only replaces an empty directory or an existing series.",
+            code="temporal_series_destination_not_series",
+            details={"path": str(destination)},
+        )
+
+
 def _commit_staging_directory(
     staging: Path,
     destination: Path,
@@ -370,6 +390,7 @@ def _commit_staging_directory(
     if not destination.exists():
         os.replace(staging, destination)
         return
+    _require_replaceable_series(destination)
 
     backup = destination.parent / f".{destination.name}.backup-{uuid.uuid4().hex}"
     os.replace(destination, backup)
@@ -485,6 +506,8 @@ class TemporalGeoTiffSeriesWriter:
                 code="temporal_series_output_exists",
                 details={"path": str(destination)},
             )
+        if destination.exists():
+            _require_replaceable_series(destination)
 
         staging = parent / f".{destination.name}.staging-{uuid.uuid4().hex}"
         try:
@@ -706,7 +729,13 @@ def write_temporal_cube(
     progress_callback: ProgressCallback | None = None,
     cancellation_requested: CancellationCheck | None = None,
 ) -> TemporalGeoTiffSeries:
-    """Persist an in-memory cube as a completed timestamped GeoTIFF series."""
+    """Persist an in-memory cube as a completed timestamped GeoTIFF series.
+
+    With ``overwrite=True`` an existing destination is replaced only when it is
+    an empty directory or an existing Lunarscout temporal series; any other
+    directory raises ``TemporalSeriesWriteError`` with code
+    ``temporal_series_destination_not_series`` and is left untouched.
+    """
 
     if not isinstance(cube, TemporalCube):
         raise TemporalSeriesWriteError(

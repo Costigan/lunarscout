@@ -7,7 +7,11 @@ import numpy as np
 import pytest
 
 import lunarscout.map_algebra._writer as writer_module
-from lunarscout.errors import OperationCancelledError
+from lunarscout.errors import (
+    MapAlgebraStorageError,
+    OperationCancelledError,
+    OutputExistsError,
+)
 from lunarscout.map_algebra import (
     source,
     slope as ma_slope,
@@ -533,11 +537,17 @@ class TestNoRegression:
         assert out.stat().st_mtime == mtime_before
 
     def test_start_fresh(self, tmp_path):
+        # Review finding H5: start_fresh discards restart state but is not
+        # permission to replace a completed output; overwrite is.
         p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
         out = tmp_path / "out.tif"
         expr = source(p) + 1
         write(out, expr)
-        result = write(out, expr, start_fresh=True)
+        published = out.read_bytes()
+        with pytest.raises(OutputExistsError):
+            write(out, expr, start_fresh=True)
+        assert out.read_bytes() == published
+        result = write(out, expr, start_fresh=True, overwrite=True)
         assert result == out
 
     def test_compound_expression_write(self, tmp_path):
@@ -1025,3 +1035,45 @@ class TestLifecycleRegressionFaults:
                 checkpoint_interval=checkpoint_interval,
             )
         assert exc_info.value.code == "map_algebra_invalid_checkpoint_interval"
+
+
+class TestStartFreshNeverDeletesOutputs:
+    """Review finding H5: start_fresh deleted the published output and manifest."""
+
+    def test_cancelled_start_fresh_overwrite_keeps_the_previous_output(self, tmp_path):
+        p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
+        out = tmp_path / "out.tif"
+        write(out, source(p) + 1)
+        published = out.read_bytes()
+        manifest = out.with_suffix(".tif.manifest.json")
+        assert manifest.exists()
+        with pytest.raises(OperationCancelledError):
+            write(out, source(p) + 2, start_fresh=True, overwrite=True,
+                  cancellation_requested=lambda: True)
+        assert out.read_bytes() == published
+        assert manifest.exists()
+
+    def test_start_fresh_restores_an_interrupted_publication(self, tmp_path):
+        p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
+        out = tmp_path / "out.tif"
+        write(out, source(p) + 1)
+        published = out.read_bytes()
+        # Interrupted publish: the previous output was moved to its backup.
+        backup = tmp_path / ".out.tif.lunarscout-partial.tif.previous"
+        out.replace(backup)
+        with pytest.raises(OutputExistsError):
+            write(out, source(p) + 2, start_fresh=True)
+        assert out.read_bytes() == published
+        assert not backup.exists()
+
+    @pytest.mark.parametrize("start_fresh", [False, True])
+    def test_output_that_is_also_an_input_is_rejected_before_any_change(
+        self, tmp_path, start_fresh
+    ):
+        p = _write_tiff(tmp_path, "src.tif", np.ones((2, 2), dtype=np.float32))
+        original = p.read_bytes()
+        with pytest.raises(MapAlgebraStorageError) as error:
+            write(p, source(p) + 1, overwrite=True, start_fresh=start_fresh)
+        assert error.value.code == "map_algebra_output_is_source"
+        assert p.read_bytes() == original
+        assert sorted(x.name for x in tmp_path.iterdir()) == ["src.tif"]

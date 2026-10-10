@@ -404,6 +404,12 @@ layer, layer_georef = series.read_time(
 streamed_mean, mean_georef = ls.temporal_mean(series)
 ```
 
+With `overwrite=True`, `write_temporal_cube` replaces only an empty directory
+or an existing Lunarscout temporal series (a `manifest.json` declaring the
+series format). Any other directory raises `TemporalSeriesWriteError` with code
+`temporal_series_destination_not_series` before any layer is written, and is
+left untouched.
+
 `TemporalGeoTiffSeries` has no `.values` property. Direct reads use bounded
 caches, and temporal reducers stream layers without constructing a full
 three-dimensional cube.
@@ -1820,7 +1826,9 @@ Before creating or modifying staging artifacts, `ma.write()` validates that
 its invalid fill is exactly representable by the requested output dtype.
 Failure raises `MapAlgebraStorageError` with code
 `map_algebra_unrepresentable_invalid_value`; an existing destination and its
-restart state remain untouched.
+restart state remain untouched. A destination that is also a file read by the
+expression is rejected the same way, with code `map_algebra_output_is_source`,
+whatever `overwrite` and `start_fresh` say.
 
 Windowed writes are resumable by default. The writer keeps a hidden staged
 GeoTIFF (``.{name}.lunarscout-partial.tif``) and a durable checkpoint
@@ -1854,8 +1862,12 @@ removed. With
 replacement is ready. A publication exception restores both the previous
 output and its previous manifest while retaining the completed stage for
 retry. With
-``start_fresh=True``, existing staging, journal, manifest, and output files
-are removed before execution.
+``start_fresh=True``, the staged TIFF, journal, and staged manifest are
+discarded and the result is recomputed; an interrupted publication is first
+rolled back so its backup restores the previous output. ``start_fresh`` never
+deletes a completed output or its manifest: replacing one still requires
+``overwrite=True``, and the previous output stays in place until the
+replacement is published.
 
 The finished output is accompanied by a ``{name}.manifest.json`` sidecar
 recording the expression scientific identity, output dtype, invalid fill

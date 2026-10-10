@@ -347,3 +347,43 @@ def test_benchmark_incremental_writer_3800_layers(tmp_path: Path) -> None:
     assert series.vrt_path is not None
     assert series.vrt_path.stat().st_size > 0
     print(f"3,800-layer temporal series: {elapsed_seconds:.3f} seconds")
+
+
+
+def test_overwrite_refuses_a_directory_that_is_not_a_temporal_series(tmp_path: Path) -> None:
+    # Review finding H6: overwrite=True renamed any existing directory to a
+    # backup and deleted it after publishing.
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "notes.txt").write_text("keep me")
+    with pytest.raises(ls.TemporalSeriesWriteError) as error:
+        ls.write_temporal_cube(project, _cube(), overwrite=True)
+    assert error.value.code == "temporal_series_destination_not_series"
+    assert (project / "notes.txt").read_text() == "keep me"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["project"]
+
+
+def test_overwrite_replaces_an_empty_directory_or_an_existing_series(tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    ls.write_temporal_cube(empty, _cube(), overwrite=True).close()
+    np.testing.assert_array_equal(ls.open_temporal_cube(empty).read_layer(0)[0], _cube().values[0])
+    ls.write_temporal_cube(empty, _cube(), overwrite=True).close()
+    assert (empty / "COMPLETE").is_file()
+
+
+def test_commit_rechecks_the_destination_before_replacing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = ls.write_temporal_cube(tmp_path / "series", _cube()).root
+    original_commit = temporal_store._commit_staging_directory
+
+    def swap_in_foreign_directory(staging, destination, *, overwrite):
+        (destination / "manifest.json").write_text('{"format": "something else"}')
+        return original_commit(staging, destination, overwrite=overwrite)
+
+    monkeypatch.setattr(temporal_store, "_commit_staging_directory", swap_in_foreign_directory)
+    with pytest.raises(ls.TemporalSeriesWriteError) as error:
+        ls.write_temporal_cube(root, _cube(), overwrite=True)
+    assert error.value.code == "temporal_series_destination_not_series"
+    assert json.loads((root / "manifest.json").read_text()) == {"format": "something else"}

@@ -63,6 +63,16 @@ def _staging_manifest_path(output_path: Path) -> Path:
     )
 
 
+def _same_path(first: Path, second: Path) -> bool:
+    """True when two paths name the same file, following links."""
+    try:
+        if first.exists() and second.exists():
+            return os.path.samefile(first, second)
+    except OSError:
+        pass
+    return first.expanduser().resolve() == second.expanduser().resolve()
+
+
 def _rollback_interrupted_swap(
     current: Path,
     backup: Path,
@@ -344,9 +354,13 @@ def write(
     each newly completed window is written. ``cancellation_requested`` is
     polled before execution and at window boundaries. Restart state is durably
     checkpointed every ``checkpoint_interval`` windows; matching state is
-    resumed automatically unless ``start_fresh`` is true. ``invalid_value``
-    must be exactly representable by the output dtype; invalid encodings fail
-    during preflight before output or restart artifacts are modified.
+    resumed automatically unless ``start_fresh`` is true. ``start_fresh``
+    discards restart state only; replacing an existing completed output
+    requires ``overwrite=True`` and happens only when the replacement is
+    published. ``invalid_value`` must be exactly representable by the output
+    dtype; invalid encodings, and an output path that is also an input of the
+    expression, fail during preflight before output or restart artifacts are
+    modified.
     """
     output_path = Path(path).expanduser().resolve()
 
@@ -426,6 +440,16 @@ def write(
             code="map_algebra_missing_output_grid",
         )
 
+    # ---------- reject an output that is also an input ----------
+    for source in plan.sources:
+        source_path = source._params_dict.get("path")
+        if source_path is not None and _same_path(Path(source_path), output_path):
+            raise MapAlgebraStorageError(
+                f"Output path is also an input of the expression: {output_path}.",
+                code="map_algebra_output_is_source",
+                details={"path": str(output_path)},
+            )
+
     # ---------- staging paths ----------
     staging_tiff = _staging_tiff_path(output_path)
     staging_journal = _staging_journal_path(output_path)
@@ -435,26 +459,30 @@ def write(
     backup_manifest = staging_manifest.with_name(staging_manifest.name + ".previous")
 
     # ---------- handle start_fresh ----------
+    # start_fresh discards restart state only. The published output and its
+    # manifest are replaced only with overwrite=True, and only after the new
+    # result is complete.
     if start_fresh:
         staging_tiff.unlink(missing_ok=True)
         staging_journal.unlink(missing_ok=True)
         staging_manifest.unlink(missing_ok=True)
-        backup_tiff.unlink(missing_ok=True)
-        backup_manifest.unlink(missing_ok=True)
-        manifest_path.unlink(missing_ok=True)
-        output_path.unlink(missing_ok=True)
-    else:
-        _rollback_interrupted_swap(output_path, backup_tiff, staging_tiff)
-        _rollback_interrupted_swap(manifest_path, backup_manifest, staging_manifest)
+    # Recover an interrupted publication first, so its backup restores the
+    # previous output rather than being discarded.
+    _rollback_interrupted_swap(output_path, backup_tiff, staging_tiff)
+    _rollback_interrupted_swap(manifest_path, backup_manifest, staging_manifest)
 
     # ---------- check complete output ----------
     existing_manifest = _load_json(manifest_path)
-    if existing_manifest is not None and _manifest_matches(existing_manifest, restart_id):
-        if output_path.exists():
-            return output_path
+    if (
+        not start_fresh
+        and existing_manifest is not None
+        and _manifest_matches(existing_manifest, restart_id)
+        and output_path.exists()
+    ):
+        return output_path
 
     # ---------- check overwrite ----------
-    if output_path.exists() and not overwrite and not start_fresh:
+    if output_path.exists() and not overwrite:
         raise OutputExistsError(
             f"Output already exists: {output_path}. Use overwrite=True.",
             code="map_algebra_output_exists",
