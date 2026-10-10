@@ -57,9 +57,14 @@ a 1,024-square crop of the overlapping production medium DEM as the outer
 pass. Across 368,640 merged values, the maximum angular difference is
 `4.0412e-5` degrees and the mean absolute error is `8.16e-10` degrees. No value
 exceeds the accepted `0.005` degree maximum, which is one percent of the
-approximately `0.5` degree apparent solar diameter and a conservative proxy
-for the accepted one-percent sunlight error. The observed maximum is about
-124 times smaller than that limit.
+approximately `0.5` degree apparent solar diameter. It is not a conservative
+proxy for a one-percent sunlight error: when the horizon crosses the middle
+of the solar disk, the visible fraction changes by `2/(pi r)`, about `2.55`
+per degree for a `0.25` degree solar radius, so `0.005` degrees can change
+sunlight by up to `1.27%`, and a one-percent bound is about `0.0039` degrees.
+The observed maximum, `4.0412e-5` degrees, is at most a `1.03e-4` sunlight
+fraction. It is about 124 times smaller than the `0.005` degree limit, but
+this compares Numba with C#, not either with the true horizon.
 
 The isolated first and second pass maxima are `3.5763e-7` and `2.3842e-7`
 degrees. Exact C# segments retain the same merged `4.0412e-5` degree maximum,
