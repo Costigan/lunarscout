@@ -3032,8 +3032,8 @@ Each output tile is a fixed 128 by 128 pixel patch with 1,440 ``float32``
 azimuth samples per pixel at 0.25-degree spacing.  Sample 0 is north.
 Tiles are staged beside their destination and atomically published.  A
 failed calculation or cancelled overwrite preserves the prior complete
-tile.  Each DEM uses a sibling ``.pyr.bin`` maximum-elevation cache.  A
-missing or invalid cache is rebuilt on CUDA and atomically replaced.
+tile.  Each DEM's maximum-elevation pyramid is built on the GPU for every
+run; nothing is written beside the DEMs.
 ```
 
 ### `lunarscout.generate_lightmap`

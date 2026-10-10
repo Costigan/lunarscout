@@ -91,7 +91,6 @@ def _run_worker(arguments: argparse.Namespace) -> dict:
         GridConvergenceInput,
         build_subpatch_segments_numba,
     )
-    from lunarscout._numba_horizon.pyramid import load_max_pyramid_cache
 
     process_started = time.perf_counter()
 
@@ -105,11 +104,8 @@ def _run_worker(arguments: argparse.Namespace) -> dict:
         f"and {arguments.repeats} warm repeats",
     )
     inputs = [Path(value).resolve() for value in arguments.inputs]
-    caches = [path.with_suffix(".pyr.bin") for path in inputs]
     input_metadata = []
-    for index, (dem_path, cache_path) in enumerate(
-        zip(inputs, caches, strict=True), start=1
-    ):
+    for index, dem_path in enumerate(inputs, start=1):
         progress("input_hash", f"hashing DEM {index}/{len(inputs)}: {dem_path}")
         started = time.perf_counter()
         input_metadata.append(
@@ -117,9 +113,6 @@ def _run_worker(arguments: argparse.Namespace) -> dict:
                 "path": str(dem_path),
                 "size_bytes": dem_path.stat().st_size,
                 "sha256": _hash_path(dem_path),
-                "pyramid_cache_path": str(cache_path),
-                "pyramid_cache_size_bytes": cache_path.stat().st_size,
-                "pyramid_cache_sha256": _hash_path(cache_path),
             }
         )
         progress(
@@ -138,19 +131,18 @@ def _run_worker(arguments: argparse.Namespace) -> dict:
             f"loaded DEM {index}/{len(inputs)} in {time.perf_counter() - item_started:.3f}s",
         )
     dem_load_seconds = time.perf_counter() - started
+    # Lunarscout no longer caches pyramids on disk; build them on the GPU.
     started = time.perf_counter()
+    pyramid_session = CudaSession()
     pyramids = []
-    for index, (dem, cache) in enumerate(
-        zip(dems, caches, strict=True), start=1
-    ):
-        progress("pyramid_cache", f"loading cache {index}/{len(caches)}: {cache}")
+    for index, dem in enumerate(dems, start=1):
         item_started = time.perf_counter()
-        pyramids.append(load_max_pyramid_cache(dem, cache))
+        pyramids.append(pyramid_session.build_max_pyramid(dem))
         progress(
-            "pyramid_cache",
-            f"loaded cache {index}/{len(caches)} in {time.perf_counter() - item_started:.3f}s",
+            "pyramid_build",
+            f"built pyramid {index}/{len(dems)} in {time.perf_counter() - item_started:.3f}s",
         )
-    pyramid_cache_load_seconds = time.perf_counter() - started
+    pyramid_build_seconds = time.perf_counter() - started
 
     configuration = ContractConfiguration(
         tile_width=128,
@@ -464,7 +456,7 @@ def _run_worker(arguments: argparse.Namespace) -> dict:
         "inputs": input_metadata,
         "startup": {
             "dem_load_seconds": dem_load_seconds,
-            "warm_pyramid_cache_load_seconds": pyramid_cache_load_seconds,
+            "pyramid_build_seconds": pyramid_build_seconds,
             "first_segment_generation_including_numba_cpu_compilation_seconds": first_segment_generation_seconds,
             "cuda_session_initialization_seconds": session_initialization_seconds,
             "first_cuda_compile_and_execution_seconds": first_cuda_compile_and_execution_seconds,

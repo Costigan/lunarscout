@@ -167,24 +167,12 @@ def _run_horizon_pipeline(
         partition_patches,
         run_bounded_pipeline,
     )
-    from ._numba_horizon.pyramid import (
-        load_max_pyramid_cache,
-        pyramid_cache_path,
-        write_max_pyramid_cache,
-    )
 
     primary = dems[0]
     session = CudaSession(device_id=0, production_concurrency=2)
-    pyramids = []
-    for dem, dem_path in zip(dems, dem_paths, strict=True):
-        cache_path = pyramid_cache_path(dem_path)
-        try:
-            pyramid = load_max_pyramid_cache(dem, cache_path)
-        except (OSError, ValueError):
-            pyramid = session.build_max_pyramid(dem)
-            write_max_pyramid_cache(pyramid, cache_path)
-        pyramids.append(pyramid)
-    pyramids = tuple(pyramids)
+    # Building each max pyramid on the GPU takes about 0.3 s for a 30,400 px
+    # DEM, mostly the host-to-device copy, so no on-disk cache is kept.
+    pyramids = tuple(session.build_max_pyramid(dem) for dem in dems)
     configuration = ContractConfiguration(
         PATCH_SIZE,
         PATCH_SIZE,
@@ -343,8 +331,8 @@ def generate_horizons(
     azimuth samples per pixel at 0.25-degree spacing.  Sample 0 is north.
     Tiles are staged beside their destination and atomically published.  A
     failed calculation or cancelled overwrite preserves the prior complete
-    tile.  Each DEM uses a sibling ``.pyr.bin`` maximum-elevation cache.  A
-    missing or invalid cache is rebuilt on CUDA and atomically replaced.
+    tile.  Each DEM's maximum-elevation pyramid is built on the GPU for every
+    run; nothing is written beside the DEMs.
     """
     if isinstance(dem_paths, (str, bytes, Path)):
         raise InputError(

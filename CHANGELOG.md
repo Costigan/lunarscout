@@ -6,6 +6,18 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Horizon pyramid cache removed.** `generate_horizons` builds each DEM's
+  maximum-elevation pyramid on the GPU for every run and no longer reads or
+  writes sibling `.pyr.bin` files. The cache was validated only by element
+  count, so a DEM re-exported at the same size silently reused stale maxima
+  (review finding H-G), DEMs sharing a stem collided, and caches built before
+  DEM nodata masking held maxima of undeclared nodata values. Building the
+  pyramid for a 30,400 x 30,400 DEM takes 0.28 s on an RTX 5090 Laptop GPU,
+  0.24 s of it the host-to-device copy, so the cache saved at most about
+  0.25 s per run. Existing `.pyr.bin` files are no longer used and can be
+  deleted. The private `load_max_pyramid_cache`, `write_max_pyramid_cache`
+  and `pyramid_cache_path` helpers are removed.
+
 - **Dynamic trajectory temporal oracle.** Froze the initial half-open UTC
   occupancy, arbitrary-duration movement, conservative edge occupancy, waiting,
   exact-boundary, and timeline-exhaustion contracts. Added a private bounded

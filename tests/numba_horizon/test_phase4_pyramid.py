@@ -26,12 +26,7 @@ from lunarscout._numba_horizon.hierarchy import (
     traverse_hierarchy,
 )
 from lunarscout._numba_horizon.kernel_math import evaluate_tangent, interpolate_segments
-from lunarscout._numba_horizon.pyramid import (
-    build_max_pyramid,
-    load_max_pyramid_cache,
-    pyramid_cache_path,
-    write_max_pyramid_cache,
-)
+from lunarscout._numba_horizon.pyramid import build_max_pyramid
 
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "numba_horizon"
@@ -94,57 +89,6 @@ def test_invalid_value_pyramid_matches_csharp_cutoff_and_sentinel() -> None:
         np.testing.assert_array_equal(
             actual.mips[offset : offset + width * height].reshape(height, width), expected
         )
-
-
-def test_load_max_pyramid_cache_reads_csharp_float_payload(tmp_path: Path) -> None:
-    elevation = np.arange(35, dtype=np.float32).reshape(5, 7)
-    dem = DemGrid(
-        elevation,
-        np.array((0.0, 2.0, 0.0, 0.0, 0.0, -2.0), dtype=np.float64),
-        ProjectionParameters(1_737_400.0, -np.pi / 2.0, 0.0, 1.0, 0.0, 0.0),
-    )
-    expected = build_max_pyramid(dem)
-    cache = tmp_path / "dem.pyr.bin"
-    expected.mips.tofile(cache)
-
-    actual = load_max_pyramid_cache(dem, cache)
-
-    np.testing.assert_array_equal(actual.level0, expected.level0)
-    np.testing.assert_array_equal(actual.mips, expected.mips)
-    np.testing.assert_array_equal(actual.levels, expected.levels)
-    np.testing.assert_array_equal(actual.map_parameters, expected.map_parameters)
-    np.testing.assert_array_equal(
-        actual.projection_parameters, expected.projection_parameters
-    )
-
-
-def test_load_max_pyramid_cache_rejects_wrong_length(tmp_path: Path) -> None:
-    dem = DemGrid(
-        np.zeros((5, 7), dtype=np.float32),
-        np.array((0.0, 2.0, 0.0, 0.0, 0.0, -2.0), dtype=np.float64),
-        ProjectionParameters(1_737_400.0, -np.pi / 2.0, 0.0, 1.0, 0.0, 0.0),
-    )
-    cache = tmp_path / "bad.pyr.bin"
-    np.zeros(1, dtype=np.float32).tofile(cache)
-
-    with pytest.raises(ValueError, match="expected"):
-        load_max_pyramid_cache(dem, cache)
-
-
-def test_write_max_pyramid_cache_round_trips_csharp_payload(tmp_path: Path) -> None:
-    dem = DemGrid(
-        np.arange(35, dtype=np.float32).reshape(5, 7),
-        np.array((0.0, 2.0, 0.0, 0.0, 0.0, -2.0), dtype=np.float64),
-        ProjectionParameters(1_737_400.0, -np.pi / 2.0, 0.0, 1.0, 0.0, 0.0),
-    )
-    expected = build_max_pyramid(dem)
-    cache = pyramid_cache_path(tmp_path / "dem.tif")
-
-    assert write_max_pyramid_cache(expected, cache) == cache
-    actual = load_max_pyramid_cache(dem, cache)
-
-    np.testing.assert_array_equal(actual.mips, expected.mips)
-    assert cache.read_bytes() == expected.mips.astype("<f4", copy=False).tobytes()
 
 
 @pytest.mark.skipif(

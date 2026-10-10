@@ -109,19 +109,16 @@ def _run(arguments: argparse.Namespace) -> dict:
         enumerate_patches,
         run_bounded_pipeline,
     )
-    from lunarscout._numba_horizon.pyramid import load_max_pyramid_cache
 
     def progress(message: str) -> None:
         print(f"[phase6 {arguments.mode}] {message}", flush=True)
 
     paths = [Path(value).resolve() for value in arguments.inputs]
-    progress("loading DEMs and pyramid caches")
+    progress("loading DEMs and building pyramids")
     load_started = time.perf_counter()
     dems = [_load_dem(path) for path in paths]
-    pyramids = [
-        load_max_pyramid_cache(dem, path.with_suffix(".pyr.bin"))
-        for dem, path in zip(dems, paths, strict=True)
-    ]
+    pyramid_session = CudaSession()
+    pyramids = [pyramid_session.build_max_pyramid(dem) for dem in dems]
     dem_and_pyramid_load_seconds = time.perf_counter() - load_started
     patches = enumerate_patches(dems[0].width, dems[0].height)[: arguments.patch_count]
     output_directory = Path(arguments.output_directory).resolve()

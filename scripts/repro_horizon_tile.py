@@ -33,11 +33,6 @@ from lunarscout._numba_horizon.geometry import (
     GridConvergenceInput,
     build_subpatch_segments_numba,
 )
-from lunarscout._numba_horizon.pyramid import (
-    load_max_pyramid_cache,
-    pyramid_cache_path,
-    write_max_pyramid_cache,
-)
 from lunarscout.products import _load_dem
 
 
@@ -70,15 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     primary = dems[0]
 
     session = CudaSession(device_id=0, production_concurrency=1)
-    pyramids = []
-    for dem, dem_path in zip(dems, dem_paths, strict=True):
-        cache_path = pyramid_cache_path(dem_path)
-        try:
-            pyramid = load_max_pyramid_cache(dem, cache_path)
-        except (OSError, ValueError):
-            pyramid = session.build_max_pyramid(dem)
-            write_max_pyramid_cache(pyramid, cache_path)
-        pyramids.append(pyramid)
+    pyramids = [session.build_max_pyramid(dem) for dem in dems]
 
     configuration = ContractConfiguration(
         PATCH_SIZE,

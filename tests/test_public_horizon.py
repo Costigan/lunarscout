@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -110,12 +111,14 @@ def test_public_horizon_facade_reports_cuda_and_returns_directory(
 def test_public_horizon_routes_verbose_timings_to_stdout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verbose: bool,
 ) -> None:
-    from lunarscout._numba_horizon import cuda_backend, pipeline, pyramid
+    from lunarscout._numba_horizon import cuda_backend, pipeline
 
     dem = _write_dem(tmp_path / "dem.tif")
     calls = []
-    monkeypatch.setattr(cuda_backend, "CudaSession", lambda **_kwargs: object())
-    monkeypatch.setattr(pyramid, "load_max_pyramid_cache", lambda *_args: object())
+    monkeypatch.setattr(
+        cuda_backend, "CudaSession",
+        lambda **_kwargs: SimpleNamespace(build_max_pyramid=lambda _dem: object()),
+    )
     # No pending patches avoids CUDA warmup while exercising the real public
     # facade and its production pipeline binding.
     monkeypatch.setattr(pipeline, "enumerate_patches", lambda *_args: [])

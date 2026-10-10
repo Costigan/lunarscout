@@ -144,7 +144,7 @@ ______________________________________________________________________
 ### 6.1 File I/O Failure Paths
 
 - **Scenario**: Disk full during `write_geotiff`, `write_temporal_cube`,
-  `TemporalGeoTiffSeriesWriter`, or `write_max_pyramid_cache`.
+  or `TemporalGeoTiffSeriesWriter`.
 - **Coverage**: None. No tests inject `OSError` or `IOError` during writes.
 - **Recommendation**: The `map_algebra/_writer.py` tests already cover
   overwrite-protection and restart-id logic. Extend with filesystem-

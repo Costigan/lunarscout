@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-import uuid
-
 import numpy as np
 
 from .contract import PyramidArrays
@@ -29,50 +25,6 @@ def _level_layout(dem: DemGrid) -> tuple[np.ndarray, int]:
         if level > 0:
             offset += width * height
     return levels, offset
-
-
-def load_max_pyramid_cache(dem: DemGrid, path: str | Path) -> PyramidArrays:
-    """Load the language-neutral float32 mip payload written by moonlib.
-
-    The legacy cache contract validates only the expected array length. Phase 5
-    records the DEM and cache hashes separately so benchmark provenance does not
-    imply stronger cache invalidation than production currently provides.
-    """
-    cache_path = Path(path)
-    levels, expected_count = _level_layout(dem)
-    mips = np.fromfile(cache_path, dtype="<f4")
-    if mips.size != expected_count:
-        raise ValueError(
-            f"pyramid cache has {mips.size} float32 values; expected {expected_count}"
-        )
-    return _pyramid_arrays(dem, np.ascontiguousarray(mips), levels)
-
-
-def pyramid_cache_path(dem_path: str | Path) -> Path:
-    """Return the C#-compatible sibling cache path for a DEM."""
-    return Path(dem_path).with_suffix(".pyr.bin")
-
-
-def write_max_pyramid_cache(
-    pyramid: PyramidArrays, path: str | Path
-) -> Path:
-    """Atomically publish a little-endian float32 mip payload."""
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temporary.open("wb") as stream:
-            np.asarray(pyramid.mips, dtype="<f4").tofile(stream)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, target)
-    except BaseException:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
-    return target
 
 
 def _pyramid_arrays(
