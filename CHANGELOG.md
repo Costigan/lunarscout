@@ -6,6 +6,36 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **0.1.0rc5 review fixes.** Corrections from `docs/code_review_0.1.0rc5.md`;
+  each is recorded there with its evidence and commit.
+  - *Horizon results change.* The far-field slope now treats the segment
+    chord as a ground chord, not slant range (H-A: errors up to 2 deg at
+    10 deg+ horizons; mean |d| against a float64 brute force on a 512 px LOLA
+    tile 0.300 -> 0.015 deg). The hierarchy cull bound is conservative for
+    blocks below the observer (H-B). NaN or declared-nodata DEM nodes no
+    longer corrupt neighbouring horizons (H-C: one NaN node gave 89 deg
+    horizons). Horizons generated before these fixes should be regenerated.
+  - *DEM loading.* The DEM's declared nodata value is masked to NaN, radius
+    encoding is detected from valid samples only, and the caller's array is
+    no longer modified (H-C).
+  - *Products.* Raw horizon tiles read unobstructed (`-inf`) bins as the
+    -50 deg floor, so such pixels are lit, not dark (H-D). Pixels whose DEM
+    node is invalid are written as nodata in every product; the new
+    `skip_dem_nodata_check=True` option skips the per-patch check (M-I).
+  - *Safety.* Each production horizon ray is capped at 16 steps per pixel of
+    range; a capped ray raises `HorizonGenerationError` with code
+    `horizon_step_limit_exceeded` instead of keeping the GPU busy (M-G). A PSR
+    writer failure raises instead of hanging the bounded pipeline (H-E).
+  - *Map algebra.* Signed integer `multiply`, `square` and `power` detect
+    every overflow; 366 int8 products such as 3 x -43 were missed (B1).
+  - *Data loss (behaviour change).* `ma.write(start_fresh=True)` discards
+    restart state only: it no longer deletes the published output, and
+    replacing one now requires `overwrite=True` (H5). An output that is also
+    an input of the expression is rejected. `write_temporal_cube(overwrite=True)`
+    replaces only an empty directory or an existing Lunarscout series (H6).
+  - *Tests.* Horizon results are no longer compared with C#
+    QuadTreeHorizonGenerator captures, which share the corrected errors.
+
 - **Horizon pyramid cache removed.** `generate_horizons` builds each DEM's
   maximum-elevation pyramid on the GPU for every run and no longer reads or
   writes sibling `.pyr.bin` files. The cache was validated only by element
