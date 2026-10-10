@@ -261,6 +261,19 @@ def align(
             eastings, northings = to.pixel_to_projected(cols, rows, anchor="center")
             assert isinstance(eastings, np.ndarray)
             assert isinstance(northings, np.ndarray)
+            source_crs = CRS.from_wkt(source_georef.projection_wkt)
+            destination_crs = CRS.from_wkt(to.projection_wkt)
+            if source_crs != destination_crs:
+                # Destination coordinates must be in the source CRS before
+                # they are compared with the source grid (review finding H1).
+                from pyproj import Transformer
+
+                transformer = Transformer.from_crs(
+                    destination_crs, source_crs, always_xy=True
+                )
+                eastings, northings = transformer.transform(eastings, northings)
+                eastings = np.asarray(eastings, dtype=np.float64)
+                northings = np.asarray(northings, dtype=np.float64)
             source_cols, source_rows = source_georef.projected_to_pixel(
                 eastings,
                 northings,
@@ -268,13 +281,15 @@ def align(
             )
             assert isinstance(source_cols, np.ndarray)
             assert isinstance(source_rows, np.ndarray)
-            outside = (
-                (source_cols < -0.5)
-                | (source_cols > float(source_georef.width) - 0.5)
-                | (source_rows < -0.5)
-                | (source_rows > float(source_georef.height) - 0.5)
+            # Written as "not inside" so coordinates that fail to transform
+            # (NaN or inf) count as outside.
+            inside = (
+                (source_cols >= -0.5)
+                & (source_cols <= float(source_georef.width) - 0.5)
+                & (source_rows >= -0.5)
+                & (source_rows <= float(source_georef.height) - 0.5)
             )
-            aligned[outside] = destination_nodata
+            aligned[~inside] = destination_nodata
         if aligned.dtype != dtype:
             aligned = aligned.astype(dtype, copy=False)
         return aligned, to.with_nodata(destination_nodata)

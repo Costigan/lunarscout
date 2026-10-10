@@ -228,3 +228,59 @@ def test_every_reported_resampling_algorithm_is_usable(lunar_projection, resampl
 
     assert aligned.shape == source.shape
     assert aligned.dtype == source.dtype
+
+
+def test_align_across_crs_keeps_covered_pixels(lunar_projection):
+    # Review finding H1: the "outside source" mask compared destination
+    # coordinates with the source grid without a CRS transform, so aligning a
+    # polar-stereographic DEM onto an equirectangular grid set every pixel to
+    # nodata.
+    from pyproj import CRS
+
+    source_georef = _georef(
+        lunar_projection, width=200, height=200,
+        affine=(-50000.0, 500.0, 0.0, 50000.0, 0.0, -500.0), nodata=-99,
+    )
+    equirectangular = CRS.from_proj4("+proj=eqc +lat_ts=0 +lon_0=0 +R=1737400 +units=m +no_defs")
+    radius = 1737400.0
+    north = radius * np.deg2rad(-89.0)
+    step_y = radius * np.deg2rad(0.5) / 10
+    step_x = radius * np.deg2rad(20.0) / 20
+    destination_georef = ls.GeoReference(
+        projection_wkt=equirectangular.to_wkt(),
+        projection_proj4=equirectangular.to_proj4(),
+        affine_transform=(0.0, step_x, 0.0, north, 0.0, -step_y),
+        width=20, height=10, pixel_size_x=step_x, pixel_size_y=-step_y, nodata=None,
+    )
+
+    aligned, aligned_georef = ls.align(
+        np.full((200, 200), 5, dtype=np.int16), source_georef, to=destination_georef,
+    )
+
+    # Every destination pixel lies 15-30 km from the pole, inside the source.
+    np.testing.assert_array_equal(aligned, np.full((10, 20), 5, dtype=np.int16))
+    assert aligned_georef.nodata == -99
+
+
+def test_align_across_crs_marks_uncovered_pixels(lunar_projection):
+    from pyproj import CRS
+
+    source_georef = _georef(
+        lunar_projection, width=200, height=200,
+        affine=(-50000.0, 500.0, 0.0, 50000.0, 0.0, -500.0), nodata=-99,
+    )
+    equirectangular = CRS.from_proj4("+proj=eqc +lat_ts=0 +lon_0=0 +R=1737400 +units=m +no_defs")
+    radius = 1737400.0
+    # 88.0 to 85.0 S: 60 to 150 km from the pole, outside the +-50 km source.
+    north = radius * np.deg2rad(-88.0)
+    step_y = radius * np.deg2rad(3.0) / 10
+    destination_georef = ls.GeoReference(
+        projection_wkt=equirectangular.to_wkt(),
+        projection_proj4=equirectangular.to_proj4(),
+        affine_transform=(0.0, step_y, 0.0, north, 0.0, step_y),
+        width=4, height=10, pixel_size_x=step_y, pixel_size_y=step_y, nodata=None,
+    )
+    aligned, _ = ls.align(
+        np.full((200, 200), 5, dtype=np.int16), source_georef, to=destination_georef,
+    )
+    np.testing.assert_array_equal(aligned, np.full((10, 4), -99, dtype=np.int16))

@@ -38,6 +38,9 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     errors, the spatial unit rules, and the `overflow=` / `numeric_errors=`
     keywords (H4; previously uint8 `250 + 10` gave 4). `hypot` and `arctan2`
     accept scalar operands instead of raising `AttributeError`.
+  - *Alignment.* `align()` across coordinate systems no longer overwrites
+    covered pixels with nodata: the coverage mask now transforms destination
+    coordinates into the source CRS (H1).
   - *Data loss (behaviour change).* `ma.write(start_fresh=True)` discards
     restart state only: it no longer deletes the published output, and
     replacing one now requires `overwrite=True` (H5). An output that is also
