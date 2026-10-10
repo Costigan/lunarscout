@@ -628,7 +628,10 @@ def run_psr_product(
                     writer_queue.put(writer_sentinel, timeout=0.05)
                     return
                 except Full:
-                    continue
+                    # A writer that failed has stopped consuming; its error is
+                    # already recorded. Waiting for queue space would hang.
+                    if not writer_thread.is_alive():
+                        return
 
         def reader() -> None:
             try:

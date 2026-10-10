@@ -767,3 +767,48 @@ def test_psr_explicit_cuda_does_not_silently_fall_back(
             sun_vectors_m=np.asarray(((1.0, 2.0, 3.0),)),
             backend="cuda",
         )
+
+
+def test_bounded_pipeline_raises_instead_of_hanging_when_the_writer_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review finding H-E: after the writer failed, the main thread retried the
+    # writer sentinel on a full queue forever. Six patches keep the
+    # one-slot writer queue occupied when the first write fails.
+    import time as time_module
+
+    from lunarscout._numba_horizon.product_store import ProductBatchWriter
+
+    width = 128 * 6
+    dem = _dem(width=width, height=1)
+    store = HorizonTileStore(tmp_path / "horizons")
+    for index in range(6):
+        store.write(
+            0, 128 * index, 0.0, np.zeros((128, AZIMUTH_COUNT), np.float32),
+            compress=True, valid_width=128, valid_height=1,
+        )
+
+    def slow_failure(self, *args, **kwargs):
+        time_module.sleep(0.5)
+        raise OSError("disk full (simulated)")
+
+    monkeypatch.setattr(ProductBatchWriter, "write_patch_with_timings", slow_failure)
+    outcome: dict[str, BaseException] = {}
+
+    def run() -> None:
+        try:
+            run_psr_product(
+                dem=dem, georef=_georef(width, 1), horizon_store=store,
+                output_path=tmp_path / "psr.tif",
+                sun_vectors_m=_position_for_local_angle(dem, 0.0, 1.0)[None, :],
+                backend="cpu", pipeline_mode="bounded",
+            )
+        except BaseException as error:  # noqa: BLE001 - recorded for the assertion
+            outcome["error"] = error
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(timeout=30)
+    assert not thread.is_alive(), "PSR pipeline hung after a writer failure"
+    assert isinstance(outcome.get("error"), OSError)
+    assert "disk full" in str(outcome["error"])

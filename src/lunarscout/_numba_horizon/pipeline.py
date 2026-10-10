@@ -335,7 +335,9 @@ def run_bounded_pipeline(
                 writer_queue.put(writer_sentinel, timeout=0.05)
                 return
             except Full:
-                continue
+                # Never wait on a writer that has stopped consuming.
+                if writer_thread is None or not writer_thread.is_alive():
+                    return
 
     def producer() -> None:
         nonlocal preparation_seconds, prepared_count, maximum_queue_depth
