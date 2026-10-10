@@ -728,3 +728,38 @@ def test_completeness_check_rejects_blocks_the_decoder_rejects(tmp_path: Path) -
     assert not HorizonTileStore.is_complete(path)
     with pytest.raises(ValueError, match="block length is invalid"):
         read_horizon_tile(path)
+
+
+def test_keyboard_interrupt_stops_pipeline_threads() -> None:
+    import os
+    import signal
+
+    started = threading.Event()
+
+    def factory(_worker_id):
+        def process(_patch, _payload):
+            started.set()
+            time.sleep(0.05)
+            return np.zeros((1, AZIMUTH_COUNT), dtype=np.float32)
+
+        return process
+
+    def interrupt_when_running() -> None:
+        started.wait(timeout=5)
+        # A real SIGINT, as from Ctrl-C, interrupts the main thread's join.
+        os.kill(os.getpid(), signal.SIGINT)
+
+    threading.Thread(target=interrupt_when_running, daemon=True).start()
+    store = _FakeStore()
+    with pytest.raises(KeyboardInterrupt):
+        run_bounded_pipeline(
+            enumerate_patches(128 * 40, 128),
+            store=store,
+            prepare_patch=lambda item: item.index,
+            processor_factory=factory,
+            finalize_patch=lambda _patch, computed: computed,
+            worker_count=2,
+        )
+
+    assert not [t for t in threading.enumerate() if t.name.startswith("horizon-")]
+    assert len(store.writes) < 40

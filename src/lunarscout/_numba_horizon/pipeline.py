@@ -545,17 +545,36 @@ def run_bounded_pipeline(
     writer_thread = None
     if writer_queue is not None:
         writer_thread = threading.Thread(target=writer, name="horizon-output-writer")
-        writer_thread.start()
-    for thread in worker_threads:
-        thread.start()
-    producer_thread.start()
-    producer_thread.join()
-    for thread in worker_threads:
-        thread.join()
-    if writer_queue is not None:
-        put_writer_sentinel()
-        assert writer_thread is not None
-        writer_thread.join()
+
+    def join_all() -> None:
+        # Only started threads can be joined; an interrupt may arrive while
+        # they are still being started.
+        if producer_thread.ident is not None:
+            producer_thread.join()
+        else:
+            for thread in worker_threads:
+                if thread.ident is not None:
+                    put_sentinel()
+        for thread in worker_threads:
+            if thread.ident is not None:
+                thread.join()
+        if writer_thread is not None and writer_thread.ident is not None:
+            put_writer_sentinel()
+            writer_thread.join()
+
+    try:
+        if writer_thread is not None:
+            writer_thread.start()
+        for thread in worker_threads:
+            thread.start()
+        producer_thread.start()
+        join_all()
+    except BaseException:
+        # KeyboardInterrupt reaches only this thread.  Stop the others after
+        # their patch in flight, so the process can exit, then re-raise.
+        stop.set()
+        join_all()
+        raise
     if errors:
         # Raise the first failure, but keep the others visible: after a CUDA
         # fault in one worker, another worker can fail first on the poisoned
