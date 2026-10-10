@@ -776,3 +776,94 @@ def test_unsafe_cast_pair_matrix_for_representable_values(source_dtype, target_d
     np.testing.assert_array_equal(
         result.values, np.array([[0, 1]], dtype=target_dtype),
     )
+
+
+# Review finding B1: the signed multiply overflow mask used floor division
+# where the mixed-sign and negative cases need the ceiling, so products such as
+# 3 * -43 and -1 * -128 in int8 overflowed silently.
+
+
+@pytest.mark.parametrize("dtype", [np.int8, np.uint8])
+def test_multiply_and_square_overflow_masks_are_exact_for_every_8_bit_pair(dtype):
+    from lunarscout.map_algebra._dtypes import _overflow_mask
+
+    info = np.iinfo(dtype)
+    values = np.arange(int(info.min), int(info.max) + 1).astype(dtype)
+    a, b = np.meshgrid(values, values, indexing="ij")
+    exact = a.astype(np.int64) * b.astype(np.int64)
+    expected = (exact < int(info.min)) | (exact > int(info.max))
+    np.testing.assert_array_equal(_overflow_mask(a, b, np.dtype(dtype), "multiply"), expected)
+
+    squares = values.astype(np.int64) ** 2
+    np.testing.assert_array_equal(
+        _overflow_mask(values, None, np.dtype(dtype), "square"), squares > int(info.max)
+    )
+
+
+@pytest.mark.parametrize("dtype", [np.int16, np.int32, np.int64])
+def test_multiply_overflow_mask_is_exact_at_the_overflow_frontier(dtype):
+    from lunarscout.map_algebra._dtypes import _overflow_mask
+
+    info = np.iinfo(dtype)
+    lower, upper = int(info.min), int(info.max)
+    if dtype is np.int16:
+        firsts = list(range(lower, upper + 1))
+    else:
+        rng = np.random.default_rng(0)
+        firsts = sorted(
+            {lower, lower + 1, -2, -1, 1, 2, upper - 1, upper}
+            | {int(v) for v in rng.integers(lower, upper, 2000, endpoint=True)}
+            | {int(v) for v in rng.integers(-70000, 70000, 2000)}
+        )
+    pairs = []
+    for first in firsts:
+        if first == 0:
+            continue
+        for bound in (lower, upper):
+            quotient = bound // first
+            for second in (quotient - 1, quotient, quotient + 1, quotient + 2):
+                if lower <= second <= upper:
+                    pairs.append((first, second))
+    a = np.array([p[0] for p in pairs], dtype=dtype)
+    b = np.array([p[1] for p in pairs], dtype=dtype)
+    expected = np.array([not (lower <= x * y <= upper) for x, y in pairs])
+    actual = _overflow_mask(a, b, np.dtype(dtype), "multiply")
+    np.testing.assert_array_equal(actual, expected)
+    assert expected.any() and (~expected).any()
+
+
+def test_int8_power_overflow_is_exact_for_every_base_and_small_exponent():
+    from lunarscout.map_algebra._dtypes import checked_integer_power
+
+    for exponent in range(9):
+        for base in range(-128, 128):
+            overflows = not (-128 <= base**exponent <= 127)
+            if overflows:
+                with pytest.raises(MapAlgebraDTypeError):
+                    checked_integer_power(np.array([base], np.int8), exponent, np.dtype(np.int8))
+            else:
+                result, _ = checked_integer_power(
+                    np.array([base], np.int8), exponent, np.dtype(np.int8)
+                )
+                assert int(result[0]) == base**exponent
+
+
+@pytest.mark.parametrize(
+    ("value", "operand", "overflows"),
+    [(3, -43, True), (3, -42, False), (-1, -128, True), (-1, -127, False), (-43, 3, True)],
+)
+def test_public_signed_multiply_raises_on_every_overflow(value, operand, overflows):
+    source = _raster(np.array([[value]], dtype=np.int8))
+    other = _raster(np.array([[operand]], dtype=np.int8))
+    if overflows:
+        with pytest.raises(MapAlgebraDTypeError) as error:
+            multiply(source, other)
+        assert error.value.code == "map_algebra_overflow"
+        with pytest.raises(MapAlgebraDTypeError) as error:
+            compute(multiply(source.expression(), other.expression()))
+        assert error.value.code == "map_algebra_overflow"
+    else:
+        for result in (multiply(source, other),
+                       compute(multiply(source.expression(), other.expression()))):
+            assert result.dtype == np.dtype(np.int8)
+            assert int(result.values[0, 0]) == value * operand
