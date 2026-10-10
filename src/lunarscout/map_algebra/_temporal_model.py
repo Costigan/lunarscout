@@ -599,7 +599,9 @@ def _temporal_source_node(
     )
 
 
-def _temporal_local_op(op_id: str, *operands: Any) -> TemporalRasterExpression:
+def _temporal_local_op(
+    op_id: str, *operands: Any, params: dict[str, Any] | None = None
+) -> TemporalRasterExpression:
     tp_operands: list[Any] = []
     temporal_ops: list[TemporalRasterExpression] = []
     spatial_ops: list[Any] = []
@@ -662,35 +664,51 @@ def _temporal_local_op(op_id: str, *operands: Any) -> TemporalRasterExpression:
     if is_comparison or is_boolean:
         dtype = np.dtype(np.bool_)
     else:
-        dtypes: list[np.dtype[Any]] = []
-        for op in tp_operands:
-            if isinstance(op, TemporalRasterExpression) and op._inferred_dtype is not None:
-                dtypes.append(np.dtype(op._inferred_dtype))
-            elif _is_scalar(op):
-                dtypes.append(np.result_type(type(op)))
-        dtype = np.result_type(*dtypes) if dtypes else None
+        # Same exact dtype rules as spatial expressions (review finding H4):
+        # each layer is evaluated by the spatial numeric core.
+        from ._dtypes import result_dtype
 
-    # Infer and validate units
-    if is_comparison or is_boolean:
-        units = None
-    else:
-        t_units = [
-            op._inferred_units
+        operand_dtypes = tuple(
+            np.dtype(op._inferred_dtype)
             for op in tp_operands
-            if isinstance(op, TemporalRasterExpression) and op._inferred_units is not None
-        ]
-        if op_id in ("local.add", "local.subtract"):
-            if len(t_units) >= 2 and t_units[0] != t_units[1]:
-                raise MapAlgebraExpressionError(
-                    f"Unit mismatch in temporal '{op_id}': {t_units[0]} vs {t_units[1]}",
-                    code="map_algebra_unit_mismatch",
-                    details={"units": t_units},
-                )
-            units = t_units[0] if t_units else None
-        elif op_id in ("local.multiply", "local.divide"):
-            units = None
-        else:
-            units = t_units[0] if t_units else None
+            if isinstance(op, TemporalRasterExpression) and op._inferred_dtype is not None
+        )
+        scalars = tuple(op for op in tp_operands if _is_scalar(op))
+        dtype = result_dtype(
+            operand_dtypes,
+            operation=op_id.removeprefix("local."),
+            scalars=scalars,
+            overflow=(params or {}).get("overflow", "raise"),
+            scalar_left=(
+                len(tp_operands) == 2
+                and _is_scalar(tp_operands[0])
+                and isinstance(tp_operands[1], TemporalRasterExpression)
+            ),
+        ) if operand_dtypes else None
+
+    # Same unit rules as spatial expressions (validated at build time).
+    from ._model import _infer_expr_units, _unary_output_units
+
+    temporal_operands = [op for op in tp_operands if isinstance(op, TemporalRasterExpression)]
+    if len(tp_operands) == 1 and temporal_operands:
+        if op_id == "local.logical_not" and temporal_operands[0]._inferred_dtype != np.dtype(np.bool_):
+            raise MapAlgebraExpressionError(
+                "logical_not requires a Boolean raster operand.",
+                code="map_algebra_requires_boolean",
+                details={"dtype": str(temporal_operands[0]._inferred_dtype)},
+            )
+        units = (
+            None if op_id == "local.logical_not"
+            else _unary_output_units(op_id, temporal_operands[0]._inferred_units)
+        )
+    else:
+        units = _infer_expr_units(
+            temporal_operands,
+            operation_id=op_id,
+            output_units=(params or {}).get("output_units"),
+            operands_in_order=tp_operands,
+            raster_types=(TemporalRasterExpression,),
+        )
 
     signal_name = None
     for op in tp_operands:
@@ -698,7 +716,10 @@ def _temporal_local_op(op_id: str, *operands: Any) -> TemporalRasterExpression:
             signal_name = op._signal_name
             break
 
-    return _make_tp_node(op_id, *tp_operands, grid=grid, dtype=dtype, units=units, times=times, signal_name=signal_name)
+    return _make_tp_node(
+        op_id, *tp_operands, grid=grid, dtype=dtype, units=units, times=times,
+        signal_name=signal_name, params=params,
+    )
 
 
 def _temporal_reduction_node(op_id: str, expr: TemporalRasterExpression, **params: Any) -> RasterExpression:
@@ -887,14 +908,12 @@ def _times_json_tp(times: np.ndarray | None) -> dict[str, Any] | None:
 
 def _compute_temporal(expression: TemporalRasterExpression) -> TemporalRaster:
     from .expression import compute as _compute_spatial
-    from ._kernels import (
-        _add, _subtract, _multiply, _divide, _floor_divide, _remainder,
-        _power, _negate, _absolute, _sqrt, _square, _exp, _log, _log10,
-        _sin, _cos, _tan, _arcsin, _arccos, _arctan, _degrees, _radians,
-        _less, _less_equal, _greater, _greater_equal, _equal, _not_equal,
-        _logical_and, _logical_or, _logical_xor, _logical_not,
-        _maximum, _minimum, _clip, _hypot, _arctan2,
-        _round_half_even, _floor, _ceil, _trunc,
+    from ._kernels import _clip
+    from .expression import (
+        _BINARY_OP_IDS,
+        _UNARY_OP_IDS,
+        _eval_binary,
+        _eval_unary,
     )
 
     spatial_cache: dict[str, _Raster] = {}
@@ -904,52 +923,6 @@ def _compute_temporal(expression: TemporalRasterExpression) -> TemporalRaster:
         if key not in spatial_cache:
             spatial_cache[key] = _compute_spatial(se)
         return spatial_cache[key]
-
-    _UNARY_KERNELS: dict[str, Any] = {
-        "local.negative": _negate,
-        "local.absolute": _absolute,
-        "local.sqrt": _sqrt,
-        "local.square": _square,
-        "local.exp": _exp,
-        "local.log": _log,
-        "local.log10": _log10,
-        "local.sin": _sin,
-        "local.cos": _cos,
-        "local.tan": _tan,
-        "local.arcsin": _arcsin,
-        "local.arccos": _arccos,
-        "local.arctan": _arctan,
-        "local.degrees": _degrees,
-        "local.radians": _radians,
-        "local.logical_not": _logical_not,
-        "local.floor": _floor,
-        "local.ceil": _ceil,
-        "local.trunc": _trunc,
-        "local.round": _round_half_even,
-    }
-
-    _BINARY_KERNELS: dict[str, Any] = {
-        "local.add": _add,
-        "local.subtract": _subtract,
-        "local.multiply": _multiply,
-        "local.divide": _divide,
-        "local.floor_divide": _floor_divide,
-        "local.remainder": _remainder,
-        "local.power": _power,
-        "local.less": _less,
-        "local.less_equal": _less_equal,
-        "local.greater": _greater,
-        "local.greater_equal": _greater_equal,
-        "local.equal": _equal,
-        "local.not_equal": _not_equal,
-        "local.logical_and": _logical_and,
-        "local.logical_or": _logical_or,
-        "local.logical_xor": _logical_xor,
-        "local.minimum": _minimum,
-        "local.maximum": _maximum,
-        "local.hypot": _hypot,
-        "local.arctan2": _arctan2,
-    }
 
     sorted_nodes = _topological_sort_temporal(expression)
     node_results: dict[str, np.ndarray] = {}
@@ -1027,43 +1000,35 @@ def _compute_temporal(expression: TemporalRasterExpression) -> TemporalRaster:
             node_valid[node._node_id] = valid
             continue
 
-        if op_id in _UNARY_KERNELS:
-            kernel = _UNARY_KERNELS[op_id]
-            operand = node._operands[0]
-            val = _get_op_result(operand, node_results)
-            vld = _get_op_valid(operand, node_valid)
-            result = kernel(val)
-            node_results[node._node_id] = result
-            node_valid[node._node_id] = vld.copy()
-            continue
+        if op_id in _UNARY_OP_IDS or op_id in _BINARY_OP_IDS:
+            # Evaluate each time layer with the spatial numeric core, so
+            # temporal and spatial expressions share dtype rules, checked
+            # integer overflow, scalar handling and domain validity (review
+            # finding H4).
+            evaluate = _eval_unary if op_id in _UNARY_OP_IDS else _eval_binary
 
-        if op_id in _BINARY_KERNELS:
-            kernel = _BINARY_KERNELS[op_id]
-            a = node._operands[0]
-            b = node._operands[1]
+            def layer_operand(operand: Any, index: int) -> Any:
+                if _is_scalar(operand):
+                    return operand
+                return _Raster(
+                    values=_get_op_result(operand, node_results)[index],
+                    georef=grid,
+                    valid=_get_op_valid(operand, node_valid)[index],
+                    units=operand._inferred_units,
+                )
 
-            if _is_scalar(a):
-                a_val = float(a) if isinstance(a, (float, np.floating)) else int(a)
-                b_val = _get_op_result(b, node_results)
-                b_vld = _get_op_valid(b, node_valid)
-                result = kernel(np.full(b_val.shape, a_val, dtype=b_val.dtype), b_val)
-                node_results[node._node_id] = result
-                node_valid[node._node_id] = b_vld.copy()
-            elif _is_scalar(b):
-                b_val = float(b) if isinstance(b, (float, np.floating)) else int(b)
-                a_val = _get_op_result(a, node_results)
-                a_vld = _get_op_valid(a, node_valid)
-                result = kernel(a_val, b_val)
-                node_results[node._node_id] = result
-                node_valid[node._node_id] = a_vld.copy()
+            layers = [
+                evaluate(node, [layer_operand(op, index) for op in node._operands])
+                for index in range(nt)
+            ]
+            if layers:
+                node_results[node._node_id] = np.stack([layer.values for layer in layers])
+                node_valid[node._node_id] = np.stack([layer.valid for layer in layers])
             else:
-                a_val = _get_op_result(a, node_results)
-                a_vld = _get_op_valid(a, node_valid)
-                b_val = _get_op_result(b, node_results)
-                b_vld = _get_op_valid(b, node_valid)
-                result = kernel(a_val, b_val)
-                node_results[node._node_id] = result
-                node_valid[node._node_id] = a_vld & b_vld
+                node_results[node._node_id] = np.empty(
+                    (0, grid.height, grid.width), dtype=node._inferred_dtype
+                )
+                node_valid[node._node_id] = np.empty((0, grid.height, grid.width), dtype=np.bool_)
             continue
 
         if op_id == "local.clip":

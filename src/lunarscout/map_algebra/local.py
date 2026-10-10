@@ -1223,16 +1223,30 @@ def arctan(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Ras
 
 
 def arctan2(
-    a: Raster,
-    b: Raster,
+    a: Raster | int | float,
+    b: Raster | int | float,
     *,
     numeric_errors: NumericErrorsPolicy = "invalid",
 ) -> Raster:
-    _require_common_grid([a, b])
-    return _dispatch_binary_raster_raster(
-        a, b, _arctan2, operation="arctan2", output_units="radians",
-        numeric_errors=numeric_errors,
-    )
+    if isinstance(a, Raster) and isinstance(b, Raster):
+        _require_common_grid([a, b])
+        return _dispatch_binary_raster_raster(
+            a, b, _arctan2, operation="arctan2", output_units="radians",
+            numeric_errors=numeric_errors,
+        )
+    if isinstance(a, Raster) and _is_scalar(b):
+        return _dispatch_binary_raster_scalar(
+            a, _normalize_scalar(b, argument="b"), _arctan2,
+            operation="arctan2", output_units="radians", keep_units=False,
+            numeric_errors=numeric_errors,
+        )
+    if _is_scalar(a) and isinstance(b, Raster):
+        return _dispatch_binary_raster_scalar(
+            b, _normalize_scalar(a, argument="a"), _arctan2,
+            operation="arctan2", output_units="radians", keep_units=False,
+            numeric_errors=numeric_errors, scalar_left=True,
+        )
+    raise MapAlgebraError("arctan2() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
 def degrees(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Raster:
@@ -1250,15 +1264,28 @@ def radians(a: Raster, *, numeric_errors: NumericErrorsPolicy = "invalid") -> Ra
 
 
 def hypot(
-    a: Raster,
-    b: Raster,
+    a: Raster | int | float,
+    b: Raster | int | float,
     *,
     numeric_errors: NumericErrorsPolicy = "invalid",
 ) -> Raster:
-    _require_common_grid([a, b])
-    return _dispatch_binary_raster_raster(
-        a, b, _hypot, operation="hypot", numeric_errors=numeric_errors,
-    )
+    if isinstance(a, Raster) and isinstance(b, Raster):
+        _require_common_grid([a, b])
+        return _dispatch_binary_raster_raster(
+            a, b, _hypot, operation="hypot", numeric_errors=numeric_errors,
+        )
+    if isinstance(a, Raster) and _is_scalar(b):
+        return _dispatch_binary_raster_scalar(
+            a, _normalize_scalar(b, argument="b"), _hypot,
+            operation="hypot", keep_units=False, numeric_errors=numeric_errors,
+        )
+    if _is_scalar(a) and isinstance(b, Raster):
+        return _dispatch_binary_raster_scalar(
+            b, _normalize_scalar(a, argument="a"), _hypot,
+            operation="hypot", keep_units=False, numeric_errors=numeric_errors,
+            scalar_left=True,
+        )
+    raise MapAlgebraError("hypot() requires at least one Raster operand.", code="map_algebra_no_raster_operand")
 
 
 def round_half_even(

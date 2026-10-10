@@ -33,6 +33,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
     writer failure raises instead of hanging the bounded pipeline (H-E).
   - *Map algebra.* Signed integer `multiply`, `square` and `power` detect
     every overflow; 366 int8 products such as 3 x -43 were missed (B1).
+    Temporal local operations follow the spatial numeric policy layer by
+    layer: checked integer overflow, exact scalar dtypes, invalid domain
+    errors, the spatial unit rules, and the `overflow=` / `numeric_errors=`
+    keywords (H4; previously uint8 `250 + 10` gave 4). `hypot` and `arctan2`
+    accept scalar operands instead of raising `AttributeError`.
   - *Data loss (behaviour change).* `ma.write(start_fresh=True)` discards
     restart state only: it no longer deletes the published output, and
     replacing one now requires `overwrite=True` (H5). An output that is also

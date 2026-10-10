@@ -33,7 +33,7 @@ from lunarscout.map_algebra import (
     explain_temporal,
 )
 from lunarscout.map_algebra._model import RasterExpression
-from lunarscout.errors import MapAlgebraError, MapAlgebraExpressionError
+from lunarscout.errors import MapAlgebraError, MapAlgebraExpressionError, MapAlgebraUnitError
 
 from tests.map_algebra.conftest import _georef  # type: ignore[import-untyped]
 
@@ -528,6 +528,7 @@ class TestTemporalLayerwiseOps:
             values=np.ones((8, 10), dtype=np.float32),
             georef=georef,
             valid=np.ones((8, 10), dtype=np.bool_),
+            units=tr.units,
         )
         result = r + temporal_expr  # Uses Raster.__add__ -> delegates to TemporalRasterExpression
         assert isinstance(result, TemporalRasterExpression)
@@ -542,6 +543,7 @@ class TestTemporalLayerwiseOps:
             values=np.ones((8, 10), dtype=np.float32),
             georef=georef,
             valid=np.ones((8, 10), dtype=np.bool_),
+            units=tr.units,
         )
         result = temporal_expr + r  # TemporalRasterExpression.__add__
         assert isinstance(result, TemporalRasterExpression)
@@ -744,11 +746,19 @@ class TestComputeTemporal:
             values=np.ones((8, 10), dtype=np.float32) * 100.0,
             georef=georef,
             valid=np.ones((8, 10), dtype=np.bool_),
+            units=tr.units,
         )
         expr2 = temporal_expr + r
         result = compute_temporal(expr2)
         expected = tr.values + 100.0
         np.testing.assert_array_almost_equal(result.values, expected)
+
+        # As for spatial expressions, adding a unitless raster to one with
+        # units is rejected when the expression is built.
+        unitless = _Raster(values=r.values, georef=georef, valid=r.valid)
+        with pytest.raises(MapAlgebraExpressionError) as error:
+            temporal_expr + unitless
+        assert error.value.code == "map_algebra_unit_mismatch"
 
     def test_compute_invalid_input(self):
         with pytest.raises(MapAlgebraExpressionError, match="TemporalRasterExpression"):
@@ -1146,10 +1156,13 @@ class TestScalarLeftOperands:
         np.testing.assert_array_almost_equal(result.values, expected)
 
     def test_ma_unary_sin_on_expr(self):
-        from lunarscout.map_algebra import sin as ma_sin
+        from lunarscout.map_algebra import radians as ma_radians, sin as ma_sin
         tr = _make_temporal_raster(num_layers=3)
         expr = temporal_source(tr)
-        composed = ma_sin(expr)
+        # As for spatial rasters, trigonometry requires angle units.
+        with pytest.raises(MapAlgebraUnitError):
+            ma_sin(expr)
+        composed = ma_sin(ma_radians(expr))
         assert isinstance(composed, TemporalRasterExpression)
 
     def test_ma_unary_log_on_expr(self):

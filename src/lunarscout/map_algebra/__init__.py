@@ -192,10 +192,8 @@ def _wrap_unary(fn: Any, op_id: str) -> Any:
     def _wrapper(a: Any, **kwargs: Any) -> Any:
         fn_signature.bind(a, **kwargs)
         if isinstance(a, TemporalRasterExpression):
-            if kwargs:
-                raise TypeError(f"{fn.__name__}() numeric policies are not supported for temporal expressions yet.")
             from ._temporal_model import _temporal_local_op
-            return _temporal_local_op(op_id, a)
+            return _temporal_local_op(op_id, a, params=_normalized_numeric_params(kwargs))
         if isinstance(a, RasterExpression):
             from ._model import _new_expr_unary
             return _new_expr_unary(a, op_id, params=_normalized_numeric_params(kwargs))
@@ -264,10 +262,17 @@ def _wrap_binary(fn: Any, op_id: str) -> Any:
     def _wrapper(a: Any, b: Any, **kwargs: Any) -> Any:
         fn_signature.bind(a, b, **kwargs)
         if isinstance(a, (TemporalRasterExpression, TemporalRaster)) or isinstance(b, (TemporalRasterExpression, TemporalRaster)):
-            if kwargs:
-                raise TypeError(f"{fn.__name__}() keyword policies are not supported for temporal expressions yet.")
             from ._temporal_model import _temporal_local_op
-            return _temporal_local_op(op_id, a, b)
+            params = _normalized_numeric_params(kwargs)
+            if "output_units" in params:
+                from ._units import normalize_output_units
+
+                normalized_units = normalize_output_units(params["output_units"])
+                if normalized_units is None:
+                    params.pop("output_units")
+                else:
+                    params["output_units"] = normalized_units
+            return _temporal_local_op(op_id, a, b, params=params)
         if isinstance(a, RasterExpression) or isinstance(b, RasterExpression):
             from ._model import _new_expr_op
             params = _normalized_numeric_params(kwargs)

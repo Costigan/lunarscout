@@ -2298,7 +2298,10 @@ temporal_expr = ma.temporal_source(series)
 Layer-wise local operations combine temporal expressions with static spatial
 rasters or scalars. A spatial `Raster` or `RasterExpression` broadcasts
 across every time layer. All operands must share the same spatial grid; two
-temporal operands must have matching UTC time coordinates.
+temporal operands must have matching UTC time coordinates. Each layer follows
+exactly the spatial rules for dtypes, units, integer overflow (`overflow=`,
+default `"raise"`), and numeric domain errors (`numeric_errors=`, default
+`"invalid"`); both keywords are accepted on temporal operands.
 
 ```python
 sun_expr = ma.temporal_source(sun_series)

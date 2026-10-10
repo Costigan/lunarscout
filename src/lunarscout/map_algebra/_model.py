@@ -387,10 +387,13 @@ def _infer_expr_units(
     operation_id: str,
     output_units: str | None = None,
     operands_in_order: list[Any] | None = None,
+    raster_types: tuple[type, ...] = (),
 ) -> str | None:
+    # raster_types lets temporal expressions share these unit rules.
+    expression_types = (RasterExpression, *raster_types)
     units: list[str | None] = []
     for op in operands:
-        if isinstance(op, RasterExpression):
+        if isinstance(op, expression_types):
             units.append(op.units)
     equality_required = operation_id in (
         "local.add", "local.subtract", "local.minimum", "local.maximum",
@@ -429,13 +432,13 @@ def _infer_expr_units(
         ordered = operands_in_order or operands
         base = ordered[0]
         exponent = ordered[1]
-        base_is_raster = isinstance(base, RasterExpression)
-        exponent_is_scalar = not isinstance(exponent, RasterExpression)
+        base_is_raster = isinstance(base, expression_types)
+        exponent_is_scalar = not isinstance(exponent, expression_types)
         return power_units(
             base_units=base.units if base_is_raster else None,
             exponent_units=(
                 exponent.units
-                if isinstance(exponent, RasterExpression)
+                if isinstance(exponent, expression_types)
                 else None
             ),
             exponent_is_scalar=exponent_is_scalar,
@@ -516,6 +519,19 @@ def _new_expr_op(
     )
 
 
+def _unary_output_units(op_id: str, units: str | None) -> str | None:
+    """Output units of a unary local operation; trigonometry requires angles."""
+    if op_id in {"local.sin", "local.cos", "local.tan"}:
+        from ._units import require_angle_units
+        require_angle_units(units, argument="a")
+    return (
+        "radians" if op_id in {"local.arcsin", "local.arccos", "local.arctan", "local.radians"}
+        else "degrees" if op_id == "local.degrees"
+        else None if op_id in {"local.sin", "local.cos", "local.tan"}
+        else units
+    )
+
+
 def _new_expr_unary(
     self_expr: RasterExpression | Raster,
     op_id: str,
@@ -531,15 +547,7 @@ def _new_expr_unary(
                 code="map_algebra_requires_boolean",
                 details={"dtype": str(expr.dtype)},
             )
-        if op_id in {"local.sin", "local.cos", "local.tan"}:
-            from ._units import require_angle_units
-            require_angle_units(expr.units, argument="a")
-        output_units = (
-            "radians" if op_id in {"local.arcsin", "local.arccos", "local.arctan", "local.radians"}
-            else "degrees" if op_id == "local.degrees"
-            else None if op_id in {"local.sin", "local.cos", "local.tan"}
-            else expr.units
-        )
+        output_units = _unary_output_units(op_id, expr.units)
         from ._dtypes import result_dtype
 
         dtype = (
