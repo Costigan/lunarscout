@@ -1044,6 +1044,36 @@ Other known sampling limits:
   `compress=False` (`.bin`, 32-bit floats) if horizons above 50 degrees
   matter.
 
+#### Near-field terrain-model uncertainty
+
+A DEM gives one elevation per pixel. Between pixels, horizon generation
+assumes a bilinear surface, which never rises above its highest corner. The
+real surface is unknown below the DEM's resolution, and a different but
+equally defensible assumption gives noticeably different horizons when the
+horizon is set by nearby terrain.
+
+On one 20 m LOLA polar tile (2026-10-09), re-tracing rays through a smooth
+curvature-minimizing (interpolating cubic) surface instead of bilinear
+changed horizons by these mean amounts, grouped by distance to the terrain
+that sets the horizon, for horizons between -2 and 5 degrees:
+
+| Distance to the limiting terrain | Mean change, cubic vs bilinear |
+|---|---|
+| 0 to 100 m | 0.35 to 0.37 deg |
+| 100 to 500 m | 0.08 deg |
+| 500 m to 2 km | 0.03 deg |
+| beyond 2 km | 0.002 deg |
+
+About half of those rays were limited within 500 m. Treat these figures as
+the terrain-model uncertainty of horizons set by terrain within a few hundred
+metres: it is larger than the code's numerical error (about 0.015 deg mean
+against an exact calculation on the same bilinear surface) and comparable to
+the Sun's apparent diameter (about 0.53 deg). Sunlight fractions, lit/unlit
+decisions and durations near the Sun's rising and setting inherit it. The
+figures come from one tile; other terrain, resolutions and latitudes may
+differ, and neither surface has been checked against observed illumination.
+The evidence and options are in `docs/numba-horizon-terrain-interpolation.md`.
+
 ### Scientific Algorithm Identifiers
 
 Every downstream product records the algorithm that produced it in
@@ -1191,6 +1221,15 @@ The calculation does not create a Metonic lightmap cube. It chooses the
 highest Sun vector in each horizon azimuth bin as seen from the four DEM
 corners and center, unions those candidates, and reduces them directly into
 one output tile per horizon patch.
+
+PSR status is a statement about the DEM's terrain model, not about the real
+surface below its resolution. Near the poles the Sun stays within a few
+degrees of the horizon, so whether a pixel is ever lit often depends on
+terrain within a few hundred metres, where the terrain-model uncertainty is
+largest (see "Near-field terrain-model uncertainty"). The PSR status of very
+small regions, a few pixels across, is probably dominated by terrain below
+the resolution of orbital DEMs, such as small craters and boulders, and
+should be treated as unreliable.
 
 ### Safe-Haven Maps
 
