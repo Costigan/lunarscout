@@ -1,6 +1,6 @@
 # Lunarscout 0.1.0rc5: Pre-Release Code Review
 
-> **Update 2026-10-09.** Part 2 horizon findings H-A, H-B, H-C, H-D, M-G and M-I are fixed on branch `fix/hierarchy-cull-bound` (not yet merged). See "Fix status" at the start of Part 2.
+> **Update 2026-10-09.** Part 2 horizon findings H-A, H-B, H-C, H-D, M-G and M-I were fixed on branch `fix/hierarchy-cull-bound`, which has since been merged into `main`. See "Fix status" at the start of Part 2.
 
 Date: 2026-10-08. Mode: read-only. Scope: public API and root namespace, map algebra and writer lifecycle, raster/temporal/SPICE/trajectory, and (second pass) the horizon calculation, CUDA kernels, tile pipeline, worker and deployment files. USRA Proprietary unless stated otherwise.
 
@@ -117,7 +117,7 @@ Basis: C# parity (phase-4 report) shows the Numba/CUDA code reproduces the earli
 - **Algorithm-level errors exist** (H-A to H-D below) that C# parity cannot reveal. **Measured on your RTX 5090 (see "Measured results" below):** production GPU horizons on the LOLA fixture differ from the independent brute force by 0.30° on average and up to 2.03°, with 74% of 815 samples above the 0.005° tolerance. A single NaN node produced 89.43° horizons on the real GPU (H-C). Correcting only the far-field slope formula (H-A) in a scratch copy cut the mean error to 0.033° and removed the far-field error (2 to 5 km max 2.03° → 0.07°); the residual is near-field terrain below the observer that production misses (s5; consistent with H-B, not yet isolated).
 - **Operational hazards** (a deadlock, silent resume reuse, silent invalid patches) matter for NRP production runs.
 
-## Fix status, 2026-10-09 (branch `fix/hierarchy-cull-bound`, not merged)
+## Fix status, 2026-10-09 (branch `fix/hierarchy-cull-bound`, since merged into `main`)
 
 All measurements in this section were run by Claude Code directly on the RTX 5090 or its CPU, against the 512 px LOLA fixture and the s2 float64 brute force unless stated. Full CPU suite after the last commit: 2131 passed, 26 skipped. GPU opt-in tests: 268 passed, 0 failed.
 
@@ -311,7 +311,7 @@ Open after 2026-10-09:
 - Part 2 LOW: all handled 2026-10-10 (see the LOW list).
 - Part 2 MEDIUM: all handled except the M-H remainder (GPU-memory pre-check, poisoned-context recovery). M-B remainder, M-C, M-D, M-E, M-F (tests), M-J, M-K, M-L and M-O fixed, M-H partly fixed and M-A documented 2026-10-10. M-M and M-N: declined 2026-10-10. H-F (resume provenance): declined 2026-10-09. (A note here that a PSR validation error surfaced as `psr_storage_failed` was a misreading of pytest's source context; it surfaces correctly as `psr_calculation_failed`.)
 - C# (`QuadTreeHorizonGenerator.cs`): H-A applied but not built or tested; H-B and H-C not ported.
-- Merge `fix/hierarchy-cull-bound`.
+- Done: `fix/hierarchy-cull-bound` is merged; all its commits are in `main` (checked 2026-10-13).
 
 ## Part 2 coverage
 
