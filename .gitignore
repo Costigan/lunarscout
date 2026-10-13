@@ -219,3 +219,6 @@ Desktop.ini
 
 # Leaderboard UI local state
 backend/evals/assistant/leaderboard_ui_state.json
+
+# Claude desktop session outputs
+Claude outputs/
