@@ -283,8 +283,9 @@ that intersect it, in time order.
 
 * **Offline oracle.** `tests/numba_horizon/test_safe_haven_state_machine.py`
   contains an independent implementation written the way a list-based
-  algorithm would be: build the whole shadow and outage timelines, merge runs,
-  find hibernations, intersect them, and take the minimum per month. The streaming
+  algorithm would be, one small function per rule of section 2: build the whole
+  shadow and outage timelines, merge runs, find hibernations, intersect them,
+  and take the minimum per month. The streaming
   machine and the oracle must agree exactly on random timelines: 10 combinations
   of step (6 h and 1 h) and merge gap (0, 1, 12, 24 and 100 h), 400 pixels each,
   260 samples, 7 bands with random boundaries and samples outside every band.

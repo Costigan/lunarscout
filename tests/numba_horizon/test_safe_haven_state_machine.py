@@ -24,58 +24,116 @@ SHADOW, PARTIAL, FULL = 0.1, 0.5, 1.0
 BELOW, ABOVE = 1.0, 3.0
 
 
+# ---------------------------------------------------------------------------
+# The offline reference: the rules of docs/safe-haven-state-machine.md, section 2,
+# written the way they are stated, on whole timelines.  One function per rule.
+# ---------------------------------------------------------------------------
+
+
+def shadow_runs(is_shadow, step, merge_gap_hours):
+    """Rule: shadow samples are joined into one run when the sunlit gap between
+    them lasts strictly less than the merge gap.  The gap belongs to the run.
+
+    Returns ``(first, last)`` sample indices of each run, inclusive.
+    """
+    runs = []
+    for sample in np.flatnonzero(is_shadow):
+        if runs:
+            first, last = runs[-1]
+            sunlit_samples_between = sample - last - 1
+            joined = (
+                sunlit_samples_between == 0
+                or sunlit_samples_between * step < merge_gap_hours
+            )
+            if joined:
+                runs[-1] = (first, int(sample))
+                continue
+        runs.append((int(sample), int(sample)))
+    return runs
+
+
+def stretches(flags):
+    """Maximal stretches of consecutive true values, as ``(first, last)``, inclusive."""
+    found = []
+    first = None
+    for sample in range(len(flags) + 1):
+        flagged = sample < len(flags) and bool(flags[sample])
+        if flagged and first is None:
+            first = sample
+        if not flagged and first is not None:
+            found.append((first, sample - 1))
+            first = None
+    return found
+
+
+def hibernations(is_outage):
+    """Rule: a hibernation is a maximal stretch of consecutive outage samples."""
+    return stretches(is_outage)
+
+
+def run_length(run):
+    first, last = run
+    return last - first + 1
+
+
+def run_touches(run, hibernation):
+    """Rule: a run intersects a hibernation when they share a sample."""
+    return run[0] <= hibernation[1] and hibernation[0] <= run[1]
+
+
+def score_of(hibernation, runs):
+    """Rule: the score of a hibernation is the length of the longest run that
+    intersects it, or 0 if no run does."""
+    return max((run_length(run) for run in runs if run_touches(run, hibernation)), default=0)
+
+
+def hibernation_values(is_shadow, is_outage, band, band_count, step, merge_gap_hours):
+    """Rule: a hibernation belongs to the month of its first sample, and a month
+    reports the smallest score among the hibernations that start in it.  A month
+    with none is NaN.  A hibernation under way at the first sample has an unknown
+    start and is not counted; neither is one that starts outside every band."""
+    runs = shadow_runs(is_shadow, step, merge_gap_hours)
+    scores_by_month = {month: [] for month in range(band_count)}
+    for hibernation in hibernations(is_outage):
+        first_sample = hibernation[0]
+        if first_sample == 0 or band[first_sample] < 0:
+            continue
+        scores_by_month[band[first_sample]].append(score_of(hibernation, runs))
+    return np.array([
+        min(scores) * step if scores else np.nan
+        for scores in scores_by_month.values()
+    ])
+
+
+def joint_operating_values(is_outage, fraction, band, band_count, step, operating):
+    """Rule: a sample is joint operating when Earth is available and the Sun is at
+    least the operating fraction (less a 1e-6 tolerance).  A month's total counts
+    the samples in it; its longest run is credited to the month the run starts in."""
+    is_joint = (~is_outage) & (fraction >= operating - OPERATING_FUZZ)
+    total = np.zeros(band_count)
+    longest = np.zeros(band_count)
+    for first, last in stretches(is_joint):
+        for sample in range(first, last + 1):
+            if band[sample] >= 0:
+                total[band[sample]] += 1
+        if band[first] >= 0:
+            longest[band[first]] = max(longest[band[first]], last - first + 1)
+    return total * step, longest * step
+
+
 def offline_reference(fraction, margin, band, *, step, merge_gap_hours, band_count,
                       operating=FULL):
     """Hibernation, joint-total and joint-longest hours for one pixel's timeline."""
-    count = len(fraction)
-    shadow = fraction < SUN_THRESHOLD
-    outage = margin < EARTH_THRESHOLD
-
-    # Shadow runs: shadow samples whose sunlit gap is shorter than the merge gap.
-    runs: list[list[int]] = []
-    for index in np.flatnonzero(shadow):
-        if runs:
-            gap = index - runs[-1][1] - 1
-            if gap == 0 or gap * step < merge_gap_hours:
-                runs[-1][1] = int(index)
-                continue
-        runs.append([int(index), int(index)])
-
-    # Hibernations: maximal outage intervals, scored by the longest run touching them.
-    hibernation = np.full(band_count, np.nan)
-    start = None
-    for index in range(count + 1):
-        active = index < count and bool(outage[index])
-        if active and start is None:
-            start = index
-        elif not active and start is not None:
-            first, last = start, index - 1
-            start = None
-            if first == 0 or band[first] < 0:
-                continue  # start unknown, or outside every band
-            score = max(
-                (b - a + 1 for a, b in runs if a <= last and b >= first), default=0
-            )
-            current = hibernation[band[first]]
-            hibernation[band[first]] = score if np.isnan(current) else min(current, score)
-
-    # Joint operating: Earth available and the Sun fully visible.
-    joint = (~outage) & (fraction >= operating - OPERATING_FUZZ)
-    total = np.zeros(band_count)
-    longest = np.zeros(band_count)
-    run_start = None
-    for index in range(count + 1):
-        active = index < count and bool(joint[index])
-        if active:
-            if band[index] >= 0:
-                total[band[index]] += 1
-            if run_start is None:
-                run_start = index
-            if band[run_start] >= 0:
-                longest[band[run_start]] = max(longest[band[run_start]], index - run_start + 1)
-        else:
-            run_start = None
-    return hibernation * step, total * step, longest * step
+    is_shadow = fraction < SUN_THRESHOLD      # strictly below the Sun threshold
+    is_outage = margin < EARTH_THRESHOLD      # strictly below the Earth threshold
+    joint_total, joint_longest = joint_operating_values(
+        is_outage, fraction, band, band_count, step, operating
+    )
+    return (
+        hibernation_values(is_shadow, is_outage, band, band_count, step, merge_gap_hours),
+        joint_total,
+        joint_longest,
+    )
 
 
 def random_timelines(rng, pixels, count, band_count):
