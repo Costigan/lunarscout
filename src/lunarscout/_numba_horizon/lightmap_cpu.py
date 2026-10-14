@@ -219,6 +219,16 @@ class LightmapCpuSession:
                 margins[:, :valid_height, :valid_width],
             )
 
+    def iter_patch_fraction_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
+        """Yield float32 visible fractions as ``(steps, y, x)`` batches of time steps."""
+        for batch, _margins in self._iter_signal_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, margin_requested=False):
+            yield batch
+
+    def iter_patch_margin_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
+        """Yield body-centre elevation above the local horizon as ``(steps, y, x)`` batches."""
+        for _fractions, margins in self._iter_signal_batches(dem, horizons_deg, body_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, margin_requested=True):
+            yield margins
+
     def iter_patch_fraction_tiles(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
         """Yield unquantized float32 visible fractions in bounded batches."""
         for batch, _margins in self._iter_signal_batches(dem, horizons_deg, sun_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, margin_requested=False):

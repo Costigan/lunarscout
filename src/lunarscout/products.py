@@ -1244,7 +1244,12 @@ def generate_safe_haven_products(
     verbose : bool, default False
         Print backend and patch-completion messages.
     progress_callback, progress_event_callback, cancellation_requested
-        As for the other products.
+        As for the other products. Horizon tiles are read ahead and products are
+        written behind the calculation on helper threads, so a progress callback
+        can be called from a helper thread; calls are serialised, never
+        concurrent, and an exception raised by a callback reaches the caller
+        unchanged. On cancellation, patches already calculated are still written
+        before the call raises, and the run resumes from them.
 
     Returns
     -------

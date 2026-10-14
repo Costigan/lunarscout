@@ -15,6 +15,7 @@ import pytest
 
 from lunarscout._numba_horizon.safe_haven import (
     OPERATING_FUZZ,
+    reduce_safe_haven_products_batches,
     reduce_safe_haven_products_patch_stream,
 )
 
@@ -165,7 +166,7 @@ def random_timelines(rng, pixels, count, band_count):
 
 
 def run_machine(fraction, margin, band, *, step, merge_gap_hours, band_count,
-                use_numba=True):
+                use_numba=True, batch_size=32):
     count, pixels = fraction.shape
     return reduce_safe_haven_products_patch_stream(
         (fraction[t].reshape(pixels, 1) for t in range(count)),
@@ -179,6 +180,7 @@ def run_machine(fraction, margin, band, *, step, merge_gap_hours, band_count,
         merge_gap_hours=merge_gap_hours,
         time_step_hours=step,
         use_numba=use_numba,
+        batch_size=batch_size,
     )
 
 
@@ -344,3 +346,48 @@ def test_invalid_dem_pixels_are_skipped_but_other_nonfinite_signals_raise() -> N
         run(None)                                  # NaN with no mask is still an error
     with pytest.raises(ValueError, match="finite"):
         run(np.array([[True, False]]))             # NaN at a pixel not marked invalid
+
+
+@pytest.mark.parametrize("batch_size", [1, 5, 32, 1000])
+def test_the_result_does_not_depend_on_how_time_steps_are_batched(batch_size) -> None:
+    rng = np.random.default_rng(11)
+    fraction, margin, band = random_timelines(rng, 60, 130, 6)
+    kwargs = dict(step=6.0, merge_gap_hours=24.0, band_count=6)
+
+    expected = run_machine(fraction, margin, band, batch_size=32, **kwargs)
+    actual = run_machine(fraction, margin, band, batch_size=batch_size, **kwargs)
+
+    for layers_a, layers_b in zip(expected, actual):
+        np.testing.assert_array_equal(np.stack(layers_a), np.stack(layers_b))
+
+
+def test_batches_of_unequal_size_are_accepted_and_checked() -> None:
+    rng = np.random.default_rng(12)
+    fraction, margin, band = random_timelines(rng, 20, 50, 3)
+    sizes = [7, 1, 20, 22]                     # 50 samples in uneven batches
+    cuts = np.cumsum([0] + sizes)
+    options = dict(
+        month_index_of=band, sunlight_threshold=SUN_THRESHOLD,
+        earth_threshold_deg=EARTH_THRESHOLD, operating_sunlight_fraction=FULL,
+        merge_gap_hours=24.0, time_step_hours=6.0,
+    )
+
+    def batches(array, take=None):
+        return (array[a:b].reshape(b - a, 20, 1) for a, b in zip(cuts[:-1], cuts[1:]))
+
+    result = reduce_safe_haven_products_batches(
+        batches(fraction), batches(margin), 50, ((None, None),) * 3, **options
+    )
+    expected = run_machine(fraction, margin, band, step=6.0, merge_gap_hours=24.0, band_count=3)
+    for layers_a, layers_b in zip(result, expected):
+        np.testing.assert_array_equal(np.stack(layers_a), np.stack(layers_b))
+    with pytest.raises(ValueError, match="time_count"):   # batches overshoot time_count
+        reduce_safe_haven_products_batches(
+            batches(fraction), batches(margin), 40, ((None, None),) * 3,
+            **{**options, "month_index_of": band[:40]},
+        )
+    with pytest.raises(ValueError, match="ended before"):  # batches run out early
+        reduce_safe_haven_products_batches(
+            batches(fraction), batches(margin), 60, ((None, None),) * 3,
+            **{**options, "month_index_of": np.concatenate([band, band[-10:]])},
+        )

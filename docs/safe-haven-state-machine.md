@@ -329,5 +329,29 @@ Per pixel the state is 17 integers plus four small per-band arrays; per sample
 the work is a fixed number of integer operations, plus one loop over a range of
 bands each time a run closes. Memory does not depend on the number of samples.
 The same functions run in a CUDA kernel; the state table lives in global memory
-between time batches. The cost relative to the lighting calculation has not been
-measured.
+between time batches.
+
+On the CPU, the reducer takes whole batches of time steps (32 by default) and
+each thread advances its pixels through every step of the batch, so one parallel
+call does many steps of work per thread. Calling it once per time step spent
+most of its time launching the parallel region.
+
+The pipeline overlaps its stages: horizon tiles are read and decoded ahead by two
+threads, the calculation runs on the calling thread (the CUDA context belongs
+to it), and one thread writes the three products behind it, in order, so each
+patch is journaled durably as before.
+
+Measured on one laptop (Core Ultra 9 275HX: 8 performance and 16 efficiency
+cores; RTX 5090 Laptop GPU), a synthetic 384 x 384 scene of 9 patches with 2,922
+six-hour samples, through `generate_safe_haven_products`:
+
+| Backend | Before overlap and batching | After |
+|---|---|---|
+| CUDA | 2.2 s | 0.85 s |
+| CPU (24 threads) | 6.9 to 8.5 s | 4.9 to 5.3 s |
+
+On the CPU, speedup over one thread at 24 threads rose from 3.9x to 6.9x. For one
+patch the CUDA calculation itself takes about 0.04 s, against about 0.7 s on
+the CPU. The CPU stages that remain are the Sun-fraction and Earth-elevation
+calculations, which are memory-bound; the busiest stage of the CUDA run is now
+writing the three products. These are single runs on one machine and scene.

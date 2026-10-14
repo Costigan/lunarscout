@@ -280,3 +280,90 @@ def test_the_public_function_in_a_fresh_cpu_process(tmp_path: Path) -> None:
     hibernation, total, longest = result["values"]
     assert hibernation[0] == pytest.approx(48.0) and hibernation[1] != hibernation[1]
     assert total == [36.0, 0.0] and longest == [36.0, 0.0]
+
+
+def _three_patch_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    """A 1 x 300 DEM: three patches, each with a real horizon tile."""
+    width = 300
+    dem_path = tmp_path / "dem.tif"
+    ls.write_geotiff(dem_path, np.zeros((1, width), dtype=np.float32), _georef(width, 1))
+    horizons_path = tmp_path / "horizons"
+    store = HorizonTileStore(horizons_path)
+    for tile_x in (0, 128, 256):
+        valid = min(128, width - tile_x)
+        store.write(
+            0, tile_x, 0.0, np.zeros((valid, AZIMUTH_COUNT), dtype=np.float32),
+            compress=True, valid_width=valid, valid_height=1,
+        )
+    return dem_path, horizons_path
+
+
+def test_tiles_are_read_while_earlier_patches_are_computed_and_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    import lunarscout._numba_horizon.safe_haven_pipeline as pipeline
+    from lunarscout._numba_horizon.product_store import ResumableTiledProduct
+
+    dem_path, horizons_path = _three_patch_inputs(tmp_path)
+    started_reading = {128: threading.Event(), 256: threading.Event()}
+    original_read = pipeline.read_patch_horizons
+    original_write = ResumableTiledProduct.write_patch
+
+    def read(store, tile_y, tile_x, observer):
+        if tile_x in started_reading:
+            started_reading[tile_x].set()
+        return original_read(store, tile_y, tile_x, observer)
+
+    def write(self, tile_y, tile_x, *args, **kwargs):
+        # The first patch cannot finish writing until the reader has started on the
+        # third tile. A pipeline that reads, computes and writes one patch at a
+        # time would wait here for ever.
+        if tile_x == 0:
+            assert started_reading[256].wait(timeout=20), "no read-ahead while writing"
+        return original_write(self, tile_y, tile_x, *args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "read_patch_horizons", read)
+    monkeypatch.setattr(ResumableTiledProduct, "write_patch", write)
+
+    products = _products(tmp_path, dem_path, horizons_path)
+
+    assert all(path.exists() for path in products)
+
+
+def test_a_progress_callback_error_on_a_helper_thread_reaches_the_caller_unchanged(
+    tmp_path: Path,
+) -> None:
+    dem_path, horizons_path = _three_patch_inputs(tmp_path)
+    boom = RuntimeError("callback failed")
+
+    def callback(fraction):
+        if fraction > 0:               # first reported by the writer thread
+            raise boom
+
+    with pytest.raises(RuntimeError) as raised:
+        _products(tmp_path, dem_path, horizons_path, progress_callback=callback)
+
+    assert raised.value is boom
+
+
+def test_cancellation_keeps_finished_patches_and_the_run_resumes(tmp_path: Path) -> None:
+    dem_path, horizons_path = _three_patch_inputs(tmp_path)
+    clean = _products(tmp_path, dem_path, horizons_path, name="clean")
+    calls = {"count": 0}
+
+    def cancel_after_two_patches() -> bool:
+        calls["count"] += 1
+        return calls["count"] > 12
+
+    with pytest.raises(ls.OperationCancelledError):
+        _products(tmp_path, dem_path, horizons_path, name="cancelled",
+                  cancellation_requested=cancel_after_two_patches)
+    assert not any(path.exists() for path in clean.__class__(
+        *(tmp_path / "cancelled" / path.name for path in clean)))
+
+    resumed = _products(tmp_path, dem_path, horizons_path, name="cancelled")
+
+    for left, right in zip(_values(clean), _values(resumed)):
+        np.testing.assert_array_equal(left, right)

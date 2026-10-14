@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from itertools import islice
 from types import SimpleNamespace
 
 import numpy as np
@@ -288,29 +289,37 @@ def make_machine(jit):
 
 
 def _tile_loops(machine, loop):
-    """Build the per-tile loops over pixels from a machine (``loop`` is range/prange)."""
+    """Build the per-batch loops over pixels from a machine (``loop`` is range/prange).
+
+    Each pixel advances through every time step of a batch before the next
+    pixel starts, so one parallel call does many steps of work per thread.
+    """
     advance_pixel = machine.advance_pixel
     finish_pixel = machine.finish_pixel
 
-    def advance_tile(
-        S, best, have, joint_total, joint_best, fractions, margins, time_index,
-        band, sunlight_threshold, earth_threshold, operating_threshold,
+    def advance_batch(
+        S, best, have, joint_total, joint_best, fractions, margins, first_time_index,
+        bands, sunlight_threshold, earth_threshold, operating_threshold,
         gap_limit, valid,
     ):
-        for i in loop(fractions.shape[0]):
+        steps = fractions.shape[0]
+        for i in loop(fractions.shape[1]):
             if valid[i]:
-                advance_pixel(
-                    S, i, best, have, joint_total, joint_best, fractions[i],
-                    margins[i], time_index, band, sunlight_threshold,
-                    earth_threshold, operating_threshold, gap_limit,
-                )
+                for step_index in range(steps):
+                    advance_pixel(
+                        S, i, best, have, joint_total, joint_best,
+                        fractions[step_index, i], margins[step_index, i],
+                        first_time_index + step_index, bands[step_index],
+                        sunlight_threshold, earth_threshold,
+                        operating_threshold, gap_limit,
+                    )
 
     def finish_tile(S, best, valid):
         for i in loop(S.shape[1]):
             if valid[i]:
                 finish_pixel(S, i, best)
 
-    return advance_tile, finish_tile
+    return advance_batch, finish_tile
 
 
 _COMPILED: dict[str, object] = {}
@@ -322,8 +331,8 @@ def _compiled():
         from numba import njit, prange
 
         machine = make_machine(njit(cache=False, nogil=True))
-        advance_tile, finish_tile = _tile_loops(machine, prange)
-        _COMPILED["advance"] = njit(cache=False, nogil=True, parallel=True)(advance_tile)
+        advance_batch, finish_tile = _tile_loops(machine, prange)
+        _COMPILED["advance"] = njit(cache=False, nogil=True, parallel=True)(advance_batch)
         _COMPILED["finish"] = njit(cache=False, nogil=True, parallel=True)(finish_tile)
     return _COMPILED["advance"], _COMPILED["finish"]
 
@@ -337,37 +346,15 @@ def _python_tiles():
 OPERATING_FUZZ = 1e-6
 
 
-def reduce_safe_haven_products_patch_stream(
-    sunlight_fraction_tiles: Iterable[npt.ArrayLike],
-    earth_elevation_tiles: Iterable[npt.ArrayLike],
-    time_count: int,
-    month_bands: tuple[tuple[datetime, datetime], ...],
-    *,
-    month_index_of: npt.NDArray[np.int32],
-    sunlight_threshold: float,
-    earth_threshold_deg: float,
-    operating_sunlight_fraction: float,
-    merge_gap_hours: float,
-    time_step_hours: float,
-    invalid_pixels: npt.ArrayLike | None = None,
-    use_numba: bool = True,
-) -> tuple[
-    tuple[npt.NDArray[np.float32], ...],
-    tuple[npt.NDArray[np.float32], ...],
-    tuple[npt.NDArray[np.float32], ...],
-]:
-    """Reduce one patch's Sun and Earth streams to the three safe-haven layers.
+#: Samples per call of the batch kernel when per-sample tiles are re-batched.
+DEFAULT_BATCH_SIZE = 32
 
-    Returns ``(hibernation, joint_total, joint_longest)``; each is a tuple with
-    one float32 ``(y, x)`` array in hours per band.  Hibernation is NaN where
-    no hibernation starts in the band; the joint layers are never NaN here.
-    See ``docs/safe-haven-state-machine.md`` for the definitions.
 
-    ``invalid_pixels`` is an optional boolean ``(y, x)`` mask of pixels on invalid
-    DEM nodes.  Their lighting signals are meaningless (NaN), so they are skipped
-    and their outputs stay at the no-event values; the caller writes NODATA there.
-    A non-finite signal at any other pixel is an error.
-    """
+def _checked_parameters(
+    time_count, month_bands, month_index_of, sunlight_threshold,
+    earth_threshold_deg, operating_sunlight_fraction, merge_gap_hours,
+    time_step_hours,
+):
     if time_count < 1:
         raise ValueError("time_count must be positive")
     if not 0.0 <= sunlight_threshold <= 1.0:
@@ -385,36 +372,80 @@ def reduce_safe_haven_products_patch_stream(
         raise ValueError("month_index_of must have shape (time_count,)")
     if np.any(month_index_of < -1) or np.any(month_index_of >= band_count):
         raise ValueError("month_index_of contains an invalid band index")
+    return band_count
 
+
+def reduce_safe_haven_products_batches(
+    sunlight_fraction_batches: Iterable[npt.ArrayLike],
+    earth_elevation_batches: Iterable[npt.ArrayLike],
+    time_count: int,
+    month_bands: tuple[tuple[datetime, datetime], ...],
+    *,
+    month_index_of: npt.NDArray[np.int32],
+    sunlight_threshold: float,
+    earth_threshold_deg: float,
+    operating_sunlight_fraction: float,
+    merge_gap_hours: float,
+    time_step_hours: float,
+    invalid_pixels: npt.ArrayLike | None = None,
+    use_numba: bool = True,
+) -> tuple[
+    tuple[npt.NDArray[np.float32], ...],
+    tuple[npt.NDArray[np.float32], ...],
+    tuple[npt.NDArray[np.float32], ...],
+]:
+    """Reduce one patch's Sun and Earth signals, given in batches of time steps.
+
+    Each element of the two iterables is a float ``(steps, y, x)`` array; the
+    Sun batches and Earth batches must have the same steps, in time order, and
+    together cover ``time_count`` samples.  Returns ``(hibernation,
+    joint_total, joint_longest)``: each a tuple with one float32 ``(y, x)``
+    array in hours per band.  Hibernation is NaN where no hibernation starts
+    in the band; the joint layers are never NaN here.  See
+    ``docs/safe-haven-state-machine.md`` for the definitions.
+
+    ``invalid_pixels`` is an optional boolean ``(y, x)`` mask of pixels on
+    invalid DEM nodes.  Their lighting signals are meaningless (NaN), so they
+    are skipped and their outputs stay at the no-event values; the caller
+    writes NODATA there.  A non-finite signal at any other pixel is an error.
+    """
+    band_count = _checked_parameters(
+        time_count, month_bands, month_index_of, sunlight_threshold,
+        earth_threshold_deg, operating_sunlight_fraction, merge_gap_hours,
+        time_step_hours,
+    )
     gap_limit = merge_gap_limit(merge_gap_hours, time_step_hours)
     operating_threshold = np.float32(operating_sunlight_fraction - OPERATING_FUZZ)
     sun_threshold = np.float32(sunlight_threshold)
     earth_threshold = np.float32(earth_threshold_deg)
+    month_index_of = np.ascontiguousarray(month_index_of, dtype=np.int32)
     if use_numba:
         advance, finish = _compiled()
     else:
         advance, finish = _python_tiles()
 
-    fraction_iter = iter(sunlight_fraction_tiles)
-    earth_iter = iter(earth_elevation_tiles)
+    fraction_iter = iter(sunlight_fraction_batches)
+    earth_iter = iter(earth_elevation_batches)
     shape = None
-    state = best = have = joint_total = joint_best = valid = None
-    for time_index in range(time_count):
+    state = best = have = joint_total = joint_best = valid = checked = None
+    time_index = 0
+    while time_index < time_count:
         try:
-            fraction_tile = np.asarray(next(fraction_iter), dtype=np.float32)
-            earth_tile = np.asarray(next(earth_iter), dtype=np.float32)
+            fractions = np.asarray(next(fraction_iter), dtype=np.float32)
+            margins = np.asarray(next(earth_iter), dtype=np.float32)
         except StopIteration as exc:
             raise ValueError(
                 "fraction or elevation iterator ended before time_count"
             ) from exc
-        if fraction_tile.ndim != 2:
-            raise ValueError("sunlight fraction tiles must be finite 2D arrays")
-        if earth_tile.ndim != 2:
-            raise ValueError("earth elevation tiles must be finite 2D arrays")
+        if fractions.ndim != 3 or margins.ndim != 3:
+            raise ValueError("signal batches must be 3D (steps, y, x) arrays")
+        if fractions.shape != margins.shape:
+            raise ValueError("fraction and elevation tiles must have the same shape")
+        steps = fractions.shape[0]
+        if steps < 1 or time_index + steps > time_count:
+            raise ValueError("signal batches do not match time_count")
         if shape is None:
-            shape = fraction_tile.shape
-            if earth_tile.shape != shape:
-                raise ValueError("fraction and elevation tiles must have the same shape")
+            shape = fractions.shape[1:]
             pixel_count = shape[0] * shape[1]
             state = new_state(pixel_count)
             best = np.full((band_count, pixel_count), UNSET, dtype=np.int32)
@@ -428,37 +459,69 @@ def reduce_safe_haven_products_patch_stream(
                 if checked.shape != shape:
                     raise ValueError("invalid_pixels must have the tile shape")
             valid = np.ascontiguousarray(checked.reshape(-1))
-        elif fraction_tile.shape != shape or earth_tile.shape != shape:
+        elif fractions.shape[1:] != shape:
             raise ValueError("all tiles must have the same shape")
         # Only pixels on valid DEM nodes must carry finite signals.
-        if not (np.all(np.isfinite(fraction_tile[checked]))):
+        if not np.all(np.isfinite(fractions) | ~checked):
             raise ValueError("sunlight fraction tiles must be finite 2D arrays")
-        if not (np.all(np.isfinite(earth_tile[checked]))):
+        if not np.all(np.isfinite(margins) | ~checked):
             raise ValueError("earth elevation tiles must be finite 2D arrays")
         advance(
             state, best, have, joint_total, joint_best,
-            np.ascontiguousarray(fraction_tile.reshape(-1)),
-            np.ascontiguousarray(earth_tile.reshape(-1)),
-            time_index, int(month_index_of[time_index]), sun_threshold,
-            earth_threshold, operating_threshold, gap_limit, valid,
+            np.ascontiguousarray(fractions.reshape(steps, -1)),
+            np.ascontiguousarray(margins.reshape(steps, -1)),
+            time_index, month_index_of[time_index:time_index + steps],
+            sun_threshold, earth_threshold, operating_threshold, gap_limit, valid,
         )
-    try:
-        next(fraction_iter)
-    except StopIteration:
-        pass
-    else:
-        raise ValueError("fraction iterator has more entries than time_count")
-    try:
-        next(earth_iter)
-    except StopIteration:
-        pass
-    else:
-        raise ValueError("elevation iterator has more entries than time_count")
+        time_index += steps
+    for iterator, message in (
+        (fraction_iter, "fraction iterator has more entries than time_count"),
+        (earth_iter, "elevation iterator has more entries than time_count"),
+    ):
+        try:
+            next(iterator)
+        except StopIteration:
+            pass
+        else:
+            raise ValueError(message)
 
     assert state is not None and shape is not None
     finish(state, best, valid)
     return assemble_outputs(
         best, have, joint_total, joint_best, shape, time_step_hours
+    )
+
+
+def _rebatched(tiles: Iterable[npt.ArrayLike], size: int):
+    """Group per-sample ``(y, x)`` tiles into ``(steps, y, x)`` batches."""
+    iterator = iter(tiles)
+    while True:
+        group = list(islice(iterator, size))
+        if not group:
+            return
+        yield np.stack([np.asarray(tile, dtype=np.float32) for tile in group])
+
+
+def reduce_safe_haven_products_patch_stream(
+    sunlight_fraction_tiles: Iterable[npt.ArrayLike],
+    earth_elevation_tiles: Iterable[npt.ArrayLike],
+    time_count: int,
+    month_bands: tuple[tuple[datetime, datetime], ...],
+    *,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    **options,
+):
+    """As :func:`reduce_safe_haven_products_batches`, from per-sample tiles.
+
+    Each iterable yields one float ``(y, x)`` tile per time step.  The tiles are
+    grouped into batches of ``batch_size`` steps.
+    """
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    return reduce_safe_haven_products_batches(
+        _rebatched(sunlight_fraction_tiles, batch_size),
+        _rebatched(earth_elevation_tiles, batch_size),
+        time_count, month_bands, **options,
     )
 
 

@@ -21,7 +21,11 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   be counted in two months. The per-pixel one-pass state machine, on CPU and CUDA
   from one definition, is specified in `docs/safe-haven-state-machine.md` and
   checked against an independent offline implementation on random timelines.
-  Also fixed: a safe-haven run aborted with a calculation error if the DEM had one
+  The pipeline reads horizon tiles ahead and writes products behind the
+  calculation on helper threads (a progress callback may now be called from a
+  helper thread, never concurrently), and the CPU reducer takes batches of time
+  steps: 2.5x faster on CUDA and 1.5x on the CPU on a 384 x 384, 2,922-sample
+  test scene. Also fixed: a safe-haven run aborted with a calculation error if the DEM had one
   invalid (NaN) node; those pixels are now skipped and written as nodata. Products
   and staged jobs made with the old function are not compatible.
 - **0.1.0rc5 review fixes.** Corrections from `docs/code_review_0.1.0rc5.md`;
