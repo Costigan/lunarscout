@@ -18,12 +18,11 @@ from lunarscout._numba_horizon.lightmap_cuda import LightmapCudaSession
 from lunarscout._numba_horizon.safe_haven import (
     build_month_bands,
     _month_indices_map,
-    reduce_safe_haven_patch_stream,
+    reduce_safe_haven_products_patch_stream,
 )
 from lunarscout._numba_horizon.safe_haven_pipeline import (
     SafeHavenPipelineCancelled,
-    run_safe_haven_product,
-    run_safe_haven_product_cpu,
+    run_safe_haven_products,
 )
 from lunarscout.georeference import GeoReference
 
@@ -59,6 +58,18 @@ def _position(dem: DemGrid, elevation_deg: float) -> np.ndarray:
 _JAN_2027 = datetime(2027, 1, 1, tzinfo=timezone.utc)
 
 
+def _paths(directory: Path, name: str = "sh") -> tuple[Path, Path, Path]:
+    return (
+        directory / f"{name}-hibernation.tif",
+        directory / f"{name}-joint-total.tif",
+        directory / f"{name}-joint-longest.tif",
+    )
+
+
+def run_safe_haven_products_cpu(**kwargs):
+    return run_safe_haven_products(**kwargs, backend="cpu")
+
+
 def test_build_month_bands_single_month() -> None:
     times = ["2027-01-01T00:00:00Z", "2027-01-15T00:00:00Z", "2027-01-31T00:00:00Z"]
     bands = build_month_bands(times)
@@ -84,140 +95,6 @@ def test_month_indices_map() -> None:
     assert mapping[1] == 1
 
 
-def test_safe_haven_stream_finds_longest_overlapping_run() -> None:
-    """A pixel with two outages, longest low-sun run credited to both months."""
-    times = [_JAN_2027.replace(hour=h) for h in (0, 6, 12, 18)]
-    month_bands = build_month_bands(times)
-    time_step = 6.0
-
-    # Earth: below at 0-12 (outage 1), above at 18
-    # Sun: always low (below 0.2 threshold)
-    fractions = (
-        np.asarray([[0.1]], dtype=np.float32),  # t0: low-sun
-        np.asarray([[0.1]], dtype=np.float32),  # t1: low-sun
-        np.asarray([[0.1]], dtype=np.float32),  # t2: low-sun
-        np.asarray([[0.1]], dtype=np.float32),  # t3: low-sun
-    )
-    earth = (
-        np.asarray([[1.0]], dtype=np.float32),  # t0: below 2.0 → outage
-        np.asarray([[1.0]], dtype=np.float32),  # t1: below → outage
-        np.asarray([[1.0]], dtype=np.float32),  # t2: below → outage
-        np.asarray([[3.0]], dtype=np.float32),  # t3: above → no outage
-    )
-
-    result = reduce_safe_haven_patch_stream(
-        iter(fractions),
-        iter(earth),
-        4,
-        month_bands,
-        month_index_of=_month_indices_map(times, month_bands),
-        sunlight_threshold=0.2,
-        earth_threshold_deg=2.0,
-        time_step_hours=time_step,
-    )
-
-    assert len(result) == 1
-    duration = result[0][0, 0]
-    # 4 low-sun samples overlapping outage (t0-t3) * 6 hours = 24 hours
-    # The run extends beyond the outage (t3: above threshold) but is credited
-    # in full because it overlaps the outage.
-    assert duration == pytest.approx(24.0)
-
-
-def test_safe_haven_stream_credits_run_until_it_ends_after_outage() -> None:
-    times = [_JAN_2027.replace(hour=h) for h in (0, 6, 12, 18)]
-    month_bands = build_month_bands(times)
-    fractions = (
-        np.asarray([[0.1]], dtype=np.float32),
-        np.asarray([[0.1]], dtype=np.float32),
-        np.asarray([[0.1]], dtype=np.float32),
-        np.asarray([[0.8]], dtype=np.float32),
-    )
-    earth = (
-        np.asarray([[1.0]], dtype=np.float32),
-        np.asarray([[3.0]], dtype=np.float32),
-        np.asarray([[3.0]], dtype=np.float32),
-        np.asarray([[3.0]], dtype=np.float32),
-    )
-
-    result = reduce_safe_haven_patch_stream(
-        iter(fractions),
-        iter(earth),
-        4,
-        month_bands,
-        month_index_of=_month_indices_map(times, month_bands),
-        sunlight_threshold=0.2,
-        earth_threshold_deg=2.0,
-        time_step_hours=6.0,
-    )
-
-    # The outage ends after t0, but the overlapping low-Sun run continues
-    # through t2 and must receive its complete 18-hour duration.
-    assert result[0][0, 0] == pytest.approx(18.0)
-
-
-def test_safe_haven_stream_nodata_when_no_outage() -> None:
-    """Earth never below threshold -> NODATA."""
-    times = [_JAN_2027.replace(hour=h) for h in (0, 6)]
-    month_bands = build_month_bands(times)
-    month_idx = _month_indices_map(times, month_bands)
-    time_step = 6.0
-
-    fractions = (
-        np.asarray([[0.1]], dtype=np.float32),
-        np.asarray([[0.1]], dtype=np.float32),
-    )
-    earth = (
-        np.asarray([[5.0]], dtype=np.float32),  # above threshold
-        np.asarray([[5.0]], dtype=np.float32),  # above threshold
-    )
-
-    result = reduce_safe_haven_patch_stream(
-        iter(fractions),
-        iter(earth),
-        2,
-        month_bands,
-        month_index_of=month_idx,
-        sunlight_threshold=0.2,
-        earth_threshold_deg=2.0,
-        time_step_hours=time_step,
-    )
-
-    assert len(result) == 1
-    assert np.isnan(result[0][0, 0])
-
-
-def test_safe_haven_stream_nodata_when_earth_always_below() -> None:
-    """Earth always below threshold -> NODATA (permanent shadow, no safe haven)."""
-    times = [_JAN_2027.replace(hour=h) for h in (0, 6)]
-    month_bands = build_month_bands(times)
-    month_idx = _month_indices_map(times, month_bands)
-    time_step = 6.0
-
-    fractions = (
-        np.asarray([[0.1]], dtype=np.float32),
-        np.asarray([[0.1]], dtype=np.float32),
-    )
-    earth = (
-        np.asarray([[1.0]], dtype=np.float32),  # always below 2.0
-        np.asarray([[1.0]], dtype=np.float32),
-    )
-
-    result = reduce_safe_haven_patch_stream(
-        iter(fractions),
-        iter(earth),
-        2,
-        month_bands,
-        month_index_of=month_idx,
-        sunlight_threshold=0.2,
-        earth_threshold_deg=2.0,
-        time_step_hours=time_step,
-    )
-
-    assert len(result) == 1
-    assert np.isnan(result[0][0, 0])
-
-
 def test_cpu_safe_haven_pipeline_writes_monthly_float_duration_bands(tmp_path: Path) -> None:
     dem = _dem()
     store = HorizonTileStore(tmp_path / "horizons")
@@ -237,15 +114,15 @@ def test_cpu_safe_haven_pipeline_writes_monthly_float_duration_bands(tmp_path: P
             yield np.asarray([[value]], dtype=np.float32)
 
     def elevations(*_args, **_kwargs):
-        # Earth crosses threshold: below at t0-t2, above at t3-t4
-        for value in (1.0, 1.0, 1.0, 3.0, 3.0):
+        # The hibernation starts at t1 (below threshold at t1-t2, above at t0, t3-t4).
+        for value in (3.0, 1.0, 1.0, 3.0, 3.0):
             yield np.asarray([[value]], dtype=np.float32)
 
-    output = run_safe_haven_product_cpu(
+    hibernation, joint_total, joint_longest = run_safe_haven_products_cpu(
         dem=dem,
         georef=_georef(),
         horizon_store=store,
-        output_path=tmp_path / "safe-haven.tif",
+        output_paths=_paths(tmp_path),
         times_utc=times,
         sun_vectors_m=np.stack(tuple(_position(dem, 1.0) for _ in times)),
         earth_vectors_m=np.stack(tuple(_position(dem, -1.0) for _ in times)),
@@ -256,10 +133,15 @@ def test_cpu_safe_haven_pipeline_writes_monthly_float_duration_bands(tmp_path: P
         elevation_calculator=elevations,
     )
 
-    with rasterio.open(output) as dataset:
+    # Shadow throughout: the one run spans all five samples, 12.5 h.
+    with rasterio.open(hibernation) as dataset:
         assert dataset.dtypes == ("float32",)
-        duration = dataset.read(1).item()
-        assert np.isfinite(duration) and duration > 0.0
+        assert dataset.read(1).item() == pytest.approx(12.5)
+    # The Sun is never fully lit, so there is no joint operating time.
+    for path in (joint_total, joint_longest):
+        with rasterio.open(path) as dataset:
+            assert dataset.dtypes == ("float32",)
+            assert dataset.read(1).item() == 0.0
 
 
 def test_safe_haven_auto_backend_falls_back_to_cpu(
@@ -285,22 +167,22 @@ def test_safe_haven_auto_backend_falls_back_to_cpu(
     )
     times = ("2027-01-01T00:00:00Z", "2027-01-01T12:00:00Z")
 
-    output = run_safe_haven_product(
+    outputs = run_safe_haven_products(
         dem=dem,
         georef=_georef(),
         horizon_store=store,
-        output_path=tmp_path / "auto-safe-haven.tif",
+        output_paths=_paths(tmp_path, "auto"),
         times_utc=times,
         sun_vectors_m=np.stack((_position(dem, -1.0), _position(dem, -1.0))),
-        # Earth crosses threshold: below at t0, above at t1
-        earth_vectors_m=np.stack((_position(dem, -1.0), _position(dem, 10.0))),
+        # Earth is available at t0 and below the threshold from t1: a hibernation
+        # starts at t1, inside shadow that began at t0.
+        earth_vectors_m=np.stack((_position(dem, 10.0), _position(dem, -1.0))),
         time_step_hours=12.0,
         backend="auto",
     )
 
-    with rasterio.open(output) as dataset:
-        duration = dataset.read(1).item()
-        assert np.isfinite(duration)
+    with rasterio.open(outputs[0]) as dataset:
+        assert dataset.read(1).item() == pytest.approx(24.0)
 
 
 def test_safe_haven_partial_injection_uses_reference_path(tmp_path: Path) -> None:
@@ -314,14 +196,14 @@ def test_safe_haven_partial_injection_uses_reference_path(tmp_path: Path) -> Non
         yield np.asarray([[0.1]], dtype=np.float32)
         yield np.asarray([[0.1]], dtype=np.float32)
 
-    output = run_safe_haven_product(
+    outputs = run_safe_haven_products(
         dem=dem, georef=_georef(), horizon_store=store,
-        output_path=tmp_path / "partial.tif", times_utc=times,
+        output_paths=_paths(tmp_path, "partial"), times_utc=times,
         sun_vectors_m=np.stack((_position(dem, -1.0), _position(dem, -1.0))),
-        earth_vectors_m=np.stack((_position(dem, -1.0), _position(dem, 10.0))),
+        earth_vectors_m=np.stack((_position(dem, 10.0), _position(dem, -1.0))),
         time_step_hours=12.0, fraction_calculator=fractions, backend="auto",
     )
-    with rasterio.open(output) as dataset:
+    with rasterio.open(outputs[0]) as dataset:
         assert np.isfinite(dataset.read(1).item())
 
 
@@ -341,26 +223,28 @@ def test_cuda_production_dispatch_does_not_use_host_iterators_or_reducer(
             pass
         def reduce_patch(self, *_args, **_kwargs):
             calls.append("reduce")
-            return (np.asarray([[2.0]], dtype=np.float32),)
+            layer = (np.asarray([[2.0]], dtype=np.float32),)
+            return layer, layer, layer
 
     monkeypatch.setattr(safe_haven_cuda, "SafeHavenCudaSession", FakeCuda)
-    monkeypatch.setattr(safe_haven_pipeline, "reduce_safe_haven_patch_stream",
+    monkeypatch.setattr(safe_haven_pipeline, "reduce_safe_haven_products_patch_stream",
                         lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("host reducer")))
     monkeypatch.setattr(lightmap_cpu.LightmapCpuSession, "iter_patch_fraction_tiles",
                         lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("host fraction")))
     monkeypatch.setattr(lightmap_cpu.LightmapCpuSession, "iter_patch_margin_tiles",
                         lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("host margin")))
-    output = run_safe_haven_product(
-        dem=dem, georef=_georef(), horizon_store=store, output_path=tmp_path / "gpu.tif",
+    outputs = run_safe_haven_products(
+        dem=dem, georef=_georef(), horizon_store=store, output_paths=_paths(tmp_path, "gpu"),
         times_utc=("2027-01-01T00:00:00Z",),
         sun_vectors_m=np.asarray([_position(dem, -1.0)]),
         earth_vectors_m=np.asarray([_position(dem, -1.0)]), time_step_hours=2.0,
         backend="cuda",
     )
     assert calls == ["reduce"]
-    with rasterio.open(output) as dataset:
-        assert dataset.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cuda"]'
-        assert dataset.read(1).item() == 2.0
+    for output in outputs:
+        with rasterio.open(output) as dataset:
+            assert dataset.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cuda"]'
+            assert dataset.read(1).item() == 2.0
 
 
 def test_explicit_cpu_does_not_construct_cuda(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -371,14 +255,14 @@ def test_explicit_cpu_does_not_construct_cuda(tmp_path: Path, monkeypatch: pytes
     store = HorizonTileStore(tmp_path / "horizons")
     store.write(0, 0, 0.0, np.zeros((1, AZIMUTH_COUNT), dtype=np.float32), compress=True,
                 valid_width=1, valid_height=1)
-    output = run_safe_haven_product_cpu(
-        dem=dem, georef=_georef(), horizon_store=store, output_path=tmp_path / "cpu.tif",
+    outputs = run_safe_haven_products_cpu(
+        dem=dem, georef=_georef(), horizon_store=store, output_paths=_paths(tmp_path, "cpu"),
         times_utc=("2027-01-01T00:00:00Z", "2027-01-01T12:00:00Z"),
         sun_vectors_m=np.stack((_position(dem, -1.0),) * 2),
         earth_vectors_m=np.stack((_position(dem, -1.0), _position(dem, 10.0))),
         time_step_hours=12.0,
     )
-    assert output.exists()
+    assert all(output.exists() for output in outputs)
 
 
 def test_explicit_cuda_unavailable_and_auto_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -397,8 +281,9 @@ def test_explicit_cuda_unavailable_and_auto_fallback(tmp_path: Path, monkeypatch
                   earth_vectors_m=np.stack((_position(dem, -1.0), _position(dem, 10.0))),
                   time_step_hours=12.0)
     with pytest.raises(CudaBackendError):
-        run_safe_haven_product(output_path=tmp_path / "explicit.tif", backend="cuda", **kwargs)
-    assert run_safe_haven_product(output_path=tmp_path / "auto.tif", backend="auto", **kwargs).exists()
+        run_safe_haven_products(output_paths=_paths(tmp_path, "explicit"), backend="cuda", **kwargs)
+    auto = run_safe_haven_products(output_paths=_paths(tmp_path, "auto"), backend="auto", **kwargs)
+    assert all(path.exists() for path in auto)
 
 
 def test_fake_cuda_typed_cancellation_resumes_unjournaled_patch(
@@ -414,7 +299,8 @@ def test_fake_cuda_typed_cancellation_resumes_unjournaled_patch(
             calls["count"] += 1
             if calls["count"] == 1:
                 raise safe_haven_cuda.SafeHavenCudaCancelled("cancelled")
-            return (np.asarray([[1.0]], dtype=np.float32),)
+            layer = (np.asarray([[1.0]], dtype=np.float32),)
+            return layer, layer, layer
 
     monkeypatch.setattr(safe_haven_cuda, "SafeHavenCudaSession", FakeCuda)
     dem = _dem()
@@ -425,11 +311,11 @@ def test_fake_cuda_typed_cancellation_resumes_unjournaled_patch(
                   times_utc=("2027-01-01T00:00:00Z",),
                   sun_vectors_m=np.asarray([_position(dem, -1.0)]),
                   earth_vectors_m=np.asarray([_position(dem, -1.0)]), time_step_hours=1.0,
-                  backend="cuda", output_path=tmp_path / "resume.tif")
+                  backend="cuda", output_paths=_paths(tmp_path, "resume"))
     with pytest.raises(SafeHavenPipelineCancelled):
-        run_safe_haven_product(**kwargs)
-    assert not (tmp_path / "resume.tif").exists()
-    assert run_safe_haven_product(**kwargs).exists()
+        run_safe_haven_products(**kwargs)
+    assert not any(path.exists() for path in kwargs["output_paths"])
+    assert all(path.exists() for path in run_safe_haven_products(**kwargs))
 
 
 def test_safe_haven_cancellation_is_checked_during_time_stream_and_resumes(
@@ -462,21 +348,21 @@ def test_safe_haven_cancellation_is_checked_during_time_stream_and_resumes(
         dem=dem,
         georef=_georef(),
         horizon_store=store,
-        output_path=tmp_path / "resumed-safe-haven.tif",
+        output_paths=_paths(tmp_path, "resumed"),
         times_utc=times,
         sun_vectors_m=np.stack((_position(dem, -1.0), _position(dem, -1.0))),
         earth_vectors_m=np.stack((_position(dem, -1.0), _position(dem, -1.0))),
         time_step_hours=12.0,
     )
     with pytest.raises(SafeHavenPipelineCancelled):
-        run_safe_haven_product(
+        run_safe_haven_products(
             **common,
             fraction_calculator=interrupted_fractions,
             elevation_calculator=elevations,
             cancellation_requested=cancelled.is_set,
         )
 
-    assert not common["output_path"].exists()
+    assert not any(path.exists() for path in common["output_paths"])
     progress_stream = StringIO()
     progress = []
 
@@ -488,7 +374,7 @@ def test_safe_haven_cancellation_is_checked_during_time_stream_and_resumes(
         yield np.asarray([[1.0]], dtype=np.float32)
         yield np.asarray([[1.0]], dtype=np.float32)
 
-    result = run_safe_haven_product(
+    result = run_safe_haven_products(
         **common,
         fraction_calculator=completed_fractions,
         elevation_calculator=completed_elevations,
@@ -496,7 +382,7 @@ def test_safe_haven_cancellation_is_checked_during_time_stream_and_resumes(
         progress_stream=progress_stream,
     )
 
-    assert result == common["output_path"]
+    assert result == common["output_paths"]
     assert [event.state for event in progress] == [
         "start",
         "read",
@@ -538,15 +424,15 @@ def test_cuda_and_cpu_fraction_streams_give_same_safe_haven_duration() -> None:
 
     month_idx = _month_indices_map(times, month_bands)
 
-    cpu_duration = reduce_safe_haven_patch_stream(
-        cpu_frac, cpu_margin, 4, month_bands,
-        month_index_of=month_idx,
-        sunlight_threshold=0.2, earth_threshold_deg=2.0, time_step_hours=2.5,
+    options = dict(
+        month_index_of=month_idx, sunlight_threshold=0.2, earth_threshold_deg=2.0,
+        operating_sunlight_fraction=1.0, merge_gap_hours=24.0, time_step_hours=2.5,
     )
-    gpu_duration = reduce_safe_haven_patch_stream(
-        gpu_frac, gpu_margin, 4, month_bands,
-        month_index_of=month_idx,
-        sunlight_threshold=0.2, earth_threshold_deg=2.0, time_step_hours=2.5,
+    cpu_duration = reduce_safe_haven_products_patch_stream(
+        cpu_frac, cpu_margin, 4, month_bands, **options
+    )
+    gpu_duration = reduce_safe_haven_products_patch_stream(
+        gpu_frac, gpu_margin, 4, month_bands, **options
     )
 
     np.testing.assert_array_equal(cpu_duration, gpu_duration)

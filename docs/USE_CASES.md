@@ -78,7 +78,7 @@ elevation, safe-haven, and landed mission-duration products.
 
 - `ls.generate_horizons`, `scenario.generate_horizons`
 - `ls.generate_lightmap`, `ls.generate_psr`
-- `ls.generate_sun_elevation`, `ls.generate_earth_elevation`, `ls.generate_safe_havens`
+- `ls.generate_sun_elevation`, `ls.generate_earth_elevation`, `ls.generate_safe_haven_products`
 - `ls.mission_duration_from_sunlight` and the other mission-duration products
 
 ## Mission and Mobility Planning

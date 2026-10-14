@@ -1,4 +1,4 @@
-"""Private patch-major per-pixel safe-haven product pipeline."""
+"""Private patch-major pipeline writing the three per-pixel safe-haven products."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from .psr_pipeline import _inventory_identity
 from .safe_haven import (
     build_month_bands,
     _month_indices_map,
-    reduce_safe_haven_patch_stream,
+    reduce_safe_haven_products_patch_stream,
 )
 
 
@@ -47,18 +47,61 @@ class SafeHavenProgress:
     invalid_patches: int | None = None
 
 
-def run_safe_haven_product(
+#: Output layers, in the order the reducer returns them.
+PRODUCT_KINDS = ("hibernation", "joint_total", "joint_longest")
+_ALGORITHMS = {
+    "hibernation": "safe-haven-hibernation-by-outage-start",
+    "joint_total": "safe-haven-joint-operating-total",
+    "joint_longest": "safe-haven-joint-operating-longest-run",
+}
+
+
+def patch_slope_exceeds(
+    dem: DemGrid,
+    georef: GeoReference,
+    patch: PatchDescriptor,
+    max_slope_deg: float,
+) -> npt.NDArray[np.bool_]:
+    """Mask of patch pixels whose Horn slope is above ``max_slope_deg``.
+
+    The slope uses the same Horn kernel as ``lunarscout.slope`` on a window
+    with a one-pixel halo, so patch edges see their true neighbours; at the DEM
+    border missing neighbours are extrapolated (gdaldem ``-compute_edges``).
+    Pixels whose slope cannot be computed (an invalid DEM node in the 3x3
+    window) are also masked.
+    """
+    from lunarscout.terrain import _gradient, _require_supported_grid
+
+    _require_supported_grid(georef, scale=1.0)
+    y0 = max(patch.tile_y - 1, 0)
+    x0 = max(patch.tile_x - 1, 0)
+    y1 = min(patch.tile_y + patch.height + 1, dem.height)
+    x1 = min(patch.tile_x + patch.width + 1, dem.width)
+    window = np.asarray(dem.elevation_m[y0:y1, x0:x1], dtype=np.float64)
+    dz_east, dz_south = _gradient(window, georef)
+    slope_deg = np.degrees(np.arctan(np.hypot(dz_east, dz_south)))
+    inner = slope_deg[
+        patch.tile_y - y0 : patch.tile_y - y0 + patch.height,
+        patch.tile_x - x0 : patch.tile_x - x0 + patch.width,
+    ]
+    return ~(inner <= max_slope_deg)
+
+
+def run_safe_haven_products(
     *,
     dem: DemGrid,
     georef: GeoReference,
     horizon_store: HorizonTileStore,
-    output_path: str | Path,
+    output_paths: Sequence[str | Path],
     times_utc: Sequence[datetime | str],
     sun_vectors_m: npt.ArrayLike,
     earth_vectors_m: npt.ArrayLike,
     time_step_hours: float,
     earth_threshold_deg: float = 2.0,
     sunlight_threshold: float = 0.2,
+    operating_sunlight_fraction: float = 1.0,
+    merge_gap_hours: float = 24.0,
+    max_slope_deg: float | None = 20.0,
     observer_elevation_m: float = 0.0,
     nodata: float = np.nan,
     output_transform: Callable[[np.ndarray], np.ndarray] | None = None,
@@ -75,31 +118,32 @@ def run_safe_haven_product(
     cancellation_requested: Callable[[], bool] | None = None,
     progress_callback: Callable[[SafeHavenProgress], None] | None = None,
     progress_stream: TextIO | None = None,
-) -> Path:
-    """Write per-pixel safe-haven duration bands, one per calendar month.
+) -> tuple[Path, Path, Path]:
+    """Write the hibernation, joint-total and joint-longest products in one pass.
 
-    Earth outages are detected per-pixel from each pixel's own terrain horizon.
-    Calendar-month bands are computed from the evaluation timespan; the band
-    name is the UTC ``[start, stop)`` interval.
+    Each product has one band per calendar month, written as its own resumable
+    GeoTIFF.  A patch is calculated once and skipped only when all three
+    products already hold it.  ``output_paths`` are in ``PRODUCT_KINDS`` order.
     """
     if (georef.width, georef.height) != (dem.width, dem.height):
         raise ValueError("GeoReference and DEM dimensions do not match")
+    if len(output_paths) != len(PRODUCT_KINDS):
+        raise ValueError("output_paths must name one file per product kind")
     timestamps = tuple(times_utc)
     sun_vectors = _validate_vectors(sun_vectors_m)
     earth_vectors = _validate_vectors(earth_vectors_m)
     if not len(timestamps) == len(sun_vectors) == len(earth_vectors):
         raise ValueError("timestamps, Sun vectors, and Earth vectors must align")
+    if max_slope_deg is not None and not (np.isfinite(max_slope_deg) and max_slope_deg > 0.0):
+        raise ValueError("max_slope_deg must be positive and finite, or None")
 
     month_bands = build_month_bands(timestamps)
     if not month_bands:
         raise ValueError("times_utc must span at least one calendar month")
-
     month_index_of = _month_indices_map(timestamps, month_bands)
 
     patches = enumerate_patches(dem.width, dem.height)
-    inventory = _inventory_identity(
-        horizon_store, patches, observer_elevation_m
-    )
+    inventory = _inventory_identity(horizon_store, patches, observer_elevation_m)
     if backend not in ("auto", "cpu", "cuda"):
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     if time_batch_size < 1:
@@ -110,7 +154,6 @@ def run_safe_haven_product(
 
     selected_backend: Literal["cpu", "cuda"] | None = None
     cuda_session = None
-
     if fraction_calculator is not None or elevation_calculator is not None:
         # Any injected calculator selects the reference streaming path.  Fill
         # the other signal with the compiled CPU implementation below.
@@ -129,9 +172,7 @@ def run_safe_haven_product(
         from .safe_haven_cuda import SafeHavenCudaSession, SafeHavenCudaCancelled
 
         try:
-            cuda_session = SafeHavenCudaSession(
-                time_batch_size=time_batch_size
-            )
+            cuda_session = SafeHavenCudaSession(time_batch_size=time_batch_size)
             selected_backend = "cuda"
         except CudaBackendError:
             if backend == "cuda":
@@ -152,51 +193,57 @@ def run_safe_haven_product(
             time_batch_size=time_batch_size
         ).iter_patch_margin_tiles
 
-    band_timestamps: list[datetime | str] = []
-    for start, stop in month_bands:
-        band_timestamps.append(start.isoformat())
-
-    product = ResumableTiledProduct(
-        output_path,
-        ProductJob(
-            georef=georef,
-            dtype=storage_dtype,
-            band_count=len(month_bands),
-            timestamps_utc=tuple(band_timestamps),
-            invalid_value=nodata,
-            nodata=nodata,
-            compression="deflate" if compress else "none",
-            algorithm="safe-haven-per-pixel-monthly-bands",
-            configuration={
-                "semantics_version": 2,
-                "time_step_hours": float(time_step_hours),
-                "earth_threshold_deg": float(earth_threshold_deg),
-                "sunlight_threshold": float(sunlight_threshold),
-                "month_bands": [
-                    [start.isoformat(), stop.isoformat()]
-                    for start, stop in month_bands
-                ],
-                "sun_vectors_sha256": hashlib.sha256(
-                    sun_vectors.astype("<f8", copy=False).tobytes()
-                ).hexdigest(),
-                "earth_vectors_sha256": hashlib.sha256(
-                    earth_vectors.astype("<f8", copy=False).tobytes()
-                ).hexdigest(),
-                "output_transform_id": output_transform_id,
-            },
-            horizon_inventory_identity=inventory,
-        ),
-        overwrite=overwrite,
-        start_fresh=start_fresh,
-        backend=selected_backend,
-        output_transform=output_transform,
-        dem_elevation=None if skip_dem_nodata_check else dem.elevation_m,
-    )
+    band_timestamps = tuple(start.isoformat() for start, _stop in month_bands)
+    configuration = {
+        "semantics_version": 3,
+        "time_step_hours": float(time_step_hours),
+        "earth_threshold_deg": float(earth_threshold_deg),
+        "sunlight_threshold": float(sunlight_threshold),
+        "operating_sunlight_fraction": float(operating_sunlight_fraction),
+        "merge_gap_hours": float(merge_gap_hours),
+        "max_slope_deg": None if max_slope_deg is None else float(max_slope_deg),
+        "month_bands": [
+            [start.isoformat(), stop.isoformat()] for start, stop in month_bands
+        ],
+        "sun_vectors_sha256": hashlib.sha256(
+            sun_vectors.astype("<f8", copy=False).tobytes()
+        ).hexdigest(),
+        "earth_vectors_sha256": hashlib.sha256(
+            earth_vectors.astype("<f8", copy=False).tobytes()
+        ).hexdigest(),
+        "output_transform_id": output_transform_id,
+    }
+    products = [
+        ResumableTiledProduct(
+            path,
+            ProductJob(
+                georef=georef,
+                dtype=storage_dtype,
+                band_count=len(month_bands),
+                timestamps_utc=band_timestamps,
+                invalid_value=nodata,
+                nodata=nodata,
+                compression="deflate" if compress else "none",
+                algorithm=_ALGORITHMS[kind],
+                configuration=configuration,
+                horizon_inventory_identity=inventory,
+            ),
+            overwrite=overwrite,
+            start_fresh=start_fresh,
+            backend=selected_backend,
+            output_transform=output_transform,
+            dem_elevation=None if skip_dem_nodata_check else dem.elevation_m,
+        )
+        for kind, path in zip(PRODUCT_KINDS, output_paths)
+    ]
 
     def cancelled() -> bool:
         return bool(cancellation_requested and cancellation_requested())
 
-    completed = len(product.completed_patches)
+    def complete(patch: PatchDescriptor) -> bool:
+        return all(product.is_complete(patch.tile_y, patch.tile_x) for product in products)
+
+    completed = sum(1 for patch in patches if complete(patch))
 
     def report(
         patch: PatchDescriptor | None, state: str, invalid_patches: int | None = None
@@ -222,12 +269,10 @@ def run_safe_haven_product(
 
     report(None, "start")
     for patch in patches:
-        if product.is_complete(patch.tile_y, patch.tile_x):
+        if complete(patch):
             continue
         if cancelled():
-            raise SafeHavenPipelineCancelled(
-                "safe-haven generation was cancelled"
-            )
+            raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
         report(patch, "read")
         # A missing tile is an invalid patch; an existing tile that cannot be
         # read raises HorizonFormatError.
@@ -235,18 +280,28 @@ def run_safe_haven_product(
             horizon_store, patch.tile_y, patch.tile_x, observer_elevation_m
         )
         if cancelled():
-            raise SafeHavenPipelineCancelled(
-                "safe-haven generation was cancelled"
-            )
+            raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
         if horizons is None:
-            product.write_invalid_patch(patch.tile_y, patch.tile_x)
+            for product in products:
+                product.write_invalid_patch(patch.tile_y, patch.tile_x)
             state = "invalid"
         else:
             report(patch, "calculate")
-
+            # Pixels on invalid DEM nodes have NaN lighting signals; the stores
+            # write them as nodata, so the reducers skip them.
+            invalid_pixels = None
+            if not skip_dem_nodata_check:
+                with np.errstate(invalid="ignore"):
+                    window = dem.elevation_m[
+                        patch.tile_y : patch.tile_y + patch.height,
+                        patch.tile_x : patch.tile_x + patch.width,
+                    ]
+                    invalid_pixels = ~(window > -20000.0)
+                if not invalid_pixels.any():
+                    invalid_pixels = None
             if cuda_session is not None and fraction_calculator is None and elevation_calculator is None:
                 try:
-                    duration_tiles = cuda_session.reduce_patch(
+                    layers = cuda_session.reduce_patch(
                         dem, horizons, sun_vectors, earth_vectors,
                         tile_y=patch.tile_y, tile_x=patch.tile_x,
                         valid_height=patch.height, valid_width=patch.width,
@@ -254,8 +309,11 @@ def run_safe_haven_product(
                         time_count=len(timestamps),
                         sunlight_threshold=sunlight_threshold,
                         earth_threshold_deg=earth_threshold_deg,
+                        operating_sunlight_fraction=operating_sunlight_fraction,
+                        merge_gap_hours=merge_gap_hours,
                         time_step_hours=time_step_hours,
                         cancellation_requested=cancelled,
+                        invalid_pixels=invalid_pixels,
                     )
                 except SafeHavenCudaCancelled as error:
                     raise SafeHavenPipelineCancelled(str(error)) from error
@@ -271,45 +329,43 @@ def run_safe_haven_product(
                     valid_width=patch.width,
                 )
 
-                def checked_fractions() -> Iterable[npt.ArrayLike]:
-                    for tile in fractions:
+                def checked(tiles: Iterable[npt.ArrayLike]) -> Iterable[npt.ArrayLike]:
+                    for tile in tiles:
                         if cancelled():
                             raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
                         yield tile
 
-                def checked_elevations() -> Iterable[npt.ArrayLike]:
-                    for tile in elevations:
-                        if cancelled():
-                            raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
-                        yield tile
-
-                duration_tiles = reduce_safe_haven_patch_stream(
-                    checked_fractions(), checked_elevations(), len(timestamps),
+                layers = reduce_safe_haven_products_patch_stream(
+                    checked(fractions), checked(elevations), len(timestamps),
                     month_bands, month_index_of=month_index_of,
                     sunlight_threshold=sunlight_threshold,
                     earth_threshold_deg=earth_threshold_deg,
+                    operating_sunlight_fraction=operating_sunlight_fraction,
+                    merge_gap_hours=merge_gap_hours,
                     time_step_hours=time_step_hours,
+                    invalid_pixels=invalid_pixels,
                 )
             if cancelled():
-                raise SafeHavenPipelineCancelled(
-                    "safe-haven generation was cancelled"
-                )
+                raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
+            if max_slope_deg is not None:
+                steep = patch_slope_exceeds(dem, georef, patch, max_slope_deg)
+                if steep.any():
+                    layers = tuple(
+                        tuple(np.where(steep, np.float32(np.nan), tile) for tile in kind_tiles)
+                        for kind_tiles in layers
+                    )
             report(patch, "write")
-            product.write_patch(patch.tile_y, patch.tile_x, duration_tiles)
+            for product, kind_tiles in zip(products, layers):
+                product.write_patch(patch.tile_y, patch.tile_x, kind_tiles)
             state = "valid"
         completed += 1
         report(patch, state)
     if cancelled():
         raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
-    result = product.finalize()
+    results = tuple(product.finalize() for product in products)
     report(
         None,
         "complete",
-        sum(state == "invalid" for state in product.completed_patches.values()),
+        sum(state == "invalid" for state in products[0].completed_patches.values()),
     )
-    return result
-
-
-def run_safe_haven_product_cpu(**kwargs) -> Path:
-    """Compatibility helper selecting the compiled CPU backend explicitly."""
-    return run_safe_haven_product(**kwargs, backend="cpu")
+    return results  # type: ignore[return-value]

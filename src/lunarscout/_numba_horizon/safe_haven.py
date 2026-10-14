@@ -1,9 +1,14 @@
-"""Private per-pixel safe-haven streaming reducer with monthly bands."""
+"""Private per-pixel safe-haven product reducer: one forward pass, monthly bands.
+
+The per-pixel state machine is specified in ``docs/safe-haven-state-machine.md``;
+the functions below implement it step for step.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from types import SimpleNamespace
 
 import numpy as np
 import numpy.typing as npt
@@ -72,7 +77,267 @@ def _month_indices_map(
     return mapping
 
 
-def reduce_safe_haven_patch_stream(
+# ---------------------------------------------------------------------------
+# Per-pixel state machine (see docs/safe-haven-state-machine.md)
+# ---------------------------------------------------------------------------
+
+#: Sentinel for "no value yet" in the per-band minimum; never an output value.
+UNSET = 2147483647
+
+# Rows of the per-pixel state table ``S[row, pixel]`` (all int32).
+RUN_LEN = 0        # samples in the open shadow run, through its last shadow sample
+GAP = 1            # sunlit samples since the run's last shadow sample (0 in shadow)
+IN_HIB = 2         # 1 while a hibernation (no-communications interval) is active
+HIB_BAND = 3       # band of the active hibernation's first sample, -1 if uncredited
+HIB_SCORE = 4      # longest closed run intersecting the active hibernation so far
+HEAD = 5           # 1 if the open run's chain has a head hibernation
+HEAD_BAND = 6      # band of the head hibernation, -1 if uncredited
+HEAD_PRIOR = 7     # head's score from runs that closed before the open run began
+HEAD_ACTIVE = 8    # 1 while the head hibernation is still the active one
+MID_LO = 9         # lowest band of ended non-head chain members (UNSET if none)
+MID_HI = 10        # highest band of ended non-head chain members (-1 if none)
+TAIL_ACTIVE = 11   # 1 while the active hibernation is a non-head chain member
+PEND_LO = 12       # lowest band of hibernations wholly inside the pending gap
+PEND_HI = 13       # highest band of those (-1 if none)
+PEND_CUR = 14      # 1 while the active hibernation began inside the pending gap
+JOINT_RUN = 15     # samples in the current joint-operating run
+JOINT_BAND = 16    # band of the current joint-operating run's first sample
+STATE_ROWS = 17
+
+
+def new_state(pixel_count: int) -> npt.NDArray[np.int32]:
+    """Return the initial state table for ``pixel_count`` pixels."""
+    state = np.zeros((STATE_ROWS, pixel_count), dtype=np.int32)
+    state[HIB_BAND] = -1
+    state[HEAD_BAND] = -1
+    state[MID_LO] = UNSET
+    state[MID_HI] = -1
+    state[PEND_LO] = UNSET
+    state[PEND_HI] = -1
+    state[JOINT_BAND] = -1
+    return state
+
+
+def merge_gap_limit(merge_gap_hours: float, time_step_hours: float) -> int:
+    """Smallest sunlit-gap length (in samples) that is *not* bridged.
+
+    Two shadow runs are joined when the sunlit gap between them lasts strictly
+    less than ``merge_gap_hours``.  A gap of ``g`` samples lasts ``g * step``.
+    """
+    ratio = merge_gap_hours / time_step_hours
+    return max(0, int(np.ceil(ratio - 1e-9)))
+
+
+def make_machine(jit):
+    """Build the per-pixel machine functions with the decorator ``jit``.
+
+    ``jit`` is ``numba.njit`` for the CPU, ``numba.cuda.jit(device=True)`` for
+    the GPU, or the identity for plain Python.  One definition serves all three.
+    """
+
+    @jit
+    def _commit(best, i, lo, hi, score):
+        """Record a hibernation score for every band in ``lo..hi`` (minimum wins)."""
+        for band in range(lo, hi + 1):
+            if score < best[band, i]:
+                best[band, i] = score
+
+
+    @jit
+    def _close_run(S, best, i):
+        """The open run is over: give its final length to every chain member."""
+        length = S[RUN_LEN, i]
+        if S[HEAD, i] == 1:
+            score = max(S[HEAD_PRIOR, i], length)
+            if S[HEAD_ACTIVE, i] == 1:
+                S[HIB_SCORE, i] = score          # head continues as the active hibernation
+            elif S[HEAD_BAND, i] >= 0:
+                _commit(best, i, S[HEAD_BAND, i], S[HEAD_BAND, i], score)
+        if S[MID_HI, i] >= 0:
+            _commit(best, i, S[MID_LO, i], S[MID_HI, i], length)
+        if S[TAIL_ACTIVE, i] == 1:
+            S[HIB_SCORE, i] = length             # prior is 0, so the score is the length
+        if S[PEND_HI, i] >= 0:
+            _commit(best, i, S[PEND_LO, i], S[PEND_HI, i], 0)  # touched no run
+        S[RUN_LEN, i] = 0
+        S[GAP, i] = 0
+        S[HEAD, i] = 0
+        S[HEAD_BAND, i] = -1
+        S[HEAD_PRIOR, i] = 0
+        S[HEAD_ACTIVE, i] = 0
+        S[MID_LO, i] = UNSET
+        S[MID_HI, i] = -1
+        S[TAIL_ACTIVE, i] = 0
+        S[PEND_LO, i] = UNSET
+        S[PEND_HI, i] = -1
+        S[PEND_CUR, i] = 0
+
+
+    @jit
+    def _widen(S, i, lo_row, hi_row, band):
+        if band >= 0:
+            if band < S[lo_row, i]:
+                S[lo_row, i] = band
+            if band > S[hi_row, i]:
+                S[hi_row, i] = band
+
+
+    @jit
+    def advance_pixel(
+        S, i, best, have, joint_total, joint_best, fraction, margin, time_index,
+        band, sunlight_threshold, earth_threshold, operating_threshold, gap_limit,
+    ):
+        """Advance pixel ``i`` by one time sample.  Steps are in specification order."""
+        outage = margin < earth_threshold
+        shadow = fraction < sunlight_threshold
+
+        # 1. Hibernation starts or ends.
+        if outage:
+            if S[IN_HIB, i] == 0:
+                S[IN_HIB, i] = 1
+                # A hibernation already under way at the first sample has an
+                # unknown start and is not credited to any band.
+                credited = band if (time_index > 0 and band >= 0) else -1
+                S[HIB_BAND, i] = credited
+                S[HIB_SCORE, i] = 0
+                if credited >= 0:
+                    have[credited, i] = 1
+        elif S[IN_HIB, i] == 1:
+            S[IN_HIB, i] = 0
+            credited = S[HIB_BAND, i]
+            if S[HEAD_ACTIVE, i] == 1:
+                S[HEAD_ACTIVE, i] = 0            # stays the head, now an ended member
+            elif S[TAIL_ACTIVE, i] == 1:
+                S[TAIL_ACTIVE, i] = 0
+                _widen(S, i, MID_LO, MID_HI, credited)
+            elif S[PEND_CUR, i] == 1:
+                S[PEND_CUR, i] = 0
+                _widen(S, i, PEND_LO, PEND_HI, credited)
+            elif credited >= 0:
+                _commit(best, i, credited, credited, S[HIB_SCORE, i])
+
+        # 2. Shadow runs, with sunlit gaps shorter than the merge limit bridged.
+        if shadow:
+            if S[RUN_LEN, i] == 0:
+                S[RUN_LEN, i] = 1                # a new run opens
+                if S[IN_HIB, i] == 1:            # the active hibernation is its head
+                    S[HEAD, i] = 1
+                    S[HEAD_BAND, i] = S[HIB_BAND, i]
+                    S[HEAD_PRIOR, i] = S[HIB_SCORE, i]
+                    S[HEAD_ACTIVE, i] = 1
+            else:
+                if S[GAP, i] > 0:                # the gap is bridged
+                    S[RUN_LEN, i] += S[GAP, i] + 1
+                    S[GAP, i] = 0
+                    if S[PEND_HI, i] >= 0:       # hibernations wholly inside the gap
+                        if S[PEND_LO, i] < S[MID_LO, i]:
+                            S[MID_LO, i] = S[PEND_LO, i]
+                        if S[PEND_HI, i] > S[MID_HI, i]:
+                            S[MID_HI, i] = S[PEND_HI, i]
+                        S[PEND_LO, i] = UNSET
+                        S[PEND_HI, i] = -1
+                    S[PEND_CUR, i] = 0           # a hibernation that began in the gap
+                                                 # and is still active joins as the tail below
+                else:
+                    S[RUN_LEN, i] += 1
+                if (
+                    S[IN_HIB, i] == 1
+                    and S[HEAD_ACTIVE, i] == 0
+                    and S[TAIL_ACTIVE, i] == 0
+                ):
+                    S[TAIL_ACTIVE, i] = 1        # began at this shadow sample
+        elif S[RUN_LEN, i] > 0:
+            S[GAP, i] += 1
+            if (
+                S[IN_HIB, i] == 1
+                and S[HEAD_ACTIVE, i] == 0
+                and S[TAIL_ACTIVE, i] == 0
+                and S[PEND_CUR, i] == 0
+            ):
+                S[PEND_CUR, i] = 1               # began inside the gap: unconfirmed
+            if S[GAP, i] >= gap_limit:
+                _close_run(S, best, i)
+
+        # 3. Joint operating: Earth available and the Sun fully visible.
+        if (not outage) and fraction >= operating_threshold:
+            if S[JOINT_RUN, i] == 0:
+                S[JOINT_BAND, i] = band
+            S[JOINT_RUN, i] += 1
+            if band >= 0:
+                joint_total[band, i] += 1
+            start_band = S[JOINT_BAND, i]
+            if start_band >= 0 and S[JOINT_RUN, i] > joint_best[start_band, i]:
+                joint_best[start_band, i] = S[JOINT_RUN, i]
+        else:
+            S[JOINT_RUN, i] = 0
+
+
+    @jit
+    def finish_pixel(S, i, best):
+        """No more samples: close the open run and the active hibernation."""
+        if S[RUN_LEN, i] > 0:
+            _close_run(S, best, i)
+        if S[IN_HIB, i] == 1 and S[HIB_BAND, i] >= 0:
+            _commit(best, i, S[HIB_BAND, i], S[HIB_BAND, i], S[HIB_SCORE, i])
+        S[IN_HIB, i] = 0
+
+    return SimpleNamespace(
+        advance_pixel=advance_pixel,
+        finish_pixel=finish_pixel,
+    )
+
+
+def _tile_loops(machine, loop):
+    """Build the per-tile loops over pixels from a machine (``loop`` is range/prange)."""
+    advance_pixel = machine.advance_pixel
+    finish_pixel = machine.finish_pixel
+
+    def advance_tile(
+        S, best, have, joint_total, joint_best, fractions, margins, time_index,
+        band, sunlight_threshold, earth_threshold, operating_threshold,
+        gap_limit, valid,
+    ):
+        for i in loop(fractions.shape[0]):
+            if valid[i]:
+                advance_pixel(
+                    S, i, best, have, joint_total, joint_best, fractions[i],
+                    margins[i], time_index, band, sunlight_threshold,
+                    earth_threshold, operating_threshold, gap_limit,
+                )
+
+    def finish_tile(S, best, valid):
+        for i in loop(S.shape[1]):
+            if valid[i]:
+                finish_pixel(S, i, best)
+
+    return advance_tile, finish_tile
+
+
+_COMPILED: dict[str, object] = {}
+
+
+def _compiled():
+    """Compile the machine once with Numba (nogil, parallel over pixels)."""
+    if not _COMPILED:
+        from numba import njit, prange
+
+        machine = make_machine(njit(cache=False, nogil=True))
+        advance_tile, finish_tile = _tile_loops(machine, prange)
+        _COMPILED["advance"] = njit(cache=False, nogil=True, parallel=True)(advance_tile)
+        _COMPILED["finish"] = njit(cache=False, nogil=True, parallel=True)(finish_tile)
+    return _COMPILED["advance"], _COMPILED["finish"]
+
+
+def _python_tiles():
+    """The same machine run as plain Python, for reading and debugging."""
+    return _tile_loops(make_machine(lambda function: function), range)
+
+
+#: Tolerance on the operating-Sun comparison: ``fraction >= threshold - fuzz``.
+OPERATING_FUZZ = 1e-6
+
+
+def reduce_safe_haven_products_patch_stream(
     sunlight_fraction_tiles: Iterable[npt.ArrayLike],
     earth_elevation_tiles: Iterable[npt.ArrayLike],
     time_count: int,
@@ -81,48 +346,27 @@ def reduce_safe_haven_patch_stream(
     month_index_of: npt.NDArray[np.int32],
     sunlight_threshold: float,
     earth_threshold_deg: float,
+    operating_sunlight_fraction: float,
+    merge_gap_hours: float,
     time_step_hours: float,
-) -> tuple[npt.NDArray[np.float32], ...]:
-    """Measure per-pixel safe-haven durations with calendar-month bands.
+    invalid_pixels: npt.ArrayLike | None = None,
+    use_numba: bool = True,
+) -> tuple[
+    tuple[npt.NDArray[np.float32], ...],
+    tuple[npt.NDArray[np.float32], ...],
+    tuple[npt.NDArray[np.float32], ...],
+]:
+    """Reduce one patch's Sun and Earth streams to the three safe-haven layers.
 
-    For each pixel and calendar month, the reducer computes the longest complete
-    contiguous low-Sun interval that overlaps any Earth-outage interval detected
-    from *that pixel's own terrain horizon* within the month.
+    Returns ``(hibernation, joint_total, joint_longest)``; each is a tuple with
+    one float32 ``(y, x)`` array in hours per band.  Hibernation is NaN where
+    no hibernation starts in the band; the joint layers are never NaN here.
+    See ``docs/safe-haven-state-machine.md`` for the definitions.
 
-    Earth outages are detected per-pixel online (streaming): a pixel enters an
-    outage when Earth elevation relative to its local terrain horizon drops
-    strictly below *earth_threshold_deg*, and exits when it rises back above.
-
-    A qualifying low-Sun run may begin before an outage, end after it, and span
-    multiple months.  The run's full duration is credited to every calendar month
-    it touches while overlapping an active Earth outage.
-
-    Pixels where Earth never goes below the threshold during a month, or where
-    Earth stays below the threshold for the *entire* month, receive NODATA
-    because the safe-haven question is ill-posed for those pixels during that
-    month.
-
-    Parameters
-    ----------
-    sunlight_fraction_tiles:
-        Iterator yielding one ``float32 (y, x)`` fraction tile per timestep.
-    earth_elevation_tiles:
-        Iterator yielding one ``float32 (y, x)`` Earth horizon-relative elevation
-        tile per timestep, in degrees.
-    time_count:
-        Number of timesteps (must equal the length of both iterators).
-    month_bands:
-        Calendar-month ``(start_utc, stop_utc)`` intervals.
-    month_index_of:
-        Optional ``int32[time_count]`` mapping each timestep index to its month
-        band index, or ``-1`` for timesteps outside all bands.  If omitted it
-        is computed from *month_bands*.
-    sunlight_threshold:
-        Unitless strict-below threshold for a low-Sun pixel.
-    earth_threshold_deg:
-        Strict-below threshold in degrees for an Earth outage.
-    time_step_hours:
-        Duration of one sample in decimal hours.
+    ``invalid_pixels`` is an optional boolean ``(y, x)`` mask of pixels on invalid
+    DEM nodes.  Their lighting signals are meaningless (NaN), so they are skipped
+    and their outputs stay at the no-event values; the caller writes NODATA there.
+    A non-finite signal at any other pixel is an error.
     """
     if time_count < 1:
         raise ValueError("time_count must be positive")
@@ -130,24 +374,31 @@ def reduce_safe_haven_patch_stream(
         raise ValueError("sunlight_threshold must be between zero and one")
     if not np.isfinite(earth_threshold_deg):
         raise ValueError("earth_threshold_deg must be finite")
+    if not 0.0 <= operating_sunlight_fraction <= 1.0:
+        raise ValueError("operating_sunlight_fraction must be between zero and one")
+    if not np.isfinite(merge_gap_hours) or merge_gap_hours < 0.0:
+        raise ValueError("merge_gap_hours must be finite and nonnegative")
     if not np.isfinite(time_step_hours) or time_step_hours <= 0.0:
         raise ValueError("time_step_hours must be positive and finite")
     band_count = len(month_bands)
-
     if month_index_of.shape != (time_count,):
         raise ValueError("month_index_of must have shape (time_count,)")
+    if np.any(month_index_of < -1) or np.any(month_index_of >= band_count):
+        raise ValueError("month_index_of contains an invalid band index")
+
+    gap_limit = merge_gap_limit(merge_gap_hours, time_step_hours)
+    operating_threshold = np.float32(operating_sunlight_fraction - OPERATING_FUZZ)
+    sun_threshold = np.float32(sunlight_threshold)
+    earth_threshold = np.float32(earth_threshold_deg)
+    if use_numba:
+        advance, finish = _compiled()
+    else:
+        advance, finish = _python_tiles()
 
     fraction_iter = iter(sunlight_fraction_tiles)
     earth_iter = iter(earth_elevation_tiles)
-
     shape = None
-
-    run_length = None
-    run_touching = None
-    best = None
-    had_outage = None
-    was_above = None
-
+    state = best = have = joint_total = joint_best = valid = None
     for time_index in range(time_count):
         try:
             fraction_tile = np.asarray(next(fraction_iter), dtype=np.float32)
@@ -156,67 +407,41 @@ def reduce_safe_haven_patch_stream(
             raise ValueError(
                 "fraction or elevation iterator ended before time_count"
             ) from exc
-
-        if fraction_tile.ndim != 2 or not np.all(np.isfinite(fraction_tile)):
+        if fraction_tile.ndim != 2:
             raise ValueError("sunlight fraction tiles must be finite 2D arrays")
-        if earth_tile.ndim != 2 or not np.all(np.isfinite(earth_tile)):
+        if earth_tile.ndim != 2:
             raise ValueError("earth elevation tiles must be finite 2D arrays")
-
         if shape is None:
             shape = fraction_tile.shape
             if earth_tile.shape != shape:
-                raise ValueError(
-                    "fraction and elevation tiles must have the same shape"
-                )
-            run_length = np.zeros(shape, dtype=np.int32)
-            run_touching = np.zeros((band_count, *shape), dtype=np.bool_)
-            best = np.zeros((band_count, *shape), dtype=np.int32)
-            had_outage = np.zeros((band_count, *shape), dtype=np.bool_)
-            was_above = np.zeros((band_count, *shape), dtype=np.bool_)
+                raise ValueError("fraction and elevation tiles must have the same shape")
+            pixel_count = shape[0] * shape[1]
+            state = new_state(pixel_count)
+            best = np.full((band_count, pixel_count), UNSET, dtype=np.int32)
+            have = np.zeros((band_count, pixel_count), dtype=np.uint8)
+            joint_total = np.zeros((band_count, pixel_count), dtype=np.int32)
+            joint_best = np.zeros((band_count, pixel_count), dtype=np.int32)
+            if invalid_pixels is None:
+                checked = np.ones(shape, dtype=np.bool_)
+            else:
+                checked = ~np.asarray(invalid_pixels, dtype=np.bool_)
+                if checked.shape != shape:
+                    raise ValueError("invalid_pixels must have the tile shape")
+            valid = np.ascontiguousarray(checked.reshape(-1))
         elif fraction_tile.shape != shape or earth_tile.shape != shape:
             raise ValueError("all tiles must have the same shape")
-
-        month_index = int(month_index_of[time_index]) if time_index < len(month_index_of) else -1
-
-        sun_low = fraction_tile < np.float32(sunlight_threshold)
-        earth_below = earth_tile < np.float32(earth_threshold_deg)
-
-        # Update the low-Sun run independently of Earth outage state.  Once a
-        # run touches an outage, every later sample in that same run must be
-        # credited even after Earth rises above the threshold.
-        run_length[:] = np.where(sun_low, run_length + 1, 0)
-
-        # Track whether the monthly safe-haven question is well posed, and
-        # mark a low-Sun run when it overlaps an outage in the current month.
-        if month_index >= 0:
-            band = month_index
-            was_above[band] |= ~earth_below
-            had_outage[band] |= earth_below
-            run_touching[band] |= earth_below & sun_low
-
-        # Extend every marked run, including its portion after the outage and
-        # across calendar-month boundaries.  Clear the marker only when the
-        # low-Sun run ends.
-        for band in range(band_count):
-            active = run_touching[band] & sun_low
-            best[band] = np.maximum(
-                best[band],
-                np.where(active, run_length, 0).astype(np.int32),
-            )
-            run_touching[band] &= sun_low
-
-    # --- right-censor active runs ---
-    active_run = run_length > 0
-    if np.any(active_run):
-        for band in range(band_count):
-            mask = active_run & run_touching[band]
-            if np.any(mask):
-                best[band] = np.maximum(
-                    best[band],
-                    np.where(mask, run_length, 0).astype(np.int32),
-                )
-
-    # --- verify iterators are exhausted ---
+        # Only pixels on valid DEM nodes must carry finite signals.
+        if not (np.all(np.isfinite(fraction_tile[checked]))):
+            raise ValueError("sunlight fraction tiles must be finite 2D arrays")
+        if not (np.all(np.isfinite(earth_tile[checked]))):
+            raise ValueError("earth elevation tiles must be finite 2D arrays")
+        advance(
+            state, best, have, joint_total, joint_best,
+            np.ascontiguousarray(fraction_tile.reshape(-1)),
+            np.ascontiguousarray(earth_tile.reshape(-1)),
+            time_index, int(month_index_of[time_index]), sun_threshold,
+            earth_threshold, operating_threshold, gap_limit, valid,
+        )
     try:
         next(fraction_iter)
     except StopIteration:
@@ -230,14 +455,29 @@ def reduce_safe_haven_patch_stream(
     else:
         raise ValueError("elevation iterator has more entries than time_count")
 
-    # --- assemble output bands ---
-    assert best is not None and had_outage is not None and was_above is not None
-    results: list[npt.NDArray[np.float32]] = []
-    for band in range(band_count):
-        durations = best[band].astype(np.float32) * np.float32(time_step_hours)
-        # NODATA for pixels where Earth was never below threshold (no outage
-        # question to answer) or always below (permanent Earth shadow).
-        nodata_mask = ~had_outage[band] | (had_outage[band] & ~was_above[band])
-        durations[nodata_mask] = np.nan
-        results.append(np.ascontiguousarray(durations))
-    return tuple(results)
+    assert state is not None and shape is not None
+    finish(state, best, valid)
+    return assemble_outputs(
+        best, have, joint_total, joint_best, shape, time_step_hours
+    )
+
+
+def assemble_outputs(best, have, joint_total, joint_best, shape, time_step_hours):
+    """Convert the reducer's integer counters to float32 hours per band."""
+    step = np.float32(time_step_hours)
+    hibernation: list[npt.NDArray[np.float32]] = []
+    totals: list[npt.NDArray[np.float32]] = []
+    longest: list[npt.NDArray[np.float32]] = []
+    for band in range(best.shape[0]):
+        started = have[band] == 1
+        if np.any(started & (best[band] == UNSET)):
+            raise ValueError("internal error: a hibernation was never scored")
+        hours = np.where(started, best[band].astype(np.float32) * step, np.nan)
+        hibernation.append(np.ascontiguousarray(hours.astype(np.float32).reshape(shape)))
+        totals.append(
+            np.ascontiguousarray((joint_total[band].astype(np.float32) * step).reshape(shape))
+        )
+        longest.append(
+            np.ascontiguousarray((joint_best[band].astype(np.float32) * step).reshape(shape))
+        )
+    return tuple(hibernation), tuple(totals), tuple(longest)

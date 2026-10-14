@@ -303,11 +303,11 @@ def test_read_cbin_via_lunarscout_public_api_roundtrips_content(
 
 def test_small_safe_haven_completes_within_reasonable_time(tmp_path: Path) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
-    output = tmp_path / "bench_safe.tif"
+    output = tmp_path / "bench_safe"
     times = ("2027-01-01T00:00:00Z", "2027-01-01T06:00:00Z", "2027-01-01T12:00:00Z", "2027-01-01T18:00:00Z")
 
     t0 = time.monotonic()
-    result = ls.generate_safe_havens(
+    result = ls.generate_safe_haven_products(
         dem_path, horizons_path, output,
         times=times,
         sun_vectors_m=np.stack(4 * (_sun_vector(-1.0),)),
@@ -320,7 +320,7 @@ def test_small_safe_haven_completes_within_reasonable_time(tmp_path: Path) -> No
     )
     elapsed = time.monotonic() - t0
 
-    with rasterio.open(result) as ds:
+    with rasterio.open(result.hibernation) as ds:
         assert ds.count >= 1
     assert elapsed < 30.0  # small fixture, should complete quickly
 
@@ -497,10 +497,10 @@ def test_safe_haven_geotiff_has_per_band_timestamp_and_backend_tag(
     tmp_path: Path,
 ) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
-    output = tmp_path / "sh_meta.tif"
+    output = tmp_path / "sh_meta"
     times = ("2027-01-01T00:00:00Z", "2027-01-01T06:00:00Z", "2027-01-01T12:00:00Z", "2027-01-01T18:00:00Z")
 
-    result = ls.generate_safe_havens(
+    result = ls.generate_safe_haven_products(
         dem_path, horizons_path, output,
         times=times,
         sun_vectors_m=np.stack(4 * (_sun_vector(-1.0),)),
@@ -512,7 +512,7 @@ def test_safe_haven_geotiff_has_per_band_timestamp_and_backend_tag(
         backend="cpu",
     )
 
-    with rasterio.open(result) as ds:
+    with rasterio.open(result.hibernation) as ds:
         tags = ds.tags()
         assert "LUNARSCOUT_TIMESTAMPS_UTC" in tags
         assert "LUNARSCOUT_COMPUTE_BACKENDS" in tags

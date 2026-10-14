@@ -77,7 +77,7 @@ def test_public_product_storage_defaults_are_explicit() -> None:
     float_products = (
         ls.generate_sun_elevation,
         ls.generate_earth_elevation,
-        ls.generate_safe_havens,
+        ls.generate_safe_haven_products,
         ls.mission_duration_from_sunlight,
         ls.mission_duration_from_sun_elevation,
         ls.mission_duration_from_sunlight_and_earth_elevation,
@@ -602,34 +602,44 @@ def test_public_cpu_safe_havens_use_hours_and_strict_thresholds(
         "2027-01-01T12:00:00Z",
         "2027-01-01T18:00:00Z",
     )
-    output = ls.generate_safe_havens(
+    products = ls.generate_safe_haven_products(
         dem_path,
         horizons_path,
-        tmp_path / "safe-havens.tif",
+        tmp_path / "safe-havens",
         times=times,
-        # Sun always low, Earth crosses threshold: below at t0-t1, above at t2-t3
+        # Sun always low; Earth is available at t0, below the threshold at t1-t2
+        # (a hibernation starts at t1) and available again at t3.
         sun_vectors_m=np.stack(4 * (_sun_vector(-1.0),)),
         earth_vectors_m=np.stack(
-            (_sun_vector(-1.0), _sun_vector(-1.0), _sun_vector(10.0), _sun_vector(10.0))
+            (_sun_vector(10.0), _sun_vector(-1.0), _sun_vector(-1.0), _sun_vector(10.0))
         ),
         earth_elevation_threshold_deg=2.0,
         sunlight_fraction_threshold=0.2,
         backend="cpu",
     )
 
-    with rasterio.open(output) as dataset:
+    assert isinstance(products, ls.SafeHavenProducts)
+    assert [path.name for path in products] == [
+        "safe_haven_hibernation_hours.tif",
+        "safe_haven_joint_operating_total_hours.tif",
+        "safe_haven_joint_operating_longest_hours.tif",
+    ]
+    with rasterio.open(products.hibernation) as dataset:
         assert dataset.count == 1
-        duration = dataset.read(1).item()
-        assert np.isfinite(duration) and duration > 0.0
+        # One shadow run covers all four six-hour samples: 24 hours.
+        assert dataset.read(1).item() == pytest.approx(24.0)
         assert dataset.dataset_mask().item() == 255
         assert dataset.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
+    for path in (products.joint_total, products.joint_longest):
+        with rasterio.open(path) as dataset:
+            assert dataset.read(1).item() == 0.0   # the Sun is never fully lit
 
 
 def test_public_safe_havens_reject_nonuniform_samples_before_output(
     tmp_path: Path,
 ) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
-    output = tmp_path / "nonuniform.tif"
+    output = tmp_path / "nonuniform"
     times = (
         "2027-01-01T00:00:00Z",
         "2027-01-01T06:00:00Z",
@@ -638,7 +648,7 @@ def test_public_safe_havens_reject_nonuniform_samples_before_output(
     vectors = np.stack(tuple(_sun_vector(-1.0) for _ in times))
 
     with pytest.raises(ls.ProductTimeError) as raised:
-        ls.generate_safe_havens(
+        ls.generate_safe_haven_products(
             dem_path,
             horizons_path,
             output,
@@ -745,7 +755,7 @@ def test_all_public_downstream_cpu_and_cuda_products_agree(tmp_path: Path) -> No
         ),
         (
             "safe_havens",
-            ls.generate_safe_havens,
+            ls.generate_safe_haven_products,
             {
                 "times": times,
                 "sun_vectors_m": sun_low,
@@ -787,30 +797,38 @@ def test_all_public_downstream_cpu_and_cuda_products_agree(tmp_path: Path) -> No
     )
 
     for name, function, kwargs in operations:
-        cpu_path = function(
+        # Safe havens write three files into a directory; the rest write one file.
+        extension = "" if name == "safe_havens" else ".tif"
+        cpu_result = function(
             dem_path,
             horizons_path,
-            tmp_path / f"{name}-cpu.tif",
+            tmp_path / f"{name}-cpu{extension}",
             backend="cpu",
             **kwargs,
         )
-        cuda_path = function(
+        cuda_result = function(
             dem_path,
             horizons_path,
-            tmp_path / f"{name}-cuda.tif",
+            tmp_path / f"{name}-cuda{extension}",
             backend="cuda",
             **kwargs,
         )
-        with rasterio.open(cpu_path) as cpu, rasterio.open(cuda_path) as cuda:
-            assert cpu.count == cuda.count
-            assert cpu.dtypes == cuda.dtypes
-            if np.issubdtype(np.dtype(cpu.dtypes[0]), np.integer):
-                np.testing.assert_array_equal(cpu.read(), cuda.read())
-            else:
-                np.testing.assert_allclose(cpu.read(), cuda.read(), atol=1e-4)
-            np.testing.assert_array_equal(cpu.dataset_mask(), cuda.dataset_mask())
-            assert cpu.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
-            assert cuda.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cuda"]'
+        pairs = (
+            list(zip(cpu_result, cuda_result))
+            if isinstance(cpu_result, ls.SafeHavenProducts)
+            else [(cpu_result, cuda_result)]
+        )
+        for cpu_path, cuda_path in pairs:
+            with rasterio.open(cpu_path) as cpu, rasterio.open(cuda_path) as cuda:
+                assert cpu.count == cuda.count
+                assert cpu.dtypes == cuda.dtypes
+                if np.issubdtype(np.dtype(cpu.dtypes[0]), np.integer):
+                    np.testing.assert_array_equal(cpu.read(), cuda.read())
+                else:
+                    np.testing.assert_allclose(cpu.read(), cuda.read(), atol=1e-4)
+                np.testing.assert_array_equal(cpu.dataset_mask(), cuda.dataset_mask())
+                assert cpu.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
+                assert cuda.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cuda"]'
 
 
 # ---------------------------------------------------------------------------
@@ -934,19 +952,19 @@ def test_output_transform_missing_dtype_raises_with_code(
 
 def test_safe_haven_output_preserved_on_overwrite_false(tmp_path: Path) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
-    output = tmp_path / "safe.tif"
+    output = tmp_path / "safe"
 
-    ls.generate_safe_havens(
+    first = ls.generate_safe_haven_products(
         dem_path, horizons_path, output,
         times=("2027-01-01T00:00:00Z", "2027-01-02T00:00:00Z"),
         sun_vectors_m=np.stack((_sun_vector(-1.0), _sun_vector(-1.0))),
         earth_vectors_m=np.stack((_sun_vector(1.0), _sun_vector(1.0))),
         backend="cpu",
     )
-    original = output.read_bytes()
+    originals = [path.read_bytes() for path in first]
 
     with pytest.raises(ls.ProductStorageError):
-        ls.generate_safe_havens(
+        ls.generate_safe_haven_products(
             dem_path, horizons_path, output,
             times=("2027-01-01T00:00:00Z", "2027-01-02T00:00:00Z"),
             sun_vectors_m=np.stack((_sun_vector(-1.0), _sun_vector(-1.0))),
@@ -955,7 +973,7 @@ def test_safe_haven_output_preserved_on_overwrite_false(tmp_path: Path) -> None:
             backend="cpu",
         )
 
-    assert output.read_bytes() == original
+    assert [path.read_bytes() for path in first] == originals
 
 
 # ---------------------------------------------------------------------------
@@ -965,7 +983,7 @@ def test_safe_haven_output_preserved_on_overwrite_false(tmp_path: Path) -> None:
 
 def test_safe_haven_no_earth_outage_produces_nodata_band(tmp_path: Path) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
-    output = tmp_path / "safe.tif"
+    output = tmp_path / "safe"
     times = (
         "2027-01-01T00:00:00Z",
         "2027-01-02T00:00:00Z",
@@ -974,7 +992,7 @@ def test_safe_haven_no_earth_outage_produces_nodata_band(tmp_path: Path) -> None
     )
     sun = np.stack(4 * (_sun_vector(-1.0),))
 
-    result = ls.generate_safe_havens(
+    result = ls.generate_safe_haven_products(
         dem_path, horizons_path, output,
         times=times,
         sun_vectors_m=sun,
@@ -984,7 +1002,7 @@ def test_safe_haven_no_earth_outage_produces_nodata_band(tmp_path: Path) -> None
         backend="cpu",
     )
 
-    with rasterio.open(result) as ds:
+    with rasterio.open(result.hibernation) as ds:
         assert ds.count == 1
         assert np.isnan(ds.read(1).item())
 
@@ -993,7 +1011,7 @@ def test_safe_haven_whole_interval_outage_produces_nodata_band(
     tmp_path: Path,
 ) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
-    output = tmp_path / "safe.tif"
+    output = tmp_path / "safe"
     times = (
         "2027-01-01T00:00:00Z",
         "2027-01-02T00:00:00Z",
@@ -1001,7 +1019,7 @@ def test_safe_haven_whole_interval_outage_produces_nodata_band(
     )
     sun = np.stack(3 * (_sun_vector(-1.0),))
 
-    result = ls.generate_safe_havens(
+    result = ls.generate_safe_haven_products(
         dem_path, horizons_path, output,
         times=times,
         sun_vectors_m=sun,
@@ -1011,7 +1029,7 @@ def test_safe_haven_whole_interval_outage_produces_nodata_band(
         backend="cpu",
     )
 
-    with rasterio.open(result) as ds:
+    with rasterio.open(result.hibernation) as ds:
         assert ds.count == 1
         assert np.isnan(ds.read(1).item())
         assert ds.dataset_mask().item() == 255
@@ -1019,7 +1037,7 @@ def test_safe_haven_whole_interval_outage_produces_nodata_band(
 
 def test_safe_haven_adjacent_outages_produce_two_bands(tmp_path: Path) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
-    output = tmp_path / "safe.tif"
+    output = tmp_path / "safe"
     times = (
         "2027-01-01T00:00:00Z",
         "2027-01-01T01:00:00Z",
@@ -1037,7 +1055,7 @@ def test_safe_haven_adjacent_outages_produce_two_bands(tmp_path: Path) -> None:
     )
     sun = np.stack(6 * (_sun_vector(-1.0),))
 
-    result = ls.generate_safe_havens(
+    result = ls.generate_safe_haven_products(
         dem_path, horizons_path, output,
         times=times,
         sun_vectors_m=sun,
@@ -1047,23 +1065,27 @@ def test_safe_haven_adjacent_outages_produce_two_bands(tmp_path: Path) -> None:
         backend="cpu",
     )
 
-    with rasterio.open(result) as ds:
+    with rasterio.open(result.hibernation) as ds:
         assert ds.count == 1  # single month band
         assert ds.dataset_mask().item() == 255
+        # The first outage (samples 0-1) starts at the first sample and is not
+        # credited; the second (samples 3-4) starts in the month and sits inside
+        # the one six-sample shadow run: 6 hours.
+        assert ds.read(1).item() == pytest.approx(6.0)
 
 
 def test_safe_haven_above_threshold_earth_yields_nodata_band(
     tmp_path: Path,
 ) -> None:
     dem_path, horizons_path = _inputs(tmp_path)
-    output = tmp_path / "safe.tif"
+    output = tmp_path / "safe"
     times = (
         "2027-01-01T00:00:00Z",
         "2027-01-02T00:00:00Z",
     )
     sun = np.stack((_sun_vector(-1.0), _sun_vector(-1.0)))
 
-    result = ls.generate_safe_havens(
+    result = ls.generate_safe_haven_products(
         dem_path, horizons_path, output,
         times=times,
         sun_vectors_m=sun,
@@ -1073,7 +1095,7 @@ def test_safe_haven_above_threshold_earth_yields_nodata_band(
         backend="cpu",
     )
 
-    with rasterio.open(result) as ds:
+    with rasterio.open(result.hibernation) as ds:
         assert ds.count == 1
         assert np.isnan(ds.read(1).item())
 
@@ -1095,12 +1117,12 @@ def test_safe_haven_missing_horizon_returns_nodata_and_invalid_mask(
         ),
     )
     (tmp_path / "horizons").mkdir()
-    output = tmp_path / "safe_missing.tif"
+    output = tmp_path / "safe_missing"
     times = ("2027-01-01T00:00:00Z", "2027-01-02T00:00:00Z")
     sun = np.stack((_sun_vector(-1.0), _sun_vector(-1.0)))
     earth = np.stack((_sun_vector(-5.0), _sun_vector(-5.0)))
 
-    result = ls.generate_safe_havens(
+    result = ls.generate_safe_haven_products(
         tmp_path / "dem.tif",
         tmp_path / "horizons",
         output,
@@ -1112,7 +1134,7 @@ def test_safe_haven_missing_horizon_returns_nodata_and_invalid_mask(
         backend="cpu",
     )
 
-    with rasterio.open(result) as ds:
+    with rasterio.open(result.hibernation) as ds:
         assert ds.count == 1
         data = ds.read(1)
         mask = ds.dataset_mask()
@@ -1505,7 +1527,7 @@ _METADATA_FIELDS = frozenset(
         ("generate_psr", {}),
         ("generate_sun_elevation", {}),
         ("generate_earth_elevation", {}),
-        ("generate_safe_havens", {}),
+        ("generate_safe_haven_products", {}),
     ],
 )
 def test_downstream_products_emit_timestamps_and_backend_tags(
@@ -1517,7 +1539,11 @@ def test_downstream_products_emit_timestamps_and_backend_tags(
     times = ("2027-01-01T00:00:00Z", "2027-01-02T00:00:00Z")
     sun = np.stack((_sun_vector(1.0), _sun_vector(1.0)))
     earth = np.stack((_sun_vector(1.0), _sun_vector(1.0)))
-    output = tmp_path / f"{generator_name}.tif"
+    # Safe havens write three files into a directory; the rest write one file.
+    output = tmp_path / (
+        generator_name if generator_name == "generate_safe_haven_products"
+        else f"{generator_name}.tif"
+    )
 
     kwargs: dict[str, object] = {
         "times": times,
@@ -1527,7 +1553,7 @@ def test_downstream_products_emit_timestamps_and_backend_tags(
 
     if generator_name == "generate_earth_elevation":
         kwargs["earth_vectors_m"] = earth
-    elif generator_name == "generate_safe_havens":
+    elif generator_name == "generate_safe_haven_products":
         kwargs["sun_vectors_m"] = sun
         kwargs["earth_vectors_m"] = earth
         kwargs["earth_elevation_threshold_deg"] = 2.0
@@ -1538,11 +1564,12 @@ def test_downstream_products_emit_timestamps_and_backend_tags(
     gen_func = getattr(ls, generator_name)
     result = gen_func(dem_path, horizons_path, output, **kwargs)  # type: ignore[arg-type]
 
-    with rasterio.open(result) as ds:
-        tags = ds.tags()
-        assert "LUNARSCOUT_TIMESTAMPS_UTC" in tags
-        assert "LUNARSCOUT_COMPUTE_BACKENDS" in tags
-        assert tags["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
+    for path in (list(result) if isinstance(result, ls.SafeHavenProducts) else [result]):
+        with rasterio.open(path) as ds:
+            tags = ds.tags()
+            assert "LUNARSCOUT_TIMESTAMPS_UTC" in tags
+            assert "LUNARSCOUT_COMPUTE_BACKENDS" in tags
+            assert tags["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
 
 
 def _two_pixel_inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -1588,7 +1615,7 @@ _SCENARIO_PRODUCT_METHODS = (
     ("psr", "generate_psr"),
     ("sun_elevation", "generate_sun_elevation"),
     ("earth_elevation", "generate_earth_elevation"),
-    ("safe_havens", "generate_safe_havens"),
+    ("safe_haven_products", "generate_safe_haven_products"),
     ("mission_duration_from_sunlight", "mission_duration_from_sunlight"),
     ("mission_duration_from_sun_elevation", "mission_duration_from_sun_elevation"),
     (
@@ -1654,10 +1681,11 @@ def _run_product(name: str, dem_path: Path, horizons_path: Path, output: Path):
     if name == "earth_elevation":
         return ls.generate_earth_elevation(dem_path, horizons_path, output, times=_TIMES, earth_vectors_m=sun, **common)
     if name == "safe_havens":
-        return ls.generate_safe_havens(
-            dem_path, horizons_path, output, times=_TIMES, sun_vectors_m=sun, earth_vectors_m=sun,
-            earth_elevation_threshold_deg=2.0, sunlight_fraction_threshold=0.2, **common,
-        )
+        return ls.generate_safe_haven_products(
+            dem_path, horizons_path, output.with_suffix(""), times=_TIMES, sun_vectors_m=sun,
+            earth_vectors_m=sun, earth_elevation_threshold_deg=2.0,
+            sunlight_fraction_threshold=0.2, **common,
+        ).hibernation
     return ls.mission_duration_from_sunlight(
         dem_path, horizons_path, output, evaluation_start=_TIMES[0], evaluation_stop=_TIMES[1],
         step=timedelta(hours=6), candidate_start_intervals=((_TIMES[0], _TIMES[1]),),
@@ -1692,7 +1720,13 @@ def test_corrupt_horizon_tile_raises_instead_of_masking(tmp_path: Path, product:
     assert error.value.details["path"] == str(tile)
     assert (error.value.details["tile_y"], error.value.details["tile_x"]) == (0, 0)
     assert "NaN" in error.value.details["error"]
-    assert not (tmp_path / f"{product}.tif").exists()
+    # Nothing completed was published (the safe-haven directory may hold staging files).
+    published = (
+        [p for p in (tmp_path / product).glob("*.tif") if not p.name.startswith(".")]
+        if product == "safe_havens"
+        else [p for p in [tmp_path / f"{product}.tif"] if p.exists()]
+    )
+    assert published == []
 
 
 @pytest.mark.parametrize("product", _PRODUCTS)

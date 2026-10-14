@@ -147,16 +147,27 @@ def test_elevations_agree_away_from_steep_edge_horizons(
     assert np.max(difference) < 0.01
 
 
-def test_safe_havens_agree_apart_from_rare_threshold_flips(scene) -> None:
-    cpu, cuda = _both(
-        scene, "safe_havens", ls.generate_safe_havens,
-        times=scene["times"], sun_vectors_m=scene["sun"],
-        earth_vectors_m=scene["earth"], earth_elevation_threshold_deg=0.0,
-        sunlight_fraction_threshold=0.5,
-    )
+def test_safe_haven_products_agree_apart_from_rare_threshold_flips(scene) -> None:
+    results = []
+    for backend in ("cpu", "cuda"):
+        results.append(ls.generate_safe_haven_products(
+            scene["dem"], scene["horizons"], scene["root"] / f"safe_haven-{backend}",
+            backend=backend, times=scene["times"], sun_vectors_m=scene["sun"],
+            earth_vectors_m=scene["earth"], earth_elevation_threshold_deg=0.0,
+            sunlight_fraction_threshold=0.5, operating_sunlight_fraction=0.9,
+            max_slope_deg=45.0,
+        ))
+    cpu_products, cuda_products = results
 
-    assert np.nanmax(cpu) > 0
-    assert _differing_fraction(cpu, cuda) < 1e-3
+    for name in ("hibernation", "joint_total", "joint_longest"):
+        with rasterio.open(getattr(cpu_products, name)) as cpu_file, rasterio.open(
+            getattr(cuda_products, name)
+        ) as cuda_file:
+            assert cpu_file.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cpu"]'
+            assert cuda_file.tags()["LUNARSCOUT_COMPUTE_BACKENDS"] == '["cuda"]'
+            cpu, cuda = cpu_file.read().astype(np.float64), cuda_file.read().astype(np.float64)
+        assert np.nanmax(cpu) > 0, name
+        assert _differing_fraction(cpu, cuda) < 1e-3, name
 
 
 @pytest.mark.parametrize(

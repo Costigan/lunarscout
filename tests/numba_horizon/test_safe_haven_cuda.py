@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from lunarscout._numba_horizon.geometry import DemGrid, ProjectionParameters
-from lunarscout._numba_horizon.safe_haven import reduce_safe_haven_patch_stream
+from lunarscout._numba_horizon.safe_haven import reduce_safe_haven_products_patch_stream
 from lunarscout._numba_horizon.safe_haven_cuda import (
     SafeHavenCudaCancelled,
     SafeHavenCudaSession,
@@ -78,42 +78,101 @@ def calculate(session, inputs, *, cancellation_requested=None):
         dem, horizons, vectors, vectors, tile_y=0, tile_x=0,
         valid_height=2, valid_width=3, month_bands=months,
         month_index_of=mapping, time_count=len(mapping), sunlight_threshold=0.2,
-        earth_threshold_deg=2.0, time_step_hours=2.5,
+        earth_threshold_deg=2.0, operating_sunlight_fraction=1.0,
+        merge_gap_hours=24.0, time_step_hours=2.5,
         cancellation_requested=cancellation_requested,
     )
 
 
 def reference(inputs):
+    """The CPU machine on the same signals: (hibernation, total, longest) layers."""
     _, _, months, mapping, fractions, earth = inputs
-    return reduce_safe_haven_patch_stream(
+    return reduce_safe_haven_products_patch_stream(
         iter(fractions), iter(earth), len(mapping), months,
         month_index_of=mapping, sunlight_threshold=0.2,
-        earth_threshold_deg=2.0, time_step_hours=2.5,
+        earth_threshold_deg=2.0, operating_sunlight_fraction=1.0,
+        merge_gap_hours=24.0, time_step_hours=2.5,
     )
+
+
+def stacked(result):
+    """(layer, band, y, x) array from the three per-band tuples."""
+    return np.stack([np.stack(layer) for layer in result])
 
 
 @pytest.mark.parametrize("batch_size", [1, 3, 8])
 def test_month_batch_boundary_parity_and_patch_reset(inputs, batch_size):
     session = SafeHavenCudaSession(time_batch_size=batch_size)
-    expected = np.stack(reference(inputs))
-    np.testing.assert_array_equal(calculate(session, inputs), expected)
-    np.testing.assert_array_equal(expected[:, 0, 0], [25., 25., 25.])
-    np.testing.assert_array_equal(expected[:, 0, 1], [15., 0., np.nan])
-    np.testing.assert_array_equal(expected[:, 0, 2], [0., 0., 0.])
-    np.testing.assert_array_equal(expected[:, 1, 2], [20., 20., 20.])
-    assert np.isnan(expected[:, 1, :2]).all()
-    allocation = session._duration_output
+    expected = stacked(reference(inputs))
+    np.testing.assert_array_equal(stacked(calculate(session, inputs)), expected)
+    # Hibernation layer, derived by hand for each pixel (see the signals above).
+    hibernation = expected[0]
+    np.testing.assert_array_equal(hibernation[:, 0, 0], [25., 25., 25.])
+    np.testing.assert_array_equal(hibernation[:, 0, 1], [15., 0., np.nan])
+    np.testing.assert_array_equal(hibernation[:, 0, 2], [0., 0., 0.])
+    np.testing.assert_array_equal(hibernation[:, 1, 2], [20., 20., 20.])
+    assert np.isnan(hibernation[:, 1, :2]).all()
+    allocation = session._outputs
     changed = (*inputs[:4], np.full_like(inputs[4], 0.8), inputs[5])
-    np.testing.assert_array_equal(calculate(session, changed), reference(changed))
-    assert session._duration_output is allocation
+    np.testing.assert_array_equal(
+        stacked(calculate(session, changed)), stacked(reference(changed))
+    )
+    assert session._outputs is allocation
     # Mutating an existing mapping must invalidate its content cache.
     mapping = inputs[3].copy()
     altered = (*inputs[:3], mapping, inputs[4], inputs[5])
     calculate(session, altered)
     previous = session._month_map
     mapping[-2:] = 1
-    np.testing.assert_array_equal(calculate(session, altered), reference(altered))
+    np.testing.assert_array_equal(
+        stacked(calculate(session, altered)), stacked(reference(altered))
+    )
     assert session._month_map is not previous
+
+
+def test_invalid_dem_pixels_are_skipped_on_the_device(inputs):
+    dem, horizons, months, mapping, fractions, earth = inputs
+    fractions, earth = fractions.copy(), earth.copy()
+    fractions[:, 0, 1] = np.nan     # pixel (0, 1) sits on an invalid DEM node
+    earth[:, 0, 1] = np.nan
+    changed = (dem, horizons, months, mapping, fractions, earth)
+    invalid = np.zeros((2, 3), dtype=bool)
+    invalid[0, 1] = True
+    session = SafeHavenCudaSession(time_batch_size=4)
+    vectors = np.ones((len(mapping), 3), dtype=np.float64)
+    session._kernel = SignalKernel(fractions, earth)
+    result = session.reduce_patch(
+        dem, horizons, vectors, vectors, tile_y=0, tile_x=0, valid_height=2,
+        valid_width=3, month_bands=months, month_index_of=mapping,
+        time_count=len(mapping), sunlight_threshold=0.2, earth_threshold_deg=2.0,
+        operating_sunlight_fraction=1.0, merge_gap_hours=24.0, time_step_hours=2.5,
+        invalid_pixels=invalid,
+    )
+    reference = reduce_safe_haven_products_patch_stream(
+        iter(fractions), iter(earth), len(mapping), months, month_index_of=mapping,
+        sunlight_threshold=0.2, earth_threshold_deg=2.0, operating_sunlight_fraction=1.0,
+        merge_gap_hours=24.0, time_step_hours=2.5, invalid_pixels=invalid,
+    )
+    np.testing.assert_array_equal(stacked(result), stacked(reference))
+    assert np.isnan(stacked(result)[0][:, 0, 1]).all()
+    with pytest.raises(ValueError, match="non-finite"):
+        calculate(SafeHavenCudaSession(time_batch_size=4), changed)  # not marked invalid
+
+
+def test_joint_operating_layers_match_the_cpu_machine(inputs):
+    dem, horizons, months, mapping, fractions, earth = inputs
+    fractions = fractions.copy()
+    fractions[:6, 1, 0] = 1.0      # fully lit with Earth available: samples 0-5
+    fractions[8, 1, 0] = 1.0       # a second, one-sample run in band 2
+    fractions[:6, 0, 1] = 0.9999   # almost, but not within the 1e-6 tolerance
+    changed = (dem, horizons, months, mapping, fractions, earth)
+    result = calculate(SafeHavenCudaSession(time_batch_size=4), changed)
+    np.testing.assert_array_equal(stacked(result), stacked(reference(changed)))
+    total, longest = stacked(result)[1], stacked(result)[2]
+    # Bands hold samples 0-3, 4-7, 8-10: run 0-5 starts in band 0 and is 15 h long.
+    np.testing.assert_array_equal(total[:, 1, 0], [10., 5., 2.5])
+    np.testing.assert_array_equal(longest[:, 1, 0], [15., 0., 2.5])
+    assert (total[:, 0, 1] == 0.0).all()
 
 
 @pytest.mark.parametrize("signal", ["fraction", "earth"])
@@ -134,7 +193,9 @@ def test_cuda_cancellation_and_reused_session(inputs):
         return checks >= 2
     with pytest.raises(SafeHavenCudaCancelled):
         calculate(session, inputs, cancellation_requested=cancelled)
-    np.testing.assert_array_equal(calculate(session, inputs), reference(inputs))
+    np.testing.assert_array_equal(
+        stacked(calculate(session, inputs)), stacked(reference(inputs))
+    )
 
 
 def test_only_finished_months_and_error_flag_copy_to_host(inputs, monkeypatch):
@@ -146,8 +207,11 @@ def test_only_finished_months_and_error_flag_copy_to_host(inputs, monkeypatch):
         copied.append(array.shape)
         return original(array, *args, **kwargs)
     monkeypatch.setattr(DeviceNDArray, "copy_to_host", record_copy)
-    np.testing.assert_array_equal(calculate(session, inputs), reference(inputs))
-    assert copied == [(1,), (3, 128 * 128)]
+    np.testing.assert_array_equal(
+        stacked(calculate(session, inputs)), stacked(reference(inputs))
+    )
+    # The error flag is read twice (signals, then finalizer); then three outputs.
+    assert copied == [(1,), (1,)] + [(3, 128 * 128)] * 3
 
 
 def test_public_byte_product_in_fresh_process(tmp_path):
@@ -189,23 +253,35 @@ def test_public_byte_product_in_fresh_process(tmp_path):
                       sun_vectors_m=sun, earth_vectors_m=earth, nodata=255,
                       output_transform=encode, output_dtype=np.uint8,
                       output_transform_id='test-two-hour-byte-v1', compress=True)
-        cpu = ls.generate_safe_havens(dem_path, 'horizons', 'cpu.tif', backend='cpu', **kwargs)
+        cpu = ls.generate_safe_haven_products(dem_path, 'horizons', 'cpu', backend='cpu', **kwargs)
         def forbidden(*args, **kwargs):
             raise AssertionError('Host lighting/reduction path called by CUDA product')
-        safe_haven_pipeline.reduce_safe_haven_patch_stream = forbidden
+        safe_haven_pipeline.reduce_safe_haven_products_patch_stream = forbidden
         lightmap_cuda.LightmapCudaSession.iter_patch_fraction_tiles = forbidden
         lightmap_cuda.LightmapCudaSession.iter_patch_margin_tiles = forbidden
-        gpu = ls.generate_safe_havens(dem_path, 'horizons', 'cuda.tif', backend='cuda', **kwargs)
+        gpu = ls.generate_safe_haven_products(dem_path, 'horizons', 'cuda', backend='cuda', **kwargs)
         assert 'spiceypy' not in sys.modules
-        with rasterio.open(cpu) as expected, rasterio.open(gpu) as actual:
-            np.testing.assert_array_equal(actual.read(), expected.read())
-            assert actual.dtypes == ('uint8', 'uint8')
-            assert actual.nodata == 255
-            assert actual.block_shapes == [(128, 128), (128, 128)]
-            assert actual.compression.value.upper() == 'DEFLATE'
-            assert actual.tags()['LUNARSCOUT_COMPUTE_BACKENDS'] == '["cuda"]'
-            assert (actual.read()[:, 0, 0] == 255).all()
-            assert (actual.read()[:, 1, :] == 12).all()
+        for cpu_path, gpu_path in zip(cpu, gpu):
+            with rasterio.open(cpu_path) as expected, rasterio.open(gpu_path) as actual:
+                np.testing.assert_array_equal(actual.read(), expected.read())
+                assert actual.dtypes == ('uint8', 'uint8')
+                assert actual.nodata == 255
+                assert actual.block_shapes == [(128, 128), (128, 128)]
+                assert actual.compression.value.upper() == 'DEFLATE'
+                assert actual.tags()['LUNARSCOUT_COMPUTE_BACKENDS'] == '["cuda"]'
+        with rasterio.open(gpu.hibernation) as hibernation:
+            data = hibernation.read()
+            # Pixel (0, 0) has Earth below its 45 degree horizon throughout: the
+            # hibernation under way at the first sample is not credited.
+            assert (data[:, 0, 0] == 255).all()
+            # Elsewhere the first outage (first sample) is uncredited, so January has
+            # no hibernation start; the second starts on February 1 inside 24 h of
+            # shadow (12 two-hour bytes).
+            assert (data[0, :, :][np.arange(6).reshape(2, 3) != 0] == 255).all()
+            assert (data[1, 1, :] == 12).all()
+        with rasterio.open(gpu.joint_total) as total, rasterio.open(gpu.joint_longest) as longest:
+            # Earth available and the Sun fully lit on the last two samples (12 h = 6 bytes).
+            assert (total.read()[1, 1, :] == 6).all() and (longest.read()[1, 1, :] == 6).all()
     ''')
     completed = subprocess.run([sys.executable, "-c", code], cwd=tmp_path,
                                env=environment, capture_output=True, text=True)

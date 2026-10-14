@@ -113,7 +113,7 @@ import lunarscout as ls
 | `ls.generate_psr(dem, horizons, output, ...)`                              | Generate a permanent-shadow classification and validity mask.                       |
 | `ls.generate_sun_elevation(dem, horizons, output, ...)`                    | Generate Sun-center terrain-relative elevation bands.                               |
 | `ls.generate_earth_elevation(dem, horizons, output, ...)`                  | Generate Earth-center terrain-relative elevation bands.                             |
-| `ls.generate_safe_havens(dem, horizons, output, ...)`                      | Generate longest low-Sun durations for Earth outages.                               |
+| `ls.generate_safe_haven_products(dem, horizons, output_dir, ...)`          | Generate monthly hibernation and joint-operating screening maps (three GeoTIFFs).  |
 | `ls.mission_duration_from_sunlight(...)`                                   | Generate landed-duration bands from a sunlight-fraction threshold.                  |
 | `ls.mission_duration_from_sun_elevation(...)`                              | Generate landed-duration bands from a Sun-elevation threshold.                      |
 | `ls.mission_duration_from_sunlight_and_earth_elevation(...)`               | Generate durations satisfying sunlight and Earth-elevation thresholds.              |
@@ -143,7 +143,7 @@ import lunarscout as ls
 | `scenario.psr(output, ...)`                                             | Generate a Python permanent-shadow product.                                               |
 | `scenario.sun_elevation(output, ...)`                                   | Generate Sun-center terrain-relative elevation bands.                                    |
 | `scenario.earth_elevation(output, ...)`                                 | Generate Earth-center terrain-relative elevation bands.                                  |
-| `scenario.safe_havens(output, ...)`                                     | Generate safe-haven duration bands.                                                       |
+| `scenario.safe_haven_products(output_dir, ...)`                         | Generate the three monthly safe-haven screening maps.                                     |
 | `scenario.lonlat_to_dem_pixel(point)`                                   | Convert a `LonLat` to DEM pixel coordinates.                                             |
 | `scenario.plot_azimuth_elevation_axes(...)`                             | Create an empty azimuth/elevation Matplotlib axis.                                       |
 | `scenario.plot_horizon(point, ...)`                                     | Plot the stored horizon for a lon/lat point.                                             |
@@ -1086,7 +1086,9 @@ public compatibility promises for ``0.1.0rc1``:
 | ``psr-upper-solar-limb``                      | PSR                  | Five-viewpoint vector reduction, upper-solar-limb semantics |
 | ``sun-center-local-horizon-elevation``        | Sun elevation        | Sun-center terrain-relative elevation at interpolated horizon azimuth |
 | ``earth-center-local-horizon-elevation``      | Earth elevation      | Earth-center terrain-relative elevation at interpolated horizon azimuth |
-| ``safe-haven-per-pixel-monthly-bands``        | safe havens          | Per-pixel Earth outage detection, monthly calendar bands, streaming reducer |
+| ``safe-haven-hibernation-by-outage-start``    | safe havens          | Best power-negative time per hibernation starting in each calendar month, one-pass state machine |
+| ``safe-haven-joint-operating-total``          | safe havens          | Hours per month with Earth available and the Sun at least the operating fraction |
+| ``safe-haven-joint-operating-longest-run``    | safe havens          | Longest joint-operating run, credited to the month it starts in |
 | ``landed-mission-sunlight-duration``          | mission duration     | Longest sunlight-fraction run per candidate interval |
 | ``landed-mission-sun-elevation-duration``     | mission duration     | Longest Sun terrain-relative elevation run per candidate interval |
 | ``landed-mission-sunlight-earth-elevation-duration`` | mission duration | Longest combined sunlight + Earth elevation run per candidate interval |
@@ -1102,10 +1104,10 @@ computed with the expected algorithm.
 ### Shared Tiled-Product Pipeline
 
 For safe-haven products, `backend="cuda"` calculates Sun visibility, Earth
-elevation, and monthly duration reduction on the GPU. Lighting batches and
-the low-Sun run state remain in device memory. Only the completed monthly
-duration patches are copied to the CPU for optional output conversion,
-compression, and writing. This avoids transferring and reducing each
+elevation, and the monthly reduction on the GPU. Lighting batches and the
+per-pixel state machine's state remain in device memory. Only the completed
+monthly patches of the three products are copied to the CPU for optional output
+conversion, compression, and writing. This avoids transferring and reducing each
 timestamp's lighting raster on the CPU. Memory is bounded by patch size,
 time-batch size, and the number of monthly bands, without a full time cube.
 `backend="auto"` selects a complete CUDA calculation path or a complete CPU
@@ -1233,16 +1235,50 @@ should be treated as unreliable.
 
 ### Safe-Haven Maps
 
-Safe-haven products find Earth outages as maximal half-open intervals during
-which the Earth-center elevation relative to the local terrain horizon is
-strictly below an Earth threshold. For every pixel and outage, the reducer
-records the longest complete contiguous interval whose sunlight fraction is
-strictly below the sunlight threshold and whose interval overlaps the outage.
-The low-Sun interval may begin before the Earth outage or end after it, so the
-output reveals a location that remains shadowed when communication returns.
-Durations are `float32`, in hours by default, and no truncation or duration
-clamp is applied. Each Earth outage is one output band, timestamped with the
-first occurrence of its minimum Earth elevation.
+`ls.generate_safe_haven_products` writes three monthly screening maps from one
+pass over the Sun and Earth. They help choose where to study a landing site in
+more detail for a small solar-powered rover that is operated over a
+line-of-sight link from Earth. They do not model a particular rover, battery or
+route.
+
+When Earth is lower than 2 degrees above a pixel's own horizon there is no
+reliable link, and the rover hibernates until the link returns. A
+*hibernation* is one such interval. While hibernating the rover is
+power-negative whenever less than 20 percent of the solar disk is visible
+(*shadow*). Two shadow runs separated by a sunlit gap shorter than
+`merge_gap_hours` (default 24) count as one run, because a rover cannot recharge
+in a short gap.
+
+* **Hibernation map.** The score of a hibernation is the length of the longest
+  shadow run that touches it, including the parts before and after the outage.
+  A hibernation with no shadow on it scores 0, the best possible. A hibernation
+  is credited to the calendar month in which it starts, and to no other, so
+  none is counted twice. If two start in one month, the band holds the
+  better (smaller) score. A band is NaN where no hibernation starts in the
+  month, which includes months where Earth is always or never below the
+  threshold, and where the month begins inside a hibernation that started
+  earlier.
+* **Joint-operating maps.** Hours with Earth available and the Sun at least
+  `operating_sunlight_fraction` (default 1.0, the whole disk) visible: the total
+  in each month, and the longest uninterrupted stretch, credited to the month it
+  starts in.
+* **NODATA.** All three maps are NaN where the Horn slope exceeds
+  `max_slope_deg` (default 20), where the slope cannot be computed, and where
+  the DEM node is invalid. A hibernation already under way at the first sample
+  has an unknown start and is not credited.
+
+Durations are `float32` hours by default, sampled at the step of `times`. Runs
+touching the first or last sample are limited to the samples available. With
+six-hour sampling a sunlit gap of three samples is between 12 and 24 hours long,
+so the merge threshold is accurate to about one sample. Horizons computed for a
+surface observer are never lower than for a raised solar array, so products made
+from surface horizons err toward more shadow and less operating time; for a
+specific rover and route, generate horizons at the array height. The
+terrain-model uncertainty described above applies to surface horizons.
+
+The definitions are specified exactly, together with the one-pass state machine
+that computes them on the CPU and the GPU and the checks that verify it, in
+[`safe-haven-state-machine.md`](safe-haven-state-machine.md).
 
 ### Landed Mission-Duration Maps
 

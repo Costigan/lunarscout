@@ -106,8 +106,8 @@ def main() -> int:
         "earth-elevation": lambda: scenario.earth_elevation(
             output_directory / "earth-elevation.tif", **common
         ),
-        "safe-havens": lambda: scenario.safe_havens(
-            output_directory / "safe-havens.tif",
+        "safe-havens": lambda: scenario.safe_haven_products(
+            output_directory / "safe-havens",
             earth_elevation_threshold_deg=2.0,
             sunlight_fraction_threshold=0.2,
             **common,

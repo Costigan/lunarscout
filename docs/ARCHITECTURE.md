@@ -197,7 +197,7 @@ scenario.lightmap(
 )
 
 scenario.psr("analysis/psr.tif", backend="auto")
-scenario.safe_havens("analysis/safe-havens.tif", backend="auto")
+scenario.safe_haven_products("analysis/safe-havens", backend="auto")
 scenario.mission_duration("analysis/mission-hours.tif", backend="auto")
 ```
 

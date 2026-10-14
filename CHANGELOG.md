@@ -6,6 +6,24 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Safe-haven products (breaking).** `ls.generate_safe_havens` and
+  `scenario.safe_havens` are replaced by `ls.generate_safe_haven_products` and
+  `scenario.safe_haven_products`, which write three monthly GeoTIFFs from one pass:
+  hibernation, joint-operating total, and joint-operating longest run. A
+  hibernation (a no-communications interval) is scored once, in the month it
+  starts, by the longest shadow run that touches it, with shadow runs separated
+  by less than `merge_gap_hours` (default 24) merged; when two start in a month
+  the better score is reported. Pixels steeper than `max_slope_deg` (default 20)
+  are NODATA. New arguments `operating_sunlight_fraction` (default 1.0),
+  `merge_gap_hours`, `max_slope_deg` and `name_prefix`; the function returns a
+  `SafeHavenProducts` with the three paths. The old function credited a shadow
+  run to every month in which it overlapped an outage, so one hibernation could
+  be counted in two months. The per-pixel one-pass state machine, on CPU and CUDA
+  from one definition, is specified in `docs/safe-haven-state-machine.md` and
+  checked against an independent offline implementation on random timelines.
+  Also fixed: a safe-haven run aborted with a calculation error if the DEM had one
+  invalid (NaN) node; those pixels are now skipped and written as nodata. Products
+  and staged jobs made with the old function are not compatible.
 - **0.1.0rc5 review fixes.** Corrections from `docs/code_review_0.1.0rc5.md`;
   each is recorded there with its evidence and commit.
   - *Horizon results change.* The far-field slope now treats the segment
