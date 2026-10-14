@@ -367,3 +367,89 @@ def test_cancellation_keeps_finished_patches_and_the_run_resumes(tmp_path: Path)
 
     for left, right in zip(_values(clean), _values(resumed)):
         np.testing.assert_array_equal(left, right)
+
+
+def test_the_three_products_are_written_at_the_same_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from lunarscout._numba_horizon.product_store import ResumableTiledProduct
+
+    dem_path, horizons_path = _three_patch_inputs(tmp_path)
+    inside = threading.Barrier(3, timeout=20)
+    original = ResumableTiledProduct.write_patch
+
+    def write(self, tile_y, tile_x, *args, **kwargs):
+        # All three products must be inside write_patch together for the first
+        # patch. One writer thread writing them in turn would time out here.
+        if tile_x == 0:
+            inside.wait()
+        return original(self, tile_y, tile_x, *args, **kwargs)
+
+    monkeypatch.setattr(ResumableTiledProduct, "write_patch", write)
+
+    products = _products(tmp_path, dem_path, horizons_path)
+
+    assert all(path.exists() for path in products)
+
+
+def test_a_patch_is_valid_only_after_all_three_products_hold_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+    import time
+
+    from lunarscout._numba_horizon.product_store import ResumableTiledProduct
+
+    dem_path, horizons_path = _three_patch_inputs(tmp_path)
+    log: list[str] = []
+    lock = threading.Lock()
+    original = ResumableTiledProduct.write_patch
+
+    def write(self, tile_y, tile_x, *args, **kwargs):
+        if tile_x == 0 and "longest" in self.output_path.name:
+            time.sleep(0.3)           # the slowest product finishes last
+        result = original(self, tile_y, tile_x, *args, **kwargs)
+        if tile_x == 0:
+            with lock:
+                log.append("written")
+        return result
+
+    def event(event):
+        if event.tile_x == 0 and event.stage == "valid":
+            with lock:
+                log.append("valid")
+
+    monkeypatch.setattr(ResumableTiledProduct, "write_patch", write)
+    _products(tmp_path, dem_path, horizons_path, progress_event_callback=event)
+
+    # The first patch is reported valid exactly once, after all three writes.
+    assert log.count("valid") == 1
+    assert log.index("valid") == 3
+    assert log.count("written") == 3
+
+
+def test_one_products_write_failing_midway_resumes_to_the_same_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lunarscout._numba_horizon.product_store import ResumableTiledProduct
+
+    dem_path, horizons_path = _three_patch_inputs(tmp_path)
+    clean = _products(tmp_path, dem_path, horizons_path, name="clean")
+    original = ResumableTiledProduct.write_patch
+
+    def write(self, tile_y, tile_x, *args, **kwargs):
+        if tile_x == 128 and "longest" in self.output_path.name:
+            raise OSError("simulated disk failure")
+        return original(self, tile_y, tile_x, *args, **kwargs)
+
+    monkeypatch.setattr(ResumableTiledProduct, "write_patch", write)
+    with pytest.raises(ls.ProductStorageError):
+        _products(tmp_path, dem_path, horizons_path, name="resumed")
+    monkeypatch.setattr(ResumableTiledProduct, "write_patch", original)
+
+    resumed = _products(tmp_path, dem_path, horizons_path, name="resumed")
+
+    for left, right in zip(_values(clean), _values(resumed)):
+        np.testing.assert_array_equal(left, right)

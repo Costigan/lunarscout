@@ -57,7 +57,7 @@ class SafeHavenProgress:
 #: so the compute stage should never wait for it.
 PREFETCH_TILES = 3
 READ_WORKERS = 2
-#: Computed patches waiting for the writer thread.
+#: Computed patches waiting in each product's writer queue.
 WRITE_QUEUE_SIZE = 2
 
 #: Output layers, in the order the reducer returns them.
@@ -353,49 +353,85 @@ def run_safe_haven_products(
             month_bands, **options,
         )
 
-    write_queue: queue.Queue = queue.Queue(maxsize=WRITE_QUEUE_SIZE)
+    # One writer thread per product: the products are separate files, so their
+    # compression and fsync calls run in parallel. Each thread writes its
+    # product's patches in order, so every product's journal stays consistent. A
+    # patch is complete, and reported, only when all of its products hold it.
+    write_queues = [queue.Queue(maxsize=WRITE_QUEUE_SIZE) for _ in products]
     finished = object()
     writer_errors: list[BaseException] = []
+    patch_lock = threading.Lock()
+    waiting_products: dict[tuple[int, int], int] = {}
+    announced: set[tuple[int, int]] = set()
 
-    def writer() -> None:
+    def write_started(patch: PatchDescriptor) -> None:
+        """Report "write" once per patch, when its first product starts."""
+        key = (patch.tile_y, patch.tile_x)
+        with patch_lock:
+            first = key not in announced
+            announced.add(key)
+        if first:
+            report(patch, "write")
+
+    def write_finished(patch: PatchDescriptor, state: str) -> None:
+        """Count the patch complete when its last product is written."""
         nonlocal completed
+        key = (patch.tile_y, patch.tile_x)
+        with patch_lock:
+            waiting_products[key] -= 1
+            last = waiting_products[key] == 0
+            if last:
+                del waiting_products[key]
+                announced.discard(key)
+        if last:
+            with progress_lock:
+                completed += 1
+            report(patch, state)
+
+    def writer(index: int) -> None:
+        product = products[index]
+        jobs = write_queues[index]
         while True:
-            job = write_queue.get()
+            job = jobs.get()
             if job is finished:
                 return
             if writer_errors:
                 continue          # a write failed: drop the work queued behind it
-            patch, layers = job
+            patch, kind_tiles = job
             try:
-                if layers is None:
-                    for product in products:
-                        product.write_invalid_patch(patch.tile_y, patch.tile_x)
-                    state = "invalid"
+                if kind_tiles is None:
+                    product.write_invalid_patch(patch.tile_y, patch.tile_x)
+                    write_finished(patch, "invalid")
                 else:
-                    report(patch, "write")
-                    for product, kind_tiles in zip(products, layers):
-                        product.write_patch(patch.tile_y, patch.tile_x, kind_tiles)
-                    state = "valid"
-                with progress_lock:
-                    completed += 1
-                report(patch, state)
+                    write_started(patch)
+                    product.write_patch(patch.tile_y, patch.tile_x, kind_tiles)
+                    write_finished(patch, "valid")
             except BaseException as error:  # reported to the calling thread
                 writer_errors.append(error)
 
-    def hand_to_writer(job) -> None:
-        while True:
-            if writer_errors:
-                raise writer_errors[0]
-            try:
-                write_queue.put(job, timeout=0.05)
-                return
-            except queue.Full:
-                continue
+    def hand_to_writers(patch: PatchDescriptor, layers) -> None:
+        """Queue one patch for every product's writer (``None`` layers: invalid)."""
+        with patch_lock:
+            waiting_products[(patch.tile_y, patch.tile_x)] = len(products)
+        for index, jobs in enumerate(write_queues):
+            job = (patch, None if layers is None else layers[index])
+            while True:
+                if writer_errors:
+                    raise writer_errors[0]
+                try:
+                    jobs.put(job, timeout=0.05)
+                    break
+                except queue.Full:
+                    continue
 
     report(None, "start")
     pending = [patch for patch in patches if not complete(patch)]
-    writer_thread = threading.Thread(target=writer, name="safe-haven-writer")
-    writer_thread.start()
+    writer_threads = [
+        threading.Thread(target=writer, args=(index,), name=f"safe-haven-write-{index}")
+        for index in range(len(products))
+    ]
+    for thread in writer_threads:
+        thread.start()
     futures: deque = deque()
     try:
         with ThreadPoolExecutor(max_workers=READ_WORKERS, thread_name_prefix="safe-haven-read") as readers:
@@ -419,7 +455,7 @@ def run_safe_haven_products(
                     if cancelled():
                         raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
                     if horizons is None:
-                        hand_to_writer((patch, None))
+                        hand_to_writers(patch, None)
                         continue
                     layers = calculate(patch, horizons)
                     del horizons
@@ -432,19 +468,21 @@ def run_safe_haven_products(
                                 tuple(np.where(steep, np.float32(np.nan), tile) for tile in kind_tiles)
                                 for kind_tiles in layers
                             )
-                    hand_to_writer((patch, layers))
+                    hand_to_writers(patch, layers)
             finally:
                 for _patch, future in futures:
                     future.cancel()
     finally:
-        # Let the writer finish what is already queued, so completed work is kept.
-        while True:
-            try:
-                write_queue.put(finished, timeout=0.05)
-                break
-            except queue.Full:
-                continue
-        writer_thread.join()
+        # Let the writers finish what is already queued, so completed work is kept.
+        for jobs in write_queues:
+            while True:
+                try:
+                    jobs.put(finished, timeout=0.05)
+                    break
+                except queue.Full:
+                    continue
+        for thread in writer_threads:
+            thread.join()
     if writer_errors:
         raise writer_errors[0]
     if cancelled():
