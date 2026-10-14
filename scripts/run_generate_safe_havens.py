@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Edit the constants below, then run this script with the project environment.
 
-    .venv/bin/python run_generate_safe_havens.py
+    .venv/bin/python scripts/run_generate_safe_havens.py
 
 Writes the three safe-haven screening products (hibernation, joint operating
 total, joint operating longest run) into OUTPUT_DIRECTORY from one pass.
@@ -18,7 +18,7 @@ from pathlib import Path
 import sys
 
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import lunarscout as ls  # noqa: E402
