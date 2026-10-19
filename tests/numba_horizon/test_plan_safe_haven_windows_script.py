@@ -56,3 +56,38 @@ def test_the_script_plans_the_scene_and_prints_the_report(tmp_path: Path, monkey
     assert "Pass 1: 1/1 cells" in output
     assert '"cell_months_kept": 3' in output and f"Plan written to: {plan}" in output
     assert [json.loads(line)["month"] for line in plan.read_text().splitlines()] == [0, 1, 2]
+
+
+LIST_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "list_safe_haven_cells.py"
+
+
+def load_list_script():
+    spec = importlib.util.spec_from_file_location("list_safe_haven_cells", LIST_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_cell_listing_script_prints_cells_and_a_cells_line(tmp_path: Path, monkeypatch, capsys) -> None:
+    module = load_list_script()
+    assert module.AROUND_NORTHING_EASTING_M == (117030.0, 71534.0)
+    dem_path, _horizons_path, products, _stamps = scene.stage_one(tmp_path)
+    monkeypatch.setattr(module, "DEM_PATH", dem_path)
+    monkeypatch.setattr(module, "STAGE1_DIRECTORY", products.hibernation.parent)
+    monkeypatch.setattr(module, "HOURS_PER_COUNT", None)
+    monkeypatch.setattr(module, "STAGE1_NODATA", None)
+    monkeypatch.setattr(module, "CELL_SIZE", 10)
+    monkeypatch.setattr(module, "AROUND_NORTHING_EASTING_M", (-1005.0, 1005.0))    # pixel (5, 5) of the scene
+    monkeypatch.setattr(module, "AROUND_RADIUS_CELLS", 0)
+
+    assert module.main() == 0
+
+    output = capsys.readouterr().out
+    assert "is in cell (0, 0); scanning 1 cells." in output
+    assert "1 cells have a haven pixel at or under 72 h." in output
+    assert "CELLS = [(0, 0)]" in output
+    monkeypatch.setattr(module, "AROUND_NORTHING_EASTING_M", None)
+    assert module.main() == 0
+    # Scanning every cell: April makes every pixel a haven, so all four 10 x 10 cells count.
+    assert "4 cells have a haven pixel at or under 72 h." in capsys.readouterr().out

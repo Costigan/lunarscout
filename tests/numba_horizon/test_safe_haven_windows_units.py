@@ -239,3 +239,31 @@ def test_only_the_record_needs_a_known_start() -> None:
     # The record is the one with a run that may reach back.
     found = record_for(list(range(0, 8)), [6, 7], 30, gap_limit=2, offset=10)
     assert found.record.outage_first == 16 and found.open_start
+
+
+# --- choosing cells ------------------------------------------------------------------------
+
+
+def test_a_coordinate_maps_to_its_cell() -> None:
+    from lunarscout._numba_horizon.safe_haven_windows import cell_of_coordinate
+
+    # The 20 m south-pole DEM: origin (-304000, 304000). Easting 71534, northing 117030 is
+    # row 9348, column 18776 (checked against rasterio's index), inside cell (36, 73).
+    transform = (-304000.0, 20.0, 0.0, 304000.0, 0.0, -20.0)
+    assert cell_of_coordinate(transform, 71534.0, 117030.0, 256) == (36, 73)
+    assert cell_of_coordinate(transform, -304000.0, 304000.0, 256) == (0, 0)
+    assert cell_of_coordinate(transform, -304000.0 + 20.0 * 256 - 0.01, 304000.0, 256) == (0, 0)
+    assert cell_of_coordinate(transform, -304000.0 + 20.0 * 256, 304000.0, 256) == (0, 1)
+    with pytest.raises(ValueError):
+        cell_of_coordinate(transform, -304001.0, 0.0, 256)
+    with pytest.raises(ValueError):
+        cell_of_coordinate((0, 20.0, 1.0, 0, 0, -20.0), 1.0, -1.0, 256)
+
+
+def test_cells_around_are_clipped_to_the_raster() -> None:
+    from lunarscout._numba_horizon.safe_haven_windows import cells_around
+
+    kwargs = dict(height=600, width=300, cell_size=256)       # 3 cell rows, 2 cell columns
+    assert cells_around((1, 1), 1, **kwargs) == [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
+    assert cells_around((0, 0), 0, **kwargs) == [(0, 0)]
+    assert cells_around((2, 1), 1, **kwargs) == [(1, 0), (1, 1), (2, 0), (2, 1)]

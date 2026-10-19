@@ -729,6 +729,14 @@ class Stage1Rasters:
         with rasterio.open(self.hibernation_path) as one, rasterio.open(self.joint_total_path) as two:
             return self._decode(one.read(window=window)), self._decode(two.read(window=window))
 
+    def read_hibernation_window(self, row0: int, row1: int, col0: int, col1: int):
+        """Only the hibernation hours, ``(months, rows, columns)``."""
+        import rasterio
+        from rasterio.windows import Window
+
+        with rasterio.open(self.hibernation_path) as one:
+            return self._decode(one.read(window=Window(col0, row0, col1 - col0, row1 - row0)))
+
     def expected(self, hours: float) -> float:
         """The value stage 1 would store for an exact ``hours``, as decoded hours."""
         if self.hours_per_count is None:
@@ -859,6 +867,69 @@ def iter_cell_months(
     if report is not None:
         report.append(PassOneReport(grid.step_minutes, flood_steps, len(cells),
                                     time.month_count, counts, parameters))
+
+
+def cell_of_coordinate(
+    geo_transform: npt.ArrayLike, x_m: float, y_m: float, cell_size: int
+) -> tuple[int, int]:
+    """The ``(cell_row, cell_column)`` containing a CRS coordinate (north-up rasters)."""
+    transform = np.asarray(geo_transform, dtype=np.float64)
+    if transform[2] != 0.0 or transform[4] != 0.0:
+        raise ValueError("a rotated raster has no simple cell grid")
+    column = int(math.floor((x_m - transform[0]) / transform[1]))
+    row = int(math.floor((y_m - transform[3]) / transform[5]))
+    if row < 0 or column < 0:
+        raise ValueError("the coordinate lies outside the raster")
+    return row // cell_size, column // cell_size
+
+
+def cells_around(
+    cell: tuple[int, int], radius: int, *, height: int, width: int, cell_size: int
+) -> list[tuple[int, int]]:
+    """The cells within ``radius`` cells of ``cell`` (a square), clipped to the raster."""
+    rows, columns = -(-height // cell_size), -(-width // cell_size)
+    return [
+        (row, column)
+        for row in range(max(0, cell[0] - radius), min(rows, cell[0] + radius + 1))
+        for column in range(max(0, cell[1] - radius), min(columns, cell[1] + radius + 1))
+    ]
+
+
+def haven_cells(
+    stage1: Stage1Rasters,
+    *,
+    survival_limit_hours: float,
+    cell_size: int,
+    cells: list[tuple[int, int]] | None = None,
+    progress: Callable[[int, int], None] | None = None,
+) -> list[dict]:
+    """Cells with at least one haven pixel, from the stage-1 hibernation product.
+
+    Each entry has ``cell_row``, ``cell_col``, ``months_with_haven`` and
+    ``haven_pixels`` (haven pixels summed over the months).  The list is ordered by
+    months with a haven, then haven pixels, both descending, then cell.
+    """
+    if cells is None:
+        rows, columns = -(-stage1.height // cell_size), -(-stage1.width // cell_size)
+        cells = [(r, c) for r in range(rows) for c in range(columns)]
+    found = []
+    for done, (cell_row, cell_column) in enumerate(cells, start=1):
+        row0, col0 = cell_row * cell_size, cell_column * cell_size
+        values = stage1.read_hibernation_window(
+            row0, min(stage1.height, row0 + cell_size), col0, min(stage1.width, col0 + cell_size)
+        )
+        with np.errstate(invalid="ignore"):
+            haven = values <= survival_limit_hours
+        pixels = haven.sum(axis=(1, 2))
+        if pixels.any():
+            found.append({
+                "cell_row": cell_row, "cell_col": cell_column,
+                "months_with_haven": int((pixels > 0).sum()), "haven_pixels": int(pixels.sum()),
+            })
+        if progress is not None:
+            progress(done, len(cells))
+    found.sort(key=lambda e: (-e["months_with_haven"], -e["haven_pixels"], e["cell_row"], e["cell_col"]))
+    return found
 
 
 def halo_pixels(flood_steps: int) -> int:

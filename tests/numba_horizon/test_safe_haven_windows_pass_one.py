@@ -667,3 +667,20 @@ def test_the_spice_adapter_passes_utc_times_to_the_vector_generator(monkeypatch)
     result = windows.spice_vector_source("earth")(stamps)
     assert result.shape == (2, 3) and seen["body"] == "earth"
     assert [m.isoformat() for m in seen["moments"]] == ["2027-01-01T00:00:00+00:00", "2027-01-01T00:30:00+00:00"]
+
+
+def test_haven_cells_lists_cells_with_a_haven_most_months_first(prepared) -> None:
+    found = windows.haven_cells(prepared.stage1, survival_limit_hours=72.0, cell_size=128)
+    # One cell. Months 0 and 1 have the 8 x 8 cluster and the outlier (65 pixels); month 2
+    # the same; month 3 every pixel (400). The limit decides: at 30 h nothing in months 0-1.
+    assert found == [{"cell_row": 0, "cell_col": 0, "months_with_haven": 4, "haven_pixels": 3 * 65 + 400}]
+    assert windows.haven_cells(prepared.stage1, survival_limit_hours=30.0, cell_size=128)[0][
+        "months_with_haven"] == 2
+    assert windows.haven_cells(prepared.stage1, survival_limit_hours=72.0, cell_size=128, cells=[]) == []
+    calls = []
+    windows.haven_cells(prepared.stage1, survival_limit_hours=72.0, cell_size=10,
+                        progress=lambda d, t: calls.append((d, t)))
+    assert calls == [(1, 4), (2, 4), (3, 4), (4, 4)]
+    ordered = windows.haven_cells(prepared.stage1, survival_limit_hours=72.0, cell_size=10)
+    assert [(e["months_with_haven"], e["haven_pixels"]) for e in ordered] == sorted(
+        [(e["months_with_haven"], e["haven_pixels"]) for e in ordered], reverse=True)
