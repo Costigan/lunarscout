@@ -247,10 +247,10 @@ def test_only_the_record_needs_a_known_start() -> None:
 def test_a_coordinate_maps_to_its_cell() -> None:
     from lunarscout._numba_horizon.safe_haven_windows import cell_of_coordinate
 
-    # The 20 m south-pole DEM: origin (-304000, 304000); this point is at row 11623,
-    # column 21051 (checked against rasterio's index), inside cell (45, 82).
+    # The 20 m south-pole DEM: origin (-304000, 304000). Easting 71534, northing 117030 is
+    # row 9348, column 18776 (checked against rasterio's index), inside cell (36, 73).
     transform = (-304000.0, 20.0, 0.0, 304000.0, 0.0, -20.0)
-    assert cell_of_coordinate(transform, 117030.0, 71534.0, 256) == (45, 82)
+    assert cell_of_coordinate(transform, 71534.0, 117030.0, 256) == (36, 73)
     assert cell_of_coordinate(transform, -304000.0, 304000.0, 256) == (0, 0)
     assert cell_of_coordinate(transform, -304000.0 + 20.0 * 256 - 0.01, 304000.0, 256) == (0, 0)
     assert cell_of_coordinate(transform, -304000.0 + 20.0 * 256, 304000.0, 256) == (0, 1)

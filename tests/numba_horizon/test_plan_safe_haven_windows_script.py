@@ -71,14 +71,14 @@ def load_list_script():
 
 def test_the_cell_listing_script_prints_cells_and_a_cells_line(tmp_path: Path, monkeypatch, capsys) -> None:
     module = load_list_script()
-    assert module.AROUND_XY_M == (117030.0, 71534.0)       # the default looks near this point
+    assert module.AROUND_NORTHING_EASTING_M == (117030.0, 71534.0)
     dem_path, _horizons_path, products, _stamps = scene.stage_one(tmp_path)
     monkeypatch.setattr(module, "DEM_PATH", dem_path)
     monkeypatch.setattr(module, "STAGE1_DIRECTORY", products.hibernation.parent)
     monkeypatch.setattr(module, "HOURS_PER_COUNT", None)
     monkeypatch.setattr(module, "STAGE1_NODATA", None)
     monkeypatch.setattr(module, "CELL_SIZE", 10)
-    monkeypatch.setattr(module, "AROUND_XY_M", (1005.0, -1005.0))    # pixel (5, 5) of the scene
+    monkeypatch.setattr(module, "AROUND_NORTHING_EASTING_M", (-1005.0, 1005.0))    # pixel (5, 5) of the scene
     monkeypatch.setattr(module, "AROUND_RADIUS_CELLS", 0)
 
     assert module.main() == 0
@@ -87,7 +87,7 @@ def test_the_cell_listing_script_prints_cells_and_a_cells_line(tmp_path: Path, m
     assert "is in cell (0, 0); scanning 1 cells." in output
     assert "1 cells have a haven pixel at or under 72 h." in output
     assert "CELLS = [(0, 0)]" in output
-    monkeypatch.setattr(module, "AROUND_XY_M", None)
+    monkeypatch.setattr(module, "AROUND_NORTHING_EASTING_M", None)
     assert module.main() == 0
     # Scanning every cell: April makes every pixel a haven, so all four 10 x 10 cells count.
     assert "4 cells have a haven pixel at or under 72 h." in capsys.readouterr().out

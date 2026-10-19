@@ -38,10 +38,10 @@ STAGE1_NODATA = 255
 SURVIVAL_LIMIT_HOURS = 72.0
 CELL_SIZE = 256         # cell_patches * 128
 
-# To look only near a place, give a coordinate in the DEM's projection (metres) and a
-# radius in cells (1 gives the 3 x 3 cells around it). Set AROUND_XY_M to None to scan
-# every cell, which reads the whole product.
-AROUND_XY_M = (117030.0, 71534.0)
+# To look only near a place, give its (northing, easting) in the DEM's projection, in
+# metres, and a radius in cells (1 gives the 3 x 3 cells around it). Set
+# AROUND_NORTHING_EASTING_M to None to scan every cell, which reads the whole product.
+AROUND_NORTHING_EASTING_M = (117030.0, 71534.0)
 AROUND_RADIUS_CELLS = 1
 TOP = 30                # rows of the table to print
 
@@ -55,12 +55,16 @@ def main() -> int:
         nodata=STAGE1_NODATA,
     )
     cells = None
-    if AROUND_XY_M is not None:
-        centre = cell_of_coordinate(dem.geo_transform, *AROUND_XY_M, CELL_SIZE)
+    if AROUND_NORTHING_EASTING_M is not None:
+        northing, easting = AROUND_NORTHING_EASTING_M
+        centre = cell_of_coordinate(dem.geo_transform, easting, northing, CELL_SIZE)
         cells = cells_around(
             centre, AROUND_RADIUS_CELLS, height=dem.height, width=dem.width, cell_size=CELL_SIZE
         )
-        print(f"Coordinate {AROUND_XY_M} is in cell {centre}; scanning {len(cells)} cells.")
+        print(
+            f"Northing, easting {AROUND_NORTHING_EASTING_M} is in cell {centre}; "
+            f"scanning {len(cells)} cells."
+        )
     started = clock.monotonic()
 
     def progress(done: int, total: int) -> None:
