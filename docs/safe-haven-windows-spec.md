@@ -1,7 +1,10 @@
 # Safe-haven windows: finding 5 km cells with a good haven and reachable lit terrain
 
-Status: DRAFT SPECIFICATION FOR REVIEW. Nothing described here is implemented.
-Numbers marked (estimate) come from reasoning over measurements made on a small
+Status: DRAFT SPECIFICATION FOR REVIEW. Pass 1 (section 5, the lighting ranges of
+section 8 and the report of section 9) is implemented in
+`src/lunarscout/_numba_horizon/safe_haven_windows.py` and run by
+`scripts/plan_safe_haven_windows.py`. The flood, the lighting of patches and the
+table (sections 6, 7 and the schedule of section 8) are not implemented. Numbers marked (estimate) come from reasoning over measurements made on a small
 synthetic scene; they have not been measured on the real pole. Section 10 lists
 the decisions still open.
 
@@ -40,6 +43,7 @@ ranking is deferred.
 | `rover_speed_m_s` | 0.01 | Sets the flood step, section 6. |
 | `connectivity` | 8 | 4 or 8 neighbour moves per step. |
 | `max_seeds_per_cell_month` | 5 | Seeds selected, flooded and reported. |
+| `timing_probes_per_seed` | 8 | Nearby pixels probed for a different timing, per accepted seed. |
 | `haven_neighbourhood_m` | 100 | Radius for the nearby-haven fraction. |
 | `min_nearby_haven_fraction` | 0.05 | Candidates below this are not considered. |
 | `boundary_search_hours` | 24 | Longest shift of a flood boundary to find a lit time. |
@@ -95,21 +99,32 @@ For each cell and month:
    fraction below `min_nearby_haven_fraction`, so single-pixel outliers never take
    a seed slot.
 2. **Filter.** Keep the cell-month only if at least one haven pixel remains.
-3. **Proxy.** Rank haven pixels by `joint_total` for the month, summed over a
-   square of side `2 * reach + 1` pixels centred on the pixel (a box sum, linear
-   time). Ties break by (row, column).
-4. **Candidate pool.** Take candidates greedily in proxy order, dropping any
-   within `seed_separation_m` of one already taken, until `4 * N` candidates.
-5. **Timelines.** For each candidate, compute its outage and shadow timeline on
+3. **Proxy.** Rank the remaining haven pixels by `joint_total` for the month,
+   summed over a square of side `2 * reach + 1` pixels centred on the pixel (a box
+   sum, linear time; `reach` is the flood step count, section 6). Ties break by
+   row, then column.
+4. **Candidates, in proxy order.** Walk the pixels in that order. A pixel at least
+   `seed_separation_m` from every accepted seed is a candidate. A pixel closer than
+   that to an accepted seed is probed for a different timing only while its nearest
+   accepted seed has had fewer than `timing_probes_per_seed` (8) probes; after that
+   it is skipped as a duplicate. This bounds the number of timelines per cell-month
+   at about `N * (1 + timing_probes_per_seed)` plus the pixels that turn out to have
+   no usable hibernation.
+5. **Timeline of each candidate or probe.** Compute its outage and shadow timeline on
    the stage-1 grid, with the stage-1 rules, over the span needed to close the
-   hibernation of record and every shadow run touching it. Confirm that the
-   recomputed score equals the stage-1 raster value; a mismatch is an internal
-   error. This yields `T_s`, `T_e` and the score.
-6. **Selection.** Walk the pool in proxy order. Accept a candidate unless an
-   already accepted seed lies within `seed_separation_m` AND has `T_s` within
-   `seed_timing_tolerance_hours` AND has `T_e` within the same tolerance. Stop
-   at N seeds. Seeds are cell-local, so the choice does not depend on how cells
-   are grouped into blocks.
+   hibernation of record and every shadow run touching it. The span starts far
+   enough before the month to hold any run that could still score at or under the
+   limit, and is extended forward until the hibernation, every run touching it, and
+   `operational_hours` of Earth visibility after it are inside it. Confirm that the
+   recomputed score equals the stage-1 raster value (as stored, so a byte product
+   is compared after its rounding); a mismatch is an internal error. This yields
+   `T_s`, `T_e` and the score. A pixel with no hibernation of record, an outage
+   that does not end inside the series, or no horizon tile is dropped and counted.
+6. **Selection.** Accept a candidate unless an accepted seed lies closer than
+   `seed_separation_m` AND has `T_s` within `seed_timing_tolerance_hours` AND has
+   `T_e` within the same tolerance (differences equal to the tolerance count as
+   within). Stop at N seeds. Seeds are cell-local, so the choice does not depend on
+   how cells are grouped into blocks.
 7. **Boundaries.** For each selected seed, find the two flood boundaries of
    section 6 from the seed pixel's own lit state on the flood grid. This needs
    only the seed's horizon column (it is already read for step 5), at most
@@ -136,8 +151,9 @@ into one ranking is deferred.
 
 **Flood grid.** Times are `epoch + k * dt`. The step `dt` is the largest divisor
 of 24 h, in whole minutes, that is at most `pixel_size_m / rover_speed_m_s`. At
-20 m and 1 cm/s the speed-implied step is 33.3 min, so `dt` = 30 min. The step
-count is `n = ceil(operational_hours * 60 / dt)` (96 by default). One step moves
+20 m and 1 cm/s the speed-implied step is 33.3 min, so `dt` = 32 min (1,440 / 32 is
+a whole number; 33 does not divide a day). The step count is
+`n = ceil(operational_hours * 60 / dt)` (90 by default). One step moves
 the rover one pixel, so the reach is `n` pixels.
 
 **Boundaries.** A flood starts at a time when the seed is lit.
@@ -212,7 +228,7 @@ table later.
 
 Per patch, the horizons are the dominant data: 128 x 128 x 1,440 azimuths as
 float32 is 94.4 MB on the device. A 24 h chunk of lit bits for one patch is
-96 KiB, about 1,000 times smaller.
+90 KiB at the default 32 minute step (45 steps), about 1,000 times smaller.
 
 **Lighting ranges.** The boundaries are known before any patch is lit (pass 1,
 step 7), so the lighting covers exactly what the floods use, not a worst case.
@@ -222,13 +238,13 @@ after-boundary `a_i`:
 * before range: from `min(b_i) - operational_hours` to `max(b_i)`;
 * after range: from `min(a_i)` to `max(a_i) + operational_hours`.
 
-That is 48 h beyond the latest operations start of the set on the after side,
-and 48 h before the earliest last operations on the before side. The outage
+That is `operational_hours` beyond the latest operations start of the set on the after side,
+and the same before the earliest last operations on the before side. The outage
 between the two ranges is not computed. Ranges are rounded out to the 24 h chunk
 grid below.
 
 **Lit chunks and work buffers.** The unit of storage is `(patch, chunk)`: a 24 h
-chunk is 48 flood steps. Chunks lie on a fixed global 24 h grid, so neighbouring
+chunk is `1440 / dt` flood steps (45 at the default step). Chunks lie on a fixed global 24 h grid, so neighbouring
 windows reuse them. For each patch, the GPU computes the sun fraction over the
 ranges with the existing lightmap path, then a small second kernel thresholds
 and bit-packs. Only the packed bits are stored. The float array and the
