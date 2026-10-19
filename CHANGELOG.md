@@ -6,6 +6,14 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Safe-haven windows, pass 1 (internal, in progress).** `scripts/plan_safe_haven_windows.py`
+  reads the stage-1 products and writes a plan for the 5 km window analysis specified in
+  `docs/safe-haven-windows-spec.md`: for each cell and month with a haven, up to five
+  seeds (nearby-haven filter, separation and timing rules), each seed's hibernation
+  recomputed from the horizons and checked against the stage-1 raster, its two flood
+  boundaries, and the lighting ranges, with a report that sizes the later GPU work.
+  It runs no flood and writes no table yet. The CPU lightmap kernel gained a
+  single-pixel entry point that shares the patch kernel's arithmetic.
 - **Safe-haven products (breaking).** `ls.generate_safe_havens` and
   `scenario.safe_havens` are replaced by `ls.generate_safe_haven_products` and
   `scenario.safe_haven_products`, which write three monthly GeoTIFFs from one pass:
