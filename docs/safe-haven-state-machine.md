@@ -61,6 +61,39 @@ has an unknown start; it is not credited to any month, but it still intersects
 runs normally. Runs touching the first or last sample are limited to the
 samples available.
 
+### 2.1 An Earth cycle without an outage
+
+Earth's elevation above a flat horizon (without terrain) has one minimum and one
+maximum in each Earth cycle of about 27 days. On the 20 m south-pole DEM the
+smallest swing between neighbouring extrema is 12.7 degrees at 6 hour sampling,
+so there are no ripples to confuse the minimum. Where the horizon does not block
+Earth at that minimum (pixels on the Earth side of the map), the margin above the
+horizon may never fall below `earth_elevation_threshold_deg`, and there is no
+outage and no hibernation in that cycle.
+
+Such a cycle gets a *degenerate outage*: a single outage sample at the minimum.
+Sample `k` is a degenerate outage when all of these hold:
+
+* `e[k] < e[k-1]` and `e[k] <= e[k+1]`, where `e` is Earth's elevation above a flat
+  horizon. The first of two equal minimum samples is the one.
+* The margin above the real horizon is at or above the threshold for every sample
+  from `k - W` to `k + W` (so there is no outage within `W` samples of the minimum).
+* `W <= k <= N - 1 - W`: the whole window lies inside the series. A minimum within
+  `W` samples of either end of the series is not credited.
+
+`W` is `degenerate_outage_window_hours / time_step_hours`, rounded to whole samples
+(24 h and 6 h steps give `W = 4`); 0 turns the rule off. A degenerate outage is an
+outage sample in every respect: it is a one-sample hibernation scored by the
+shadow runs that touch it, it belongs to the month of that sample, and Earth is
+unavailable for the joint-operating layers at that sample. It is *not* a
+hibernation under way at the first sample, because `k >= W >= 1`.
+
+Because `k` is only known `W` samples later, the machine runs `W` samples behind
+the data (`advance_delayed`) and decides each sample's outage flag when its window
+is complete. The last `W` samples are flushed with their real flags. The state
+added per pixel is the last `2W + 1` outage flags as a bit mask, the last `W + 1`
+Sun fractions and the last `W + 2` flat-horizon elevations.
+
 ## 3. Why one pass is hard
 
 A pixel's timeline is two interleaved sequences, hibernations and shadow runs.
@@ -76,7 +109,8 @@ one run touches every hibernation, and the summary stays the same size.
 
 ## 4. State
 
-Per pixel, 17 integers (`S[row, pixel]` in the code). `UNSET` is 2147483647.
+Per pixel, 18 integers (`S[row, pixel]` in the code) and a float ring table
+(section 2.1). `UNSET` is 2147483647.
 
 | Row | Meaning | Initial |
 |---|---|---|
@@ -95,6 +129,7 @@ Per pixel, 17 integers (`S[row, pixel]` in the code). `UNSET` is 2147483647.
 | `PEND_CUR` | 1 while the active hibernation began inside the pending gap. | 0 |
 | `JOINT_RUN` | Samples in the current joint-operating run. | 0 |
 | `JOINT_BAND` | Band of that run's first sample. | -1 |
+| `DELAY_MASK` | Outage flags of the last `2W + 1` samples, newest in bit 0 (the degenerate-outage window, section 2.1). | 0 |
 
 Per band and pixel: `best` (int32, initially `UNSET`; the minimum score so far),
 `have` (1 once a hibernation has started in the band), `joint_total` and
@@ -307,7 +342,26 @@ that intersect it, in time order.
 * **Plain Python against compiled.** One test runs the Python form and the
   Numba form on the same random timelines and requires identical output.
 * **CPU against CUDA.** The GPU tests (opt-in, `LUNARSCOUT_REQUIRE_NUMBA_CUDA=1`)
-  compare the CUDA machine with the CPU machine on the same signals.
+  compare the CUDA machine with the CPU machine on the same signals, including
+  smooth Earth cycles with the degenerate rule on (windows 0, 2 and 4 samples;
+  batches of 1, 7 and 64 steps).
+* **The degenerate-outage rule** (section 2.1).
+  `tests/numba_horizon/test_safe_haven_degenerate_outage.py` holds an offline
+  statement of the rule and compares the machine with it on 220 smooth random
+  timelines per window (0, 1, 2, 4 and 7 samples), including quantised elevations
+  that make ties. It also checks by hand: a sunlit cycle gives a zero-hour
+  hibernation and costs one joint-operating sample; shadow on the minimum scores
+  the whole run; a real outage at 4 samples blocks the rule with a window of 4
+  and one at 5 samples does not; of two equal minima the first is used; minima
+  within the window of either end are not credited; the last samples are flushed
+  with their real flags; series shorter than the window equal the plain machine;
+  batching never changes the result. The rule's delay-line code was also mutated
+  by hand (21 defects, 20 caught; the other is an equivalent change, the default
+  elevation array used when the rule is off). The wiring was mutated too: the CPU
+  and CUDA paths each ignoring the window, the margin and the flat elevation swapped,
+  the window missing from the job configuration, and pass 1 using the margin instead
+  of the flat elevation were all caught, using a scene whose ridge moves the margin
+  minimum 2.5 days away from the elevation minimum.
 
 ## 12. Conventions chosen, in one place
 
@@ -322,10 +376,16 @@ that intersect it, in time order.
 * Joint totals count each sample in its own month; the joint longest run goes to
   the month it starts in.
 * The first/last samples limit runs to the available data.
+* A cycle with no outage gets a one-sample outage at the minimum of Earth's
+  elevation above a flat horizon, when no real outage lies within `W` samples
+  either side (default 24 h; section 2.1). The sample counts as Earth-unavailable
+  for the joint-operating layers. A minimum within `W` samples of either end is
+  not credited.
 
 ## 13. Cost
 
-Per pixel the state is 17 integers plus four small per-band arrays; per sample
+Per pixel the state is 18 integers, a ring table of 33 floats (the last `W + 1`
+Sun fractions and `W + 2` flat-horizon elevations) and four small per-band arrays; per sample
 the work is a fixed number of integer operations, plus one loop over a range of
 bands each time a run closes. Memory does not depend on the number of samples.
 The same functions run in a CUDA kernel; the state table lives in global memory

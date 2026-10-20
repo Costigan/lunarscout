@@ -608,7 +608,7 @@ class TimelineSignals:
     def __init__(self, fraction, margin):
         self.fraction, self.margin = np.asarray(fraction, np.float32), np.asarray(margin, np.float32)
 
-    def series(self, row, column, vectors, *, margin):
+    def series(self, row, column, vectors, *, margin, flat_elevation=False):
         indices = np.asarray(vectors)[:, 0].astype(int)
         return (self.margin if margin else self.fraction)[indices]
 
@@ -628,7 +628,9 @@ def test_equality_is_neither_shadow_nor_outage() -> None:
     fraction[7] = 0.1             # shadow
     fraction[8] = 0.25            # equal to the threshold: not shadow
     time = windows.TimeContext.build(stamps, indexed, indexed)
-    parameters = WindowParameters(cell_patches=1, rover_speed_m_s=1.0 / 1800.0)
+    parameters = WindowParameters(
+        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, degenerate_outage_window_hours=0.0
+    )
     evaluator = windows.CandidateEvaluator(
         TimelineSignals(fraction, margin), time, parameters,
         earth_elevation_threshold_deg=2.0, sunlight_fraction_threshold=0.25, merge_gap_hours=0.0,

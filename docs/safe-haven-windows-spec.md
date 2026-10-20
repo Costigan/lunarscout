@@ -44,6 +44,8 @@ ranking is deferred.
 | `connectivity` | 8 | 4 or 8 neighbour moves per step. |
 | `max_seeds_per_cell_month` | 5 | Seeds selected, flooded and reported. |
 | `timing_probes_per_seed` | 8 | Nearby pixels probed for a different timing, per accepted seed. |
+| `max_consecutive_failures` | 50 | A cell-month is abandoned after this many failed timelines in a row. |
+| `degenerate_outage_window_hours` | stage-1 default | Must equal the stage-1 run's value (24 h by default). |
 | `haven_neighbourhood_m` | 100 | Radius for the nearby-haven fraction. |
 | `min_nearby_haven_fraction` | 0.05 | Candidates below this are not considered. |
 | `boundary_search_hours` | 24 | Longest shift of a flood boundary to find a lit time. |
@@ -118,7 +120,11 @@ For each cell and month:
    `operational_hours` of Earth visibility after it are inside it. Confirm that the
    recomputed score equals the stage-1 raster value (as stored, so a byte product
    is compared after its rounding); a mismatch is an internal error. This yields
-   `T_s`, `T_e` and the score. A pixel with no hibernation of record, an outage
+   `T_s`, `T_e` and the score. The outage flags include the degenerate outages of
+   `docs/safe-haven-state-machine.md` section 2.1 (the cycle minimum of Earth's
+   elevation above a flat horizon, where no real outage lies within the window), so
+   an Earth-side pixel's hibernation of record can be one sample long: `T_e` is the
+   next sample. A pixel with no hibernation of record, an outage
    that does not end inside the series, or no horizon tile is dropped and counted.
 6. **Selection.** Accept a candidate unless an accepted seed lies closer than
    `seed_separation_m` AND has `T_s` within `seed_timing_tolerance_hours` AND has

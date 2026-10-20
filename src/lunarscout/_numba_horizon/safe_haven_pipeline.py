@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 import hashlib
+import itertools
 from pathlib import Path
 import queue
 import threading
@@ -127,6 +128,8 @@ def run_safe_haven_products(
     time_batch_size: int = 32,
     fraction_calculator: FractionCalculator | None = None,
     elevation_calculator: MarginCalculator | None = None,
+    flat_elevation_calculator: MarginCalculator | None = None,
+    degenerate_window_samples: int = 0,
     backend: Literal["auto", "cpu", "cuda"] = "auto",
     cancellation_requested: Callable[[], bool] | None = None,
     progress_callback: Callable[[SafeHavenProgress], None] | None = None,
@@ -149,6 +152,17 @@ def run_safe_haven_products(
         raise ValueError("timestamps, Sun vectors, and Earth vectors must align")
     if max_slope_deg is not None and not (np.isfinite(max_slope_deg) and max_slope_deg > 0.0):
         raise ValueError("max_slope_deg must be positive and finite, or None")
+    if int(degenerate_window_samples) != degenerate_window_samples or degenerate_window_samples < 0:
+        raise ValueError("degenerate_window_samples must be a non-negative integer")
+    if (
+        degenerate_window_samples > 0
+        and (fraction_calculator is not None or elevation_calculator is not None)
+        and flat_elevation_calculator is None
+    ):
+        raise ValueError(
+            "the degenerate-outage rule needs flat_elevation_calculator when a "
+            "calculator is injected"
+        )
 
     month_bands = build_month_bands(timestamps)
     if not month_bands:
@@ -201,7 +215,8 @@ def run_safe_haven_products(
 
     band_timestamps = tuple(start.isoformat() for start, _stop in month_bands)
     configuration = {
-        "semantics_version": 3,
+        "semantics_version": 4,
+        "degenerate_window_samples": int(degenerate_window_samples),
         "time_step_hours": float(time_step_hours),
         "earth_threshold_deg": float(earth_threshold_deg),
         "sunlight_threshold": float(sunlight_threshold),
@@ -328,6 +343,7 @@ def run_safe_haven_products(
                     dem, horizons, sun_vectors, earth_vectors,
                     month_bands=month_bands, time_count=len(timestamps),
                     cancellation_requested=cancelled, **window_arguments,
+                    degenerate_window_samples=degenerate_window_samples,
                     **{key: options[key] for key in (
                         "month_index_of", "sunlight_threshold", "earth_threshold_deg",
                         "operating_sunlight_fraction", "merge_gap_hours",
@@ -339,18 +355,26 @@ def run_safe_haven_products(
         if cpu_session is not None and fraction_calculator is None and elevation_calculator is None:
             # Whole batches of time steps go to the reducer, so each parallel
             # call does many steps of work per thread.
+            flats, margins = itertools.tee(checked(cpu_session.iter_patch_earth_batches(
+                dem, horizons, earth_vectors, **window_arguments)))
             return reduce_safe_haven_products_batches(
                 checked(cpu_session.iter_patch_fraction_batches(
                     dem, horizons, sun_vectors, **window_arguments)),
-                checked(cpu_session.iter_patch_margin_batches(
-                    dem, horizons, earth_vectors, **window_arguments)),
-                len(timestamps), month_bands, **options,
+                (pair[1] for pair in margins),
+                len(timestamps), month_bands,
+                earth_flat_elevation_batches=(pair[0] for pair in flats),
+                degenerate_window_samples=degenerate_window_samples, **options,
             )
         fractions = calc_fractions(dem, horizons, sun_vectors, **window_arguments)
         elevations = calc_elevations(dem, horizons, earth_vectors, **window_arguments)
+        flats = (
+            checked(flat_elevation_calculator(dem, horizons, earth_vectors, **window_arguments))
+            if degenerate_window_samples > 0 else None
+        )
         return reduce_safe_haven_products_patch_stream(
             checked(fractions), checked(elevations), len(timestamps),
-            month_bands, **options,
+            month_bands, earth_flat_elevation_tiles=flats,
+            degenerate_window_samples=degenerate_window_samples, **options,
         )
 
     # One writer thread per product: the products are separate files, so their

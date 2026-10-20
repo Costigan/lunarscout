@@ -21,7 +21,13 @@ import numpy as np
 import numpy.typing as npt
 
 from .file_format import AZIMUTH_COUNT, PATCH_SIZE, HorizonTileStore, read_patch_horizons
-from .safe_haven import OPERATING_FUZZ, _month_indices_map, build_month_bands, merge_gap_limit
+from .safe_haven import (
+    OPERATING_FUZZ,
+    _month_indices_map,
+    build_month_bands,
+    degenerate_window_samples,
+    merge_gap_limit,
+)
 
 MINUTES_PER_DAY = 1440
 MICROSECONDS_PER_MINUTE = 60_000_000
@@ -62,6 +68,9 @@ class WindowParameters:
     #: in which every pixel fails (an outage that runs past the end of the series)
     #: does not cost a timeline per haven pixel.
     max_consecutive_failures: int = 50
+    #: The stage-1 degenerate-outage window in hours (``None``: the stage-1 default);
+    #: it must equal the stage-1 run's.
+    degenerate_outage_window_hours: float | None = None
 
     def __post_init__(self) -> None:
         positive = (
@@ -73,8 +82,10 @@ class WindowParameters:
             value = getattr(self, name)
             if not (np.isfinite(value) and value > 0.0):
                 raise ValueError(f"{name} must be positive and finite")
-        for name in ("seed_timing_tolerance_hours",):
+        for name in ("seed_timing_tolerance_hours", "degenerate_outage_window_hours"):
             value = getattr(self, name)
+            if value is None and name == "degenerate_outage_window_hours":
+                continue
             if not (np.isfinite(value) and value >= 0.0):
                 raise ValueError(f"{name} must be non-negative and finite")
         if self.connectivity not in (4, 8):
@@ -217,6 +228,28 @@ def outage_spans(is_outage: npt.NDArray[np.bool_]) -> npt.NDArray[np.int64]:
     return np.stack((change[0::2], change[1::2] - 1), axis=1).astype(np.int64)
 
 
+def degenerate_outage_flags(
+    flat: npt.NDArray[np.floating], is_outage: npt.NDArray[np.bool_], window: int
+) -> npt.NDArray[np.bool_]:
+    """Samples that are degenerate outages (``docs/safe-haven-state-machine.md``, 2.1).
+
+    ``flat`` is Earth's elevation above a flat horizon and ``is_outage`` the real
+    outage flags.  Sample ``k`` qualifies when it is a minimum of ``flat`` (lower than
+    the sample before, no higher than the one after), no real outage lies within
+    ``window`` samples either side, and the window lies inside the arrays.
+    """
+    count = len(flat)
+    flags = np.zeros(count, dtype=bool)
+    if window < 1 or count < 2 * window + 1:
+        return flags
+    k = np.arange(window, count - window)
+    minimum = (flat[k] < flat[k - 1]) & (flat[k] <= flat[k + 1])
+    outages = np.concatenate(([0], np.cumsum(np.asarray(is_outage, dtype=np.int64))))
+    clear = (outages[k + window + 1] - outages[k - window]) == 0
+    flags[k] = minimum & clear
+    return flags
+
+
 @dataclass(frozen=True)
 class HibernationRecord:
     """The hibernation that sets a month's value, in global sample indices."""
@@ -321,13 +354,18 @@ class PixelSignals:
         patch = self._cache[key]
         return None if patch is None else patch[row - key[0], column - key[1]]
 
-    def series(self, row: int, column: int, vectors_m: npt.ArrayLike, *, margin: bool):
-        """Float32 values per vector, or ``None`` when the pixel has no horizon."""
+    def series(self, row: int, column: int, vectors_m: npt.ArrayLike, *, margin: bool,
+               flat_elevation: bool = False):
+        """Float32 values per vector, or ``None`` when the pixel has no horizon.
+
+        ``flat_elevation`` (with ``margin``) gives the elevation above a flat horizon.
+        """
         horizon = self.horizon_column(row, column)
         if horizon is None:
             return None
         return self._session.pixel_series(
-            self._dem, horizon, vectors_m, row=row, column=column, margin=margin
+            self._dem, horizon, vectors_m, row=row, column=column, margin=margin,
+            flat_elevation=flat_elevation,
         )
 
 
@@ -458,12 +496,13 @@ class CandidateEvaluator:
         self.sun_threshold = float(sunlight_fraction_threshold)
         self.gap_limit = max(1, merge_gap_limit(merge_gap_hours, time.step_hours))
         step = time.step_hours
-        self.lookback = max(
+        self.window = degenerate_window_samples(parameters.degenerate_outage_window_hours, step)
+        self.lookback = self.window + max(
             int(math.ceil(parameters.survival_limit_hours / step)) + self.gap_limit + 2,
             int(math.ceil(parameters.operational_hours / step)) + 2,
         )
         self.forward = int(math.ceil(15.0 * 24.0 / step))
-        self.after_samples = int(math.ceil(parameters.operational_hours / step)) + 1
+        self.after_samples = int(math.ceil(parameters.operational_hours / step)) + 1 + self.window
 
     def evaluate(self, row: int, column: int, month: int) -> PixelRecord | str:
         """The pixel's record, or the reason it has none: ``no_horizon``, ``no_record``,
@@ -483,6 +522,13 @@ class CandidateEvaluator:
                 return "no_horizon"
             is_shadow = sun.astype(np.float64) < self.sun_threshold
             is_outage = earth.astype(np.float64) < self.earth_threshold
+            if self.window > 0:
+                flat = self.signals.series(
+                    row, column, time.earth_vectors[start:stop], margin=True, flat_elevation=True
+                )
+                if not np.isfinite(flat).all():
+                    return "no_horizon"
+                is_outage = is_outage | degenerate_outage_flags(flat, is_outage, self.window)
             found = hibernation_of_record(
                 is_shadow, is_outage, time.sample_month[start:stop], month,
                 gap_limit=self.gap_limit, offset=start,

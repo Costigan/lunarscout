@@ -6,6 +6,21 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Safe-haven products: degenerate outage (changes results).** An Earth cycle in
+  which Earth stays above `earth_elevation_threshold_deg` used to have no
+  hibernation. `ls.generate_safe_haven_products` and `scenario.safe_haven_products`
+  now give such a cycle a one-sample outage at the minimum of Earth's elevation above
+  a flat horizon, if Earth stays above the threshold for
+  `degenerate_outage_window_hours` (new; default 24 hours, or 15 steps for steps under
+  1.6 hours; 0 turns the rule off) either side. It matters on the Earth side of the
+  map: on the 20 m south-pole DEM, in cell row 0 about a third of Earth cycles lack an
+  outage, and the share of pixel-months that are havens at or below 72 hours rose
+  from about 8 to 20-29 percent in the top two cell rows (sampled, 60 pixels per
+  cell). The machine runs the window's worth of samples behind the data to decide
+  each minimum, in the same single-source code for CPU and CUDA; the Earth launch of
+  the lightmap kernels also reports the elevation above a flat horizon. Products and
+  staged jobs made before this change are not compatible (the job configuration now
+  records the window), so rerun stage 1.
 - **Safe-haven windows, pass 1 (internal, in progress).** `scripts/plan_safe_haven_windows.py`
   reads the stage-1 products and writes a plan for the 5 km window analysis specified in
   `docs/safe-haven-windows-spec.md`: for each cell and month with a haven, up to five

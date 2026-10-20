@@ -1255,9 +1255,19 @@ in a short gap.
   is credited to the calendar month in which it starts, and to no other, so
   none is counted twice. If two start in one month, the band holds the
   better (smaller) score. A band is NaN where no hibernation starts in the
-  month, which includes months where Earth is always or never below the
-  threshold, and where the month begins inside a hibernation that started
-  earlier.
+  month, which includes months where Earth is always below the threshold, and
+  where the month begins inside a hibernation that started earlier.
+* **Earth-side pixels.** Near the Earth-facing edge of the map Earth may stay
+  above the threshold through a whole 27-day Earth cycle, so there is no outage.
+  Such a cycle gets a *degenerate outage*: one sample at the minimum of Earth's
+  elevation above a flat horizon, when Earth stays above the threshold for
+  `degenerate_outage_window_hours` (default 24, or 15 steps for steps shorter than
+  1.6 hours) either side. It is a one-sample hibernation scored like any other, and
+  Earth counts as unavailable at that sample in the joint-operating maps. Where the
+  Sun is up at that moment the score is 0, so these pixels can be havens even though
+  communications are almost continuous; the second-stage window analysis is what
+  tells whether the Sun is also up when Earth is high. Set the window to 0 to turn
+  the rule off. Pixels where Earth never rises above the threshold stay NaN.
 * **Joint-operating maps.** Hours with Earth available and the Sun at least
   `operating_sunlight_fraction` (default 1.0, the whole disk) visible: the total
   in each month, and the longest uninterrupted stretch, credited to the month it

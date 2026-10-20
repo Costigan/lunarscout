@@ -1139,6 +1139,7 @@ def generate_safe_haven_products(
     sunlight_fraction_threshold: float = 0.2,
     operating_sunlight_fraction: float = 1.0,
     merge_gap_hours: float = 24.0,
+    degenerate_outage_window_hours: float | None = None,
     max_slope_deg: float | None = 20.0,
     name_prefix: str = "safe_haven",
     backend: Backend = "auto",
@@ -1209,6 +1210,14 @@ def generate_safe_haven_products(
         Two shadow runs separated by a sunlit gap shorter than this are one
         run, and the gap counts toward its length: a rover cannot recharge in
         a short gap. Zero disables merging.
+    degenerate_outage_window_hours : float or None, default None
+        Where Earth never goes below ``earth_elevation_threshold_deg`` in an
+        Earth cycle (the Earth side of the map), the cycle has no outage. The
+        rule gives it one: a single outage sample at the minimum of Earth's
+        elevation above a flat horizon, if Earth stays at or above the threshold
+        for this many hours either side of it. Rounded to whole time steps; an
+        explicit value must be zero (rule off) or one to 15 steps. ``None`` means
+        24 hours, or 15 steps when the step is shorter than 1.6 hours. See Notes.
     max_slope_deg : float or None, default 20.0
         Pixels steeper than this (Horn slope, as ``lunarscout.slope``), or whose
         slope cannot be computed, are NODATA in all three products. ``None``
@@ -1286,6 +1295,14 @@ def generate_safe_haven_products(
     ``merge_gap_hours``. A hibernation with no shadow on it scores 0, the best
     possible. Durations are ``samples * step`` in hours.
 
+    **Degenerate outage.** An Earth cycle (about 27 days) in which Earth stays
+    above the threshold has no outage, so it would have no hibernation. Earth's
+    elevation above a flat horizon has one minimum per cycle; if there is no
+    outage within ``degenerate_outage_window_hours`` of it, that one sample is
+    defined as an outage (a hibernation of one sample, scored like any other,
+    with Earth unavailable for the joint-operating layers at that sample).
+    Minima within the window of either end of the series are not credited.
+
     **Months.** Each hibernation belongs to the calendar month containing its
     first sample, and nothing else decides the month: a shadow run that starts
     later, or continues into the next month, does not move it. A hibernation
@@ -1293,8 +1310,9 @@ def generate_safe_haven_products(
     month, the band holds the smaller (better) of their scores.
 
     **NODATA.** A hibernation band is NaN where no hibernation starts in the
-    month (Earth never below the threshold, always below it, or the month
-    begins inside a hibernation that started earlier), where the slope exceeds
+    month (Earth always below the threshold, no cycle minimum falls in the month
+    with the rule satisfied, or the month begins inside a hibernation that
+    started earlier), where the slope exceeds
     ``max_slope_deg``, and where the DEM node is invalid. A hibernation already
     under way at the first sample has an unknown start and is not credited.
     Zero means a hibernation starts in the month and no shadow touches it. The
@@ -1342,6 +1360,17 @@ def generate_safe_haven_products(
             "merge_gap_hours must be a finite, nonnegative number of hours.",
             code="safe_haven_merge_gap_invalid",
             details={"merge_gap_hours": merge_gap_hours},
+        )
+    if degenerate_outage_window_hours is not None and (
+        isinstance(degenerate_outage_window_hours, bool)
+        or not isinstance(degenerate_outage_window_hours, (int, float))
+        or not np.isfinite(degenerate_outage_window_hours)
+        or degenerate_outage_window_hours < 0
+    ):
+        raise InputError(
+            "degenerate_outage_window_hours must be a finite, nonnegative number of hours.",
+            code="safe_haven_degenerate_window_invalid",
+            details={"degenerate_outage_window_hours": degenerate_outage_window_hours},
         )
     if (
         isinstance(operating_sunlight_fraction, bool)
@@ -1424,11 +1453,25 @@ def generate_safe_haven_products(
     from ._numba_horizon.cuda_backend import CudaBackendError
     from ._numba_horizon.file_format import HorizonTileStore
     from ._numba_horizon.product_store import ProductStoreError
+    from ._numba_horizon.safe_haven import degenerate_window_samples
     from ._numba_horizon.safe_haven_pipeline import (
         SafeHavenPipelineCancelled,
         run_safe_haven_products,
     )
 
+    try:
+        window_samples = degenerate_window_samples(
+            degenerate_outage_window_hours, float(steps[0])
+        )
+    except ValueError as exc:
+        raise InputError(
+            str(exc),
+            code="safe_haven_degenerate_window_invalid",
+            details={
+                "degenerate_outage_window_hours": degenerate_outage_window_hours,
+                "time_step_hours": float(steps[0]),
+            },
+        ) from exc
     adapter = _ProgressAdapter(
         "safe_havens",
         directory,
@@ -1450,6 +1493,7 @@ def generate_safe_haven_products(
             sunlight_threshold=sunlight_fraction_threshold,
             operating_sunlight_fraction=float(operating_sunlight_fraction),
             merge_gap_hours=float(merge_gap_hours),
+            degenerate_window_samples=window_samples,
             max_slope_deg=None if max_slope_deg is None else float(max_slope_deg),
             observer_elevation_m=observer_height_m,
             nodata=nodata,

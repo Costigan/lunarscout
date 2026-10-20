@@ -54,9 +54,10 @@ def inputs():
 class SignalKernel:
     """Supply controlled device signals while exercising real reducer kernels."""
 
-    def __init__(self, fractions, earth):
+    def __init__(self, fractions, earth, flat=None):
         self.fractions = fractions
         self.earth = earth
+        self.flat = earth if flat is None else flat    # zero horizons: elevation equals margin
 
     def __getitem__(self, _launch):
         def launch(*args):
@@ -67,6 +68,12 @@ class SignalKernel:
             batch = np.full((count, 128, 128), np.nan, dtype=np.float32)
             batch[:, :2, :3] = source[start:start + count]
             buffer[:count].copy_to_device(batch.reshape(count, 128 * 128))
+            if args[-1]:
+                # The Earth launch also writes the flat-horizon elevation, into the
+                # array given as its fraction output.
+                flat = np.full((count, 128, 128), np.nan, dtype=np.float32)
+                flat[:, :2, :3] = self.flat[start:start + count]
+                args[12][:count].copy_to_device(flat.reshape(count, 128 * 128))
         return launch
 
 
@@ -128,6 +135,69 @@ def test_month_batch_boundary_parity_and_patch_reset(inputs, batch_size):
         stacked(calculate(session, altered)), stacked(reference(altered))
     )
     assert session._month_map is not previous
+
+
+def smooth_signals():
+    """Two by three pixels of smooth Earth cycles, on which the degenerate rule changes
+    the result for every window used below (the first such seed is taken)."""
+    from test_safe_haven_degenerate_outage import smooth_timelines
+
+    bounds = tuple(datetime(2027, month, 1, tzinfo=timezone.utc) for month in (1, 2, 3, 4, 5))
+    months = tuple(zip(bounds[:-1], bounds[1:]))
+    count, pixels = 150, 6
+    for seed in range(21, 200):
+        fraction, flat, margin, band = smooth_timelines(np.random.default_rng(seed), pixels, count, 4)
+        shape = (count, 2, 3)
+        fraction, flat, margin = fraction.reshape(shape), flat.reshape(shape), margin.reshape(shape)
+
+        def reduced(window):
+            return stacked(reduce_safe_haven_products_patch_stream(
+                iter(fraction), iter(margin), count, months, month_index_of=band,
+                earth_flat_elevation_tiles=iter(flat), degenerate_window_samples=window,
+                sunlight_threshold=0.2, earth_threshold_deg=2.0, operating_sunlight_fraction=1.0,
+                merge_gap_hours=24.0, time_step_hours=6.0,
+            ))
+
+        plain = reduced(0)
+        if all(not np.array_equal(reduced(w), plain, equal_nan=True) for w in (2, 4)):
+            return fraction, flat, margin, band
+    raise AssertionError("no seed exercises the rule")
+
+
+@pytest.mark.parametrize("window", [0, 2, 4])
+@pytest.mark.parametrize("batch_size", [1, 7, 64])
+def test_degenerate_outage_parity_with_the_cpu_machine(window, batch_size):
+    fractions, flat, margin, mapping = smooth_signals()
+    bounds = tuple(datetime(2027, month, 1, tzinfo=timezone.utc) for month in (1, 2, 3, 4, 5))
+    months = tuple(zip(bounds[:-1], bounds[1:]))
+    dem = DemGrid(
+        np.zeros((2, 3), dtype=np.float32),
+        np.array((1000., 20., 0., -1000., 0., -20.)),
+        ProjectionParameters(1737400., -np.pi / 2, 0., 1., 0., 0.),
+    )
+    session = SafeHavenCudaSession(time_batch_size=batch_size)
+    session._kernel = SignalKernel(fractions, margin, flat)
+    vectors = np.ones((len(mapping), 3), dtype=np.float64)
+    options = dict(
+        sunlight_threshold=0.2, earth_threshold_deg=2.0, operating_sunlight_fraction=1.0,
+        merge_gap_hours=24.0, time_step_hours=6.0,
+    )
+    result = session.reduce_patch(
+        dem, np.zeros((128, 128, 1440), dtype=np.float32), vectors, vectors, tile_y=0, tile_x=0,
+        valid_height=2, valid_width=3, month_bands=months, month_index_of=mapping,
+        time_count=len(mapping), degenerate_window_samples=window, **options,
+    )
+    expected = reduce_safe_haven_products_patch_stream(
+        iter(fractions), iter(margin), len(mapping), months, month_index_of=mapping,
+        earth_flat_elevation_tiles=iter(flat), degenerate_window_samples=window, **options,
+    )
+    np.testing.assert_array_equal(stacked(result), stacked(expected))
+    if window > 0:
+        # the rule changed something relative to no rule at all
+        plain = reduce_safe_haven_products_patch_stream(
+            iter(fractions), iter(margin), len(mapping), months, month_index_of=mapping, **options,
+        )
+        assert not np.array_equal(stacked(result), stacked(plain), equal_nan=True)
 
 
 def test_invalid_dem_pixels_are_skipped_on_the_device(inputs):
