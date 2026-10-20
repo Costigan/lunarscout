@@ -218,6 +218,14 @@ The flood is clipped to the window. Seeds lie in the central cell and the halo i
 at least the reach, so the reach never leaves the window. The boundary shift
 moves the flood start, not its position, so it does not change this.
 
+**Reference implementation.** `_numba_horizon/safe_haven_flood.py` holds the
+plain-Python oracle for this section: `flood_side_reference`, `flood_seed_reference`
+and `lit_reference_cube` (the per-pixel lit state from the single-pixel kernel). It is
+for small windows and for testing the packed-bit and GPU flood; it is not the
+production path. `tests/numba_horizon/test_safe_haven_flood_reference.py` checks it by
+hand-worked cases, against an independent path-existence search on random inputs, and
+on the synthetic scene.
+
 **Diagnostics.** For each seed, `earth_visible_before_h` and
 `earth_visible_after_h`: the contiguous Earth-available time adjacent to the
 hibernation, capped at `operational_hours`. Because of the Earth gate every reported seed has
