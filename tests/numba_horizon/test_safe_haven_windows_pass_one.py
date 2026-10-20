@@ -393,7 +393,7 @@ def contiguous(flags):
 
 
 def test_earth_visibility_beside_the_hibernation_is_measured_and_capped(prepared) -> None:
-    evaluator = evaluator_for(prepared, prepared.stamps, operational_hours=720.0)
+    evaluator = evaluator_for(prepared, prepared.stamps, operational_hours=24.0)
     available = scene.earth_elevation(prepared.stamps) - scene.LOW_HORIZON >= 2.0
     for month in (0, 1):
         record = evaluator.evaluate(5, 5, month)
@@ -402,11 +402,11 @@ def test_earth_visibility_beside_the_hibernation_is_measured_and_capped(prepared
         assert not available[last] and available[last + 1]
         before = contiguous(available[:first][::-1])
         after = contiguous(available[last + 1:])
-        assert record.earth_visible_before_hours == min(720.0, before * 6.0)
-        assert record.earth_visible_after_hours == min(720.0, after * 6.0)
-    # January's visibility before the outage is cut short by the start of the series.
-    january = evaluator.evaluate(5, 5, 0)
-    assert january.earth_visible_before_hours == january.outage_first * 6.0 < 720.0
+        assert record.earth_visible_before_hours == min(24.0, before * 6.0)
+        assert record.earth_visible_after_hours == min(24.0, after * 6.0)
+    # A window that is never available in full is rejected, including one cut short
+    # by the start of the series.
+    assert evaluator_for(prepared, prepared.stamps, operational_hours=720.0).evaluate(5, 5, 0) == "earth_window"
     # The default 48 hours is a cap.
     capped = evaluator_for(prepared, prepared.stamps).evaluate(5, 5, 0)
     assert (capped.earth_visible_before_hours, capped.earth_visible_after_hours) == (48.0, 48.0)
@@ -629,7 +629,8 @@ def test_equality_is_neither_shadow_nor_outage() -> None:
     fraction[8] = 0.25            # equal to the threshold: not shadow
     time = windows.TimeContext.build(stamps, indexed, indexed)
     parameters = WindowParameters(
-        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, degenerate_outage_window_hours=0.0
+        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, degenerate_outage_window_hours=0.0,
+        operational_hours=12.0,
     )
     evaluator = windows.CandidateEvaluator(
         TimelineSignals(fraction, margin), time, parameters,
@@ -735,3 +736,61 @@ def test_numpy_integer_coordinates_are_accepted_by_the_horizon_reader(prepared) 
 
 def test_the_synthetic_scene_never_abandons_a_cell_month(run) -> None:
     assert run[1].counts.cell_months_abandoned == 0
+
+
+# --- the Earth-availability gate on stub timelines ---------------------------------------------
+
+
+def gate_evaluator(margin, *, operational_hours=12.0):
+    count = len(margin)
+    stamps = np.datetime64("2027-01-01T00:00:00", "us") + np.arange(count) * np.timedelta64(6, "h")
+
+    def indexed(values):
+        steps = (np.asarray(values).astype("datetime64[us]") - stamps[0]) // np.timedelta64(6, "h")
+        return np.stack([steps, 0 * steps, 0 * steps], axis=1).astype(float)
+
+    margin = np.asarray(margin, float)
+    fraction = np.where(margin < 2.0, 0.0, 1.0)   # dark whenever Earth is lost
+    time = windows.TimeContext.build(stamps, indexed, indexed)
+    parameters = WindowParameters(
+        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, degenerate_outage_window_hours=0.0,
+        operational_hours=operational_hours,
+    )
+    return windows.CandidateEvaluator(
+        TimelineSignals(fraction, margin), time, parameters,
+        earth_elevation_threshold_deg=2.0, sunlight_fraction_threshold=0.25, merge_gap_hours=0.0,
+    )
+
+
+def gate_margin(*, before=8, after=8, count=40):
+    margin = np.full(count, 1.0)
+    margin[10 - before:10] = 3.0
+    margin[10] = 1.0              # the outage is the single sample 10
+    margin[11:11 + after] = 3.0
+    return margin
+
+
+def test_a_seed_needs_earth_for_the_full_operational_window_on_both_sides() -> None:
+    assert gate_evaluator(gate_margin(before=8, after=8)).evaluate(0, 0, 0).outage_first == 10
+    # exactly operational_hours (two samples at 6 h) is enough
+    full = gate_evaluator(gate_margin(before=2, after=2)).evaluate(0, 0, 0)
+    assert (full.earth_visible_before_hours, full.earth_visible_after_hours) == (12.0, 12.0)
+    assert gate_evaluator(gate_margin(before=1, after=8)).evaluate(0, 0, 0) == "earth_window"
+    assert gate_evaluator(gate_margin(before=8, after=1)).evaluate(0, 0, 0) == "earth_window"
+
+
+def test_a_margin_dip_inside_the_window_rejects_the_seed() -> None:
+    margin = gate_margin(before=8, after=8)
+    margin[8] = 1.9               # below the 2 degree margin, one sample before the outage
+    margin[12] = 1.9             # the same, on the after side
+    assert gate_evaluator(margin, operational_hours=24.0).evaluate(0, 0, 0) == "earth_window"
+
+
+def test_a_rejected_window_is_counted_and_ends_the_cell_month_after_the_failure_cap(monkeypatch) -> None:
+    monkeypatch.setattr(StubEvaluator, "evaluate", lambda self, row, column, month: "earth_window")
+    seeds, _evaluator, counts = stub_select(
+        monkeypatch, np.zeros((12, 12)), np.zeros((12, 12)), lambda r, c: 0.0, max_consecutive_failures=3,
+    )
+    assert seeds == []
+    assert counts.invalid_earth_window == counts.timelines_evaluated == 3
+    assert counts.cell_months_abandoned == 1
