@@ -473,6 +473,7 @@ class PlanCounts:
     invalid_no_horizon: int = 0
     invalid_no_record: int = 0
     invalid_outage_unclosed: int = 0
+    invalid_earth_window: int = 0
     invalid_no_lit_boundary: int = 0
     cell_months_abandoned: int = 0
     tasks_unshared: int = 0
@@ -506,7 +507,7 @@ class CandidateEvaluator:
 
     def evaluate(self, row: int, column: int, month: int) -> PixelRecord | str:
         """The pixel's record, or the reason it has none: ``no_horizon``, ``no_record``,
-        ``outage_unclosed``."""
+        ``outage_unclosed``, ``earth_window``."""
         time = self.time
         count = len(time.times_us)
         first = int(time.month_first[month])
@@ -555,6 +556,10 @@ class CandidateEvaluator:
         before = _contiguous_true(available[: record.outage_first - start][::-1])
         after = _contiguous_true(available[record.outage_last + 1 - start:])
         cap = self.parameters.operational_hours
+        # Earth must be available for the whole operational window on each side
+        # (section 5, step 5); a window cut short by the series is not verified.
+        if before * time.step_hours < cap - 1e-9 or after * time.step_hours < cap - 1e-9:
+            return "earth_window"
         return PixelRecord(
             row=row, column=column,
             score_hours=float(np.float32(record.score_samples) * np.float32(time.step_hours)),
@@ -675,6 +680,7 @@ def select_seeds(
             counts.invalid_no_horizon += result == "no_horizon"
             counts.invalid_no_record += result == "no_record"
             counts.invalid_outage_unclosed += result == "outage_unclosed"
+            counts.invalid_earth_window += result == "earth_window"
             failures += 1
             if failures >= parameters.max_consecutive_failures:
                 counts.cell_months_abandoned += 1

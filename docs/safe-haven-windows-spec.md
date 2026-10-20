@@ -71,7 +71,16 @@ slope mask and the lit rule always agree with stage 1.
   slope within the limit and a valid DEM node) and inside the DEM. Pixels outside
   the DEM are impassable.
 * **Lit:** `fraction >= operating_sunlight_fraction - 1e-6` at the pixel, the
-  stage-1 joint-operating rule. Earth visibility is not tested during a flood.
+  stage-1 joint-operating rule. Earth visibility is not tested pixel by pixel during
+  a flood; instead a seed is valid only if Earth is available at the seed for the
+  whole flood window on each side (section 5, step 5), so every lit pixel is
+  counted while communications are available.
+* **Earth available:** Earth's elevation above the pixel's own horizon is at least
+  `earth_elevation_threshold_deg` (2 degrees), the stage-1 rule. The threshold is
+  a practical approximation: radio links are treated as reliable at 2 degrees or
+  more above the terrain horizon, because signals reflected off the surface below
+  that interfere enough to make the link unusable, and the frame error rate rises
+  steeply as elevation falls.
 * **Haven pixel for month m:** a pixel whose stage-1 `hibernation` value for
   month m is at most `survival_limit_hours`. That value is the longest merged
   shadow run that shares a sample with the outage, not the length of the outage
@@ -124,8 +133,15 @@ For each cell and month:
    `docs/safe-haven-state-machine.md` section 2.1 (the cycle minimum of Earth's
    elevation above a flat horizon, where no real outage lies within the window), so
    an Earth-side pixel's hibernation of record can be one sample long: `T_e` is the
-   next sample. A pixel with no hibernation of record, an outage
-   that does not end inside the series, or no horizon tile is dropped and counted.
+   next sample. **Earth gate.** The seed is valid only if Earth is available at every sample of
+   the `operational_hours` immediately before `T_s` and of the `operational_hours`
+   starting at `T_e` (contiguous available time of at least `operational_hours` on
+   each side, counted in whole samples). A margin dip inside either window, or a
+   window cut short by the start or end of the series, fails the gate. There is no
+   separate parameter: the gate window is the flood duration. A pixel with no
+   hibernation of record, an outage that does not end inside the series, a failed
+   Earth gate, or no horizon tile is dropped and counted (`invalid_no_record`,
+   `invalid_outage_unclosed`, `invalid_earth_window`, `invalid_no_horizon`).
 6. **Selection.** Accept a candidate unless an accepted seed lies closer than
    `seed_separation_m` AND has `T_s` within `seed_timing_tolerance_hours` AND has
    `T_e` within the same tolerance (differences equal to the tolerance count as
@@ -204,7 +220,8 @@ moves the flood start, not its position, so it does not change this.
 
 **Diagnostics.** For each seed, `earth_visible_before_h` and
 `earth_visible_after_h`: the contiguous Earth-available time adjacent to the
-hibernation, capped at `operational_hours`. They are reported, not tested.
+hibernation, capped at `operational_hours`. Because of the Earth gate every reported seed has
+both equal to `operational_hours`; the columns are kept as a check.
 
 ## 7. Output
 
