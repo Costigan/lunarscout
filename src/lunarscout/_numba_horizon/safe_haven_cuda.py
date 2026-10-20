@@ -14,7 +14,9 @@ from .cuda_backend import cuda_session_setup
 from .file_format import AZIMUTH_COUNT, PATCH_SIZE
 from .lightmap_cuda import LightmapCudaSession
 from .safe_haven import (
+    MAX_DEGENERATE_WINDOW,
     OPERATING_FUZZ,
+    RING_ROWS,
     STATE_ROWS,
     UNSET,
     merge_gap_limit,
@@ -46,13 +48,15 @@ def _build_reducer(cuda):
     from .safe_haven import make_machine
 
     machine = make_machine(cuda.jit(device=True))
-    advance_pixel = machine.advance_pixel
+    advance_delayed = machine.advance_delayed
+    flush_delayed = machine.flush_delayed
     finish_pixel = machine.finish_pixel
 
     def reducer(
-        fractions, margins, month_map, start, count, final, valid_width,
-        valid_height, sunlight_threshold, earth_threshold, operating_threshold,
-        gap_limit, S, best, have, joint_total, joint_best, error_flag, pixel_valid,
+        fractions, margins, elevations, month_map, start, count, final, time_count,
+        window, valid_width, valid_height, sunlight_threshold, earth_threshold,
+        operating_threshold, gap_limit, S, R, best, have, joint_total, joint_best,
+        error_flag, pixel_valid,
     ):
         pixel = cuda.grid(1)
         if pixel >= PATCH_SIZE * PATCH_SIZE:
@@ -66,16 +70,24 @@ def _build_reducer(cuda):
         for offset in range(count):
             fraction = fractions[offset, pixel]
             margin = margins[offset, pixel]
-            if not math.isfinite(fraction) or not math.isfinite(margin):
+            elevation = elevations[offset, pixel]
+            if (
+                not math.isfinite(fraction) or not math.isfinite(margin)
+                or not math.isfinite(elevation)
+            ):
                 cuda.atomic.max(error_flag, 0, 1)
                 continue
-            time_index = start + offset
-            advance_pixel(
-                S, pixel, best, have, joint_total, joint_best, fraction, margin,
-                time_index, month_map[time_index], sunlight_threshold,
+            advance_delayed(
+                S, R, pixel, best, have, joint_total, joint_best, fraction, margin,
+                elevation, start + offset, month_map, window, sunlight_threshold,
                 earth_threshold, operating_threshold, gap_limit,
             )
         if final:
+            flush_delayed(
+                S, R, pixel, best, have, joint_total, joint_best, time_count,
+                month_map, window, sunlight_threshold, earth_threshold,
+                operating_threshold, gap_limit,
+            )
             finish_pixel(S, pixel, best)
 
     return _cuda_jit_cached(cuda, reducer)
@@ -135,6 +147,10 @@ class SafeHavenCudaSession(LightmapCudaSession):
             self._state_months = 0
             self._error_flag = self._cuda.device_array(1, dtype=np.int32)
             self._state = self._cuda.device_array((STATE_ROWS, n), dtype=np.int32)
+            self._ring = self._cuda.device_array((RING_ROWS, n), dtype=np.float32)
+            self._elevation_output = self._cuda.device_array(
+                (self.time_batch_size, n), dtype=np.float32
+            )
             self._pixel_valid = self._cuda.device_array(n, dtype=np.uint8)
             self._host_state = new_state(n)
             self._outputs = None
@@ -149,8 +165,20 @@ class SafeHavenCudaSession(LightmapCudaSession):
         operating_sunlight_fraction: float, merge_gap_hours: float,
         time_step_hours: float, cancellation_requested: Callable[[], bool] | None = None,
         invalid_pixels: npt.ArrayLike | None = None,
+        degenerate_window_samples: int = 0,
     ) -> tuple[tuple[npt.NDArray[np.float32], ...], ...]:
-        """Return ``(hibernation, joint_total, joint_longest)`` tiles per band."""
+        """Return ``(hibernation, joint_total, joint_longest)`` tiles per band.
+
+        ``degenerate_window_samples`` is the half-window of the degenerate-outage
+        rule (``docs/safe-haven-state-machine.md``, section 2.1); 0 turns it off.
+        """
+        if (
+            int(degenerate_window_samples) != degenerate_window_samples
+            or not 0 <= degenerate_window_samples <= MAX_DEGENERATE_WINDOW
+        ):
+            raise ValueError(
+                f"degenerate_window_samples must be an integer from 0 to {MAX_DEGENERATE_WINDOW}"
+            )
         if time_count < 1 or len(month_bands) < 1:
             raise ValueError("time_count and month bands must be positive")
         if not 1 <= valid_width <= PATCH_SIZE or not 1 <= valid_height <= PATCH_SIZE:
@@ -240,15 +268,21 @@ class SafeHavenCudaSession(LightmapCudaSession):
                 if cancellation_requested and cancellation_requested():
                     raise SafeHavenCudaCancelled("safe-haven generation was cancelled")
                 count = min(self.time_batch_size, time_count - start)
-                for vectors, margin in ((self._sun_vectors, False), (self._earth_vectors, True)):
-                    self._kernel[blocks, threads](self._dem, self._geotransform, self._projection, vectors, self._horizons, start, count, tile_x, tile_y, valid_width, valid_height, self._output, self._fraction_output, self._margin_output, margin)
+                # The Earth call writes the elevation above a flat horizon into
+                # the array given as its fraction output.
+                for vectors, fraction_output, margin in (
+                    (self._sun_vectors, self._fraction_output, False),
+                    (self._earth_vectors, self._elevation_output, True),
+                ):
+                    self._kernel[blocks, threads](self._dem, self._geotransform, self._projection, vectors, self._horizons, start, count, tile_x, tile_y, valid_width, valid_height, self._output, fraction_output, self._margin_output, margin)
                 self._reducer[blocks, threads](
-                    self._fraction_output, self._margin_output, self._month_map,
-                    start, count, start + count == time_count, valid_width,
+                    self._fraction_output, self._margin_output, self._elevation_output,
+                    self._month_map, start, count, start + count == time_count,
+                    time_count, np.int32(degenerate_window_samples), valid_width,
                     valid_height, np.float32(sunlight_threshold),
                     np.float32(earth_threshold_deg), operating_threshold,
-                    np.int32(gap_limit), self._state, self._best, self._have,
-                    self._joint_total, self._joint_best, self._error_flag,
+                    np.int32(gap_limit), self._state, self._ring, self._best,
+                    self._have, self._joint_total, self._joint_best, self._error_flag,
                     self._pixel_valid,
                 )
                 self._cuda.synchronize()

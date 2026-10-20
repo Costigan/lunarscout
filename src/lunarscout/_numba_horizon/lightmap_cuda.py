@@ -140,6 +140,9 @@ def _build_lightmap_kernel(cuda):
                         - horizons[line, sample, center_left]
                     )
                 )
+                # In margin mode the fraction array carries the body's elevation
+                # above a flat horizon (no terrain).
+                fraction_output[batch_index, index] = elevation
                 margin_output[batch_index, index] = float32(
                     elevation - center_horizon
                 )

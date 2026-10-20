@@ -103,7 +103,44 @@ PEND_HI = 13       # highest band of those (-1 if none)
 PEND_CUR = 14      # 1 while the active hibernation began inside the pending gap
 JOINT_RUN = 15     # samples in the current joint-operating run
 JOINT_BAND = 16    # band of the current joint-operating run's first sample
-STATE_ROWS = 17
+DELAY_MASK = 17    # outage flags of the last 2W+1 samples, newest in bit 0
+STATE_ROWS = 18
+
+#: Longest half-window of the degenerate-outage rule, in samples (2W+1 flag bits
+#: must fit in the int32 mask).
+MAX_DEGENERATE_WINDOW = 15
+#: Rows of the float ring table: fractions of the last W+1 samples, then flat-horizon
+#: elevations of the last W+2 samples, each indexed by sample number modulo its length.
+FRACTION_ROW = 0
+ELEVATION_ROW = MAX_DEGENERATE_WINDOW + 1
+RING_ROWS = ELEVATION_ROW + MAX_DEGENERATE_WINDOW + 2
+
+
+def degenerate_window_samples(
+    window_hours: float | None, time_step_hours: float
+) -> int:
+    """Whole samples in the degenerate-outage half-window.
+
+    ``None`` is 24 hours, or 15 samples when the step is shorter than 1.6 hours.
+    An explicit window must be zero (the rule is off) or one to 15 steps; anything
+    else raises ``ValueError``.
+    """
+    if window_hours is None:
+        return min(
+            MAX_DEGENERATE_WINDOW, max(1, int(np.floor(24.0 / time_step_hours + 0.5)))
+        )
+    samples = int(np.floor(window_hours / time_step_hours + 0.5))
+    if (window_hours > 0 and samples < 1) or samples > MAX_DEGENERATE_WINDOW:
+        raise ValueError(
+            "the degenerate-outage window must be zero, or between one and "
+            f"{MAX_DEGENERATE_WINDOW} time steps"
+        )
+    return samples
+
+
+def new_ring(pixel_count: int) -> npt.NDArray[np.float32]:
+    """The float ring table for ``pixel_count`` pixels."""
+    return np.zeros((RING_ROWS, pixel_count), dtype=np.float32)
 
 
 def new_state(pixel_count: int) -> npt.NDArray[np.int32]:
@@ -282,8 +319,69 @@ def make_machine(jit):
             _commit(best, i, S[HIB_BAND, i], S[HIB_BAND, i], S[HIB_SCORE, i])
         S[IN_HIB, i] = 0
 
+    @jit
+    def advance_delayed(
+        S, R, i, best, have, joint_total, joint_best, fraction, margin, elevation,
+        time_index, band_of_time, window, sunlight_threshold, earth_threshold,
+        operating_threshold, gap_limit,
+    ):
+        """Take sample ``time_index`` and advance the machine ``window`` samples behind.
+
+        The machine sees sample ``time_index - window`` with its final outage flag:
+        the real flag (margin below the threshold), or a degenerate outage at an
+        Earth-elevation minimum with no real outage within ``window`` samples
+        either side (docs/safe-haven-state-machine.md, section 2.1).
+        ``window == 0`` is the plain machine.
+        """
+        outage = margin < earth_threshold
+        R[FRACTION_ROW + time_index % (window + 1), i] = fraction
+        R[ELEVATION_ROW + time_index % (window + 2), i] = elevation
+        full = (1 << (2 * window + 1)) - 1
+        mask = ((S[DELAY_MASK, i] << 1) | (1 if outage else 0)) & full
+        S[DELAY_MASK, i] = mask
+        sample = time_index - window
+        if sample < 0:
+            return
+        flagged = ((mask >> window) & 1) == 1
+        if window >= 1 and sample >= window and mask == 0:
+            before = R[ELEVATION_ROW + (sample - 1) % (window + 2), i]
+            here = R[ELEVATION_ROW + sample % (window + 2), i]
+            after = R[ELEVATION_ROW + (sample + 1) % (window + 2), i]
+            if here < before and here <= after:
+                flagged = True
+        advance_pixel(
+            S, i, best, have, joint_total, joint_best,
+            R[FRACTION_ROW + sample % (window + 1), i],
+            earth_threshold - 1.0 if flagged else earth_threshold + 1.0,
+            sample, band_of_time[sample], sunlight_threshold, earth_threshold,
+            operating_threshold, gap_limit,
+        )
+
+    @jit
+    def flush_delayed(
+        S, R, i, best, have, joint_total, joint_best, time_count, band_of_time,
+        window, sunlight_threshold, earth_threshold, operating_threshold, gap_limit,
+    ):
+        """Feed the last ``window`` samples, which have no complete window, with
+        their real outage flags, then the machine has seen every sample."""
+        mask = S[DELAY_MASK, i]
+        first = time_count - window
+        if first < 0:
+            first = 0
+        for sample in range(first, time_count):
+            flagged = ((mask >> (time_count - 1 - sample)) & 1) == 1
+            advance_pixel(
+                S, i, best, have, joint_total, joint_best,
+                R[FRACTION_ROW + sample % (window + 1), i],
+                earth_threshold - 1.0 if flagged else earth_threshold + 1.0,
+                sample, band_of_time[sample], sunlight_threshold, earth_threshold,
+                operating_threshold, gap_limit,
+            )
+
     return SimpleNamespace(
         advance_pixel=advance_pixel,
+        advance_delayed=advance_delayed,
+        flush_delayed=flush_delayed,
         finish_pixel=finish_pixel,
     )
 
@@ -294,29 +392,38 @@ def _tile_loops(machine, loop):
     Each pixel advances through every time step of a batch before the next
     pixel starts, so one parallel call does many steps of work per thread.
     """
-    advance_pixel = machine.advance_pixel
+    advance_delayed = machine.advance_delayed
+    flush_delayed = machine.flush_delayed
     finish_pixel = machine.finish_pixel
 
     def advance_batch(
-        S, best, have, joint_total, joint_best, fractions, margins, first_time_index,
-        bands, sunlight_threshold, earth_threshold, operating_threshold,
-        gap_limit, valid,
+        S, R, best, have, joint_total, joint_best, fractions, margins, elevations,
+        first_time_index, band_of_time, window, sunlight_threshold, earth_threshold,
+        operating_threshold, gap_limit, valid,
     ):
         steps = fractions.shape[0]
         for i in loop(fractions.shape[1]):
             if valid[i]:
                 for step_index in range(steps):
-                    advance_pixel(
-                        S, i, best, have, joint_total, joint_best,
+                    advance_delayed(
+                        S, R, i, best, have, joint_total, joint_best,
                         fractions[step_index, i], margins[step_index, i],
-                        first_time_index + step_index, bands[step_index],
-                        sunlight_threshold, earth_threshold,
+                        elevations[step_index, i], first_time_index + step_index,
+                        band_of_time, window, sunlight_threshold, earth_threshold,
                         operating_threshold, gap_limit,
                     )
 
-    def finish_tile(S, best, valid):
+    def finish_tile(
+        S, R, best, have, joint_total, joint_best, time_count, band_of_time, window,
+        sunlight_threshold, earth_threshold, operating_threshold, gap_limit, valid,
+    ):
         for i in loop(S.shape[1]):
             if valid[i]:
+                flush_delayed(
+                    S, R, i, best, have, joint_total, joint_best, time_count,
+                    band_of_time, window, sunlight_threshold, earth_threshold,
+                    operating_threshold, gap_limit,
+                )
                 finish_pixel(S, i, best)
 
     return advance_batch, finish_tile
@@ -353,8 +460,15 @@ DEFAULT_BATCH_SIZE = 32
 def _checked_parameters(
     time_count, month_bands, month_index_of, sunlight_threshold,
     earth_threshold_deg, operating_sunlight_fraction, merge_gap_hours,
-    time_step_hours,
+    time_step_hours, degenerate_window_samples=0,
 ):
+    if (
+        int(degenerate_window_samples) != degenerate_window_samples
+        or not 0 <= degenerate_window_samples <= MAX_DEGENERATE_WINDOW
+    ):
+        raise ValueError(
+            f"degenerate_window_samples must be an integer from 0 to {MAX_DEGENERATE_WINDOW}"
+        )
     if time_count < 1:
         raise ValueError("time_count must be positive")
     if not 0.0 <= sunlight_threshold <= 1.0:
@@ -389,6 +503,8 @@ def reduce_safe_haven_products_batches(
     time_step_hours: float,
     invalid_pixels: npt.ArrayLike | None = None,
     use_numba: bool = True,
+    earth_flat_elevation_batches: Iterable[npt.ArrayLike] | None = None,
+    degenerate_window_samples: int = 0,
 ) -> tuple[
     tuple[npt.NDArray[np.float32], ...],
     tuple[npt.NDArray[np.float32], ...],
@@ -408,12 +524,22 @@ def reduce_safe_haven_products_batches(
     invalid DEM nodes.  Their lighting signals are meaningless (NaN), so they
     are skipped and their outputs stay at the no-event values; the caller
     writes NODATA there.  A non-finite signal at any other pixel is an error.
+
+    ``degenerate_window_samples`` (``W``, 0 to 15) turns on the degenerate-outage
+    rule of ``docs/safe-haven-state-machine.md`` section 2.1: an Earth-elevation
+    minimum with no outage within ``W`` samples either side becomes a one-sample
+    outage.  It needs ``earth_flat_elevation_batches``, Earth's elevation above a
+    flat horizon, in the same batches as the other two signals.  With ``W = 0``
+    that argument is ignored.
     """
     band_count = _checked_parameters(
         time_count, month_bands, month_index_of, sunlight_threshold,
         earth_threshold_deg, operating_sunlight_fraction, merge_gap_hours,
-        time_step_hours,
+        time_step_hours, degenerate_window_samples,
     )
+    window = int(degenerate_window_samples)
+    if window > 0 and earth_flat_elevation_batches is None:
+        raise ValueError("the degenerate-outage rule needs earth_flat_elevation_batches")
     gap_limit = merge_gap_limit(merge_gap_hours, time_step_hours)
     operating_threshold = np.float32(operating_sunlight_fraction - OPERATING_FUZZ)
     sun_threshold = np.float32(sunlight_threshold)
@@ -426,20 +552,25 @@ def reduce_safe_haven_products_batches(
 
     fraction_iter = iter(sunlight_fraction_batches)
     earth_iter = iter(earth_elevation_batches)
+    flat_iter = (
+        iter(earth_flat_elevation_batches)
+        if window > 0 and earth_flat_elevation_batches is not None else None
+    )
     shape = None
-    state = best = have = joint_total = joint_best = valid = checked = None
+    state = ring = best = have = joint_total = joint_best = valid = checked = None
     time_index = 0
     while time_index < time_count:
         try:
             fractions = np.asarray(next(fraction_iter), dtype=np.float32)
             margins = np.asarray(next(earth_iter), dtype=np.float32)
+            flats = None if flat_iter is None else np.asarray(next(flat_iter), dtype=np.float32)
         except StopIteration as exc:
             raise ValueError(
                 "fraction or elevation iterator ended before time_count"
             ) from exc
         if fractions.ndim != 3 or margins.ndim != 3:
             raise ValueError("signal batches must be 3D (steps, y, x) arrays")
-        if fractions.shape != margins.shape:
+        if fractions.shape != margins.shape or (flats is not None and flats.shape != margins.shape):
             raise ValueError("fraction and elevation tiles must have the same shape")
         steps = fractions.shape[0]
         if steps < 1 or time_index + steps > time_count:
@@ -448,6 +579,7 @@ def reduce_safe_haven_products_batches(
             shape = fractions.shape[1:]
             pixel_count = shape[0] * shape[1]
             state = new_state(pixel_count)
+            ring = new_ring(pixel_count)
             best = np.full((band_count, pixel_count), UNSET, dtype=np.int32)
             have = np.zeros((band_count, pixel_count), dtype=np.uint8)
             joint_total = np.zeros((band_count, pixel_count), dtype=np.int32)
@@ -466,18 +598,26 @@ def reduce_safe_haven_products_batches(
             raise ValueError("sunlight fraction tiles must be finite 2D arrays")
         if not np.all(np.isfinite(margins) | ~checked):
             raise ValueError("earth elevation tiles must be finite 2D arrays")
+        if flats is None:
+            flats = np.zeros_like(margins)
+        elif not np.all(np.isfinite(flats) | ~checked):
+            raise ValueError("flat-horizon elevation tiles must be finite 2D arrays")
         advance(
-            state, best, have, joint_total, joint_best,
+            state, ring, best, have, joint_total, joint_best,
             np.ascontiguousarray(fractions.reshape(steps, -1)),
             np.ascontiguousarray(margins.reshape(steps, -1)),
-            time_index, month_index_of[time_index:time_index + steps],
+            np.ascontiguousarray(flats.reshape(steps, -1)),
+            time_index, month_index_of, window,
             sun_threshold, earth_threshold, operating_threshold, gap_limit, valid,
         )
         time_index += steps
     for iterator, message in (
         (fraction_iter, "fraction iterator has more entries than time_count"),
         (earth_iter, "elevation iterator has more entries than time_count"),
+        (flat_iter, "flat-elevation iterator has more entries than time_count"),
     ):
+        if iterator is None:
+            continue
         try:
             next(iterator)
         except StopIteration:
@@ -486,7 +626,10 @@ def reduce_safe_haven_products_batches(
             raise ValueError(message)
 
     assert state is not None and shape is not None
-    finish(state, best, valid)
+    finish(
+        state, ring, best, have, joint_total, joint_best, time_count, month_index_of,
+        window, sun_threshold, earth_threshold, operating_threshold, gap_limit, valid,
+    )
     return assemble_outputs(
         best, have, joint_total, joint_best, shape, time_step_hours
     )
@@ -509,6 +652,7 @@ def reduce_safe_haven_products_patch_stream(
     month_bands: tuple[tuple[datetime, datetime], ...],
     *,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    earth_flat_elevation_tiles: Iterable[npt.ArrayLike] | None = None,
     **options,
 ):
     """As :func:`reduce_safe_haven_products_batches`, from per-sample tiles.
@@ -521,7 +665,12 @@ def reduce_safe_haven_products_patch_stream(
     return reduce_safe_haven_products_batches(
         _rebatched(sunlight_fraction_tiles, batch_size),
         _rebatched(earth_elevation_tiles, batch_size),
-        time_count, month_bands, **options,
+        time_count, month_bands,
+        earth_flat_elevation_batches=(
+            None if earth_flat_elevation_tiles is None
+            else _rebatched(earth_flat_elevation_tiles, batch_size)
+        ),
+        **options,
     )
 
 

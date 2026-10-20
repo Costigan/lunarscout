@@ -1157,7 +1157,7 @@ Return the canonical aspect product path.
 lunarscout.Scenario.body_azimuth_elevation_over_horizon(self, point: 'LonLat', body: 'BodyName', times: 'Any', *, observer_height_decimeters: 'int' = 0, ensure_kernels: 'bool' = True) -> 'np.ndarray'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1164).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1166).
 
 ```text
 Return body azimuth and elevation above the horizon at ``point``.
@@ -1171,7 +1171,7 @@ Return body azimuth and elevation above the horizon at ``point``.
 lunarscout.Scenario.close_horizon_file(self) -> 'None'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1052).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1054).
 
 ```text
 Close the cached horizon tile file handle, if one is open.
@@ -1215,7 +1215,7 @@ return-value contract.
 lunarscout.Scenario.generate_horizons(self, *, dem_paths: 'Sequence[str | Path] | None' = None, surrounding_dems: 'Sequence[str | Path] | None' = None, observer_height_m: 'float' = 0.0, compress: 'bool' = True, overwrite: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L799).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L801).
 
 ```text
 Generate CUDA horizon tiles in the canonical horizons directory.
@@ -1252,7 +1252,7 @@ Return the canonical hillshade product path.
 lunarscout.Scenario.horizon_file_path(self, x: 'int', y: 'int', observer_height_decimeters: 'int') -> 'Path | None'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L906).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L908).
 
 ```text
 Return the existing horizon file path for a DEM pixel, preferring ``.cbin``.
@@ -1266,7 +1266,7 @@ Return the existing horizon file path for a DEM pixel, preferring ``.cbin``.
 lunarscout.Scenario.horizon_for_pixel(self, x: 'int', y: 'int', observer_height_decimeters: 'int') -> 'np.ndarray | None'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1034).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1036).
 
 ```text
 Fetch one DEM pixel's horizon, caching one open horizon tile file.
@@ -1280,7 +1280,7 @@ Fetch one DEM pixel's horizon, caching one open horizon tile file.
 lunarscout.Scenario.horizon_from_open_file(file_handle: 'BinaryIO', patch_x: 'int', patch_y: 'int') -> 'np.ndarray'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L967).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L969).
 
 ```text
 Read one pixel horizon from an open ``.bin`` or ``.cbin`` horizon file.
@@ -1294,7 +1294,7 @@ Read one pixel horizon from an open ``.bin`` or ``.cbin`` horizon file.
 lunarscout.Scenario.horizon_patch_pixel(self, x: 'int', y: 'int') -> 'tuple[int, int]'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L892).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L894).
 
 ```text
 Return ``(x, y)`` local coordinates within the 128x128 horizon patch.
@@ -1308,7 +1308,7 @@ Return ``(x, y)`` local coordinates within the 128x128 horizon patch.
 lunarscout.Scenario.horizon_patch_row_col(self, x: 'int', y: 'int') -> 'tuple[int, int]'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L899).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L901).
 
 ```text
 Return ``(row, col)`` of the horizon patch containing a DEM pixel.
@@ -1354,7 +1354,7 @@ return-value contract.
 lunarscout.Scenario.lonlat_to_dem_pixel(self, point: 'LonLat') -> 'tuple[float, float]'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1061).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1063).
 
 ```text
 Return the floating-point ``(x, y)`` DEM pixel position for a lon/lat.
@@ -1368,7 +1368,7 @@ Return the floating-point ``(x, y)`` DEM pixel position for a lon/lat.
 lunarscout.Scenario.mission_duration_from_sun_and_earth_elevation(self, output: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Sequence[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L727).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L729).
 
 ```text
 Generate Sun-and-Earth-elevation mission-duration bands.
@@ -1388,7 +1388,7 @@ operational, and return-value contract.
 lunarscout.Scenario.mission_duration_from_sun_elevation(self, output: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Sequence[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L599).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L601).
 
 ```text
 Generate Sun-elevation-threshold mission-duration bands.
@@ -1408,7 +1408,7 @@ and return-value contract.
 lunarscout.Scenario.mission_duration_from_sunlight(self, output: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Sequence[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L537).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L539).
 
 ```text
 Generate sunlight-threshold mission-duration bands.
@@ -1428,7 +1428,7 @@ and return-value contract.
 lunarscout.Scenario.mission_duration_from_sunlight_and_earth_elevation(self, output: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Sequence[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L661).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L663).
 
 ```text
 Generate sunlight-and-Earth-threshold mission-duration bands.
@@ -1476,7 +1476,7 @@ Resolve a scenario-relative path without creating it.
 lunarscout.Scenario.plot_azimuth_elevation_axes(self, *, center_azimuth: 'float' = 0.0, elevation_limits: 'tuple[float, float] | None' = (-90.0, 90.0), grid: 'bool' = True)
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1093).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1095).
 
 ```text
 Create an empty azimuth/elevation plot using the horizon convention.
@@ -1490,7 +1490,7 @@ Create an empty azimuth/elevation plot using the horizon convention.
 lunarscout.Scenario.plot_body_elevations(self, point: 'LonLat', bodies: 'Sequence[BodyName]', times: 'Any', *, horizon: 'np.ndarray | None' = None, over_horizon: 'bool' = False, observer_height_decimeters: 'int' = 0, grid: 'bool' = True, ensure_kernels: 'bool' = True)
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1205).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1207).
 
 ```text
 Plot body elevations, optionally relative to the scenario horizon.
@@ -1504,7 +1504,7 @@ Plot body elevations, optionally relative to the scenario horizon.
 lunarscout.Scenario.plot_body_path(self, ax: 'Any', point: 'LonLat', body: 'BodyName', times: 'Any', *, style: 'str' = 'center', center_azimuth: 'float | None' = None, label: 'str | None' = None, ensure_kernels: 'bool' = True, **plot_kwargs: 'Any')
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1326).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1328).
 
 ```text
 Overlay center and/or limb paths of the Sun or Earth.
@@ -1518,7 +1518,7 @@ Overlay center and/or limb paths of the Sun or Earth.
 lunarscout.Scenario.plot_body_position(self, ax: 'Any', point: 'LonLat', body: 'BodyName', time: 'Any', *, style: 'str' = 'center', center_azimuth: 'float | None' = None, label: 'str | None' = None, ensure_kernels: 'bool' = True, **plot_kwargs: 'Any')
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1260).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1262).
 
 ```text
 Overlay the center point or apparent limb of the Sun or Earth.
@@ -1532,7 +1532,7 @@ Overlay the center point or apparent limb of the Sun or Earth.
 lunarscout.Scenario.plot_horizon(self, point: 'LonLat', *, observer_height_decimeters: 'int' = 0, center_azimuth: 'float' = 0.0, grid: 'bool' = True)
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1113).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1115).
 
 ```text
 Plot the stored horizon for the DEM pixel nearest a lon/lat point.
@@ -1546,7 +1546,7 @@ Plot the stored horizon for the DEM pixel nearest a lon/lat point.
 lunarscout.Scenario.plot_zoomed_body_path(self, point: 'LonLat', bodies: 'Sequence[BodyName] | BodyName', times: 'Any', *, observer_height_decimeters: 'int' = 0, grid: 'bool' = True, ensure_kernels: 'bool' = True, margin_degrees: 'float' = 1.0)
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1413).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1415).
 
 ```text
 Plot body limb paths against the local horizon in a zoomed equal-scale view.
@@ -1560,7 +1560,7 @@ Plot body limb paths against the local horizon in a zoomed equal-scale view.
 lunarscout.Scenario.psr(self, output: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, invalid_value: 'int' = 0, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1567).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1569).
 
 ```text
 Generate a public Python permanent-shadow classification product.
@@ -1601,7 +1601,7 @@ Return the canonical roughness product path.
 #### `lunarscout.Scenario.safe_haven_products`
 
 ```python
-lunarscout.Scenario.safe_haven_products(self, output_directory: 'str | Path' = 'safe_havens', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, earth_elevation_threshold_deg: 'float' = 2.0, sunlight_fraction_threshold: 'float' = 0.2, operating_sunlight_fraction: 'float' = 1.0, merge_gap_hours: 'float' = 24.0, max_slope_deg: 'float | None' = 20.0, name_prefix: 'str' = 'safe_haven', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None)
+lunarscout.Scenario.safe_haven_products(self, output_directory: 'str | Path' = 'safe_havens', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, earth_elevation_threshold_deg: 'float' = 2.0, sunlight_fraction_threshold: 'float' = 0.2, operating_sunlight_fraction: 'float' = 1.0, merge_gap_hours: 'float' = 24.0, degenerate_outage_window_hours: 'float | None' = None, max_slope_deg: 'float | None' = 20.0, name_prefix: 'str' = 'safe_haven', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'Callable[[Any], None] | None' = None, cancellation_requested: '_CancellationCheck | None' = None)
 ```
 
 Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L444).
@@ -1641,7 +1641,7 @@ Examples
     # This example requires matching horizons and SPICE kernels for both bodies.
 ```
 
-**Parameters without explicit entries in this docstring:** `times`, `sun_vectors_m`, `earth_vectors_m`, `earth_elevation_threshold_deg`, `sunlight_fraction_threshold`, `operating_sunlight_fraction`, `merge_gap_hours`, `max_slope_deg`, `name_prefix`, `backend`, `observer_height_m`, `nodata`, `output_transform`, `output_dtype`, `output_transform_id`, `compress`, `overwrite`, `start_fresh`, `skip_dem_nodata_check`, `verbose`, `progress_callback`, `progress_event_callback`, `cancellation_requested`.
+**Parameters without explicit entries in this docstring:** `times`, `sun_vectors_m`, `earth_vectors_m`, `earth_elevation_threshold_deg`, `sunlight_fraction_threshold`, `operating_sunlight_fraction`, `merge_gap_hours`, `degenerate_outage_window_hours`, `max_slope_deg`, `name_prefix`, `backend`, `observer_height_m`, `nodata`, `output_transform`, `output_dtype`, `output_transform_id`, `compress`, `overwrite`, `start_fresh`, `skip_dem_nodata_check`, `verbose`, `progress_callback`, `progress_event_callback`, `cancellation_requested`.
 
 #### `lunarscout.Scenario.slope_path`
 
@@ -3074,7 +3074,7 @@ elevation-from-sphere automatically.
 ### `lunarscout.generate_safe_haven_products`
 
 ```python
-lunarscout.generate_safe_haven_products(dem_path: 'str | Path', horizons_path: 'str | Path', output_directory: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, earth_elevation_threshold_deg: 'float' = 2.0, sunlight_fraction_threshold: 'float' = 0.2, operating_sunlight_fraction: 'float' = 1.0, merge_gap_hours: 'float' = 24.0, max_slope_deg: 'float | None' = 20.0, name_prefix: 'str' = 'safe_haven', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'SafeHavenProducts'
+lunarscout.generate_safe_haven_products(dem_path: 'str | Path', horizons_path: 'str | Path', output_directory: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, earth_elevation_threshold_deg: 'float' = 2.0, sunlight_fraction_threshold: 'float' = 0.2, operating_sunlight_fraction: 'float' = 1.0, merge_gap_hours: 'float' = 24.0, degenerate_outage_window_hours: 'float | None' = None, max_slope_deg: 'float | None' = 20.0, name_prefix: 'str' = 'safe_haven', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'SafeHavenProducts'
 ```
 
 Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1130).
@@ -3133,6 +3133,14 @@ merge_gap_hours : float, default 24.0
     Two shadow runs separated by a sunlit gap shorter than this are one
     run, and the gap counts toward its length: a rover cannot recharge in
     a short gap. Zero disables merging.
+degenerate_outage_window_hours : float or None, default None
+    Where Earth never goes below ``earth_elevation_threshold_deg`` in an
+    Earth cycle (the Earth side of the map), the cycle has no outage. The
+    rule gives it one: a single outage sample at the minimum of Earth's
+    elevation above a flat horizon, if Earth stays at or above the threshold
+    for this many hours either side of it. Rounded to whole time steps; an
+    explicit value must be zero (rule off) or one to 15 steps. ``None`` means
+    24 hours, or 15 steps when the step is shorter than 1.6 hours. See Notes.
 max_slope_deg : float or None, default 20.0
     Pixels steeper than this (Horn slope, as ``lunarscout.slope``), or whose
     slope cannot be computed, are NODATA in all three products. ``None``
@@ -3210,6 +3218,14 @@ before and after the outage, and bridging sunlit gaps shorter than
 ``merge_gap_hours``. A hibernation with no shadow on it scores 0, the best
 possible. Durations are ``samples * step`` in hours.
 
+**Degenerate outage.** An Earth cycle (about 27 days) in which Earth stays
+above the threshold has no outage, so it would have no hibernation. Earth's
+elevation above a flat horizon has one minimum per cycle; if there is no
+outage within ``degenerate_outage_window_hours`` of it, that one sample is
+defined as an outage (a hibernation of one sample, scored like any other,
+with Earth unavailable for the joint-operating layers at that sample).
+Minima within the window of either end of the series are not credited.
+
 **Months.** Each hibernation belongs to the calendar month containing its
 first sample, and nothing else decides the month: a shadow run that starts
 later, or continues into the next month, does not move it. A hibernation
@@ -3217,8 +3233,9 @@ is therefore counted exactly once. When two hibernations start in one
 month, the band holds the smaller (better) of their scores.
 
 **NODATA.** A hibernation band is NaN where no hibernation starts in the
-month (Earth never below the threshold, always below it, or the month
-begins inside a hibernation that started earlier), where the slope exceeds
+month (Earth always below the threshold, no cycle minimum falls in the month
+with the rule satisfied, or the month begins inside a hibernation that
+started earlier), where the slope exceeds
 ``max_slope_deg``, and where the DEM node is invalid. A hibernation already
 under way at the first sample has an unknown start and is not credited.
 Zero means a hibernation starts in the month and no shadow touches it. The
@@ -3376,7 +3393,7 @@ Source: [src/lunarscout/map_products.py](../src/lunarscout/map_products.py#L148)
 lunarscout.mission_duration_from_sun_and_earth_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1941).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1985).
 
 ```text
 Longest duration meeting inclusive Sun and Earth elevation thresholds.
@@ -3398,7 +3415,7 @@ output lifecycle contract.
 lunarscout.mission_duration_from_sun_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1817).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1861).
 
 ```text
 Longest inclusive Sun terrain-relative elevation duration.
@@ -3420,7 +3437,7 @@ output lifecycle contract.
 lunarscout.mission_duration_from_sunlight(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1714).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1758).
 
 ```text
 Longest inclusive sunlight-fraction duration for each start interval.
@@ -3486,7 +3503,7 @@ are converted to elevation-from-sphere automatically.
 lunarscout.mission_duration_from_sunlight_and_earth_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1878).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1922).
 
 ```text
 Longest duration meeting inclusive sunlight and Earth thresholds.
@@ -3509,7 +3526,7 @@ output lifecycle contract.
 lunarscout.open_scenario(path: 'str | Path', *, state: 'Any | None' = None) -> 'Scenario'
 ```
 
-Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1622).
+Source: [src/lunarscout/scenario.py](../src/lunarscout/scenario.py#L1624).
 
 ```text
 Open an existing scenario directory in filesystem-only mode.

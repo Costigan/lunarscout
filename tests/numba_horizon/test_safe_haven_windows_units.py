@@ -267,3 +267,25 @@ def test_cells_around_are_clipped_to_the_raster() -> None:
     assert cells_around((1, 1), 1, **kwargs) == [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
     assert cells_around((0, 0), 0, **kwargs) == [(0, 0)]
     assert cells_around((2, 1), 1, **kwargs) == [(1, 0), (1, 1), (2, 0), (2, 1)]
+
+
+def test_the_degenerate_window_in_samples_follows_the_hours_and_the_step() -> None:
+    from lunarscout._numba_horizon.safe_haven import degenerate_window_samples
+
+    assert [degenerate_window_samples(None, step) for step in (6.0, 2.0, 1.0, 0.5, 24.0, 48.0, 200.0)] == [
+        4, 12, 15, 15, 1, 1, 1,
+    ]
+    assert degenerate_window_samples(0.0, 6.0) == 0
+    assert degenerate_window_samples(30.0, 6.0) == 5
+    assert degenerate_window_samples(9.0, 6.0) == 2          # 1.5 steps rounds to 2
+    assert degenerate_window_samples(8.9, 6.0) == 1
+    assert degenerate_window_samples(90.0, 6.0) == 15
+    for bad in (2.9, 96.0):                                  # under half a step; over 15 steps
+        with pytest.raises(ValueError):
+            degenerate_window_samples(bad, 6.0)
+
+
+def test_pass_one_parameters_accept_the_default_window_and_reject_a_negative_one() -> None:
+    assert WindowParameters().degenerate_outage_window_hours is None
+    with pytest.raises(ValueError):
+        WindowParameters(degenerate_outage_window_hours=-1.0)

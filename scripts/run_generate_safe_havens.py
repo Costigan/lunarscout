@@ -42,6 +42,10 @@ EARTH_ELEVATION_THRESHOLD_DEG = 2.0
 SUNLIGHT_FRACTION_THRESHOLD = 0.2
 OPERATING_SUNLIGHT_FRACTION = 1.0  # Sun fraction at or above which the rover operates.
 MERGE_GAP_HOURS = 24.0  # Shadow runs closer than this are one run (0 disables).
+# An Earth cycle in which Earth never drops below the threshold has no outage; it gets a
+# one-sample outage at Earth's lowest elevation if Earth stays above the threshold for this
+# many hours either side (0 disables). Pass 1 of the window analysis must use the same value.
+DEGENERATE_OUTAGE_WINDOW_HOURS = 24.0
 MAX_SLOPE_DEG = 20.0  # Steeper pixels are NODATA in all three products (None disables).
 OBSERVER_HEIGHT_M = 0.0  # Must match the precomputed horizon tiles.
 BACKEND = "auto"  # "auto", "cpu", or "cuda"; "cpu" never probes CUDA.
@@ -92,6 +96,7 @@ def main() -> int:
         sunlight_fraction_threshold=SUNLIGHT_FRACTION_THRESHOLD,
         operating_sunlight_fraction=OPERATING_SUNLIGHT_FRACTION,
         merge_gap_hours=MERGE_GAP_HOURS,
+        degenerate_outage_window_hours=DEGENERATE_OUTAGE_WINDOW_HOURS,
         max_slope_deg=MAX_SLOPE_DEG,
         backend=BACKEND,
         observer_height_m=OBSERVER_HEIGHT_M,

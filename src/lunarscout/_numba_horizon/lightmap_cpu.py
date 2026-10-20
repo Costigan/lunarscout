@@ -136,6 +136,9 @@ def _build_cpu_functions():
                         - horizons[line, sample, center_left]
                     )
                 )
+                # In margin mode the otherwise unused fraction array carries the
+                # body's elevation above a flat horizon (no terrain).
+                output[time_index, line, sample] = elevation
                 margin_output[time_index, line, sample] = np.float32(
                     elevation - center_horizon
                 )
@@ -273,8 +276,11 @@ class LightmapCpuSession:
                 margins[:, :valid_height, :valid_width],
             )
 
-    def pixel_series(self, dem: DemGrid, horizon_column_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, row: int, column: int, margin: bool) -> npt.NDArray[np.float32]:
+    def pixel_series(self, dem: DemGrid, horizon_column_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, row: int, column: int, margin: bool, flat_elevation: bool = False) -> npt.NDArray[np.float32]:
         """One pixel's Sun visible fraction (or body-centre margin) for every vector.
+
+        With ``margin`` and ``flat_elevation`` the result is the body-centre elevation
+        above a flat horizon instead (the margin without the terrain).
 
         The arithmetic is the patch kernel's own, so the values equal what a patch
         calculation gives for the same pixel.  ``horizon_column_deg`` is the
@@ -285,7 +291,17 @@ class LightmapCpuSession:
         patch_dem = np.asarray([[dem.elevation_m[row, column]]], dtype=np.float32)
         projection = np.asarray((dem.projection.radius_m, dem.projection.latitude_origin_rad, dem.projection.longitude_origin_rad, dem.projection.scale, dem.projection.false_easting_m, dem.projection.false_northing_m), dtype=np.float64)
         fractions, margins = self._calculate_pixel(patch_dem, dem.geo_transform, projection, vectors, horizons, int(column), int(row), bool(margin))
-        return margins if margin else fractions
+        if margin:
+            return fractions if flat_elevation else margins
+        return fractions
+
+    def iter_patch_earth_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, body_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]]:
+        """Yield ``(flat_elevation, margin)`` batches of ``(steps, y, x)`` float32.
+
+        ``flat_elevation`` is the body-centre elevation above a flat horizon;
+        ``margin`` is the same minus the interpolated local horizon.
+        """
+        yield from self._iter_signal_batches(dem, horizons_deg, body_vectors_m, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width, margin_requested=True)
 
     def iter_patch_fraction_batches(self, dem: DemGrid, horizons_deg: npt.ArrayLike, sun_vectors_m: npt.ArrayLike, *, tile_y: int, tile_x: int, valid_height: int = PATCH_SIZE, valid_width: int = PATCH_SIZE) -> Iterator[npt.NDArray[np.float32]]:
         """Yield float32 visible fractions as ``(steps, y, x)`` batches of time steps."""

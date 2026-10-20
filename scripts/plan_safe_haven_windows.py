@@ -72,6 +72,7 @@ PARAMETERS = WindowParameters(
     boundary_search_hours=24.0,
     operating_sunlight_fraction=1.0,
     cell_patches=2,
+    degenerate_outage_window_hours=24.0,    # must equal the stage-1 run's
 )
 
 # None plans every cell. For a trial, list (cell_row, cell_column) pairs.
