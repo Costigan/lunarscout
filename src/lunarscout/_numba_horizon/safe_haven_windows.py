@@ -58,6 +58,10 @@ class WindowParameters:
     #: Pixels in a near-duplicate probe budget: how many pixels within the
     #: separation of an accepted seed are examined for a different timing.
     timing_probes_per_seed: int = 8
+    #: A cell-month is abandoned after this many failed timelines in a row, so a month
+    #: in which every pixel fails (an outage that runs past the end of the series)
+    #: does not cost a timeline per haven pixel.
+    max_consecutive_failures: int = 50
 
     def __post_init__(self) -> None:
         positive = (
@@ -77,7 +81,8 @@ class WindowParameters:
             raise ValueError("connectivity must be 4 or 8")
         if not 0.0 <= self.min_nearby_haven_fraction <= 1.0:
             raise ValueError("min_nearby_haven_fraction must be in [0, 1]")
-        for name in ("max_seeds_per_cell_month", "cell_patches", "timing_probes_per_seed"):
+        for name in ("max_seeds_per_cell_month", "cell_patches", "timing_probes_per_seed",
+                     "max_consecutive_failures"):
             if int(getattr(self, name)) != getattr(self, name) or getattr(self, name) < 1:
                 raise ValueError(f"{name} must be a positive integer")
 
@@ -305,6 +310,7 @@ class PixelSignals:
         self._cache_size = int(patch_cache_size)
 
     def horizon_column(self, row: int, column: int) -> npt.NDArray[np.float32] | None:
+        row, column = int(row), int(column)
         key = (row // PATCH_SIZE * PATCH_SIZE, column // PATCH_SIZE * PATCH_SIZE)
         if key in self._cache:
             self._cache.move_to_end(key)
@@ -430,6 +436,7 @@ class PlanCounts:
     invalid_no_record: int = 0
     invalid_outage_unclosed: int = 0
     invalid_no_lit_boundary: int = 0
+    cell_months_abandoned: int = 0
     tasks_unshared: int = 0
     tasks_shared: int = 0
 
@@ -601,6 +608,7 @@ def select_seeds(
     accepted: list[PixelRecord] = []
     local: list[tuple[int, int]] = []
     probes: list[int] = []
+    failures = 0
     for position in order:
         if len(accepted) == parameters.max_seeds_per_cell_month:
             break
@@ -621,7 +629,12 @@ def select_seeds(
             counts.invalid_no_horizon += result == "no_horizon"
             counts.invalid_no_record += result == "no_record"
             counts.invalid_outage_unclosed += result == "outage_unclosed"
+            failures += 1
+            if failures >= parameters.max_consecutive_failures:
+                counts.cell_months_abandoned += 1
+                break
             continue
+        failures = 0
         stage_one = float(hibernation_hours[row, column])
         if not math.isclose(expected(result.score_hours), stage_one, rel_tol=0.0, abs_tol=1e-6):
             raise PlanConsistencyError(

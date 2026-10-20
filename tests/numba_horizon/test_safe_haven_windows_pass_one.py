@@ -684,3 +684,52 @@ def test_haven_cells_lists_cells_with_a_haven_most_months_first(prepared) -> Non
     ordered = windows.haven_cells(prepared.stage1, survival_limit_hours=72.0, cell_size=10)
     assert [(e["months_with_haven"], e["haven_pixels"]) for e in ordered] == sorted(
         [(e["months_with_haven"], e["haven_pixels"]) for e in ordered], reverse=True)
+
+
+# --- a month in which every pixel fails ------------------------------------------------------
+
+
+def test_a_cell_month_where_every_timeline_fails_is_abandoned_after_the_limit(monkeypatch) -> None:
+    hibernation = havens((30, 30))
+    seeds, evaluator, counts = stub_select(
+        monkeypatch, hibernation, np.zeros((30, 30)), lambda r, c: None, max_consecutive_failures=7,
+    )
+    assert seeds == [] and len(evaluator.calls) == 7
+    assert (counts.cell_months_abandoned, counts.invalid_no_record) == (1, 7)
+
+
+def test_a_success_resets_the_failure_count(monkeypatch) -> None:
+    hibernation = np.full((30, 30), np.nan)
+    hibernation[0, :10] = 12.0                 # ten haven pixels in row order
+    # pixels 0..4 fail, pixel 5 works, pixels 6..9 fail: never 6 failures in a row
+    working = {205}
+    timing = lambda row, column: 0.0 if column in working else None
+    seeds, evaluator, counts = stub_select(
+        monkeypatch, hibernation, np.zeros((30, 30)), timing, max_consecutive_failures=6,
+        seed_separation_m=1.0, max_seeds_per_cell_month=3,
+    )
+    assert [(s.row, s.column) for s in seeds] == [(100, 205)]
+    assert len(evaluator.calls) == 10 and counts.cell_months_abandoned == 0
+
+
+def test_seeds_found_before_abandoning_are_kept(monkeypatch) -> None:
+    hibernation = np.full((30, 30), np.nan)
+    hibernation[0, :20] = 12.0
+    working = {200}
+    timing = lambda row, column: 0.0 if column in working else None
+    seeds, _evaluator, counts = stub_select(
+        monkeypatch, hibernation, np.zeros((30, 30)), timing, max_consecutive_failures=5,
+        seed_separation_m=1.0,
+    )
+    assert [(s.row, s.column) for s in seeds] == [(100, 200)] and counts.cell_months_abandoned == 1
+
+
+def test_numpy_integer_coordinates_are_accepted_by_the_horizon_reader(prepared) -> None:
+    signals = windows.PixelSignals(prepared.dem, prepared.store)
+    column = signals.horizon_column(np.int64(5), np.int64(5))
+    assert column.shape == (1440,)
+    assert signals.series(np.int64(5), np.int64(5), np.zeros((1, 3)) + [0.0, 3.8e8, 1e5], margin=False).shape == (1,)
+
+
+def test_the_synthetic_scene_never_abandons_a_cell_month(run) -> None:
+    assert run[1].counts.cell_months_abandoned == 0
