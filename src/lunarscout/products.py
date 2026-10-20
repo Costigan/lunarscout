@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
+import time
 from typing import Any, Literal
 import warnings
 
@@ -301,6 +303,42 @@ def _resolve_vectors(
         ) from exc
 
 
+def _format_duration(seconds: float) -> str:
+    minutes = int(round(seconds / 60.0))
+    if minutes < 1:
+        return f"{int(round(seconds))}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
+
+
+class _PatchRate:
+    """Recent patch completion rate, for an ETA that is right after a resume.
+
+    Only patches finished by this run count: the first sample is the run's own
+    start, so patches completed by an earlier run do not inflate the rate.  The
+    rate is taken over the most recent samples, so a slow start (kernel
+    compilation, filling the read-ahead) drops out of the estimate.
+    """
+
+    WINDOW = 1000
+    MINIMUM_SAMPLES = 5
+
+    def __init__(self, clock: Callable[[], float]) -> None:
+        self._clock = clock
+        self._samples: deque[tuple[float, int]] = deque(maxlen=self.WINDOW)
+
+    def add(self, completed: int) -> None:
+        self._samples.append((self._clock(), completed))
+
+    def seconds_per_patch(self) -> float | None:
+        if len(self._samples) < self.MINIMUM_SAMPLES:
+            return None
+        (first_time, first_count), (last_time, last_count) = self._samples[0], self._samples[-1]
+        if last_count <= first_count or last_time <= first_time:
+            return None
+        return (last_time - first_time) / (last_count - first_count)
+
+
 class _ProgressAdapter:
     def __init__(
         self,
@@ -310,6 +348,8 @@ class _ProgressAdapter:
         verbose: bool,
         progress_callback: ProgressCallback | None,
         progress_event_callback: ProgressEventCallback | None,
+        clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.operation = operation
         self.output_path = output_path
@@ -318,10 +358,26 @@ class _ProgressAdapter:
         self.progress_event_callback = progress_event_callback
         self._last_completed: int | None = None
         self.callback_error: BaseException | None = None
+        self._rate = _PatchRate(clock)
+        self._wall_clock = wall_clock or (lambda: datetime.now().astimezone())
+
+    def _timing_status(self, completed: int, total: int) -> str:
+        seconds = self._rate.seconds_per_patch()
+        if seconds is None:
+            return " | ETA pending"
+        remaining = max(0, total - completed)
+        finish = self._wall_clock() + timedelta(seconds=seconds * remaining)
+        rate = f"{1.0 / seconds:.2f} patches/s" if seconds <= 1.0 else f"{seconds:.2f} s/patch"
+        return (
+            f" | {rate} | ETA {finish:%Y-%m-%d %H:%M:%S} "
+            f"({_format_duration(seconds * remaining)} left)"
+        )
 
     def __call__(self, private_event: Any) -> None:
         total = int(private_event.total_patches)
         completed = int(private_event.completed_patches)
+        if str(private_event.state) in ("start", "valid", "invalid"):
+            self._rate.add(completed)
         fraction = 1.0 if total == 0 else completed / total
         state = str(private_event.state)
         backend = getattr(private_event, "backend", None)
@@ -355,8 +411,9 @@ class _ProgressAdapter:
                     if state == "complete" and invalid_patches is not None
                     else ""
                 )
+                timing = "" if state == "complete" else self._timing_status(completed, total)
                 print(
-                    f"{self.operation}: {state} {completed}/{total}{suffix}",
+                    f"{self.operation}: {state} {completed}/{total}{suffix}{timing}",
                     file=sys.stdout,
                     flush=True,
                 )

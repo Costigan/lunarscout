@@ -21,6 +21,15 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   the lightmap kernels also reports the elevation above a flat horizon. Products and
   staged jobs made before this change are not compatible (the job configuration now
   records the window), so rerun stage 1.
+
+- **Progress ETA for product functions.** With `verbose=True`, `generate_lightmap`,
+  `generate_psr`, `generate_safe_haven_products` and the other product functions
+  now print the recent patch rate and an estimated completion time on every
+  progress line, for example
+  `safe_havens: valid 1010/2000 | 2.00 s/patch | ETA 2026-01-01 12:33:20 (33m left)`.
+  The rate counts only the patches the current run finished, so it is right after
+  a resume, and it follows the most recent 1,000 patches, so a slow start drops out
+  of the estimate. It reads `ETA pending` for the first few patches.
 - **Safe-haven windows, pass 1 (internal, in progress).** `scripts/plan_safe_haven_windows.py`
   reads the stage-1 products and writes a plan for the 5 km window analysis specified in
   `docs/safe-haven-windows-spec.md`: for each cell and month with a haven, up to five
