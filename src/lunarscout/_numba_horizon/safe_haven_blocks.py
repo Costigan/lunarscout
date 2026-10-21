@@ -192,6 +192,32 @@ def _add_counts(total, part: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+class CachedVectors:
+    """A vector source that remembers its answers by the exact times asked, so the
+    same chunk's Sun vectors are computed once however many patches or cells use it."""
+
+    def __init__(self, source: VectorSource, *, limit: int = 20000) -> None:
+        self._source = source
+        self._limit = limit
+        self._answers: dict[bytes, npt.NDArray[np.float64]] = {}
+        self.calls = 0
+        self.hits = 0
+
+    def __call__(self, stamps: npt.ArrayLike) -> npt.NDArray[np.float64]:
+        stamps = np.ascontiguousarray(np.asarray(stamps).astype("datetime64[us]"))
+        key = stamps.tobytes()
+        answer = self._answers.get(key)
+        if answer is None:
+            self.calls += 1
+            answer = np.asarray(self._source(stamps), dtype=np.float64)
+            if len(self._answers) >= self._limit:
+                self._answers.pop(next(iter(self._answers)))
+            self._answers[key] = answer
+        else:
+            self.hits += 1
+        return answer
+
+
 def _month_labels(time: TimeContext) -> list[str]:
     return [str(np.datetime64(int(time.times_us[int(first)]), "us"))[:7] for first in time.month_first]
 
@@ -273,7 +299,9 @@ def run_pass_two(
     default) is appended after each block, and an existing one with the same
     configuration is resumed.  The CSV is written to a staging file and moved into place
     at the end, so a failure leaves any earlier output alone; the checkpoint is removed
-    once the CSV is in place.  ``stop_after_blocks`` ends the run early for tests and
+    once the CSV is in place.  ``progress(blocks_done, blocks_total)`` is called once at the start (with the
+    blocks a checkpoint already holds) and after each block, so a caller can time
+    this run's blocks alone.  ``stop_after_blocks`` ends the run early for tests and
     returns ``None``.
     """
     output = Path(output_path)
@@ -286,6 +314,8 @@ def run_pass_two(
         raise ValueError("the stage-1 products and the DEM differ in size")
 
     pixel_size = abs(float(dem.geo_transform[1]))
+    sun_vectors_at = CachedVectors(sun_vectors_at)
+    earth_vectors_at = CachedVectors(earth_vectors_at)
     time = TimeContext.build(times, sun_vectors_at, earth_vectors_at)
     grid = FloodGrid(flood_step_minutes(pixel_size, parameters.rover_speed_m_s))
     flood_steps = grid.step_count(parameters.operational_hours)
@@ -323,7 +353,9 @@ def run_pass_two(
         _add_counts(plan_counts, entry["plan_counts"])
         _add_counts(flood_counts, entry["flood_counts"])
     ran = 0
-    for block_number, block in enumerate(order, start=1):
+    if progress is not None:
+        progress(len(done), len(order))
+    for block in order:
         if block in done:
             continue
         if stop_after_blocks is not None and ran >= stop_after_blocks:
@@ -347,7 +379,7 @@ def run_pass_two(
         _add_counts(flood_counts, entry["flood_counts"])
         ran += 1
         if progress is not None:
-            progress(block_number, len(order))
+            progress(len(done), len(order))
 
     all_rows = [row for entry in done.values() for row in entry["rows"]]
     all_rows.sort(key=lambda r: (r["cell_row"], r["cell_col"], r["month"], r["rank"]))

@@ -3,9 +3,13 @@
 Status: DRAFT SPECIFICATION FOR REVIEW. Pass 1 (section 5, the lighting ranges of
 section 8 and the report of section 9) is implemented in
 `src/lunarscout/_numba_horizon/safe_haven_windows.py` and run by
-`scripts/plan_safe_haven_windows.py`. The flood, the lighting of patches and the
-table (sections 6, 7 and the schedule of section 8) are not implemented. Numbers marked (estimate) come from reasoning over measurements made on a small
-synthetic scene; they have not been measured on the real pole. Section 10 lists
+`scripts/plan_safe_haven_windows.py`. Pass 2 is implemented as a CPU reference route:
+the flood (section 6, `safe_haven_flood.py` and `safe_haven_flood_packed.py`), the lit
+store (section 8, `safe_haven_litstore.py`) and the block schedule with the table
+(sections 7 and 8, `safe_haven_blocks.py`), run by `scripts/run_safe_haven_windows.py`.
+The GPU lighting and thresholding kernels, and haven-density rasters, are not
+implemented. Numbers marked (estimate) come from reasoning over measurements made on a
+small synthetic scene; they have not been measured on the real pole. Section 10 lists
 the decisions still open.
 
 This is "stage 2". Stage 1 is `generate_safe_haven_products` (see
