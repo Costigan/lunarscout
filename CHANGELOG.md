@@ -41,8 +41,8 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   a flood never counts lit pixels when there is no Earth contact; rejections are
   counted as `invalid_earth_window`.
   It runs no flood and writes no table yet. A plain-Python reference for the flood
-  (`safe_haven_flood.py`, spec section 6) exists as the oracle for the later
-  packed-bit and GPU implementations. The CPU lightmap kernel gained a
+  (`safe_haven_flood.py`, spec section 6) exists as the oracle, and
+  `safe_haven_flood_packed.py` is the packed-bit CPU flood tested against it. The CPU lightmap kernel gained a
   single-pixel entry point that shares the patch kernel's arithmetic.
 - **Safe-haven products (breaking).** `ls.generate_safe_havens` and
   `scenario.safe_havens` are replaced by `ls.generate_safe_haven_products` and
