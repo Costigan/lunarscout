@@ -226,6 +226,14 @@ production path. `tests/numba_horizon/test_safe_haven_flood_reference.py` checks
 hand-worked cases, against an independent path-existence search on random inputs, and
 on the synthetic scene.
 
+**Packed-bit flood.** `_numba_horizon/safe_haven_flood_packed.py` is the production
+CPU flood: rows of 64-bit words (bit `k` of word `w` is column `64 * w + k`), a
+three-row, three-bit dilation per step, an AND with the passable and lit masks, and the
+work at step `j` limited to the `j`-pixel box around the seed. It takes `lit[j - 1]`
+as the lit mask `j` steps from the boundary, so the caller orders the before side
+backward in time. `tests/numba_horizon/test_safe_haven_flood_packed.py` checks it
+against the oracle on random inputs, including seeds and walls at word seams.
+
 **Diagnostics.** For each seed, `earth_visible_before_h` and
 `earth_visible_after_h`: the contiguous Earth-available time adjacent to the
 hibernation, capped at `operational_hours`. Because of the Earth gate every reported seed has
