@@ -48,11 +48,11 @@ from lunarscout.products import _load_dem  # noqa: E402
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven"
+STAGE1_PREFIX = "safe_haven_degenerate"  # must equal NAME_PREFIX in run_generate_safe_havens.py
 # The table. The checkpoint is OUTPUT_PATH + ".checkpoint.jsonl" next to it and is
 # removed when the table is complete. An existing OUTPUT_PATH is not replaced unless
 # OVERWRITE is True.
-OUTPUT_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_windows.csv")
+OUTPUT_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_degenerate_windows.csv")
 OVERWRITE = False
 
 # Must equal the stage-1 run.

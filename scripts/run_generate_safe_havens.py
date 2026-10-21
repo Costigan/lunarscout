@@ -29,6 +29,10 @@ import numpy as np  # noqa: E402
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
 OUTPUT_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
+# Output files are <NAME_PREFIX>_hibernation_hours.tif and so on. This prefix differs from the
+# earlier run (without the degenerate-outage rule, prefix "safe_haven") so the two never
+# overwrite each other. Set the same value as STAGE1_PREFIX in the stage-2 scripts.
+NAME_PREFIX = "safe_haven_degenerate"
 
 # UTC timestamps; STOP_UTC is inclusive when it falls on the sampling grid.
 # A stop at midnight on the first day of another month also creates a band
@@ -89,6 +93,7 @@ def main() -> int:
         DEM_PATH,
         HORIZONS_PATH,
         OUTPUT_DIRECTORY,
+        name_prefix=NAME_PREFIX,
         times=times,
         sun_vectors_m=SUN_VECTORS_M,
         earth_vectors_m=EARTH_VECTORS_M,

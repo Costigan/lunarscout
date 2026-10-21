@@ -23,9 +23,19 @@ def load_script():
     return module
 
 
+def test_the_stage_two_scripts_read_the_prefix_stage_one_writes() -> None:
+    generate = importlib.util.spec_from_file_location(
+        "run_generate_safe_havens", SCRIPT.parent / "run_generate_safe_havens.py")
+    module = importlib.util.module_from_spec(generate)
+    generate.loader.exec_module(module)
+    assert module.NAME_PREFIX != "safe_haven"                  # never overwrites the earlier run
+    for other in (load_script(), load_run_script(), load_list_script()):
+        assert other.STAGE1_PREFIX == module.NAME_PREFIX
+
+
 def test_importing_the_script_starts_nothing() -> None:
     module = load_script()
-    assert module.PLAN_PATH.name == "window_plan.jsonl"
+    assert module.PLAN_PATH.name == "safe_haven_degenerate_window_plan.jsonl"
     assert module.PARAMETERS.survival_limit_hours == 72.0
     assert module.PARAMETERS.max_seeds_per_cell_month == 5
 
@@ -38,6 +48,7 @@ def test_the_script_plans_the_scene_and_prints_the_report(tmp_path: Path, monkey
     monkeypatch.setattr(module, "DEM_PATH", dem_path)
     monkeypatch.setattr(module, "HORIZONS_PATH", horizons_path)
     monkeypatch.setattr(module, "STAGE1_DIRECTORY", products.hibernation.parent)
+    monkeypatch.setattr(module, "STAGE1_PREFIX", "safe_haven")      # the scene's default prefix
     monkeypatch.setattr(module, "PLAN_PATH", plan)
     monkeypatch.setattr(module, "START_UTC", scene.START)
     monkeypatch.setattr(module, "STOP_UTC", scene.STOP)
@@ -75,6 +86,7 @@ def test_the_cell_listing_script_prints_cells_and_a_cells_line(tmp_path: Path, m
     dem_path, _horizons_path, products, _stamps = scene.stage_one(tmp_path)
     monkeypatch.setattr(module, "DEM_PATH", dem_path)
     monkeypatch.setattr(module, "STAGE1_DIRECTORY", products.hibernation.parent)
+    monkeypatch.setattr(module, "STAGE1_PREFIX", "safe_haven")
     monkeypatch.setattr(module, "HOURS_PER_COUNT", None)
     monkeypatch.setattr(module, "STAGE1_NODATA", None)
     monkeypatch.setattr(module, "CELL_SIZE", 10)
@@ -106,7 +118,7 @@ def load_run_script():
 
 def test_the_pass_two_script_defaults_and_importing_it_starts_nothing() -> None:
     module = load_run_script()
-    assert module.OUTPUT_PATH.name == "safe_haven_windows.csv" and module.OVERWRITE is False
+    assert module.OUTPUT_PATH.name == "safe_haven_degenerate_windows.csv" and module.OVERWRITE is False
     assert module.PARAMETERS.block_patches % module.PARAMETERS.cell_patches == 0
     assert module.PARAMETERS.survival_limit_hours == 72.0 and module.PARAMETERS.operational_hours == 48.0
     assert module.CELLS is None
@@ -119,7 +131,7 @@ def test_the_pass_two_script_writes_the_table_and_resumes(tmp_path: Path, monkey
     vectors = {"sun": scene.sun_vectors, "earth": scene.earth_vectors}
     for name, value in dict(
         DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, STAGE1_DIRECTORY=products.hibernation.parent,
-        OUTPUT_PATH=output, START_UTC=scene.START, STOP_UTC=scene.STOP, STEP_HOURS=scene.STEP_HOURS,
+        STAGE1_PREFIX="safe_haven", OUTPUT_PATH=output, START_UTC=scene.START, STOP_UTC=scene.STOP, STEP_HOURS=scene.STEP_HOURS,
         HOURS_PER_COUNT=None, STAGE1_NODATA=None, CELLS=[(0, 0)],
     ).items():
         monkeypatch.setattr(module, name, value)

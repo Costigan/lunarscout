@@ -41,8 +41,8 @@ from lunarscout.products import _load_dem  # noqa: E402
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven"
-PLAN_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/window_plan.jsonl")
+STAGE1_PREFIX = "safe_haven_degenerate"  # must equal NAME_PREFIX in run_generate_safe_havens.py
+PLAN_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_degenerate_window_plan.jsonl")
 
 # Must equal the stage-1 run.
 START_UTC = "2024-01-01T00:00:00Z"
