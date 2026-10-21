@@ -345,3 +345,46 @@ def test_seeds_that_fail_the_flood_are_counted_and_leave_no_row(prepared, monkey
     monkeypatch.setattr(blocks, "flood_seed_from_store", lambda *a, **k: FloodResult(0, 0))
     path, report = run(prepared, "all_invalid", 3, cells=[(0, 0)])
     assert read_rows(path) == [] and report.flood.cell_months_without_valid_seed == report.flood.cell_months_flooded > 0
+
+
+# --- progress and cached vectors ---------------------------------------------------------------------
+
+
+def test_progress_starts_at_the_blocks_a_checkpoint_already_holds(prepared) -> None:
+    path = prepared.directory / "progress.csv"
+    kwargs = dict(dem=prepared.dem, horizon_store=prepared.store, stage1=prepared.stage1, times=prepared.stamps,
+                  sun_vectors_at=scene.sun_vectors, earth_vectors_at=scene.earth_vectors,
+                  output_path=path, parameters=parameters(1), overwrite=True)
+    calls = []
+    blocks.run_pass_two(stop_after_blocks=1, progress=lambda done, total: calls.append((done, total)), **kwargs)
+    assert calls == [(0, 4), (1, 4)]
+    calls.clear()
+    blocks.run_pass_two(progress=lambda done, total: calls.append((done, total)), **kwargs)
+    assert calls == [(1, 4), (2, 4), (3, 4), (4, 4)]
+
+
+def test_each_set_of_times_is_sent_to_the_vector_source_once(prepared, tables) -> None:
+    asked = []
+
+    def sun(stamps):
+        asked.append(np.asarray(stamps).astype("datetime64[us]").tobytes())
+        return scene.sun_vectors(stamps)
+
+    path = prepared.directory / "cached.csv"
+    blocks.run_pass_two(
+        dem=prepared.dem, horizon_store=prepared.store, stage1=prepared.stage1, times=prepared.stamps,
+        sun_vectors_at=sun, earth_vectors_at=scene.earth_vectors, output_path=path,
+        parameters=parameters(3), overwrite=True, cells=[(0, 0)],
+    )
+    assert len(asked) == len(set(asked)) > 5
+    expected = [r for r in read_rows(tables[3][0]) if (r['cell_row'], r['cell_col']) == ('0', '0')]
+    assert read_rows(path) == expected and expected
+
+
+def test_the_vector_cache_is_bounded_and_returns_equal_answers() -> None:
+    cache = blocks.CachedVectors(lambda stamps: np.arange(len(stamps) * 3, dtype=float).reshape(-1, 3), limit=2)
+    first = np.array(["2027-01-01T00:00", "2027-01-01T06:00"], dtype="datetime64[us]")
+    assert np.array_equal(cache(first), cache(first)) and (cache.calls, cache.hits) == (1, 1)
+    for hour in (1, 2, 3):
+        cache(first + np.timedelta64(hour, "h"))
+    assert len(cache._answers) == 2
