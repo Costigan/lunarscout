@@ -293,6 +293,16 @@ patch is processed in time slabs, as the lightmap session does with its time
 batch. A flood assembles a `(n + 1, 512, 512)` boolean array from the stored
 chunks, over the seed's own time range.
 
+**CPU reference store.** `_numba_horizon/safe_haven_litstore.py` implements this
+section on the CPU: `LitStore` (units keyed by patch row, patch column and chunk, packed
+as `(steps_per_chunk, 128, 2)` words; 90 KiB at 32 minutes), `fill_lit_store` (reads each
+patch's horizons once, lights only the missing units with the CPU lightmap, applies the
+stage-1 lit threshold and packs), `LitStore.side_lit` (the masks of one flood side in
+flood order) and `flood_seed_from_store` (both sides from the store, with the boundary
+agreement rule below). A patch outside the DEM or without a horizon tile is never lit.
+It is the reference for the GPU lighting and thresholding kernels, which must produce
+the same bits.
+
 **Boundary agreement.** The boundaries come from a CPU evaluation of the seed
 pixel and the lit arrays from the GPU. A flood checks that its seed is lit at its
 boundary in the assembled array. If a rounding difference at the fuzz limit makes
