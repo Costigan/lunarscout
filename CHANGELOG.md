@@ -44,7 +44,9 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   (`safe_haven_flood.py`, spec section 6) exists as the oracle, and
   `safe_haven_flood_packed.py` is the packed-bit CPU flood tested against it, and
   `safe_haven_litstore.py` is the per-month packed lit-bit store with its CPU lighting route
-  (the reference for the GPU kernels). The CPU lightmap kernel gained a
+  (the reference for the GPU kernels), and `safe_haven_blocks.py` runs the block
+  schedule on the CPU (snake order, resident horizons, checkpoint and resume) and writes
+  the pass-2 table as CSV (`run_pass_two`; internal, no script yet). The CPU lightmap kernel gained a
   single-pixel entry point that shares the patch kernel's arithmetic.
 - **Safe-haven products (breaking).** `ls.generate_safe_havens` and
   `scenario.safe_havens` are replaced by `ls.generate_safe_haven_products` and

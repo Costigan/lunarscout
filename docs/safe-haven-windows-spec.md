@@ -330,8 +330,24 @@ Budgets for one RTX 4090 (24 GB) and 16 GB of host RAM (estimates):
 | Host: reader prefetch, 3 decoded patches | about 0.3 GB |
 | Host: stage-1 windows for a block, per product | about 0.16 GB |
 
-The host holds nothing pole-wide. Horizon patches load about 1.56 times each at
-block 8, falling to about 1.25 times with the snake carry-over.
+The host holds nothing pole-wide. Horizon patches load about 1.55 times each at
+block 8, falling to about 1.24 times with the snake carry-over (computed for the
+237 x 237 patch grid by `plan_horizon_loads`; the resident block peaks at 100 patches,
+9.4 GB, because the patches the next block does not need are dropped before it loads).
+
+**CPU driver.** `_numba_horizon/safe_haven_blocks.py` runs this schedule on the CPU:
+`block_order` (the snake), `HorizonResidency` (resident horizons with drop-before-load
+and a read count), `plan_horizon_loads` (the load plan, also used to size a run) and
+`run_pass_two`. For each block, in snake order, it runs pass 1 for the block's cells,
+makes the horizons of their windows resident, then for each month fills the lit store
+for the block's cell-months, floods their seeds and appends the rows to a checkpoint
+(`<output>.checkpoint.jsonl`, one line per finished block, flushed to disk). A rerun
+with the same configuration skips the finished blocks; a different configuration, or a
+different `block_patches`, is refused. The CSV is written to a staging file and moved
+into place at the end, and an existing output is not replaced unless asked. Rows are
+sorted by cell, month and rank, so the table is identical for any `block_patches` and
+after a resume. In this CPU route pass 1 still reads horizons itself through its own
+small cache, so each patch is read once more than the resident count shows.
 
 ## 9. Pass 1 report and the decision gate
 

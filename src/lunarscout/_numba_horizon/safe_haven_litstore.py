@@ -201,11 +201,14 @@ def fill_lit_store(
     operating_sunlight_fraction: float = 1.0,
     observer_height_m: float = 0.0,
     session=None,
+    horizons_for: Callable[[tuple[int, int]], npt.NDArray[np.float32] | None] | None = None,
 ) -> FillCounts:
     """Light every missing ``(patch, chunk)`` of ``patches`` x ``chunks`` into the store.
 
     Each patch's horizons are read once, however many chunks it needs, and units already
     stored are reused.  A patch without a horizon tile is stored as all unlit.
+    ``horizons_for((patch_row, patch_column))`` supplies resident horizons (``None`` for a
+    patch with no tile) instead of reading them from ``horizon_store``.
     """
     if session is None:
         from .lightmap_cpu import LightmapCpuSession
@@ -220,9 +223,12 @@ def fill_lit_store(
         counts.reused += len(wanted) - len(todo)
         if not todo:
             continue
-        horizons = read_patch_horizons(
-            horizon_store, patch_row * PATCH_SIZE, patch_column * PATCH_SIZE, observer_height_m
-        )
+        if horizons_for is not None:
+            horizons = horizons_for((patch_row, patch_column))
+        else:
+            horizons = read_patch_horizons(
+                horizon_store, patch_row * PATCH_SIZE, patch_column * PATCH_SIZE, observer_height_m
+            )
         counts.patches_read += 1
         if horizons is None:
             counts.patches_without_horizons += 1

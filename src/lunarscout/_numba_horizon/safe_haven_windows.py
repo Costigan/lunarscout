@@ -61,6 +61,8 @@ class WindowParameters:
     boundary_search_hours: float = 24.0
     operating_sunlight_fraction: float = 1.0
     cell_patches: int = 2
+    #: Block edge in patches for the pass-2 schedule (section 8); a whole number of cells.
+    block_patches: int = 8
     #: Pixels in a near-duplicate probe budget: how many pixels within the
     #: separation of an accepted seed are examined for a different timing.
     timing_probes_per_seed: int = 8
@@ -92,10 +94,12 @@ class WindowParameters:
             raise ValueError("connectivity must be 4 or 8")
         if not 0.0 <= self.min_nearby_haven_fraction <= 1.0:
             raise ValueError("min_nearby_haven_fraction must be in [0, 1]")
-        for name in ("max_seeds_per_cell_month", "cell_patches", "timing_probes_per_seed",
-                     "max_consecutive_failures"):
+        for name in ("max_seeds_per_cell_month", "cell_patches", "block_patches",
+                     "timing_probes_per_seed", "max_consecutive_failures"):
             if int(getattr(self, name)) != getattr(self, name) or getattr(self, name) < 1:
                 raise ValueError(f"{name} must be a positive integer")
+        if self.block_patches % self.cell_patches:
+            raise ValueError("block_patches must be a whole number of cells (a multiple of cell_patches)")
 
 
 def flood_step_minutes(pixel_size_m: float, rover_speed_m_s: float) -> int:
@@ -855,19 +859,22 @@ def iter_cell_months(
     cells: list[tuple[int, int]] | None = None,
     report: list | None = None,
     progress: Callable[[int, int], None] | None = None,
+    time_context: "TimeContext | None" = None,
 ) -> Iterator[dict]:
     """Yield one record per cell-month that has at least one valid seed.
 
     ``cells`` lists ``(cell_row, cell_col)`` indices; the default is every cell of
     the raster.  The final :class:`PassOneReport` is appended to ``report``, and
-    ``progress(cells_done, cells_total)`` is called after every cell.
+    ``progress(cells_done, cells_total)`` is called after every cell.  A prebuilt
+    ``time_context`` (from ``TimeContext.build`` on the same ``times``) avoids rebuilding
+    the vectors when a caller runs this once per block.
     """
     if (stage1.height, stage1.width) != (dem.height, dem.width):
         raise ValueError("the stage-1 products and the DEM differ in size")
     pixel_size = abs(float(dem.geo_transform[1]))
     if not math.isclose(pixel_size, abs(float(dem.geo_transform[5])), rel_tol=1e-6):
         raise ValueError("pass 1 needs square pixels")
-    time = TimeContext.build(times, sun_vectors_at, earth_vectors_at)
+    time = time_context or TimeContext.build(times, sun_vectors_at, earth_vectors_at)
     if time.month_count != stage1.band_count:
         raise ValueError(
             f"the times span {time.month_count} months but the products have {stage1.band_count} bands"
