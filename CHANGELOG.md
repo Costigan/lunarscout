@@ -30,6 +30,12 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   The rate counts only the patches the current run finished, so it is right after
   a resume, and it follows the most recent 1,000 patches, so a slow start drops out
   of the estimate. It reads `ETA pending` for the first few patches.
+- **`scripts/monitor_temperatures.py`.** Prints and logs (CSV) GPU temperature, power, clocks and
+  thermal-slowdown flags (from `nvidia-smi`), CPU package and hottest-core temperature and load,
+  each NVMe drive's temperature (drives holding the horizon and output paths are marked) and fan
+  speeds, every 10 seconds, and prints min/mean/max on Ctrl-C. It flags readings within 10 degrees
+  of the limits the sensors themselves report, or a GPU thermal slowdown. Meant to be watched in a
+  second terminal at the start of a long run.
 - **Safe-haven windows, pass 2: a resume no longer rescans stage 1.** With no explicit cell
   list, `run_pass_two` takes the cells from the checkpoint it resumes instead of scanning the
   whole stage-1 raster again (about 24 minutes at the pole). The checkpoint fingerprint now
