@@ -42,6 +42,12 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   haven-pixel counts, tied to the stage-1 files by size and modification time. On the real pole
   the strip scan took 222 to 230 seconds against 1,458 seconds for the per-cell scan, and found
   the same 8,093 cells and 264,044 cell-months. Stage 3 reads this list (next change).
+- **`scripts/monitor_temperatures.py`.** Prints and logs (CSV) GPU temperature, power, clocks and
+  thermal-slowdown flags (from `nvidia-smi`), CPU package and hottest-core temperature and load,
+  each NVMe drive's temperature (drives holding the horizon and output paths are marked) and fan
+  speeds, every 10 seconds, and prints min/mean/max on Ctrl-C. It flags readings within 10 degrees
+  of the limits the sensors themselves report, or a GPU thermal slowdown. Meant to be watched in a
+  second terminal at the start of a long run.
 - **Safe-haven windows, pass 2: a resume no longer rescans stage 1.** With no explicit cell
   list, `run_pass_two` takes the cells from the checkpoint it resumes instead of scanning the
   whole stage-1 raster again (about 24 minutes at the pole). The checkpoint fingerprint now
