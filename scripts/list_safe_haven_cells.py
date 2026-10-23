@@ -4,8 +4,9 @@
     .venv/bin/python scripts/list_safe_haven_cells.py
 
 Lists the 256 x 256 pixel cells (5.12 km at 20 m) that hold at least one safe-haven
-pixel in the stage-1 hibernation product, so you can choose cells for
-scripts/plan_safe_haven_windows.py. A haven pixel has a hibernation value at or
+pixel in the stage-1 hibernation product, so you can choose cells for a trial of
+scripts/plan_safe_haven_windows.py or scripts/run_safe_haven_stage3.py (the full list for
+stage 3 comes from scripts/run_safe_haven_stage2.py, which scans much faster). A haven pixel has a hibernation value at or
 below SURVIVAL_LIMIT_HOURS in some month. The script prints a table and a CELLS
 line to paste into the planning script. CPU only; it needs the stage-1 products
 from scripts/run_generate_safe_havens.py. Importing it starts no calculation.

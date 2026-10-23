@@ -399,8 +399,8 @@ def test_a_resume_takes_its_cells_from_the_checkpoint_instead_of_scanning(prepar
                   sun_vectors_at=scene.sun_vectors, earth_vectors_at=scene.earth_vectors,
                   output_path=path, parameters=parameters(1), overwrite=True)
     scans = []
-    real = blocks.haven_cells
-    monkeypatch.setattr(blocks, "haven_cells", lambda *a, **k: scans.append(1) or real(*a, **k))
+    real = blocks.scan_cells
+    monkeypatch.setattr(blocks, "scan_cells", lambda *a, **k: scans.append(1) or real(*a, **k))
     assert blocks.run_pass_two(stop_after_blocks=1, **kwargs) is None
     assert len(scans) == 1                                    # the first launch has to find the cells
     report = blocks.run_pass_two(**kwargs)
