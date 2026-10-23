@@ -30,6 +30,14 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   The rate counts only the patches the current run finished, so it is right after
   a resume, and it follows the most recent 1,000 patches, so a slow start drops out
   of the estimate. It reads `ETA pending` for the first few patches.
+- **Safe-haven windows, pass 1: a seed that disagrees with stage 1 is skipped.** Pass 1
+  recomputes each seed's hibernation and compares it with the stage-1 raster. A sample within
+  rounding of a threshold (Earth margin of exactly 2 degrees, for example) can fall either way
+  between the GPU and the CPU, so an isolated disagreement no longer stops the run: it is logged
+  (`logging`, warning level), counted as `invalid_stage1_mismatch` and the pixel is skipped.
+  The run still stops with `PlanConsistencyError` once at least 10 timelines disagree and they
+  exceed `stage1_mismatch_limit` (1 percent) of those evaluated, which means the settings
+  differ from the stage-1 run's.
 - **Safe-haven windows, pass 1 (internal, in progress).** `scripts/plan_safe_haven_windows.py`
   reads the stage-1 products and writes a plan for the 5 km window analysis specified in
   `docs/safe-haven-windows-spec.md`: for each cell and month with a haven, up to five

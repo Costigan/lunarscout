@@ -49,6 +49,7 @@ ranking is deferred.
 | `max_seeds_per_cell_month` | 5 | Seeds selected, flooded and reported. |
 | `timing_probes_per_seed` | 8 | Nearby pixels probed for a different timing, per accepted seed. |
 | `max_consecutive_failures` | 50 | A cell-month is abandoned after this many failed timelines in a row. |
+| `stage1_mismatch_limit` | 0.01 | Share of timelines that may disagree with stage 1 before the run stops (and at least 10). |
 | `degenerate_outage_window_hours` | stage-1 default | Must equal the stage-1 run's value (24 h by default). |
 | `haven_neighbourhood_m` | 100 | Radius for the nearby-haven fraction. |
 | `min_nearby_haven_fraction` | 0.05 | Candidates below this are not considered. |
@@ -132,7 +133,11 @@ For each cell and month:
    limit, and is extended forward until the hibernation, every run touching it, and
    `operational_hours` of Earth visibility after it are inside it. Confirm that the
    recomputed score equals the stage-1 raster value (as stored, so a byte product
-   is compared after its rounding); a mismatch is an internal error. This yields
+   is compared after its rounding); a mismatch is logged, counted (`invalid_stage1_mismatch`) and the pixel is skipped, because a sample
+   within rounding of a threshold can fall either way between the GPU and the CPU. The run stops
+   with `PlanConsistencyError` when mismatches number at least 10 and exceed
+   `stage1_mismatch_limit` (1 percent) of the timelines evaluated, which means the settings
+   differ from the stage-1 run's. This yields
    `T_s`, `T_e` and the score. The outage flags include the degenerate outages of
    `docs/safe-haven-state-machine.md` section 2.1 (the cycle minimum of Earth's
    elevation above a flat horizon, where no real outage lies within the window), so
