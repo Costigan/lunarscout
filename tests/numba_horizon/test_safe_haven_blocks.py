@@ -388,3 +388,53 @@ def test_the_vector_cache_is_bounded_and_returns_equal_answers() -> None:
     for hour in (1, 2, 3):
         cache(first + np.timedelta64(hour, "h"))
     assert len(cache._answers) == 2
+
+
+# --- a resume does not rescan the stage-1 raster -------------------------------------------------------
+
+
+def test_a_resume_takes_its_cells_from_the_checkpoint_instead_of_scanning(prepared, tables, monkeypatch) -> None:
+    path = prepared.directory / "noscan.csv"
+    kwargs = dict(dem=prepared.dem, horizon_store=prepared.store, stage1=prepared.stage1, times=prepared.stamps,
+                  sun_vectors_at=scene.sun_vectors, earth_vectors_at=scene.earth_vectors,
+                  output_path=path, parameters=parameters(1), overwrite=True)
+    scans = []
+    real = blocks.haven_cells
+    monkeypatch.setattr(blocks, "haven_cells", lambda *a, **k: scans.append(1) or real(*a, **k))
+    assert blocks.run_pass_two(stop_after_blocks=1, **kwargs) is None
+    assert len(scans) == 1                                    # the first launch has to find the cells
+    report = blocks.run_pass_two(**kwargs)
+    assert len(scans) == 1 and report.blocks_resumed == 1     # the resume did not
+    assert path.read_bytes() == tables[1][0].read_bytes()
+
+
+def test_a_checkpoint_is_refused_when_a_stage_1_file_has_changed(prepared, tmp_path) -> None:
+    import os
+    import shutil
+
+    hibernation, joint = tmp_path / "hibernation.tif", tmp_path / "joint.tif"
+    shutil.copy(prepared.stage1.hibernation_path, hibernation)
+    shutil.copy(prepared.stage1.joint_total_path, joint)
+    stage1 = Stage1Rasters(hibernation, joint)
+    kwargs = dict(dem=prepared.dem, horizon_store=prepared.store, stage1=stage1, times=prepared.stamps,
+                  sun_vectors_at=scene.sun_vectors, earth_vectors_at=scene.earth_vectors,
+                  output_path=tmp_path / "out.csv", parameters=parameters(1), overwrite=True)
+    assert blocks.run_pass_two(stop_after_blocks=1, **kwargs) is None
+    stat = hibernation.stat()
+    os.utime(hibernation, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))      # rewritten, same size
+    with pytest.raises(ValueError, match="different configuration"):
+        blocks.run_pass_two(**kwargs)
+    os.utime(hibernation, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    assert blocks.run_pass_two(**kwargs).blocks_resumed == 1
+
+
+def test_a_torn_or_missing_checkpoint_header_falls_back_to_a_scan(tmp_path) -> None:
+    missing = tmp_path / "none.jsonl"
+    assert blocks._checkpoint_cells(missing) is None
+    torn = tmp_path / "torn.jsonl"
+    torn.write_text('{"type": "header", "config": {"cel')
+    assert blocks._checkpoint_cells(torn) is None
+    torn.write_text(json.dumps({"type": "header", "config": {"cells": [[1, 2], [3, 4]]}}) + "\n")
+    assert blocks._checkpoint_cells(torn) == [(1, 2), (3, 4)]
+    torn.write_text(json.dumps({"type": "block", "config": {"cells": [[1, 2]]}}) + "\n")
+    assert blocks._checkpoint_cells(torn) is None              # not a header

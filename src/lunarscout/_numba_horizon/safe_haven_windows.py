@@ -10,6 +10,7 @@ lighting the floods will need.  It runs no flood and no patch lighting.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from collections import OrderedDict
 from collections.abc import Callable, Iterator
@@ -36,8 +37,16 @@ MICROSECONDS_PER_HOUR = 3_600_000_000
 VectorSource = Callable[[npt.NDArray[np.datetime64]], npt.ArrayLike]
 
 
+logger = logging.getLogger(__name__)
+
+#: Isolated disagreements with stage 1 are tolerated (a sample within rounding of a
+#: threshold can fall either way between the GPU and the CPU), but never fewer than this many
+#: before ``WindowParameters.stage1_mismatch_limit`` can end the run.
+STAGE1_MISMATCH_FLOOR = 10
+
+
 class PlanConsistencyError(RuntimeError):
-    """Pass 1 recomputed a stage-1 value and got a different one."""
+    """Pass 1 recomputed stage-1 values and too many differed (a different configuration)."""
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +79,11 @@ class WindowParameters:
     #: in which every pixel fails (an outage that runs past the end of the series)
     #: does not cost a timeline per haven pixel.
     max_consecutive_failures: int = 50
+    #: A recomputed seed score that differs from the stage-1 raster is logged, counted and
+    #: skipped; the run stops with ``PlanConsistencyError`` once such mismatches number at
+    #: least ``STAGE1_MISMATCH_FLOOR`` and exceed this fraction of the timelines evaluated,
+    #: which means the settings differ from the stage-1 run's.
+    stage1_mismatch_limit: float = 0.01
     #: The stage-1 degenerate-outage window in hours (``None``: the stage-1 default);
     #: it must equal the stage-1 run's.
     degenerate_outage_window_hours: float | None = None
@@ -92,6 +106,8 @@ class WindowParameters:
                 raise ValueError(f"{name} must be non-negative and finite")
         if self.connectivity not in (4, 8):
             raise ValueError("connectivity must be 4 or 8")
+        if not 0.0 <= self.stage1_mismatch_limit <= 1.0:
+            raise ValueError("stage1_mismatch_limit must be in [0, 1]")
         if not 0.0 <= self.min_nearby_haven_fraction <= 1.0:
             raise ValueError("min_nearby_haven_fraction must be in [0, 1]")
         for name in ("max_seeds_per_cell_month", "cell_patches", "block_patches",
@@ -479,6 +495,7 @@ class PlanCounts:
     invalid_outage_unclosed: int = 0
     invalid_earth_window: int = 0
     invalid_no_lit_boundary: int = 0
+    invalid_stage1_mismatch: int = 0
     cell_months_abandoned: int = 0
     tasks_unshared: int = 0
     tasks_shared: int = 0
@@ -690,13 +707,30 @@ def select_seeds(
                 counts.cell_months_abandoned += 1
                 break
             continue
-        failures = 0
         stage_one = float(hibernation_hours[row, column])
         if not math.isclose(expected(result.score_hours), stage_one, rel_tol=0.0, abs_tol=1e-6):
-            raise PlanConsistencyError(
-                f"pixel ({global_row}, {global_column}) month {month}: stage 1 holds "
-                f"{stage_one} h but the recomputed hibernation scores {result.score_hours} h"
+            counts.invalid_stage1_mismatch += 1
+            logger.warning(
+                "pixel (%d, %d) month %d: stage 1 holds %s h but the recomputed hibernation "
+                "scores %s h; the pixel is skipped",
+                global_row, global_column, month, stage_one, result.score_hours,
             )
+            if (counts.invalid_stage1_mismatch >= STAGE1_MISMATCH_FLOOR
+                    and counts.invalid_stage1_mismatch
+                    > parameters.stage1_mismatch_limit * counts.timelines_evaluated):
+                raise PlanConsistencyError(
+                    f"{counts.invalid_stage1_mismatch} of {counts.timelines_evaluated} recomputed "
+                    f"hibernations disagree with stage 1 (last: pixel ({global_row}, {global_column}) "
+                    f"month {month}: stage 1 holds {stage_one} h, recomputed {result.score_hours} h); "
+                    "the times, thresholds, observer height, vectors or degenerate-outage window "
+                    "differ from the stage-1 run"
+                )
+            failures += 1
+            if failures >= parameters.max_consecutive_failures:
+                counts.cell_months_abandoned += 1
+                break
+            continue
+        failures = 0
         if near_indices and any(
             abs(result.outage_start_us - accepted[i].outage_start_us) <= tolerance_us
             and abs(result.outage_end_us - accepted[i].outage_end_us) <= tolerance_us

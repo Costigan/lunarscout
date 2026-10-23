@@ -355,12 +355,56 @@ def test_pixels_without_a_record_are_counted_and_skipped(monkeypatch) -> None:
     assert counts.invalid_no_record == 1 and counts.timelines_evaluated == 2
 
 
-def test_a_wrong_recomputed_score_raises(monkeypatch) -> None:
+def test_an_isolated_disagreement_with_stage_1_is_logged_counted_and_skipped(monkeypatch, caplog) -> None:
     hibernation = np.full((12, 12), np.nan)
     hibernation[5, 5] = 12.0
+    hibernation[8, 8] = 12.0
+    with caplog.at_level("WARNING", logger=windows.logger.name):
+        seeds, _evaluator, counts = stub_select(
+            monkeypatch, hibernation, np.zeros((12, 12)), lambda r, c: 0.0,
+            scores={(105, 205): 18.0}, seed_separation_m=1.0,
+        )
+    assert counts.invalid_stage1_mismatch == 1 and counts.timelines_evaluated == 2
+    assert [(s.row, s.column) for s in seeds] == [(108, 208)]
+    assert "pixel (105, 205) month 0: stage 1 holds 12.0 h but the recomputed hibernation scores 18.0 h" in caplog.text
+
+
+def test_mismatches_across_the_run_end_it_once_they_are_many_and_not_rare(monkeypatch) -> None:
+    hibernation = np.full((30, 30), 12.0)
+    wrong = {(100 + r, 200 + c): 18.0 for r in range(30) for c in range(30)}
+    with pytest.raises(PlanConsistencyError, match="differ from the stage-1 run"):
+        stub_select(monkeypatch, hibernation, np.zeros((30, 30)), lambda r, c: 0.0, scores=wrong,
+                    max_consecutive_failures=10_000, seed_separation_m=1.0)
+    # Fewer than the floor never end the run, however large their share of the timelines.
+    few = {(100 + r, 200 + c): 18.0 for r in range(3) for c in range(3)}
+    _seeds, _evaluator, counts = stub_select(
+        monkeypatch, hibernation, np.zeros((30, 30)), lambda r, c: 0.0, scores=few,
+        seed_separation_m=1.0, max_seeds_per_cell_month=3)
+    assert counts.invalid_stage1_mismatch <= windows.STAGE1_MISMATCH_FLOOR - 1
+    # A mismatch counts as a failed timeline, so a run of them abandons the cell-month.
+    _seeds, _evaluator, counts = stub_select(
+        monkeypatch, hibernation, np.zeros((30, 30)), lambda r, c: 0.0, scores=wrong,
+        max_consecutive_failures=3, stage1_mismatch_limit=1.0, seed_separation_m=1.0)
+    assert counts.cell_months_abandoned == 1 and counts.invalid_stage1_mismatch == 3
+
+
+def test_the_mismatch_limit_is_a_fraction_of_the_timelines_evaluated(monkeypatch) -> None:
+    hibernation = np.full((30, 30), 12.0)
+    first_twelve = {(100, 200 + c): 18.0 for c in range(12)}         # the first pixels evaluated
+    common = dict(scores=first_twelve, seed_separation_m=1.0, max_consecutive_failures=10_000)
+    # 10 mismatches in the first 10 timelines: 100 percent, over a 50 percent limit
     with pytest.raises(PlanConsistencyError):
-        stub_select(monkeypatch, hibernation, np.zeros((12, 12)), lambda r, c: 0.0,
-                    scores={(105, 205): 18.0})
+        stub_select(monkeypatch, hibernation, np.zeros((30, 30)), lambda r, c: 0.0,
+                    stage1_mismatch_limit=0.5, **common)
+    # ... and not over a 100 percent limit, which nothing can exceed
+    _seeds, _evaluator, counts = stub_select(
+        monkeypatch, hibernation, np.zeros((30, 30)), lambda r, c: 0.0, stage1_mismatch_limit=1.0, **common)
+    assert counts.invalid_stage1_mismatch == 12
+
+
+def test_the_mismatch_limit_is_validated() -> None:
+    with pytest.raises(ValueError):
+        WindowParameters(stage1_mismatch_limit=1.5)
 
 
 def test_the_cell_core_decides_which_pixels_can_be_seeds(monkeypatch) -> None:
