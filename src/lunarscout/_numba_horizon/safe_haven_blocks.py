@@ -233,13 +233,31 @@ def _window_patches(window: tuple[int, int, int, int]) -> tuple[int, int, int, i
     return window[0] // PATCH_SIZE, window[2] // PATCH_SIZE, rows, columns
 
 
+def _file_identity(path) -> list:
+    """A file's path, size and modification time, so a rewritten product is not mistaken for
+    the one a checkpoint was made from."""
+    stat = Path(path).stat()
+    return [str(path), int(stat.st_size), int(stat.st_mtime_ns)]
+
+
+def _checkpoint_cells(path: Path) -> list[Cell] | None:
+    """The cell list in a checkpoint's header, or ``None`` if there is no usable header."""
+    try:
+        with path.open(encoding="utf-8") as handle:
+            header = json.loads(handle.readline())
+        cells = header["config"]["cells"]
+        return [(int(r), int(c)) for r, c in cells] if header.get("type") == "header" else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def _fingerprint(*, parameters, block_patches, flood_steps, time: TimeContext, cells, stage1,
                  earth_elevation_threshold_deg, sunlight_fraction_threshold, merge_gap_hours) -> dict:
     return {
         "parameters": asdict(parameters), "block_patches": block_patches, "flood_steps": flood_steps,
         "times": [int(time.times_us[0]), int(time.times_us[-1]), int(len(time.times_us))],
         "cells": [list(c) for c in cells],
-        "stage1": [str(stage1.hibernation_path), str(stage1.joint_total_path)],
+        "stage1": [_file_identity(stage1.hibernation_path), _file_identity(stage1.joint_total_path)],
         "earth_elevation_threshold_deg": earth_elevation_threshold_deg,
         "sunlight_fraction_threshold": sunlight_fraction_threshold,
         "merge_gap_hours": merge_gap_hours,
@@ -324,6 +342,11 @@ def run_pass_two(
     block_cells = parameters.block_patches // parameters.cell_patches
     patch_rows, patch_columns = -(-dem.height // PATCH_SIZE), -(-dem.width // PATCH_SIZE)
     cell_rows, cell_columns = -(-dem.height // cell_size), -(-dem.width // cell_size)
+    if cells is None:
+        # A resume takes the cell list from the checkpoint instead of scanning the whole
+        # stage-1 raster again (about 24 minutes at the pole). The fingerprint check below
+        # still refuses the checkpoint if the settings or the stage-1 files have changed.
+        cells = _checkpoint_cells(checkpoint)
     if cells is None:
         cells = [(e["cell_row"], e["cell_col"]) for e in haven_cells(
             stage1, survival_limit_hours=parameters.survival_limit_hours, cell_size=cell_size)]

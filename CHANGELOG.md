@@ -30,6 +30,10 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   The rate counts only the patches the current run finished, so it is right after
   a resume, and it follows the most recent 1,000 patches, so a slow start drops out
   of the estimate. It reads `ETA pending` for the first few patches.
+- **Safe-haven windows, pass 2: a resume no longer rescans stage 1.** With no explicit cell
+  list, `run_pass_two` takes the cells from the checkpoint it resumes instead of scanning the
+  whole stage-1 raster again (about 24 minutes at the pole). The checkpoint fingerprint now
+  includes each stage-1 file's size and modification time, so a rewritten product is refused.
 - **Safe-haven windows, pass 1: a seed that disagrees with stage 1 is skipped.** Pass 1
   recomputes each seed's hibernation and compares it with the stage-1 raster. A sample within
   rounding of a threshold (Earth margin of exactly 2 degrees, for example) can fall either way
