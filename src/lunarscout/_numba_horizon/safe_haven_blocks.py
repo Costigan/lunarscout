@@ -31,6 +31,7 @@ import numpy.typing as npt
 
 from .file_format import PATCH_SIZE, HorizonTileStore, read_patch_horizons
 from .safe_haven_flood_packed import pack_bits
+from .safe_haven_cells import scan_cells
 from .safe_haven_litstore import LitStore, fill_lit_store, flood_seed_from_store
 from .safe_haven_windows import (
     FloodGrid,
@@ -42,7 +43,6 @@ from .safe_haven_windows import (
     cell_window,
     flood_step_minutes,
     halo_pixels,
-    haven_cells,
     iter_cell_months,
 )
 
@@ -348,7 +348,7 @@ def run_pass_two(
         # still refuses the checkpoint if the settings or the stage-1 files have changed.
         cells = _checkpoint_cells(checkpoint)
     if cells is None:
-        cells = [(e["cell_row"], e["cell_col"]) for e in haven_cells(
+        cells = [(e["cell_row"], e["cell_col"]) for e in scan_cells(
             stage1, survival_limit_hours=parameters.survival_limit_hours, cell_size=cell_size)]
         cells.sort()
     cells = sorted(set((int(r), int(c)) for r, c in cells))

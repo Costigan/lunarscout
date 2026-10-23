@@ -1,19 +1,22 @@
 # Safe-haven windows: finding 5 km cells with a good haven and reachable lit terrain
 
-Status: DRAFT SPECIFICATION FOR REVIEW. Pass 1 (section 5, the lighting ranges of
-section 8 and the report of section 9) is implemented in
-`src/lunarscout/_numba_horizon/safe_haven_windows.py` and run by
-`scripts/plan_safe_haven_windows.py`. Pass 2 is implemented as a CPU reference route:
-the flood (section 6, `safe_haven_flood.py` and `safe_haven_flood_packed.py`), the lit
-store (section 8, `safe_haven_litstore.py`) and the block schedule with the table
-(sections 7 and 8, `safe_haven_blocks.py`), run by `scripts/run_safe_haven_windows.py`.
-The GPU lighting and thresholding kernels, and haven-density rasters, are not
-implemented. Numbers marked (estimate) come from reasoning over measurements made on a
-small synthetic scene; they have not been measured on the real pole. Section 10 lists
-the decisions still open.
+Status: DRAFT SPECIFICATION FOR REVIEW. The work is run in three stages. Stage 1 is
+`generate_safe_haven_products`. **Stage 2** scans the stage-1 hibernation product for the
+cells that have a haven pixel and writes the list
+(`src/lunarscout/_numba_horizon/safe_haven_cells.py`, run by
+`scripts/run_safe_haven_stage2.py`). **Stage 3** is the rest of this document: pass 1
+(section 5, the lighting ranges of section 8 and the report of section 9, in
+`safe_haven_windows.py`, run on its own by `scripts/plan_safe_haven_windows.py`) and pass 2,
+the flood (section 6, `safe_haven_flood.py` and `safe_haven_flood_packed.py`), the lit store
+(section 8, `safe_haven_litstore.py`) and the block schedule with the table (sections 7 and
+8, `safe_haven_blocks.py`), run by `scripts/run_safe_haven_stage3.py`, which reads the stage-2
+list. Stage 3 is implemented as a CPU reference route. The GPU lighting and thresholding
+kernels, and haven-density rasters, are not implemented. Numbers marked (estimate) come from
+reasoning over measurements made on a small synthetic scene; they have not been measured on
+the real pole. Section 10 lists the decisions still open.
 
-This is "stage 2". Stage 1 is `generate_safe_haven_products` (see
-`safe-haven-state-machine.md`). Stage 2 reads the stage-1 rasters and the
+This document specifies stage 3. Stage 1 is `generate_safe_haven_products` (see
+`safe-haven-state-machine.md`). Stage 3 reads the stage-1 rasters, the stage-2 cell list and the
 horizons, and produces a table of the 5.12 km cells and months worth studying.
 
 ## 1. Question answered

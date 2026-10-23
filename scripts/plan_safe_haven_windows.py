@@ -3,7 +3,8 @@
 
     .venv/bin/python scripts/plan_safe_haven_windows.py
 
-Stage 2, pass 1 of the safe-haven window analysis (docs/safe-haven-windows-spec.md):
+Stage 3, pass 1 of the safe-haven window analysis (docs/safe-haven-windows-spec.md), the
+seed-planning half of scripts/run_safe_haven_stage3.py run on its own for a trial:
 for every 5.12 km cell and month with a haven, pick up to five seeds, recompute each
 seed's hibernation from the horizons, find its flood boundaries, and write the plan
 as JSON lines. It prints the counts that size the later lighting work. No flood runs
