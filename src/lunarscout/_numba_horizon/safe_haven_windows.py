@@ -840,6 +840,29 @@ class Stage1Rasters:
         with rasterio.open(self.hibernation_path) as one:
             return self._decode(one.read(window=Window(col0, row0, col1 - col0, row1 - row0)))
 
+    def read_haven_window(self, row0: int, row1: int, col0: int, col1: int,
+                          survival_limit_hours: float) -> npt.NDArray[np.bool_]:
+        """Haven mask ``(months, rows, columns)``: hibernation at most ``survival_limit_hours``.
+
+        The same decision as ``read_hibernation_window(...) <= limit`` (NODATA is never a haven)
+        without expanding byte products to float64, so a whole strip of the pole fits in memory.
+        """
+        import rasterio
+        from rasterio.windows import Window
+
+        with rasterio.open(self.hibernation_path) as one:
+            raw = one.read(window=Window(col0, row0, col1 - col0, row1 - row0))
+        if self.hours_per_count is None:
+            with np.errstate(invalid="ignore"):
+                return raw <= survival_limit_hours
+        step = float(self.hours_per_count)
+        limit = int(math.floor(survival_limit_hours / step))
+        while (limit + 1) * step <= survival_limit_hours:
+            limit += 1
+        while limit >= 0 and limit * step > survival_limit_hours:
+            limit -= 1
+        return (raw <= limit) & (raw != self.nodata) if limit >= 0 else np.zeros(raw.shape, dtype=bool)
+
     def expected(self, hours: float) -> float:
         """The value stage 1 would store for an exact ``hours``, as decoded hours."""
         if self.hours_per_count is None:

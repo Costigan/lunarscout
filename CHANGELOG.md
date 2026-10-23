@@ -30,6 +30,12 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   The rate counts only the patches the current run finished, so it is right after
   a resume, and it follows the most recent 1,000 patches, so a slow start drops out
   of the estimate. It reads `ETA pending` for the first few patches.
+- **Safe-haven stage 2: the scan for cells with havens (`scripts/run_safe_haven_stage2.py`).**
+  The stage-1 hibernation product is scanned once, by strips of cell rows, and the cells with a
+  haven pixel (at most `SURVIVAL_LIMIT_HOURS`) are written to a JSON list with their months and
+  haven-pixel counts, tied to the stage-1 files by size and modification time. On the real pole
+  the strip scan took 222 to 230 seconds against 1,458 seconds for the per-cell scan, and found
+  the same 8,093 cells and 264,044 cell-months. Stage 3 reads this list (next change).
 - **Safe-haven windows, pass 2: a resume no longer rescans stage 1.** With no explicit cell
   list, `run_pass_two` takes the cells from the checkpoint it resumes instead of scanning the
   whole stage-1 raster again (about 24 minutes at the pole). The checkpoint fingerprint now
