@@ -17,8 +17,10 @@ times, thresholds, observer height and degenerate-outage window, and the horizon
 be the ones stage 1 used. SPICE supplies Sun and Earth positions unless you replace the
 two vector sources.
 
-This is the CPU route: CPU lightmap, CPU packed-bit flood, run as a pipeline with bounded queues
-(PLAN_WORKERS and its neighbours below). It needs no NVIDIA device. It loads the CPU heavily for
+This runs as a pipeline with bounded queues (PLAN_WORKERS and its neighbours below). Lighting uses
+the NVIDIA GPU when LIGHTING is "auto" and one can be set up, or "cuda" (a compatible NVIDIA device
+and driver are required, and there is no fallback); with "cpu" or an "auto" fallback it needs no GPU
+and runs on all CPU cores. The flood is always on the CPU. It loads the CPU heavily for
 many hours and reads the horizon tiles from disk throughout: watch scripts/monitor_temperatures.py
 in a second terminal for the first 10 to 20 minutes. Memory is the units in flight, not a block of
 horizons: the script logs its estimate at the start and warns when it exceeds what is free. Set
@@ -116,6 +118,18 @@ PARAMETERS = WindowParameters(
 # count. Measured on 10 dense blocks (this laptop, idle, same table every time): the block loop took
 # 1179 s, the pipeline 498 s (2.4x), 16 GB, with lighting at about 390 units/s, the CPU kernel's
 # ceiling. A checkpoint resumes with any of these settings.
+# Where lighting runs. "auto" uses the NVIDIA GPU when it can be set up and otherwise falls back to
+# the CPU with a warning; "cuda" requires a compatible NVIDIA device and driver and fails if there
+# is none (it never falls back); "cpu" never probes CUDA. On the GPU the lightmap and the bit packing
+# run on the device (the same kernel stage 1 uses), GPU_LIGHT_WORKERS threads decode horizons and
+# feed it, and each launch lights GPU_CHUNKS_PER_BATCH days. A GPU run gives the CPU run's table except
+# for rare one-pixel differences where a pixel's Sun fraction sits within a rounding step of the lit
+# threshold (12 of 4,181 rows in the trial, each off by one pixel). Measured on 10 dense blocks: the
+# CPU pipeline took 536 s, the GPU pipeline 52 s (10x); the GPU needs about 1 GB of device memory.
+LIGHTING = "auto"
+GPU_DEVICE_ID = 0
+GPU_LIGHT_WORKERS = 6
+GPU_CHUNKS_PER_BATCH = 4
 PLAN_WORKERS = 4
 LIGHT_WORKERS = 12
 NUMBA_THREADS_PER_LIGHT_WORKER = 2
@@ -224,6 +238,8 @@ def _run() -> int:
             numba_threads_per_light_worker=NUMBA_THREADS_PER_LIGHT_WORKER, flood_workers=FLOOD_WORKERS,
             decode_cache_patches=DECODE_CACHE_PATCHES, cells_in_flight=CELLS_IN_FLIGHT,
             store_budget_bytes=int(STORE_BUDGET_GB * 2**30), status_seconds=STATUS_SECONDS,
+            lighting=LIGHTING, gpu_device_id=GPU_DEVICE_ID, gpu_light_workers=GPU_LIGHT_WORKERS,
+            gpu_chunks_per_batch=GPU_CHUNKS_PER_BATCH,
         ),
     )
     print(json.dumps(report.as_dict(), indent=2), flush=True)

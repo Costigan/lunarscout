@@ -39,6 +39,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 from .file_format import PATCH_SIZE, read_patch_horizons
+from .safe_haven_flood import OPERATING_FUZZ
 from .safe_haven_litstore import LitStore, light_patch_chunks_fused
 from .safe_haven_windows import PlanCounts, cell_window, iter_cell_months
 
@@ -64,6 +65,12 @@ class PipelineSettings:
     cells_in_flight: int = 24                               # cells planned and not yet flooded
     store_budget_bytes: int = 8 * 2**30                     # lit units requested, in bytes
     status_seconds: float = 0.0                             # log a status line this often (0: never)
+    #: Where lighting runs: ``"cpu"`` (never probes CUDA), ``"cuda"`` (an unavailable device is an error)
+    #: or ``"auto"`` (CUDA when it can be set up, otherwise the CPU, with a warning).
+    lighting: str = "auto"
+    gpu_device_id: int = 0
+    gpu_light_workers: int = 6          # threads feeding the GPU: they decode horizons while it computes
+    gpu_chunks_per_batch: int = 4       # chunks (days) per kernel launch
 
     def __post_init__(self) -> None:
         for name in ("plan_workers", "light_workers", "flood_workers", "decode_cache_patches",
@@ -73,9 +80,41 @@ class PipelineSettings:
                 raise ValueError(f"{name} must be a positive integer")
         if not self.status_seconds >= 0.0:
             raise ValueError("status_seconds must not be negative")
+        if self.lighting not in ("auto", "cpu", "cuda"):
+            raise ValueError("lighting must be 'auto', 'cpu' or 'cuda'")
+        for name in ("gpu_light_workers", "gpu_chunks_per_batch"):
+            value = getattr(self, name)
+            if int(value) != value or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if int(self.gpu_device_id) != self.gpu_device_id or self.gpu_device_id < 0:
+            raise ValueError("gpu_device_id must be a non-negative integer")
         threads = self.numba_threads_per_light_worker
         if threads is not None and (int(threads) != threads or threads < 1):
             raise ValueError("numba_threads_per_light_worker must be a positive integer")
+
+
+def _make_gpu_session(settings: PipelineSettings, steps_per_chunk: int):
+    from .safe_haven_lit_cuda import LitCudaSession
+
+    return LitCudaSession(device_id=settings.gpu_device_id, steps_per_chunk=steps_per_chunk,
+                          chunks_per_batch=settings.gpu_chunks_per_batch)
+
+
+def select_lighting(settings: PipelineSettings, steps_per_chunk: int):
+    """The CUDA lighting session, or ``None`` for the CPU. ``"cpu"`` never touches CUDA; ``"cuda"``
+    raises when the device cannot be set up; ``"auto"`` falls back to the CPU with a warning."""
+    from .cuda_backend import CudaBackendError
+
+    if settings.lighting == "cpu":
+        return None
+    try:
+        return _make_gpu_session(settings, steps_per_chunk)
+    except (CudaBackendError, ImportError) as error:
+        if settings.lighting == "cuda":
+            raise
+        logger.warning("CUDA lighting is not available (%s: %s); lighting on the CPU.",
+                       type(error).__name__, error)
+        return None
 
 
 def default_numba_threads(light_workers: int, requested: int | None = None) -> int:
@@ -451,6 +490,10 @@ def _run_blocks_in_pipeline(pending, by_block, run_arguments, finish, *, setting
     pool = multiprocessing.get_context("fork").Pool(
         settings.plan_workers, initializer=_plan_init, initargs=(_loaded_spice_kernels(),))
     light_vectors = _Locked(arguments["sun_vectors_at"])                    # the LIGHT threads' source
+    gpu = select_lighting(settings, grid.steps_per_chunk)                   # after the fork: CUDA is not fork safe
+    logger.info("Pipeline lighting: %s", "CUDA device %d, %d feeder threads, %d chunks per launch" % (
+        settings.gpu_device_id, settings.gpu_light_workers, settings.gpu_chunks_per_batch)
+        if gpu is not None else "CPU, %d threads" % settings.light_workers)
 
     store = LitStore(grid, (dem.height, dem.width))
     coordinator = _Coordinator(store=store, settings=settings, by_block=plan_by_block, finish=finish)
@@ -485,6 +528,30 @@ def _run_blocks_in_pipeline(pending, by_block, run_arguments, finish, *, setting
                 bits = light_patch_chunks_fused(
                     session, dem, horizons, patch[0], patch[1], grid, chunks, light_vectors,
                     parameters.operating_sunlight_fraction, compiled=True)
+            coordinator.publish(patch, bits)
+
+    def gpu_light_worker() -> None:
+        """Decode a patch's horizons here (in parallel with the other feeders) and light its units on the
+        GPU, which runs one patch at a time."""
+        spc = grid.steps_per_chunk
+        threshold = parameters.operating_sunlight_fraction - OPERATING_FUZZ
+        while True:
+            task = coordinator.take_lighting_task()
+            if task is None:
+                return
+            patch, chunks = task
+            horizons = cache.get(patch)
+            if horizons is None:
+                bits = {chunk: np.zeros(store.chunk_shape, dtype=np.uint64) for chunk in chunks}
+            else:
+                tile_y, tile_x = patch[0] * PATCH_SIZE, patch[1] * PATCH_SIZE
+                vectors = [light_vectors(grid.times(np.arange(c * spc, (c + 1) * spc, dtype=np.int64)))
+                           for c in chunks]
+                units = gpu.light_patch(
+                    dem, horizons, vectors, tile_y=tile_y, tile_x=tile_x,
+                    valid_height=min(PATCH_SIZE, dem.elevation_m.shape[0] - tile_y),
+                    valid_width=min(PATCH_SIZE, dem.elevation_m.shape[1] - tile_x), threshold=threshold)
+                bits = dict(zip(chunks, units))
             coordinator.publish(patch, bits)
 
     def flood_worker() -> None:
@@ -533,8 +600,9 @@ def _run_blocks_in_pipeline(pending, by_block, run_arguments, finish, *, setting
                 snapshot["unit_gb_requested"], snapshot["units_lit"], len(cache._items), snapshot["blocks_left"])
 
     threads = (
-        [threading.Thread(target=guarded(light_worker), name=f"light-{i}", daemon=True)
-         for i in range(settings.light_workers)]
+        [threading.Thread(target=guarded(light_worker if gpu is None else gpu_light_worker),
+                          name=f"light-{i}", daemon=True)
+         for i in range(settings.light_workers if gpu is None else settings.gpu_light_workers)]
         + [threading.Thread(target=guarded(flood_worker), name=f"flood-{i}", daemon=True)
            for i in range(settings.flood_workers)]
         + [threading.Thread(target=guarded(collect), name="collect", daemon=True)]

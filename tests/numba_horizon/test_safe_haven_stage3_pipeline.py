@@ -317,3 +317,101 @@ def test_a_shared_unit_is_lit_once_and_freed_after_its_last_user() -> None:
     assert (0, 0, 5) in coordinator.units and (0, 0, 6) not in coordinator.units       # 5 is still needed
     coordinator.job_done(next(j for j in jobs if j.cell == (0, 0)), [], PassTwoCounts())
     assert coordinator.units == {} and len(coordinator.store) == 0 and coordinator.requested_bytes == 0
+
+
+# --- GPU lighting: selection and plumbing (a fake session, so this runs without a GPU) --------------------------
+
+
+class CpuStandInSession:
+    """Lights units the way the CUDA session does (one call per patch, packed bits back) but on the
+    CPU, and records how it was called."""
+
+    def __init__(self):
+        self.calls = []
+        self.threads = set()
+        self.lock = threading.Lock()
+
+    def light_patch(self, dem, horizons, chunk_vectors, *, tile_y, tile_x, valid_height, valid_width, threshold):
+        import numpy as np
+
+        from lunarscout._numba_horizon.lightmap_cpu import LightmapCpuSession
+        from lunarscout._numba_horizon.safe_haven_litstore import threshold_and_pack_python
+
+        with self.lock:
+            self.calls.append((tile_y, tile_x, len(chunk_vectors), valid_height, valid_width, horizons.shape, threshold))
+            self.threads.add(threading.current_thread().name)
+        session = LightmapCpuSession()
+        units = []
+        for vectors in chunk_vectors:
+            bits = np.zeros((len(vectors), 128, 2), dtype=np.uint64)
+            done = 0
+            for fractions in session.iter_patch_fraction_batches(
+                    dem, horizons, vectors, tile_y=tile_y, tile_x=tile_x,
+                    valid_height=valid_height, valid_width=valid_width):
+                threshold_and_pack_python(fractions, valid_height, valid_width, threshold,
+                                          bits[done:done + fractions.shape[0]])
+                done += fractions.shape[0]
+            units.append(bits)
+        return units
+
+
+def test_the_gpu_lighting_slot_gives_the_same_table_as_the_cpu(prepared, tables, monkeypatch) -> None:
+    fake = CpuStandInSession()
+    made = []
+    monkeypatch.setattr(stage3, "_make_gpu_session", lambda settings, spc: made.append((settings, spc)) or fake)
+    report = run_pipeline(prepared, "pipe_gpu_fake", settings=PipelineSettings(**dict(FAST, lighting="cuda", gpu_light_workers=2)))
+    assert (prepared.directory / "pipe_gpu_fake.csv").read_bytes() == tables[1][0].read_bytes()
+    assert report.rows == tables[1][1].rows and len(made) == 1 and made[0][1] == 48       # one session, 30 min steps
+    assert fake.calls and all(call[5] == (128, 128, 1440) for call in fake.calls)
+    assert all(call[2] >= 1 for call in fake.calls)                       # a patch's chunks go in one call
+    assert {call[6] for call in fake.calls} == {1.0 - 1e-6}               # the stage-1 operating rule, with its fuzz
+    assert {(call[3], call[4]) for call in fake.calls} >= {(128, 128), (44, 128), (44, 44)}   # partial edge patches
+    assert {(call[0], call[1]) for call in fake.calls} <= {(r * 128, c * 128) for r in range(3) for c in range(3)}
+    assert fake.threads and fake.threads <= {"light-0", "light-1"}          # gpu_light_workers (2), not light_workers (3)
+
+
+def test_cpu_lighting_never_touches_cuda_and_auto_falls_back_with_a_warning(monkeypatch, caplog) -> None:
+    import logging
+
+    from lunarscout._numba_horizon.cuda_backend import CudaBackendError
+
+    def refuse(settings, spc):
+        raise CudaBackendError("no usable device")
+
+    probed = []
+    monkeypatch.setattr(stage3, "_make_gpu_session", lambda settings, spc: probed.append(1))
+    assert stage3.select_lighting(PipelineSettings(lighting="cpu"), 45) is None
+    assert probed == []                                                                  # "cpu" never probes CUDA
+    monkeypatch.setattr(stage3, "_make_gpu_session", refuse)
+    with caplog.at_level(logging.WARNING, logger=stage3.logger.name):
+        assert stage3.select_lighting(PipelineSettings(lighting="auto"), 45) is None
+    assert "CUDA lighting is not available" in caplog.text and "no usable device" in caplog.text
+    with pytest.raises(CudaBackendError):
+        stage3.select_lighting(PipelineSettings(lighting="cuda"), 45)                    # explicit: no fallback
+    monkeypatch.setattr(stage3, "_make_gpu_session", lambda settings, spc: (_ for _ in ()).throw(ImportError("no numba-cuda")))
+    assert stage3.select_lighting(PipelineSettings(lighting="auto"), 45) is None
+    with pytest.raises(ImportError):
+        stage3.select_lighting(PipelineSettings(lighting="cuda"), 45)
+    monkeypatch.setattr(stage3, "_make_gpu_session", lambda settings, spc: (_ for _ in ()).throw(ValueError("a bug")))
+    with pytest.raises(ValueError, match="a bug"):                                       # other errors are not hidden
+        stage3.select_lighting(PipelineSettings(lighting="auto"), 45)
+
+
+def test_an_available_gpu_is_used_in_auto_mode(monkeypatch) -> None:
+    fake = CpuStandInSession()
+    monkeypatch.setattr(stage3, "_make_gpu_session", lambda settings, spc: fake)
+    assert stage3.select_lighting(PipelineSettings(lighting="auto"), 45) is fake
+    assert stage3.select_lighting(PipelineSettings(lighting="cuda"), 45) is fake
+
+
+def test_the_lighting_settings_are_validated() -> None:
+    with pytest.raises(ValueError, match="lighting"):
+        PipelineSettings(lighting="gpu")
+    for name in ("gpu_light_workers", "gpu_chunks_per_batch"):
+        for bad in (0, -1, 1.5):
+            with pytest.raises(ValueError, match=name):
+                PipelineSettings(**{name: bad})
+    for bad in (-1, 0.5):
+        with pytest.raises(ValueError, match="gpu_device_id"):
+            PipelineSettings(gpu_device_id=bad)
+    assert PipelineSettings().lighting == "auto" and PipelineSettings(gpu_device_id=1).gpu_device_id == 1
