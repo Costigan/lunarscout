@@ -122,9 +122,10 @@ PARAMETERS = WindowParameters(
 # the CPU with a warning; "cuda" requires a compatible NVIDIA device and driver and fails if there
 # is none (it never falls back); "cpu" never probes CUDA. On the GPU the lightmap and the bit packing
 # run on the device (the same kernel stage 1 uses), GPU_LIGHT_WORKERS threads decode horizons and
-# feed it, and each launch lights GPU_CHUNKS_PER_BATCH days. A GPU run is bit-identical to the CPU
-# one (tested). Measured: the CUDA lightmap lights about 1,200 to 1,400 units/s through the plain
-# production path, against about 390 on all 24 CPU cores; the GPU needs about 1 GB of device memory.
+# feed it, and each launch lights GPU_CHUNKS_PER_BATCH days. A GPU run gives the CPU run's table except
+# for rare one-pixel differences where a pixel's Sun fraction sits within a rounding step of the lit
+# threshold (12 of 4,181 rows in the trial, each off by one pixel). Measured on 10 dense blocks: the
+# CPU pipeline took 536 s, the GPU pipeline 52 s (10x); the GPU needs about 1 GB of device memory.
 LIGHTING = "auto"
 GPU_DEVICE_ID = 0
 GPU_LIGHT_WORKERS = 6

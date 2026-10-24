@@ -4,8 +4,11 @@ A unit is 24 hours of flood steps of one 128 x 128 patch, stored as packed lit b
 (``safe_haven_litstore``: ``(steps_per_chunk, 128, 2)`` 64-bit words, bit ``k`` of word ``w`` in a
 row being column ``64 * w + k``). ``LitCudaSession`` computes them with the production CUDA
 lightmap kernel (the one stage 1 runs) followed by a small packing kernel, so only the packed bits,
-33 times fewer than the float32 fractions, cross the PCIe bus. The result is bit-identical to
-``safe_haven_litstore.light_patch_chunks_fused`` (the CPU route), which is its test.
+33 times fewer than the float32 fractions, cross the PCIe bus. The result matches
+``safe_haven_litstore.light_patch_chunks_fused`` (the CPU route), which is its test, except at pixel-steps
+whose Sun fraction lies within a few float32 steps of the lit threshold: there the GPU and CPU arithmetic
+can differ by up to about three ulps and the bit can fall either way (3 bits in 106 million pixel-steps
+in one traced cell window; 12 of 4,181 table rows differ, each by one pixel).
 
 The packing kernel has a fixed trip count (64 bits per word), checks every index against its array
 bounds and launches exactly one thread per output word, so it cannot loop without end or write out

@@ -1,4 +1,8 @@
-"""CUDA lighting of stage-3 units, bit for bit against the CPU route.
+"""CUDA lighting of stage-3 units, bit for bit against the CPU route on the test scenes.
+
+On real data the two routes can differ at pixel-steps whose Sun fraction is within a few float32 steps of
+the lit threshold (3 bits in 106 million pixel-steps in one traced cell window); the scenes here do not
+hit one.
 
 These tests use a real GPU: set LUNARSCOUT_REQUIRE_NUMBA_CUDA=1. Every kernel they launch is the
 production lightmap kernel or the fixed-trip-count packing kernel of ``safe_haven_lit_cuda``."""

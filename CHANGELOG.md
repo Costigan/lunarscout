@@ -33,12 +33,13 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 - **Safe-haven stage 3 can light on the GPU (`LIGHTING = "auto" | "cuda" | "cpu"`).**
   `safe_haven_lit_cuda.LitCudaSession` runs the production CUDA lightmap and a new packing kernel
   (fixed 64-iteration loop, bounds-checked, one thread per output word) so that only packed lit bits
-  return to the host; the result is bit-identical to the CPU route (tested on a real GPU with
-  `LUNARSCOUT_REQUIRE_NUMBA_CUDA=1`). `PipelineSettings` gained `lighting`, `gpu_device_id`,
+  return to the host; the result matches the CPU route bit for bit in the tests (real GPU, with
+  `LUNARSCOUT_REQUIRE_NUMBA_CUDA=1`) except at pixel-steps within a few float32 steps of the lit threshold,
+  where GPU and CPU rounding can differ (3 bits in 106 million pixel-steps in one traced cell window).
+  On 10 dense blocks of the real pole the CPU pipeline took 536 s and the GPU pipeline 52 s (10x), and
+  12 of 4,181 table rows differ, each by one pixel. `PipelineSettings` gained `lighting`, `gpu_device_id`,
   `gpu_light_workers` and `gpu_chunks_per_batch`; `"auto"` falls back to the CPU with a warning,
-  `"cuda"` never falls back and `"cpu"` never probes CUDA. In a plain run of the production path the
-  CUDA lightmap lit 1,160 to 1,380 units/s against about 390 on all CPU cores.
-- **Safe-haven stage 3 is a pipeline with bounded queues.** `run_pass_two(pipeline=PipelineSettings(...))`
+  `"cuda"` never falls back and `"cpu"` never probes CUDA. - **Safe-haven stage 3 is a pipeline with bounded queues.** `run_pass_two(pipeline=PipelineSettings(...))`
   plans cells in processes (pass 1), lights the (patch, chunk) units they need in threads (the CPU
   lightmap with threshold and packing fused into one compiled pass, which releases the GIL; the
   lightmap kernel is now compiled `nogil`), decodes horizons into a small cache on demand, and floods

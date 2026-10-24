@@ -272,8 +272,13 @@ packing kernel (one thread per output word, a fixed 64-iteration loop, every ind
 that thresholds and packs, so only the packed bits (92 KB per unit, 33 times fewer than the float32
 fractions) come back. The CUDA session is created after the planning processes fork. A patch's
 horizons go to the device once and its units come back a batch at a time; `gpu_light_workers` threads
-decode horizons while the GPU computes. The bits are identical to the CPU route's (tested bit for bit
-on full and partial patches, at several thresholds, with ties, NaN and threads sharing one session).
+decode horizons while the GPU computes. The bits match the CPU route's (tested bit for bit on
+full and partial patches, at several thresholds, with ties, NaN and threads sharing one session),
+except at pixel-steps whose Sun fraction is within a few float32 steps of the lit threshold, where the
+GPU and CPU arithmetic can differ by up to about three ulps and the bit falls either way: in one traced
+cell window 3 bits of 106 million pixel-steps differ (fractions 0.9999989 and 0.9999990 against the
+threshold 0.999999). On the 10 dense blocks, 12 of 4,181 rows differ, each by one pixel in a count,
+with no change of seed. Measured on those blocks: CPU pipeline 536 s, GPU pipeline 52 s.
 
 **Diagnostics.** For each seed, `earth_visible_before_h` and
 `earth_visible_after_h`: the contiguous Earth-available time adjacent to the
