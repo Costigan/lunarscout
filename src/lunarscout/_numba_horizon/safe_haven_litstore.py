@@ -65,6 +65,10 @@ class LitStore:
     def clear(self) -> None:
         self._chunks.clear()
 
+    def discard(self, patch_row: int, patch_column: int, chunk: int) -> None:
+        """Forget one unit (a no-op if it is not stored)."""
+        self._chunks.pop((int(patch_row), int(patch_column), int(chunk)), None)
+
     def has(self, patch_row: int, patch_column: int, chunk: int) -> bool:
         return self.outside(patch_row, patch_column) or (patch_row, patch_column, chunk) in self._chunks
 
@@ -187,6 +191,77 @@ def light_patch_chunks(
             )
             done += fractions.shape[0]
         result[chunk] = pack_bits(lit)
+    return result
+
+
+_THRESHOLD_PACK: list = []
+
+
+def threshold_and_pack_python(fractions, valid_height, valid_width, threshold, out):
+    """Set bit ``column`` of ``out[step, row]`` (two 64-bit words per row) where the fraction is at
+    least ``threshold``, for the valid rows and columns. Written as plain loops so that Numba can
+    compile it (``nogil``); identical to thresholding in float64 and ``pack_bits``."""
+    one = np.uint64(1)
+    for step in range(fractions.shape[0]):
+        for row in range(valid_height):
+            low = np.uint64(0)
+            high = np.uint64(0)
+            for column in range(valid_width):
+                if np.float64(fractions[step, row, column]) >= threshold:
+                    if column < 64:
+                        low |= one << np.uint64(column)
+                    else:
+                        high |= one << np.uint64(column - 64)
+            out[step, row, 0] = low
+            out[step, row, 1] = high
+
+
+def _threshold_and_pack(compiled: bool = True):
+    if not compiled:
+        return threshold_and_pack_python
+    if not _THRESHOLD_PACK:
+        from numba import njit
+
+        _THRESHOLD_PACK.append(njit(cache=False, nogil=True)(threshold_and_pack_python))
+    return _THRESHOLD_PACK[0]
+
+
+def light_patch_chunks_fused(
+    session,
+    dem,
+    horizons: npt.NDArray[np.float32],
+    patch_row: int,
+    patch_column: int,
+    grid: FloodGrid,
+    chunks: Iterable[int],
+    sun_vectors_at: Callable[[npt.NDArray[np.datetime64]], npt.ArrayLike],
+    operating_sunlight_fraction: float = 1.0,
+    *,
+    compiled: bool = True,
+) -> dict[int, npt.NDArray[np.uint64]]:
+    """The packed lit bits of ``light_patch_chunks``, thresholded and packed in one compiled pass
+    (no float64 copy, no boolean cube) that releases the GIL, so lighting threads overlap."""
+    from .safe_haven_flood import OPERATING_FUZZ
+
+    tile_y, tile_x = patch_row * PATCH_SIZE, patch_column * PATCH_SIZE
+    valid_height = min(PATCH_SIZE, dem.elevation_m.shape[0] - tile_y)
+    valid_width = min(PATCH_SIZE, dem.elevation_m.shape[1] - tile_x)
+    threshold = float(operating_sunlight_fraction) - OPERATING_FUZZ
+    kernel = _threshold_and_pack(compiled)
+    spc = grid.steps_per_chunk
+    result: dict[int, npt.NDArray[np.uint64]] = {}
+    for chunk in sorted(set(int(c) for c in chunks)):
+        steps = np.arange(chunk * spc, (chunk + 1) * spc, dtype=np.int64)
+        vectors = np.asarray(sun_vectors_at(grid.times(steps)), dtype=np.float64)
+        bits = np.zeros((spc, PATCH_SIZE, WORDS_PER_PATCH_ROW), dtype=np.uint64)
+        done = 0
+        for fractions in session.iter_patch_fraction_batches(
+            dem, horizons, vectors, tile_y=tile_y, tile_x=tile_x,
+            valid_height=valid_height, valid_width=valid_width,
+        ):
+            kernel(fractions, valid_height, valid_width, threshold, bits[done: done + fractions.shape[0]])
+            done += fractions.shape[0]
+        result[chunk] = bits
     return result
 
 

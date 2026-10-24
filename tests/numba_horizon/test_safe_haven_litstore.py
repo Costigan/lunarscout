@@ -235,3 +235,54 @@ def test_a_seed_unlit_at_its_boundary_moves_one_step_or_is_a_mismatch(prepared) 
     clear(after)
     clear(after + 1)
     assert litstore.flood_seed_from_store(store, passable, window, (row, column), before, after, **args) is None
+
+
+# --- the fused threshold-and-pack lighting, the unit discard and the valid-pixel mask ------------------
+
+
+def test_fused_lighting_is_bit_identical_to_threshold_then_pack(prepared) -> None:
+    from lunarscout._numba_horizon.file_format import read_patch_horizons
+    from lunarscout._numba_horizon.lightmap_cpu import LightmapCpuSession
+
+    chunk = a_seed(prepared)["boundary_after_step"] // SPC
+    horizons = read_patch_horizons(prepared["store"], 0, 0, 0.0)
+    session = LightmapCpuSession()
+    for fraction in (1.0, 0.99, 0.5, 0.0):
+        expected = litstore.light_patch_chunks(
+            session, prepared["dem"], horizons, 0, 0, GRID, [chunk, chunk + 1], scene.sun_vectors, fraction)
+        for compiled in (True, False):
+            got = litstore.light_patch_chunks_fused(
+                session, prepared["dem"], horizons, 0, 0, GRID, [chunk + 1, chunk], scene.sun_vectors, fraction,
+                compiled=compiled)
+            assert sorted(got) == sorted(expected) == [chunk, chunk + 1]
+            for key in expected:
+                assert np.array_equal(got[key], expected[key]), (fraction, compiled, key)
+    assert any(got[key].any() for key in got) and not all(got[key].all() for key in got)
+
+
+def test_the_threshold_kernel_handles_the_equality_fuzz_and_partial_patches() -> None:
+    fractions = np.zeros((2, 3, 70), dtype=np.float32)
+    fractions[0, 0, 0] = 1.0
+    fractions[0, 0, 63] = np.float32(1.0 - 5e-7)      # within the 1e-6 fuzz of 1.0: lit
+    fractions[0, 0, 64] = np.float32(1.0 - 2e-6)      # outside it: dark
+    fractions[1, 2, 69] = 1.0
+    for compiled in (True, False):
+        out = np.zeros((2, 128, 2), dtype=np.uint64)
+        litstore._threshold_and_pack(compiled)(fractions, 3, 70, 1.0 - 1e-6, out)
+        assert int(out[0, 0, 0]) == (1 | (1 << 63)) and int(out[0, 0, 1]) == 0
+        assert int(out[1, 2, 1]) == 1 << 5 and out[:, 3:].sum() == 0 and out[0, 1:].sum() == 0
+
+
+def test_a_unit_can_be_discarded_and_discarding_twice_is_harmless() -> None:
+    store = LitStore(GRID, (300, 300))
+    store.put(0, 0, 4, np.zeros(store.chunk_shape, dtype=np.uint64))
+    assert store.has(0, 0, 4) and len(store) == 1
+    store.discard(0, 0, 4)
+    store.discard(0, 0, 4)
+    assert not store.has(0, 0, 4) and len(store) == 0
+
+
+def test_the_valid_pixel_mask_equals_isfinite_of_the_decoded_product(prepared) -> None:
+    stage1 = prepared["stage1"]
+    window = (0, scene.SIZE, 0, scene.SIZE)
+    assert np.array_equal(stage1.read_valid_window(*window), np.isfinite(stage1.read_hibernation_window(*window)))

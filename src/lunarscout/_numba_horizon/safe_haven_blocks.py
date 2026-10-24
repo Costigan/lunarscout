@@ -624,6 +624,70 @@ def _run_blocks_in_workers(pending, by_block, run_arguments, finish, *, workers,
         _WORKER.clear()
 
 
+def _passable_packed(usable: npt.NDArray[np.bool_], patch_window: tuple[int, int, int, int]):
+    """A cell window's usable pixels, padded to whole patches, as packed bits."""
+    passable = np.zeros((patch_window[2] * PATCH_SIZE, patch_window[3] * PATCH_SIZE), dtype=bool)
+    passable[:usable.shape[0], :usable.shape[1]] = usable
+    return pack_bits(passable)
+
+
+def _flood_record(
+    store, record: dict, window, patch_window, passable_packed, flood_counts: PassTwoCounts, *, cell: Cell,
+    month_label: str, grid, parameters, flood_steps: int, compiled: bool, cell_size: int, transform,
+    dem_height: int, dem_width: int,
+) -> list[dict]:
+    """Flood every seed of one cell-month from a lit store and return its table rows (the best
+    ``max_seeds_per_cell_month``, ranked). Counts go into ``flood_counts``."""
+    flood_counts.cell_months_flooded += 1
+    results = []
+    for seed in record["seeds"]:
+        flood_counts.seeds_flooded += 1
+        result = flood_seed_from_store(
+            store, passable_packed, patch_window,
+            (seed["row"] - window[0], seed["column"] - window[2]),
+            seed["boundary_before_step"], seed["boundary_after_step"],
+            steps=flood_steps, connectivity=parameters.connectivity, compiled=compiled,
+        )
+        if result is None:
+            flood_counts.seeds_boundary_mismatch += 1
+        elif not result.valid:
+            flood_counts.seeds_without_both_sides += 1
+        else:
+            results.append((seed, result))
+    if not results:
+        flood_counts.cell_months_without_valid_seed += 1
+        return []
+    results.sort(key=lambda item: (-item[1].score, item[0]["row"], item[0]["column"]))
+    row0, col0 = cell[0] * cell_size, cell[1] * cell_size
+    row1, col1 = min(dem_height, row0 + cell_size), min(dem_width, col0 + cell_size)
+    rows = []
+    for rank, (seed, result) in enumerate(results[: parameters.max_seeds_per_cell_month], start=1):
+        rows.append({
+            "cell_row": cell[0], "cell_col": cell[1],
+            "x_min_m": float(transform[0] + col0 * transform[1]),
+            "y_min_m": float(transform[3] + row1 * transform[5]),
+            "x_max_m": float(transform[0] + col1 * transform[1]),
+            "y_max_m": float(transform[3] + row0 * transform[5]),
+            "month": month_label, "rank": rank,
+            "seed_row": seed["row"], "seed_col": seed["column"],
+            "seed_x_m": float(transform[0] + (seed["column"] + 0.5) * transform[1]),
+            "seed_y_m": float(transform[3] + (seed["row"] + 0.5) * transform[5]),
+            "hibernation_hours": seed["hibernation_hours"],
+            "outage_start_utc": seed["outage_start_utc"], "outage_end_utc": seed["outage_end_utc"],
+            "boundary_before_utc": _utc(grid, seed["boundary_before_step"]),
+            "boundary_after_utc": _utc(grid, seed["boundary_after_step"]),
+            "count_before": result.count_before, "count_after": result.count_after,
+            "score": result.score,
+            "nearby_haven_count": seed["nearby_haven_count"],
+            "nearby_pixel_count": seed["nearby_pixel_count"],
+            "nearby_haven_fraction": seed["nearby_haven_fraction"],
+            "candidate_seeds": len(record["seeds"]), "valid_seeds": len(results),
+            "earth_visible_before_h": seed["earth_visible_before_hours"],
+            "earth_visible_after_h": seed["earth_visible_after_hours"],
+        })
+    return rows
+
+
 def _run_block(
     block_cells_list: list[Cell], *, dem, horizon_store, stage1, time, grid, parameters, flood_steps,
     halo, cell_size, residency, months, transform, compiled, observer_height_m,
@@ -672,56 +736,13 @@ def _run_block(
             )
             flood_counts.lit_units_computed += counts.computed
             flood_counts.lit_units_reused += counts.reused
-            passable = np.zeros((patch_window[2] * PATCH_SIZE, patch_window[3] * PATCH_SIZE), dtype=bool)
-            usable = np.isfinite(hibernation[month])
-            passable[:usable.shape[0], :usable.shape[1]] = usable
-            passable_packed = pack_bits(passable)
-            flood_counts.cell_months_flooded += 1
-            results = []
-            for seed in record["seeds"]:
-                flood_counts.seeds_flooded += 1
-                result = flood_seed_from_store(
-                    store, passable_packed, patch_window,
-                    (seed["row"] - window[0], seed["column"] - window[2]),
-                    seed["boundary_before_step"], seed["boundary_after_step"],
-                    steps=flood_steps, connectivity=parameters.connectivity, compiled=compiled,
-                )
-                if result is None:
-                    flood_counts.seeds_boundary_mismatch += 1
-                elif not result.valid:
-                    flood_counts.seeds_without_both_sides += 1
-                else:
-                    results.append((seed, result))
-            if not results:
-                flood_counts.cell_months_without_valid_seed += 1
-                continue
-            results.sort(key=lambda item: (-item[1].score, item[0]["row"], item[0]["column"]))
-            row0, col0 = cell[0] * cell_size, cell[1] * cell_size
-            row1, col1 = min(dem.height, row0 + cell_size), min(dem.width, col0 + cell_size)
-            for rank, (seed, result) in enumerate(results[: parameters.max_seeds_per_cell_month], start=1):
-                rows.append({
-                    "cell_row": cell[0], "cell_col": cell[1],
-                    "x_min_m": float(transform[0] + col0 * transform[1]),
-                    "y_min_m": float(transform[3] + row1 * transform[5]),
-                    "x_max_m": float(transform[0] + col1 * transform[1]),
-                    "y_max_m": float(transform[3] + row0 * transform[5]),
-                    "month": months[month], "rank": rank,
-                    "seed_row": seed["row"], "seed_col": seed["column"],
-                    "seed_x_m": float(transform[0] + (seed["column"] + 0.5) * transform[1]),
-                    "seed_y_m": float(transform[3] + (seed["row"] + 0.5) * transform[5]),
-                    "hibernation_hours": seed["hibernation_hours"],
-                    "outage_start_utc": seed["outage_start_utc"], "outage_end_utc": seed["outage_end_utc"],
-                    "boundary_before_utc": _utc(grid, seed["boundary_before_step"]),
-                    "boundary_after_utc": _utc(grid, seed["boundary_after_step"]),
-                    "count_before": result.count_before, "count_after": result.count_after,
-                    "score": result.score,
-                    "nearby_haven_count": seed["nearby_haven_count"],
-                    "nearby_pixel_count": seed["nearby_pixel_count"],
-                    "nearby_haven_fraction": seed["nearby_haven_fraction"],
-                    "candidate_seeds": len(record["seeds"]), "valid_seeds": len(results),
-                    "earth_visible_before_h": seed["earth_visible_before_hours"],
-                    "earth_visible_after_h": seed["earth_visible_after_hours"],
-                })
+            passable_packed = _passable_packed(np.isfinite(hibernation[month]), patch_window)
+            rows.extend(_flood_record(
+                store, record, window, patch_window, passable_packed, flood_counts, cell=cell,
+                month_label=months[month], grid=grid, parameters=parameters, flood_steps=flood_steps,
+                compiled=compiled, cell_size=cell_size, transform=transform, dem_height=dem.height,
+                dem_width=dem.width,
+            ))
         store.clear()
     flood_counts.rows = len(rows)
     return plan_counts, flood_counts, rows

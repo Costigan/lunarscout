@@ -243,7 +243,7 @@ def _build_cpu_functions():
 
     evaluate_pixel = compile_function(evaluate_pixel)
     return (
-        compile_function(calculate, parallel=True),
+        compile_function(calculate, parallel=True, nogil=True),
         compile_function(calculate_pixel),
     )
 

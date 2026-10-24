@@ -848,6 +848,21 @@ class Stage1Rasters:
         with rasterio.open(self.hibernation_path) as one:
             return self._decode(one.read(window=Window(col0, row0, col1 - col0, row1 - row0)))
 
+    def read_valid_window(self, row0: int, row1: int, col0: int, col1: int) -> npt.NDArray[np.bool_]:
+        """Usable-pixel mask ``(months, rows, columns)``: the hibernation value is not NODATA.
+
+        The same as ``np.isfinite(read_hibernation_window(...))`` without expanding a byte product
+        to float64.
+        """
+        import rasterio
+        from rasterio.windows import Window
+
+        with rasterio.open(self.hibernation_path) as one:
+            raw = one.read(window=Window(col0, row0, col1 - col0, row1 - row0))
+        if self.hours_per_count is None:
+            return np.isfinite(raw)
+        return raw != self.nodata
+
     def read_haven_window(self, row0: int, row1: int, col0: int, col1: int,
                           survival_limit_hours: float) -> npt.NDArray[np.bool_]:
         """Haven mask ``(months, rows, columns)``: hibernation at most ``survival_limit_hours``.
