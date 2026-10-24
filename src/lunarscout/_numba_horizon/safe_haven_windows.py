@@ -524,6 +524,7 @@ class CandidateEvaluator:
             int(math.ceil(parameters.operational_hours / step)) + 2,
         )
         self.forward = int(math.ceil(15.0 * 24.0 / step))
+        self.back_extension = int(math.ceil(30.0 * 24.0 / step))
         self.after_samples = int(math.ceil(parameters.operational_hours / step)) + 1 + self.window
 
     def evaluate(self, row: int, column: int, month: int) -> PixelRecord | str:
@@ -561,10 +562,17 @@ class CandidateEvaluator:
                     continue
                 return "no_record"
             if found.open_start:
-                raise PlanConsistencyError(
-                    f"pixel ({row}, {column}) month {month}: a shadow run reaches back "
-                    "past the examined span"
-                )
+                # A candidate's shadow run begins before the span, so its score is only a lower
+                # bound and it may not be the month's best. Look further back until every run
+                # that touches the winning hibernation is closed (a run at the start of the
+                # series is closed by definition, so this ends).
+                if start == 0:
+                    raise PlanConsistencyError(
+                        f"pixel ({row}, {column}) month {month}: a shadow run reaches back "
+                        "past the start of the series"
+                    )
+                start = max(0, start - self.back_extension)
+                continue
             record = found.record
             needed = record.outage_last + 1 + self.after_samples
             if stop < count and (found.open_end or stop <= needed):
@@ -839,6 +847,21 @@ class Stage1Rasters:
 
         with rasterio.open(self.hibernation_path) as one:
             return self._decode(one.read(window=Window(col0, row0, col1 - col0, row1 - row0)))
+
+    def read_valid_window(self, row0: int, row1: int, col0: int, col1: int) -> npt.NDArray[np.bool_]:
+        """Usable-pixel mask ``(months, rows, columns)``: the hibernation value is not NODATA.
+
+        The same as ``np.isfinite(read_hibernation_window(...))`` without expanding a byte product
+        to float64.
+        """
+        import rasterio
+        from rasterio.windows import Window
+
+        with rasterio.open(self.hibernation_path) as one:
+            raw = one.read(window=Window(col0, row0, col1 - col0, row1 - row0))
+        if self.hours_per_count is None:
+            return np.isfinite(raw)
+        return raw != self.nodata
 
     def read_haven_window(self, row0: int, row1: int, col0: int, col1: int,
                           survival_limit_hours: float) -> npt.NDArray[np.bool_]:

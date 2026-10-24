@@ -17,18 +17,25 @@ times, thresholds, observer height and degenerate-outage window, and the horizon
 be the ones stage 1 used. SPICE supplies Sun and Earth positions unless you replace the
 two vector sources.
 
-This is the CPU reference route: CPU lightmap, CPU packed-bit flood, horizons held in
-host memory. It needs no NVIDIA device. It loads the CPU heavily for many hours, and it reads
-the horizon tiles from disk throughout: watch scripts/monitor_temperatures.py in a second
-terminal for the first 10 to 20 minutes. A block of 8 patches holds up to 10 x 10
-patches of float32 horizons (about 9.4 GB); lower BLOCK_PATCHES (a multiple of
-CELL_PATCHES) if the host has less memory. Set CELLS for a trial before running every cell
-(scripts/list_safe_haven_cells.py prints a CELLS line). Importing this file starts nothing.
+This is the CPU route: CPU lightmap, CPU packed-bit flood, run as a pipeline with bounded queues
+(PLAN_WORKERS and its neighbours below). It needs no NVIDIA device. It loads the CPU heavily for
+many hours and reads the horizon tiles from disk throughout: watch scripts/monitor_temperatures.py
+in a second terminal for the first 10 to 20 minutes. Memory is the units in flight, not a block of
+horizons: the script logs its estimate at the start and warns when it exceeds what is free. Set
+CELLS for a trial before running every cell (scripts/list_safe_haven_cells.py prints a CELLS
+line). Ctrl-C once stops feeding cells after the block being fed and lets everything in flight
+finish (finished blocks are checkpointed); Ctrl-C again stops at once. Importing this file starts
+nothing.
+
+Progress and status messages are logged: to the console, colored with rich on a terminal when
+`pip install "lunarscout[console]"` is installed and plain when piped, and to a plain-text log
+file next to the output (LOG_PATH, COLOR and LOG_LEVEL below), so `| tee` is not needed.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import time as clock
 from pathlib import Path
@@ -39,12 +46,15 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 import lunarscout as ls  # noqa: E402
 from lunarscout._numba_horizon.file_format import HorizonTileStore  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_blocks import run_pass_two  # noqa: E402
+from lunarscout._numba_horizon.safe_haven_stage3 import PipelineSettings  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_cells import read_cell_list  # noqa: E402
+from lunarscout._numba_horizon.file_format import PATCH_SIZE  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_windows import (  # noqa: E402
     Stage1Rasters,
     WindowParameters,
     spice_vector_source,
 )
+from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
 from lunarscout.products import _load_dem  # noqa: E402
 
 
@@ -94,13 +104,69 @@ PARAMETERS = WindowParameters(
     degenerate_outage_window_hours=24.0,
 )
 
+# The pipeline (src/lunarscout/_numba_horizon/safe_haven_stage3.py): cells are planned (pass 1) in
+# PLAN_WORKERS processes, the lighting units they need are lit by LIGHT_WORKERS threads (each calling
+# the CPU lightmap with NUMBA_THREADS_PER_LIGHT_WORKER threads), and each cell-month is flooded by
+# FLOOD_WORKERS threads as soon as its units are lit. Bounded queues join them: at most
+# CELLS_IN_FLIGHT cells are planned and not yet flooded, and at most STORE_BUDGET_GB of lit units
+# are requested at a time, so memory is the units in flight plus DECODE_CACHE_PATCHES decoded
+# patches (94 MB each), not a block of horizons per worker. STATUS_SECONDS logs where work is
+# waiting; when LIGHT is the stage with a long queue and the flood has nothing ready, lighting is the
+# limit, as it is on the CPU: LIGHT_WORKERS x NUMBA_THREADS_PER_LIGHT_WORKER should be about the CPU
+# count. Measured on 10 dense blocks (this laptop, idle, same table every time): the block loop took
+# 1179 s, the pipeline 498 s (2.4x), 16 GB, with lighting at about 390 units/s, the CPU kernel's
+# ceiling. A checkpoint resumes with any of these settings.
+PLAN_WORKERS = 4
+LIGHT_WORKERS = 12
+NUMBA_THREADS_PER_LIGHT_WORKER = 2
+FLOOD_WORKERS = 2
+DECODE_CACHE_PATCHES = 32
+CELLS_IN_FLIGHT = 24
+STORE_BUDGET_GB = 8.0
+STATUS_SECONDS = 60.0
+
 # None runs every cell in the stage-2 list. For a trial, list (cell_row, cell_column) pairs, for
 # example the CELLS line printed by scripts/list_safe_haven_cells.py; the stage-2 list is then
 # not needed.
 CELLS = None
 
+# Messages go to the console (colored with rich on a terminal when "lunarscout[console]" is
+# installed; plain when piped) and to a plain-text log file, which replaces `| tee`. LOG_PATH
+# None writes next to the output file. COLOR is "auto", "always" (even into a pipe) or "never".
+LOG_PATH = None
+COLOR = "auto"
+LOG_LEVEL = "INFO"
+LOG = logging.getLogger("lunarscout.scripts.stage3")
+PATCH_BYTES = PATCH_SIZE * PATCH_SIZE * 1440 * 4          # one decoded float32 patch
 
-def main() -> int:
+
+def _available_memory_bytes() -> int | None:
+    """MemAvailable from /proc/meminfo, or None where it is not readable."""
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _warn_if_memory_is_short(dem_bytes: int) -> None:
+    """Log the expected memory and warn when it exceeds what is available. The estimate is the DEM, the
+    decode cache, the lit-unit budget and about 2 GB for each planning process (measured: 16 GB for the
+    settings above), so treat it as a guide."""
+    cache = DECODE_CACHE_PATCHES * PATCH_BYTES
+    expected = dem_bytes + cache + STORE_BUDGET_GB * 2**30 + PLAN_WORKERS * 2 * 2**30
+    available = _available_memory_bytes()
+    LOG.info("Stage 3: about %.0f GB expected (DEM, %d cached patches, %.0f GB of units, %d planning "
+             "processes; an estimate)%s.", expected / 1e9, DECODE_CACHE_PATCHES, STORE_BUDGET_GB,
+             PLAN_WORKERS, "" if available is None else ", %.0f GB available" % (available / 1e9))
+    if available is not None and expected > available:
+        LOG.warning("Stage 3: about %.0f GB expected but only %.0f GB is available; lower "
+                    "STORE_BUDGET_GB, DECODE_CACHE_PATCHES or PLAN_WORKERS.", expected / 1e9, available / 1e9)
+
+
+def _run() -> int:
     dem, _georef = _load_dem(DEM_PATH)
     stage1 = Stage1Rasters(
         STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_hibernation_hours.tif",
@@ -118,7 +184,8 @@ def main() -> int:
             cell_size=PARAMETERS.cell_patches * 128,
         )
         cells = [(entry["cell_row"], entry["cell_col"]) for entry in found]
-        print(f"Stage 3: {len(cells)} cells from {CELL_LIST_PATH}", flush=True)
+        LOG.info("Stage 3: %d cells from %s", len(cells), CELL_LIST_PATH)
+    _warn_if_memory_is_short(int(dem.elevation_m.nbytes))
     times = ls.times(START_UTC, STOP_UTC, step_hours=STEP_HOURS)
     started = clock.monotonic()
     baseline: list[int] = []
@@ -126,15 +193,14 @@ def main() -> int:
     def progress(done: int, total: int) -> None:
         if not baseline:
             baseline.append(done)
-            print(f"Stage 3: {done}/{total} blocks already in the checkpoint.", flush=True)
+            LOG.info("Stage 3: %d/%d blocks already in the checkpoint.", done, total)
             return
         ran = done - baseline[0]
         elapsed = clock.monotonic() - started
         remaining = elapsed / ran * (total - done) if ran else float("nan")
-        print(
-            f"Stage 3: {done}/{total} blocks, {elapsed / 60:.1f} min elapsed, "
-            f"about {remaining / 60:.1f} min left (rate from this run only)",
-            flush=True,
+        LOG.info(
+            "Stage 3: %d/%d blocks, %.1f min elapsed, about %.1f min left (rate from this run only)",
+            done, total, elapsed / 60, remaining / 60,
         )
 
     report = run_pass_two(
@@ -153,10 +219,28 @@ def main() -> int:
         sunlight_fraction_threshold=SUNLIGHT_FRACTION_THRESHOLD,
         merge_gap_hours=MERGE_GAP_HOURS,
         progress=progress,
+        pipeline=PipelineSettings(
+            plan_workers=PLAN_WORKERS, light_workers=LIGHT_WORKERS,
+            numba_threads_per_light_worker=NUMBA_THREADS_PER_LIGHT_WORKER, flood_workers=FLOOD_WORKERS,
+            decode_cache_patches=DECODE_CACHE_PATCHES, cells_in_flight=CELLS_IN_FLIGHT,
+            store_budget_bytes=int(STORE_BUDGET_GB * 2**30), status_seconds=STATUS_SECONDS,
+        ),
     )
     print(json.dumps(report.as_dict(), indent=2), flush=True)
-    print(f"Table written to: {OUTPUT_PATH}", flush=True)
+    LOG.info("Table written to: %s", OUTPUT_PATH)
     return 0
+
+
+def main() -> int:
+    log_path = LOG_PATH if LOG_PATH is not None else OUTPUT_PATH.with_name(OUTPUT_PATH.name + ".log")
+    setup_script_logging(log_path, color=COLOR, level=LOG_LEVEL)
+    try:
+        return _run()
+    except Exception as error:
+        LOG.error("Stage 3 stopped: %s: %s", type(error).__name__, error)
+        raise
+    finally:
+        reset_script_logging()
 
 
 if __name__ == "__main__":

@@ -203,7 +203,10 @@ def test_the_stage_2_script_writes_the_cell_list_and_prints_it(products, tmp_pat
     assert "Stage 2: 3/3 cell rows" in printed and f"Cell list written to: {tmp_path / 'cells.json'}" in printed
     assert cells.read_cell_list(tmp_path / "cells.json", products.byte, survival_limit_hours=72.0,
                                 cell_size=CELL) == found
+    log = (tmp_path / "cells.json.log").read_text()
+    assert "lunarscout.scripts.stage2: Stage 2: 3/3 cell rows" in log and "Cell list written to" in log
     with pytest.raises(ValueError, match="exists"):
         module.main()
+    assert "Stage 2 stopped: ValueError" in (tmp_path / "cells.json.log").read_text()
     monkeypatch.setattr(module, "OVERWRITE", True)
     assert module.main() == 0

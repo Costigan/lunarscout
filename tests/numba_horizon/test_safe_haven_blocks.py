@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 import json
+import multiprocessing
+import sys
 from types import SimpleNamespace
 
 import numpy as np
@@ -438,3 +440,265 @@ def test_a_torn_or_missing_checkpoint_header_falls_back_to_a_scan(tmp_path) -> N
     assert blocks._checkpoint_cells(torn) == [(1, 2), (3, 4)]
     torn.write_text(json.dumps({"type": "block", "config": {"cells": [[1, 2]]}}) + "\n")
     assert blocks._checkpoint_cells(torn) is None              # not a header
+
+
+# --- blocks in worker processes ------------------------------------------------------------------------
+
+
+def parallel_kwargs(prepared, name, block_patches=1, **options):
+    return dict(
+        dem=prepared.dem, horizon_store=prepared.store, stage1=prepared.stage1, times=prepared.stamps,
+        sun_vectors_at=scene.sun_vectors, earth_vectors_at=scene.earth_vectors,
+        output_path=prepared.directory / f"{name}.csv", parameters=parameters(block_patches),
+        overwrite=True, **options,
+    )
+
+
+@pytest.mark.parametrize("workers, block_patches", [(2, 1), (3, 1), (2, 2)])
+def test_the_table_is_identical_for_any_number_of_workers(prepared, tables, workers, block_patches) -> None:
+    report = blocks.run_pass_two(**parallel_kwargs(prepared, f"w{workers}b{block_patches}", block_patches,
+                                                   workers=workers))
+    path = prepared.directory / f"w{workers}b{block_patches}.csv"
+    assert path.read_bytes() == tables[block_patches if block_patches in tables else 1][0].read_bytes()
+    sequential = tables[block_patches][1]
+    assert report.workers == workers and report.rows == sequential.rows
+    assert report.plan == sequential.plan and report.flood == sequential.flood
+    assert report.blocks_total == sequential.blocks_total and report.blocks_resumed == 0
+    assert report.peak_resident_patches == sequential.peak_resident_patches
+    # every worker loads its own horizons, so the total lies between the 9 distinct patches and the
+    # 4 blocks' windows read without any sharing (at most 9 patches each)
+    assert 9 <= report.horizon_loads <= 36
+    assert multiprocessing.active_children() == []                  # no worker is left running
+
+
+def test_a_checkpoint_made_with_some_workers_resumes_with_any_other(prepared, tables) -> None:
+    path = prepared.directory / "mixed.csv"
+    kwargs = parallel_kwargs(prepared, "mixed")
+    assert blocks.run_pass_two(stop_after_blocks=2, workers=2, **kwargs) is None
+    checkpoint = path.with_name(path.name + ".checkpoint.jsonl")
+    lines = checkpoint.read_text().splitlines()
+    assert len(lines) == 3 and all(json.loads(line)["type"] in ("header", "block") for line in lines)
+    report = blocks.run_pass_two(workers=1, **kwargs)                 # finish sequentially
+    assert report.blocks_resumed == 2 and path.read_bytes() == tables[1][0].read_bytes()
+    assert blocks.run_pass_two(stop_after_blocks=1, workers=1, **kwargs) is None
+    report = blocks.run_pass_two(workers=3, **kwargs)                 # and in parallel the other way round
+    assert report.blocks_resumed == 1 and path.read_bytes() == tables[1][0].read_bytes()
+
+
+def test_workers_must_be_a_positive_integer(prepared) -> None:
+    for bad in (0, -1, 1.5):
+        with pytest.raises(ValueError, match="workers"):
+            blocks.run_pass_two(**parallel_kwargs(prepared, "bad"), workers=bad)
+
+
+def test_progress_counts_every_block_in_the_order_they_finish(prepared) -> None:
+    calls = []
+    blocks.run_pass_two(**parallel_kwargs(prepared, "progress_parallel"), workers=2,
+                        progress=lambda done, total: calls.append((done, total)))
+    assert calls == [(0, 4), (1, 4), (2, 4), (3, 4), (4, 4)]
+
+
+def test_the_first_interrupt_lets_running_blocks_finish_and_the_run_resumes(prepared, tables) -> None:
+    import os
+    import signal
+
+    path = prepared.directory / "interrupted.csv"
+    kwargs = parallel_kwargs(prepared, "interrupted")
+    sent = []
+
+    def progress(done, total):
+        if done == 1 and not sent:                     # the first block has finished: interrupt
+            sent.append(1)
+            os.kill(os.getpid(), signal.SIGINT)
+
+    previous = signal.getsignal(signal.SIGINT)
+    assert blocks.run_pass_two(workers=2, progress=progress, **kwargs) is None
+    assert signal.getsignal(signal.SIGINT) == previous                # the handler is put back
+    checkpoint = path.with_name(path.name + ".checkpoint.jsonl")
+    finished = [json.loads(line) for line in checkpoint.read_text().splitlines()[1:]]
+    assert 1 <= len(finished) < 4 and not path.exists()               # no more blocks were handed out
+    assert multiprocessing.active_children() == []
+    report = blocks.run_pass_two(workers=2, **kwargs)
+    assert report.blocks_resumed == len(finished)
+    assert path.read_bytes() == tables[1][0].read_bytes()
+
+
+def test_a_sequential_run_also_stops_cleanly_on_an_interrupt(prepared, tables) -> None:
+    import os
+    import signal
+
+    path = prepared.directory / "interrupted_sequential.csv"
+    kwargs = parallel_kwargs(prepared, "interrupted_sequential")
+    sent = []
+
+    def progress(done, total):
+        if done == 1 and not sent:
+            sent.append(1)
+            os.kill(os.getpid(), signal.SIGINT)
+
+    previous = signal.getsignal(signal.SIGINT)
+    assert blocks.run_pass_two(workers=1, progress=progress, **kwargs) is None
+    assert signal.getsignal(signal.SIGINT) == previous
+    checkpoint = path.with_name(path.name + ".checkpoint.jsonl")
+    assert len(checkpoint.read_text().splitlines()) == 2 and not path.exists()      # header + the one finished block
+    assert blocks.run_pass_two(workers=1, **kwargs).blocks_resumed == 1
+    assert path.read_bytes() == tables[1][0].read_bytes()
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_an_interrupt_during_the_last_block_still_writes_the_table(prepared, tables, workers) -> None:
+    import os
+    import signal
+
+    path = prepared.directory / f"last_block_{workers}.csv"
+    sent = []
+
+    def progress(done, total):
+        if done == total and not sent:                    # the last block has just finished
+            sent.append(1)
+            os.kill(os.getpid(), signal.SIGINT)
+
+    report = blocks.run_pass_two(workers=workers, progress=progress, **parallel_kwargs(prepared, f"last_block_{workers}"))
+    assert report is not None and report.blocks_resumed == 0
+    assert path.read_bytes() == tables[1][0].read_bytes()
+
+
+def test_a_second_interrupt_stops_at_once(prepared) -> None:
+    import os
+    import signal
+
+    kwargs = parallel_kwargs(prepared, "double_interrupt")
+    sent = []
+
+    def progress(done, total):
+        if done == 1 and not sent:
+            sent.extend([1, 2])
+            os.kill(os.getpid(), signal.SIGINT)
+            os.kill(os.getpid(), signal.SIGINT)
+
+    with pytest.raises(KeyboardInterrupt):
+        blocks.run_pass_two(workers=1, progress=progress, **kwargs)
+    assert multiprocessing.active_children() == []
+
+
+def test_a_failing_block_is_raised_after_the_finished_blocks_are_recorded(prepared, monkeypatch) -> None:
+    path = prepared.directory / "failing.csv"
+    kwargs = parallel_kwargs(prepared, "failing")
+    real = blocks._run_block
+
+    def sometimes_fails(cells_in_block, **arguments):
+        if (1, 1) in cells_in_block:
+            raise RuntimeError("block (1, 1) is broken")
+        return real(cells_in_block, **arguments)
+
+    monkeypatch.setattr(blocks, "_run_block", sometimes_fails)        # inherited by the forked workers
+    with pytest.raises(RuntimeError, match="block .1, 1. is broken"):
+        blocks.run_pass_two(workers=2, **kwargs)
+    checkpoint = path.with_name(path.name + ".checkpoint.jsonl")
+    recorded = [json.loads(line)["block"] for line in checkpoint.read_text().splitlines()[1:]]
+    assert [1, 1] not in recorded and not path.exists()
+    assert multiprocessing.active_children() == []
+    monkeypatch.setattr(blocks, "_run_block", real)
+    assert blocks.run_pass_two(workers=2, **kwargs).blocks_resumed == len(recorded)
+
+
+def test_the_cpu_is_divided_among_the_workers(monkeypatch) -> None:
+    monkeypatch.setattr(blocks.os, "cpu_count", lambda: 24)
+    assert [blocks.threads_per_worker(w) for w in (1, 5, 24, 48)] == [24, 4, 1, 1]
+    assert blocks.threads_per_worker(5, 2) == 2
+    monkeypatch.setattr(blocks.os, "cpu_count", lambda: None)
+    assert blocks.threads_per_worker(4) == 1
+    for bad in (0, -1, 1.5):
+        with pytest.raises(ValueError, match="numba_threads_per_worker"):
+            blocks.threads_per_worker(2, bad)
+
+
+def test_a_worker_limits_its_numba_threads_and_ignores_interrupts() -> None:
+    import multiprocessing
+    import signal
+
+    import numba
+
+    context = multiprocessing.get_context("fork")
+    answers = context.Queue()
+
+    def child():
+        blocks._WORKER.update(arguments={"horizon_store": None, "observer_height_m": 0.0})
+        blocks._worker_init(2, [])
+        answers.put((numba.get_num_threads(), signal.getsignal(signal.SIGINT) == signal.SIG_IGN))
+
+    process = context.Process(target=child)
+    process.start()
+    answer = answers.get(timeout=60)
+    process.join(10)
+    assert answer == (2, True) and process.exitcode == 0
+    assert signal.getsignal(signal.SIGINT) != signal.SIG_IGN           # this process is untouched
+
+
+def test_workers_run_after_the_parent_has_used_a_parallel_numba_kernel(prepared, tables) -> None:
+    import numba
+    import numpy as np
+
+    @numba.njit(parallel=True)
+    def warm(values):
+        total = 0.0
+        for index in numba.prange(values.shape[0]):
+            total += values[index]
+        return total
+
+    warm(np.arange(1000.0))                                             # the parent has used the threading layer
+    blocks.run_pass_two(**parallel_kwargs(prepared, "afternumba"), workers=2, numba_threads_per_worker=1)
+    assert (prepared.directory / "afternumba.csv").read_bytes() == tables[1][0].read_bytes()
+
+
+def test_the_memory_a_worker_needs_is_the_block_with_its_halo() -> None:
+    assert blocks.estimate_block_memory_bytes(8) == 100 * 128 * 128 * 1440 * 4
+    assert blocks.estimate_block_memory_bytes(4) == 36 * 128 * 128 * 1440 * 4
+    assert blocks.estimate_block_memory_bytes(2, halo_patches=1) / 1e9 == pytest.approx(1.51, abs=0.01)
+
+
+# --- SPICE in forked workers -----------------------------------------------------------------------------
+
+
+def test_the_loaded_spice_kernels_are_listed_without_meta_kernels_and_reloaded_from_scratch(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    calls = []
+    entries = [("meta.tm", "META"), ("naif.tls", "TEXT"), ("de440.bsp", "SPK"), ("moon.bpc", "PCK")]
+    fake = SimpleNamespace(
+        ktotal=lambda kind: len(entries),
+        kdata=lambda index, kind: (entries[index][0], entries[index][1], "", index),
+        kclear=lambda: calls.append("kclear"),
+        furnsh=lambda name: calls.append(name),
+    )
+    monkeypatch.setitem(sys.modules, "spiceypy", fake)
+    files = blocks._loaded_spice_kernels()
+    assert files == ["naif.tls", "de440.bsp", "moon.bpc"]
+    blocks._refurnish_spice(files)
+    assert calls == ["kclear", "naif.tls", "de440.bsp", "moon.bpc"]
+    calls.clear()
+    blocks._refurnish_spice([])                                          # nothing loaded: SPICE is left alone
+    assert calls == []
+    monkeypatch.delitem(sys.modules, "spiceypy")
+    assert blocks._loaded_spice_kernels() == []                          # SPICE was never imported
+
+
+def test_workers_read_the_same_spice_kernels_without_corrupting_each_other() -> None:
+    """Forked workers share the parent's open kernel files. Without the re-load in the worker
+    initializer, five workers reading different times gave silently wrong Sun vectors and
+    SPICE(INVALIDRADIUS) errors (25 wrong results and 39 errors in 3,000 calls). It runs in a
+    fresh process so that importing SPICE does not leak into the other tests."""
+    import subprocess
+    from pathlib import Path
+
+    here = Path(__file__).resolve().parent
+    root = here.parents[1]
+    done = subprocess.run(
+        [sys.executable, str(here / "spice_fork_check.py")], capture_output=True, text=True, timeout=300,
+        env={"PYTHONPATH": f"{root / 'src'}", "PATH": "/usr/bin:/bin", "HOME": str(Path.home())},
+    )
+    if done.returncode == 3:
+        pytest.skip(done.stdout.strip())                  # SPICE or its default kernels are not installed
+    assert done.returncode == 0, done.stdout + done.stderr
+    result = json.loads(done.stdout.strip().splitlines()[-1])
+    assert result == {"wrong": 0, "errors": []}

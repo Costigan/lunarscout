@@ -30,6 +30,49 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   The rate counts only the patches the current run finished, so it is right after
   a resume, and it follows the most recent 1,000 patches, so a slow start drops out
   of the estimate. It reads `ETA pending` for the first few patches.
+- **Safe-haven stage 3 is a pipeline with bounded queues.** `run_pass_two(pipeline=PipelineSettings(...))`
+  plans cells in processes (pass 1), lights the (patch, chunk) units they need in threads (the CPU
+  lightmap with threshold and packing fused into one compiled pass, which releases the GIL; the
+  lightmap kernel is now compiled `nogil`), decodes horizons into a small cache on demand, and floods
+  each cell-month as soon as its units are lit. Units are reference counted and freed after use, so
+  memory is the units in flight (bounded by `cells_in_flight` and `store_budget_bytes`), not a block
+  of horizons per worker. The table is byte-identical to the block loop for any worker counts and
+  bounds. On 10 dense blocks of the real pole the block loop took 1,179 s and the pipeline 498 s
+  (2.4x, 16 GB against 65 GB for five block workers), limited by CPU lighting at about 390 units/s.
+  `scripts/run_safe_haven_stage3.py` now uses it (`PLAN_WORKERS`, `LIGHT_WORKERS`, ...) and
+  `status_seconds` logs where work waits. `Stage1Rasters.read_valid_window` and `LitStore.discard`
+  were added.
+- **Safe-haven stage 3 can run blocks in parallel worker processes (`WORKERS`).** `run_pass_two`
+  takes `workers` and `numba_threads_per_worker`: blocks run in forked workers with their own
+  resident horizons, only the parent writes the checkpoint (as blocks finish, in any order), and the
+  table is identical for any number of workers, any block size and after a resume with a different
+  worker count (checked on real data: 10 dense blocks, sequential, 2, 5 and 12 workers). Measured on
+  those blocks the CPU lighting kernel is about 70 percent of the time and one process already runs
+  it near the machine's limit, so workers only overlap the serial Python part: 1 worker 1179 s,
+  2 workers 919 s (1.28x, 31 GB), 5 workers 847 s (1.39x, 65 GB). The pipeline above supersedes it
+  in the script.
+  Each worker re-opens the SPICE kernels: forked workers shared the parent's open kernel files and
+  read each other's offsets, giving silently wrong Sun vectors and `SPICE(INVALIDRADIUS)` errors
+  (reproduced: 25 wrong results and 39 errors in 3,000 calls; none after the fix). The first Ctrl-C
+  now stops handing out blocks and waits for the running ones, in the sequential path too (before, an
+  interrupt inside a compiled call surfaced as a `SystemError`); a second stops at once; an interrupt
+  during the last block still writes the table.
+- **Safe-haven pass 1: a candidate whose shadow run begins before the examined span no longer stops
+  the run.** The span is extended back in 30-day steps until the winning hibernation's runs are
+  closed (the examined span used to raise `PlanConsistencyError`, which would have ended a stage-3
+  run at block (1, 7)). A month whose stage-1 value disagrees with the recomputed one is skipped and
+  counted as before; one such pixel (row 1582, column 8081, month 19) is a near-tie in Earth's
+  flat-horizon elevation (1.2e-6 degrees between two consecutive samples) that lands on a month
+  boundary and puts a degenerate outage in different months on the GPU and the CPU.
+- **Script logging, optionally colored (`lunarscout[console]`).** `scripts/run_safe_haven_stage2.py`,
+  `run_safe_haven_stage3.py` and `plan_safe_haven_windows.py` now report events through `logging`
+  instead of `print`. Messages go to the console and to a plain-text log file next to the output
+  (`<output>.log`, or `LOG_PATH`), which replaces `| tee`. The console is colored with `rich` when
+  standard output is a terminal, `rich` is installed (new optional extra `lunarscout[console]`)
+  and `NO_COLOR` is not set; into a pipe or without `rich` it is plain one-line messages. Set
+  `COLOR = "always"` to force color into a pipe, and `LOG_LEVEL` to change the level. The library
+  still only calls `logging.getLogger(__name__)` and configures no handlers; the helper is
+  private (`lunarscout._script_logging`). Result tables and JSON reports are still printed.
 - **Safe-haven stage 3 (`scripts/run_safe_haven_stage3.py`, was `run_safe_haven_windows.py`).**
   The flood-through-lit-terrain run now reads the stage-2 cell list instead of scanning stage 1
   itself, and refuses a list whose stage-1 files, survival limit or cell size have changed. `CELLS`
