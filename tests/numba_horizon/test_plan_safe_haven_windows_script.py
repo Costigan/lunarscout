@@ -122,6 +122,7 @@ def test_the_stage_three_script_defaults_and_importing_it_starts_nothing() -> No
     assert module.PARAMETERS.block_patches % module.PARAMETERS.cell_patches == 0
     assert (module.PLAN_WORKERS, module.LIGHT_WORKERS, module.NUMBA_THREADS_PER_LIGHT_WORKER) == (4, 12, 2)
     assert module.FLOOD_WORKERS == 2 and module.STORE_BUDGET_GB == 8.0 and module.CELLS_IN_FLIGHT == 24
+    assert (module.LIGHTING, module.GPU_DEVICE_ID, module.GPU_LIGHT_WORKERS, module.GPU_CHUNKS_PER_BATCH) == ("auto", 0, 6, 4)
     assert module.PARAMETERS.survival_limit_hours == 72.0 and module.PARAMETERS.operational_hours == 48.0
     assert module.CELLS is None and module.CELL_LIST_PATH.name == "safe_haven_degenerate_haven_cells.json"
 
@@ -329,7 +330,8 @@ def test_stage_three_passes_its_pipeline_settings_on_and_reports_the_memory_it_e
                         or SimpleNamespace(as_dict=lambda: {}))
     for name, value in dict(PLAN_WORKERS=3, LIGHT_WORKERS=5, NUMBA_THREADS_PER_LIGHT_WORKER=4, FLOOD_WORKERS=2,
                             DECODE_CACHE_PATCHES=7, CELLS_IN_FLIGHT=9, STORE_BUDGET_GB=1.5,
-                            STATUS_SECONDS=11.0).items():
+                            STATUS_SECONDS=11.0, LIGHTING="cuda", GPU_DEVICE_ID=1, GPU_LIGHT_WORKERS=3,
+                            GPU_CHUNKS_PER_BATCH=2).items():
         monkeypatch.setattr(module, name, value)
     monkeypatch.setattr(module, "_available_memory_bytes", lambda: 10**12)
     assert module.main() == 0
@@ -337,6 +339,8 @@ def test_stage_three_passes_its_pipeline_settings_on_and_reports_the_memory_it_e
     assert (settings.plan_workers, settings.light_workers, settings.numba_threads_per_light_worker,
             settings.flood_workers, settings.decode_cache_patches, settings.cells_in_flight,
             settings.store_budget_bytes, settings.status_seconds) == (3, 5, 4, 2, 7, 9, int(1.5 * 2**30), 11.0)
+    assert (settings.lighting, settings.gpu_device_id, settings.gpu_light_workers,
+            settings.gpu_chunks_per_batch) == ("cuda", 1, 3, 2)
     assert seen["workers"] if "workers" in seen else True
     log = (tmp_path / "windows.csv.log").read_text()
     assert "7 cached patches, 2 GB of units, 3 planning processes" in log and "WARNING" not in log
