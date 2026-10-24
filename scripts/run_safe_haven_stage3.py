@@ -24,11 +24,16 @@ terminal for the first 10 to 20 minutes. A block of 8 patches holds up to 10 x 1
 patches of float32 horizons (about 9.4 GB); lower BLOCK_PATCHES (a multiple of
 CELL_PATCHES) if the host has less memory. Set CELLS for a trial before running every cell
 (scripts/list_safe_haven_cells.py prints a CELLS line). Importing this file starts nothing.
+
+Progress and status messages are logged: to the console, colored with rich on a terminal when
+`pip install "lunarscout[console]"` is installed and plain when piped, and to a plain-text log
+file next to the output (LOG_PATH, COLOR and LOG_LEVEL below), so `| tee` is not needed.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import time as clock
 from pathlib import Path
@@ -45,6 +50,7 @@ from lunarscout._numba_horizon.safe_haven_windows import (  # noqa: E402
     WindowParameters,
     spice_vector_source,
 )
+from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
 from lunarscout.products import _load_dem  # noqa: E402
 
 
@@ -99,8 +105,16 @@ PARAMETERS = WindowParameters(
 # not needed.
 CELLS = None
 
+# Messages go to the console (colored with rich on a terminal when "lunarscout[console]" is
+# installed; plain when piped) and to a plain-text log file, which replaces `| tee`. LOG_PATH
+# None writes next to the output file. COLOR is "auto", "always" (even into a pipe) or "never".
+LOG_PATH = None
+COLOR = "auto"
+LOG_LEVEL = "INFO"
+LOG = logging.getLogger("lunarscout.scripts.stage3")
 
-def main() -> int:
+
+def _run() -> int:
     dem, _georef = _load_dem(DEM_PATH)
     stage1 = Stage1Rasters(
         STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_hibernation_hours.tif",
@@ -118,7 +132,7 @@ def main() -> int:
             cell_size=PARAMETERS.cell_patches * 128,
         )
         cells = [(entry["cell_row"], entry["cell_col"]) for entry in found]
-        print(f"Stage 3: {len(cells)} cells from {CELL_LIST_PATH}", flush=True)
+        LOG.info("Stage 3: %d cells from %s", len(cells), CELL_LIST_PATH)
     times = ls.times(START_UTC, STOP_UTC, step_hours=STEP_HOURS)
     started = clock.monotonic()
     baseline: list[int] = []
@@ -126,15 +140,14 @@ def main() -> int:
     def progress(done: int, total: int) -> None:
         if not baseline:
             baseline.append(done)
-            print(f"Stage 3: {done}/{total} blocks already in the checkpoint.", flush=True)
+            LOG.info("Stage 3: %d/%d blocks already in the checkpoint.", done, total)
             return
         ran = done - baseline[0]
         elapsed = clock.monotonic() - started
         remaining = elapsed / ran * (total - done) if ran else float("nan")
-        print(
-            f"Stage 3: {done}/{total} blocks, {elapsed / 60:.1f} min elapsed, "
-            f"about {remaining / 60:.1f} min left (rate from this run only)",
-            flush=True,
+        LOG.info(
+            "Stage 3: %d/%d blocks, %.1f min elapsed, about %.1f min left (rate from this run only)",
+            done, total, elapsed / 60, remaining / 60,
         )
 
     report = run_pass_two(
@@ -155,8 +168,20 @@ def main() -> int:
         progress=progress,
     )
     print(json.dumps(report.as_dict(), indent=2), flush=True)
-    print(f"Table written to: {OUTPUT_PATH}", flush=True)
+    LOG.info("Table written to: %s", OUTPUT_PATH)
     return 0
+
+
+def main() -> int:
+    log_path = LOG_PATH if LOG_PATH is not None else OUTPUT_PATH.with_name(OUTPUT_PATH.name + ".log")
+    setup_script_logging(log_path, color=COLOR, level=LOG_LEVEL)
+    try:
+        return _run()
+    except Exception as error:
+        LOG.error("Stage 3 stopped: %s: %s", type(error).__name__, error)
+        raise
+    finally:
+        reset_script_logging()
 
 
 if __name__ == "__main__":

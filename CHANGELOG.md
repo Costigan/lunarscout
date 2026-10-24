@@ -30,6 +30,15 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   The rate counts only the patches the current run finished, so it is right after
   a resume, and it follows the most recent 1,000 patches, so a slow start drops out
   of the estimate. It reads `ETA pending` for the first few patches.
+- **Script logging, optionally colored (`lunarscout[console]`).** `scripts/run_safe_haven_stage2.py`,
+  `run_safe_haven_stage3.py` and `plan_safe_haven_windows.py` now report events through `logging`
+  instead of `print`. Messages go to the console and to a plain-text log file next to the output
+  (`<output>.log`, or `LOG_PATH`), which replaces `| tee`. The console is colored with `rich` when
+  standard output is a terminal, `rich` is installed (new optional extra `lunarscout[console]`)
+  and `NO_COLOR` is not set; into a pipe or without `rich` it is plain one-line messages. Set
+  `COLOR = "always"` to force color into a pipe, and `LOG_LEVEL` to change the level. The library
+  still only calls `logging.getLogger(__name__)` and configures no handlers; the helper is
+  private (`lunarscout._script_logging`). Result tables and JSON reports are still printed.
 - **Safe-haven stage 3 (`scripts/run_safe_haven_stage3.py`, was `run_safe_haven_windows.py`).**
   The flood-through-lit-terrain run now reads the stage-2 cell list instead of scanning stage 1
   itself, and refuses a list whose stage-1 files, survival limit or cell size have changed. `CELLS`

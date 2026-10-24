@@ -15,11 +15,16 @@ same times, thresholds, observer height and vectors. Pass 1 recomputes each seed
 hibernation score and stops with an error if it differs from the stage-1 raster.
 SPICE supplies Sun and Earth positions unless you replace the two vector sources.
 This is CPU-only and needs no NVIDIA device. Importing it starts no calculation.
+
+Progress and status messages are logged: to the console, colored with rich on a terminal when
+`pip install "lunarscout[console]"` is installed and plain when piped, and to a plain-text log
+file next to the output (LOG_PATH, COLOR and LOG_LEVEL below), so `| tee` is not needed.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import time as clock
 from pathlib import Path
@@ -35,6 +40,7 @@ from lunarscout._numba_horizon.safe_haven_windows import (  # noqa: E402
     run_pass_one,
     spice_vector_source,
 )
+from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
 from lunarscout.products import _load_dem  # noqa: E402
 
 
@@ -80,8 +86,16 @@ PARAMETERS = WindowParameters(
 CELLS = None
 PROGRESS_EVERY_CELLS = 50
 
+# Messages go to the console (colored with rich on a terminal when "lunarscout[console]" is
+# installed; plain when piped) and to a plain-text log file, which replaces `| tee`. LOG_PATH
+# None writes next to the output file. COLOR is "auto", "always" (even into a pipe) or "never".
+LOG_PATH = None
+COLOR = "auto"
+LOG_LEVEL = "INFO"
+LOG = logging.getLogger("lunarscout.scripts.plan")
 
-def main() -> int:
+
+def _run() -> int:
     dem, _georef = _load_dem(DEM_PATH)
     stage1 = Stage1Rasters(
         STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_hibernation_hours.tif",
@@ -97,10 +111,9 @@ def main() -> int:
             return
         elapsed = clock.monotonic() - started
         remaining = elapsed / done * (total - done)
-        print(
-            f"Pass 1: {done}/{total} cells, {elapsed / 60:.1f} min elapsed, "
-            f"about {remaining / 60:.1f} min left (rate from this run only)",
-            flush=True,
+        LOG.info(
+            "Pass 1: %d/%d cells, %.1f min elapsed, about %.1f min left (rate from this run only)",
+            done, total, elapsed / 60, remaining / 60,
         )
 
     report = run_pass_one(
@@ -120,8 +133,20 @@ def main() -> int:
         progress=progress,
     )
     print(json.dumps(report.as_dict(), indent=2), flush=True)
-    print(f"Plan written to: {PLAN_PATH}", flush=True)
+    LOG.info("Plan written to: %s", PLAN_PATH)
     return 0
+
+
+def main() -> int:
+    log_path = LOG_PATH if LOG_PATH is not None else PLAN_PATH.with_name(PLAN_PATH.name + ".log")
+    setup_script_logging(log_path, color=COLOR, level=LOG_LEVEL)
+    try:
+        return _run()
+    except Exception as error:
+        LOG.error("Pass 1 stopped: %s: %s", type(error).__name__, error)
+        raise
+    finally:
+        reset_script_logging()
 
 
 if __name__ == "__main__":

@@ -69,10 +69,15 @@ analysis = [
 plot = [
     "matplotlib>=3.8",
 ]
+# colored console output from the scripts in scripts/ (a plain console without it)
+console = [
+    "rich>=13",
+]
 dev = [
     "build>=1.2",
     "coverage>=7.0",
     "pytest>=8.0",
+    "rich>=13",
     "twine>=6.0",
 ]
 

@@ -14,10 +14,15 @@ has changed, and then this script must be run again.
 The scan reads the product one strip of cell rows at a time (about 0.75 GB of memory) and is
 mostly drive reads at modest CPU load. It is not resumable; if it is interrupted, run it
 again. It needs no NVIDIA device. Importing it starts nothing.
+
+Progress and status messages are logged: to the console, colored with rich on a terminal when
+`pip install "lunarscout[console]"` is installed and plain when piped, and to a plain-text log
+file next to the output (LOG_PATH, COLOR and LOG_LEVEL below), so `| tee` is not needed.
 """
 
 from __future__ import annotations
 
+import logging
 import sys
 import time as clock
 from pathlib import Path
@@ -30,6 +35,7 @@ from lunarscout._numba_horizon.safe_haven_cells import (  # noqa: E402
     write_cell_list,
 )
 from lunarscout._numba_horizon.safe_haven_windows import Stage1Rasters  # noqa: E402
+from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
 
 
 # Edit these paths before running. They match run_generate_safe_havens.py.
@@ -49,8 +55,16 @@ CELL_LIST_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_haven_cells.json"
 OVERWRITE = False       # an existing CELL_LIST_PATH is not replaced unless this is True
 TOP = 20                # rows of the table to print
 
+# Messages go to the console (colored with rich on a terminal when "lunarscout[console]" is
+# installed; plain when piped) and to a plain-text log file, which replaces `| tee`. LOG_PATH
+# None writes next to the output file. COLOR is "auto", "always" (even into a pipe) or "never".
+LOG_PATH = None
+COLOR = "auto"
+LOG_LEVEL = "INFO"
+LOG = logging.getLogger("lunarscout.scripts.stage2")
 
-def main() -> int:
+
+def _run() -> int:
     if CELL_LIST_PATH.exists() and not OVERWRITE:
         raise ValueError(f"{CELL_LIST_PATH} exists; set OVERWRITE = True to replace it")
     stage1 = Stage1Rasters(
@@ -65,8 +79,8 @@ def main() -> int:
         if done % 10 and done != total:
             return
         elapsed = clock.monotonic() - started
-        print(f"Stage 2: {done}/{total} cell rows, {elapsed / 60:.1f} min elapsed, "
-              f"about {elapsed / done * (total - done) / 60:.1f} min left", flush=True)
+        LOG.info("Stage 2: %d/%d cell rows, %.1f min elapsed, about %.1f min left",
+                 done, total, elapsed / 60, elapsed / done * (total - done) / 60)
 
     found = scan_cells(stage1, survival_limit_hours=SURVIVAL_LIMIT_HOURS, cell_size=CELL_SIZE,
                        progress=progress)
@@ -74,14 +88,26 @@ def main() -> int:
                     cell_size=CELL_SIZE, overwrite=OVERWRITE)
     total_cells = (-(-stage1.height // CELL_SIZE)) * (-(-stage1.width // CELL_SIZE))
     months = sum(entry["months_with_haven"] for entry in found)
-    print(f"{len(found)} of {total_cells} cells have a haven pixel at or under "
-          f"{SURVIVAL_LIMIT_HOURS:g} h; {months} cell-months in all.", flush=True)
+    LOG.info("%d of %d cells have a haven pixel at or under %g h; %d cell-months in all.",
+             len(found), total_cells, SURVIVAL_LIMIT_HOURS, months)
     print("cell_row cell_col months_with_haven haven_pixels")
     for entry in found[:TOP]:
         print(f"{entry['cell_row']:8d} {entry['cell_col']:8d} {entry['months_with_haven']:17d} "
               f"{entry['haven_pixels']:12d}")
-    print(f"Cell list written to: {CELL_LIST_PATH}", flush=True)
+    LOG.info("Cell list written to: %s", CELL_LIST_PATH)
     return 0
+
+
+def main() -> int:
+    log_path = LOG_PATH if LOG_PATH is not None else CELL_LIST_PATH.with_name(CELL_LIST_PATH.name + ".log")
+    setup_script_logging(log_path, color=COLOR, level=LOG_LEVEL)
+    try:
+        return _run()
+    except Exception as error:
+        LOG.error("Stage 2 stopped: %s: %s", type(error).__name__, error)
+        raise
+    finally:
+        reset_script_logging()
 
 
 if __name__ == "__main__":

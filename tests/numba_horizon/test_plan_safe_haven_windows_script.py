@@ -231,3 +231,86 @@ def test_stage_three_passes_the_listed_cells_on_in_order_and_explicit_cells_win(
     assert seen == [[(3, 5), (1, 2)]]
     monkeypatch.setattr(module, "CELLS", [(7, 7)])
     assert module.main() == 0 and seen[-1] == [(7, 7)]
+
+
+# --- the scripts log their events to the console and a plain log file ---------------------------------
+
+
+def test_the_scripts_log_to_a_file_next_to_their_output_and_clean_up_after_themselves(
+        tmp_path: Path, monkeypatch, capsys) -> None:
+    import logging
+
+    module = load_run_script()
+    assert (module.LOG_PATH, module.COLOR, module.LOG_LEVEL) == (None, "auto", "INFO")
+    stage_three_setup(module, monkeypatch, tmp_path, cells=[(0, 0)])
+    assert module.main() == 0
+    log = (tmp_path / "windows.csv.log").read_text()
+    assert "INFO    lunarscout.scripts.stage3: Stage 3: 0/1 blocks already in the checkpoint." in log
+    assert "Stage 3: 1/1 blocks" in log and f"Table written to: {tmp_path / 'windows.csv'}" in log
+    assert "\x1b[" not in log
+    out = capsys.readouterr().out
+    assert "Stage 3: 1/1 blocks" in out and '"rows":' in out                      # the JSON report is still printed
+    assert not [h for h in logging.getLogger("lunarscout").handlers if getattr(h, "_lunarscout_script_handler", False)]
+    monkeypatch.setattr(module, "LOG_PATH", tmp_path / "elsewhere.log")
+    monkeypatch.setattr(module, "OVERWRITE", True)
+    assert module.main() == 0
+    assert "Table written to" in (tmp_path / "elsewhere.log").read_text()
+    assert (tmp_path / "windows.csv.log").read_text() == log                        # the default file was not touched
+
+
+def test_the_script_passes_its_color_and_level_settings_on(tmp_path: Path, monkeypatch, capsys) -> None:
+    pytest.importorskip("rich")
+    module = load_run_script()
+    stage_three_setup(module, monkeypatch, tmp_path, cells=[(0, 0)])
+    monkeypatch.setattr(module, "COLOR", "always")
+    monkeypatch.setattr(module, "LOG_LEVEL", "WARNING")
+    assert module.main() == 0
+    log = (tmp_path / "windows.csv.log").read_text()
+    assert "Stage 3: 1/1 blocks" not in log and "\x1b[" not in log                  # INFO is below WARNING
+    monkeypatch.setattr(module, "LOG_LEVEL", "INFO")
+    monkeypatch.setattr(module, "OVERWRITE", True)
+    capsys.readouterr()
+    assert module.main() == 0
+    assert "\x1b[" in capsys.readouterr().out                                       # rich was forced into the pipe
+    assert "\x1b[" not in (tmp_path / "windows.csv.log").read_text()
+
+
+def test_a_failing_script_logs_the_error_and_still_raises(tmp_path: Path, monkeypatch, capsys) -> None:
+    module = load_run_script()
+    stage_three_setup(module, monkeypatch, tmp_path, cells=None)                    # no stage-2 list exists
+    with pytest.raises(ValueError, match="run scripts/run_safe_haven_stage2.py first"):
+        module.main()
+    log = (tmp_path / "windows.csv.log").read_text()
+    assert "ERROR   lunarscout.scripts.stage3: Stage 3 stopped: ValueError: " in log
+    assert "ERROR   Stage 3 stopped" in capsys.readouterr().out
+
+
+def test_the_other_scripts_log_the_same_way(tmp_path: Path, monkeypatch, capsys) -> None:
+    for script in (load_script(), load_run_script(), load_stage_two_script()):
+        assert (script.LOG_PATH, script.COLOR, script.LOG_LEVEL) == (None, "auto", "INFO")
+    # pass 1 on the scene
+    module = load_script()
+    dem_path, horizons_path, products, _stamps = scene.stage_one(tmp_path)
+    vectors = {"sun": scene.sun_vectors, "earth": scene.earth_vectors}
+    for name, value in dict(
+        DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, STAGE1_DIRECTORY=products.hibernation.parent,
+        STAGE1_PREFIX="safe_haven", PLAN_PATH=tmp_path / "plan.jsonl", START_UTC=scene.START,
+        STOP_UTC=scene.STOP, STEP_HOURS=scene.STEP_HOURS, HOURS_PER_COUNT=None, STAGE1_NODATA=None,
+        PROGRESS_EVERY_CELLS=1,
+    ).items():
+        monkeypatch.setattr(module, name, value)
+    monkeypatch.setattr(module, "spice_vector_source", lambda body: vectors[body])
+    monkeypatch.setattr(module, "PARAMETERS", WindowParameters(
+        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0, seed_separation_m=4.0))
+    assert module.main() == 0
+    log = (tmp_path / "plan.jsonl.log").read_text()
+    assert "lunarscout.scripts.plan: Pass 1: 1/1 cells" in log and "Plan written to" in log
+
+
+def load_stage_two_script():
+    path = Path(__file__).resolve().parents[2] / "scripts" / "run_safe_haven_stage2.py"
+    spec = importlib.util.spec_from_file_location("run_safe_haven_stage2_logging", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
