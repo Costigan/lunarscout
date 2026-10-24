@@ -30,6 +30,18 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   The rate counts only the patches the current run finished, so it is right after
   a resume, and it follows the most recent 1,000 patches, so a slow start drops out
   of the estimate. It reads `ETA pending` for the first few patches.
+- **Safe-haven stage 3 is a pipeline with bounded queues.** `run_pass_two(pipeline=PipelineSettings(...))`
+  plans cells in processes (pass 1), lights the (patch, chunk) units they need in threads (the CPU
+  lightmap with threshold and packing fused into one compiled pass, which releases the GIL; the
+  lightmap kernel is now compiled `nogil`), decodes horizons into a small cache on demand, and floods
+  each cell-month as soon as its units are lit. Units are reference counted and freed after use, so
+  memory is the units in flight (bounded by `cells_in_flight` and `store_budget_bytes`), not a block
+  of horizons per worker. The table is byte-identical to the block loop for any worker counts and
+  bounds. On 10 dense blocks of the real pole the block loop took 1,179 s and the pipeline 498 s
+  (2.4x, 16 GB against 65 GB for five block workers), limited by CPU lighting at about 390 units/s.
+  `scripts/run_safe_haven_stage3.py` now uses it (`PLAN_WORKERS`, `LIGHT_WORKERS`, ...) and
+  `status_seconds` logs where work waits. `Stage1Rasters.read_valid_window` and `LitStore.discard`
+  were added.
 - **Safe-haven stage 3 can run blocks in parallel worker processes (`WORKERS`).** `run_pass_two`
   takes `workers` and `numba_threads_per_worker`: blocks run in forked workers with their own
   resident horizons, only the parent writes the checkpoint (as blocks finish, in any order), and the
@@ -37,7 +49,8 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   worker count (checked on real data: 10 dense blocks, sequential, 2, 5 and 12 workers). Measured on
   those blocks the CPU lighting kernel is about 70 percent of the time and one process already runs
   it near the machine's limit, so workers only overlap the serial Python part: 1 worker 1179 s,
-  2 workers 919 s (1.28x, 31 GB), 5 workers 847 s (1.39x, 65 GB). The script defaults to 2.
+  2 workers 919 s (1.28x, 31 GB), 5 workers 847 s (1.39x, 65 GB). The pipeline above supersedes it
+  in the script.
   Each worker re-opens the SPICE kernels: forked workers shared the parent's open kernel files and
   read each other's offsets, giving silently wrong Sun vectors and `SPICE(INVALIDRADIUS)` errors
   (reproduced: 25 wrong results and 39 errors in 3,000 calls; none after the fix). The first Ctrl-C

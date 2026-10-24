@@ -17,16 +17,15 @@ times, thresholds, observer height and degenerate-outage window, and the horizon
 be the ones stage 1 used. SPICE supplies Sun and Earth positions unless you replace the
 two vector sources.
 
-This is the CPU reference route: CPU lightmap, CPU packed-bit flood, horizons held in host
-memory, with WORKERS blocks running at once in separate processes. It needs no NVIDIA device.
-It loads the CPU heavily for many hours and reads the horizon tiles from disk throughout: watch
-scripts/monitor_temperatures.py in a second terminal for the first 10 to 20 minutes. Each worker
-holds a block's horizons: a block of 8 patches holds up to 10 x 10 patches of float32 horizons
-(about 9.4 GB). Lower WORKERS or block_patches (a multiple of cell_patches) if the host has less
-memory; the script logs its memory estimate at the start and warns when it exceeds what is free.
-Set CELLS for a trial before running every cell (scripts/list_safe_haven_cells.py prints a
-CELLS line). Ctrl-C once stops handing out blocks and waits for the running ones (they are
-checkpointed); Ctrl-C again stops at once. Importing this file starts nothing.
+This is the CPU route: CPU lightmap, CPU packed-bit flood, run as a pipeline with bounded queues
+(PLAN_WORKERS and its neighbours below). It needs no NVIDIA device. It loads the CPU heavily for
+many hours and reads the horizon tiles from disk throughout: watch scripts/monitor_temperatures.py
+in a second terminal for the first 10 to 20 minutes. Memory is the units in flight, not a block of
+horizons: the script logs its estimate at the start and warns when it exceeds what is free. Set
+CELLS for a trial before running every cell (scripts/list_safe_haven_cells.py prints a CELLS
+line). Ctrl-C once stops feeding cells after the block being fed and lets everything in flight
+finish (finished blocks are checkpointed); Ctrl-C again stops at once. Importing this file starts
+nothing.
 
 Progress and status messages are logged: to the console, colored with rich on a terminal when
 `pip install "lunarscout[console]"` is installed and plain when piped, and to a plain-text log
@@ -46,11 +45,10 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import lunarscout as ls  # noqa: E402
 from lunarscout._numba_horizon.file_format import HorizonTileStore  # noqa: E402
-from lunarscout._numba_horizon.safe_haven_blocks import (  # noqa: E402
-    estimate_block_memory_bytes,
-    run_pass_two,
-)
+from lunarscout._numba_horizon.safe_haven_blocks import run_pass_two  # noqa: E402
+from lunarscout._numba_horizon.safe_haven_stage3 import PipelineSettings  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_cells import read_cell_list  # noqa: E402
+from lunarscout._numba_horizon.file_format import PATCH_SIZE  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_windows import (  # noqa: E402
     Stage1Rasters,
     WindowParameters,
@@ -106,17 +104,26 @@ PARAMETERS = WindowParameters(
     degenerate_outage_window_hours=24.0,
 )
 
-# Blocks run at once, each in its own worker process with its own resident horizons. Measured on
-# 10 dense blocks (this laptop, idle, same table every time): 1 worker 1179 s; 2 workers 919 s
-# (1.28x) using 31 GB; 5 workers 847 s (1.39x) using 65 GB; 12 workers on blocks of 2 cells 879 s.
-# The CPU lighting kernel is about 70 percent of a block and one process already runs it close to
-# the machine's limit, so more workers only overlap the serial Python part (at most about 1.4x).
-# A block of block_patches = 8 holds 10 x 10 patches of float32 horizons (9.4 GB) per worker, plus
-# windows and the lit store, about 13 to 15 GB each; the DEM is shared. WORKERS = 1 runs one block
-# at a time. A checkpoint made with any WORKERS resumes with any other. NUMBA_THREADS_PER_WORKER
-# None divides the CPU count among the workers.
-WORKERS = 2
-NUMBA_THREADS_PER_WORKER = None
+# The pipeline (src/lunarscout/_numba_horizon/safe_haven_stage3.py): cells are planned (pass 1) in
+# PLAN_WORKERS processes, the lighting units they need are lit by LIGHT_WORKERS threads (each calling
+# the CPU lightmap with NUMBA_THREADS_PER_LIGHT_WORKER threads), and each cell-month is flooded by
+# FLOOD_WORKERS threads as soon as its units are lit. Bounded queues join them: at most
+# CELLS_IN_FLIGHT cells are planned and not yet flooded, and at most STORE_BUDGET_GB of lit units
+# are requested at a time, so memory is the units in flight plus DECODE_CACHE_PATCHES decoded
+# patches (94 MB each), not a block of horizons per worker. STATUS_SECONDS logs where work is
+# waiting; when LIGHT is the stage with a long queue and the flood has nothing ready, lighting is the
+# limit, as it is on the CPU: LIGHT_WORKERS x NUMBA_THREADS_PER_LIGHT_WORKER should be about the CPU
+# count. Measured on 10 dense blocks (this laptop, idle, same table every time): the block loop took
+# 1179 s, the pipeline 498 s (2.4x), 16 GB, with lighting at about 390 units/s, the CPU kernel's
+# ceiling. A checkpoint resumes with any of these settings.
+PLAN_WORKERS = 4
+LIGHT_WORKERS = 12
+NUMBA_THREADS_PER_LIGHT_WORKER = 2
+FLOOD_WORKERS = 2
+DECODE_CACHE_PATCHES = 32
+CELLS_IN_FLIGHT = 24
+STORE_BUDGET_GB = 8.0
+STATUS_SECONDS = 60.0
 
 # None runs every cell in the stage-2 list. For a trial, list (cell_row, cell_column) pairs, for
 # example the CELLS line printed by scripts/list_safe_haven_cells.py; the stage-2 list is then
@@ -130,6 +137,7 @@ LOG_PATH = None
 COLOR = "auto"
 LOG_LEVEL = "INFO"
 LOG = logging.getLogger("lunarscout.scripts.stage3")
+PATCH_BYTES = PATCH_SIZE * PATCH_SIZE * 1440 * 4          # one decoded float32 patch
 
 
 def _available_memory_bytes() -> int | None:
@@ -144,19 +152,18 @@ def _available_memory_bytes() -> int | None:
 
 
 def _warn_if_memory_is_short(dem_bytes: int) -> None:
-    """Log the expected memory and warn when it exceeds what is available. The estimate is the
-    shared DEM plus, per worker, the block's float32 horizons with 40 percent for windows and
-    lit stores; measured on dense blocks of 8 patches: 31 GB for 2 workers and 65 GB for 5
-    (about 13 to 15 GB each), so treat it as a guide."""
-    horizons = WORKERS * estimate_block_memory_bytes(PARAMETERS.block_patches)
-    expected = dem_bytes + 1.4 * horizons
+    """Log the expected memory and warn when it exceeds what is available. The estimate is the DEM, the
+    decode cache, the lit-unit budget and about 2 GB for each planning process (measured: 16 GB for the
+    settings above), so treat it as a guide."""
+    cache = DECODE_CACHE_PATCHES * PATCH_BYTES
+    expected = dem_bytes + cache + STORE_BUDGET_GB * 2**30 + PLAN_WORKERS * 2 * 2**30
     available = _available_memory_bytes()
-    LOG.info("Stage 3: %d worker(s), block_patches %d: about %.0f GB of horizons, about %.0f GB expected "
-             "in all (an estimate)%s.", WORKERS, PARAMETERS.block_patches, horizons / 1e9, expected / 1e9,
-             "" if available is None else ", %.0f GB available" % (available / 1e9))
+    LOG.info("Stage 3: about %.0f GB expected (DEM, %d cached patches, %.0f GB of units, %d planning "
+             "processes; an estimate)%s.", expected / 1e9, DECODE_CACHE_PATCHES, STORE_BUDGET_GB,
+             PLAN_WORKERS, "" if available is None else ", %.0f GB available" % (available / 1e9))
     if available is not None and expected > available:
-        LOG.warning("Stage 3: about %.0f GB expected but only %.0f GB is available; lower WORKERS or "
-                    "block_patches.", expected / 1e9, available / 1e9)
+        LOG.warning("Stage 3: about %.0f GB expected but only %.0f GB is available; lower "
+                    "STORE_BUDGET_GB, DECODE_CACHE_PATCHES or PLAN_WORKERS.", expected / 1e9, available / 1e9)
 
 
 def _run() -> int:
@@ -212,8 +219,12 @@ def _run() -> int:
         sunlight_fraction_threshold=SUNLIGHT_FRACTION_THRESHOLD,
         merge_gap_hours=MERGE_GAP_HOURS,
         progress=progress,
-        workers=WORKERS,
-        numba_threads_per_worker=NUMBA_THREADS_PER_WORKER,
+        pipeline=PipelineSettings(
+            plan_workers=PLAN_WORKERS, light_workers=LIGHT_WORKERS,
+            numba_threads_per_light_worker=NUMBA_THREADS_PER_LIGHT_WORKER, flood_workers=FLOOD_WORKERS,
+            decode_cache_patches=DECODE_CACHE_PATCHES, cells_in_flight=CELLS_IN_FLIGHT,
+            store_budget_bytes=int(STORE_BUDGET_GB * 2**30), status_seconds=STATUS_SECONDS,
+        ),
     )
     print(json.dumps(report.as_dict(), indent=2), flush=True)
     LOG.info("Table written to: %s", OUTPUT_PATH)

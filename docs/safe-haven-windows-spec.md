@@ -246,6 +246,24 @@ as the lit mask `j` steps from the boundary, so the caller orders the before sid
 backward in time. `tests/numba_horizon/test_safe_haven_flood_packed.py` checks it
 against the oracle on random inputs, including seeds and walls at word seams.
 
+**Stage-3 pipeline.** `_numba_horizon/safe_haven_stage3.py` runs the schedule above as a pipeline
+with bounded queues (`run_pass_two(pipeline=PipelineSettings(...))`; the block loop stays as the
+reference, and the table is the same for any settings). PLAN runs pass 1 for one cell in forked
+processes and returns its seeds, the (patch, chunk) lighting units each cell-month needs and its
+passable mask. LIGHT, in threads, turns a patch's units into packed lit bits (the CPU lightmap with
+the threshold and packing fused in one compiled pass; this is the slot a GPU kernel takes), decoding
+the patch's horizons into a small LRU cache on demand. FLOOD, in threads, floods a cell-month once all
+the units of its window are lit. Units are reference counted and freed when the last cell-month that
+needs them has been flooded, so memory is the units in flight plus the decode cache, not a block of
+horizons. The cells in flight (`cells_in_flight`) and the bytes of units requested
+(`store_budget_bytes`) are the bounds that hold PLAN back; `plan_workers`, `light_workers`,
+`flood_workers` and `numba_threads_per_light_worker` tune each stage, and `status_seconds` logs where
+work is waiting. Cells are fed a block at a time in snake order; a block is checkpointed when all
+its cells are flooded. Measured on 10 dense blocks of the real pole (4,181 rows, identical table):
+block loop 1,179 s; pipeline 498 s using 16 GB, with lighting the limit at about 390 units/s (the
+CPU lightmap kernel's ceiling on this machine: 34 units/s on one core, 401 on 24 independent
+processes) and nothing waiting to flood.
+
 **Diagnostics.** For each seed, `earth_visible_before_h` and
 `earth_visible_after_h`: the contiguous Earth-available time adjacent to the
 hibernation, capped at `operational_hours`. Because of the Earth gate every reported seed has

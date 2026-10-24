@@ -321,6 +321,7 @@ def run_pass_two(
     stop_after_blocks: int | None = None,
     workers: int = 1,
     numba_threads_per_worker: int | None = None,
+    pipeline=None,
 ) -> PassTwoReport | None:
     """Run the pass-2 schedule and write the table to ``output_path`` (CSV).
 
@@ -340,6 +341,10 @@ def run_pass_two(
     ``workers``).  Only this process writes the checkpoint, as blocks finish in any order, and
     the table is the same for any ``workers`` and after a resume with a different one.  The first
     Ctrl-C stops handing out blocks and waits for the running ones; a second stops at once.
+
+    ``pipeline`` (a ``safe_haven_stage3.PipelineSettings``) runs the blocks through the stage-3
+    pipeline instead: planning in processes, lighting, decoding and flooding in threads, joined by
+    bounded queues. It replaces ``workers`` (which must then be 1) and gives the same table.
     """
     output = Path(output_path)
     if output.exists() and not overwrite:
@@ -428,7 +433,17 @@ def run_pass_two(
             progress(len(done), len(order))
 
     horizon_loads = peak_resident = 0
-    if workers == 1:
+    if pipeline is not None:
+        if workers != 1:
+            raise ValueError("workers must be 1 when a pipeline is given")
+        from .safe_haven_stage3 import _run_blocks_in_pipeline
+
+        stopped_early, horizon_loads, peak_resident = _run_blocks_in_pipeline(
+            pending, by_block, run_arguments, finish, settings=pipeline, stop_after_blocks=stop_after_blocks,
+        )
+        if stopped_early:
+            return None
+    elif workers == 1:
         residency = HorizonResidency(load_patch)
         with _graceful_interrupt() as interrupts:
             for block in pending:
