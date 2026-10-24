@@ -18,10 +18,17 @@ and rows apply when the lighting moves to the GPU.  The table is the same for an
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import json
+import logging
 import math
+import multiprocessing
 import os
+import queue
+import signal
+import sys
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
@@ -45,6 +52,8 @@ from .safe_haven_windows import (
     halo_pixels,
     iter_cell_months,
 )
+
+logger = logging.getLogger(__name__)
 
 Patch = tuple[int, int]
 Cell = tuple[int, int]
@@ -176,6 +185,7 @@ class PassTwoReport:
     flood: PassTwoCounts
     rows: int
     output_path: str
+    workers: int = 1
 
     def as_dict(self) -> dict:
         return {**{k: v for k, v in asdict(self).items() if k not in ("plan", "flood")},
@@ -309,6 +319,8 @@ def run_pass_two(
     compiled: bool = True,
     progress: Callable[[int, int], None] | None = None,
     stop_after_blocks: int | None = None,
+    workers: int = 1,
+    numba_threads_per_worker: int | None = None,
 ) -> PassTwoReport | None:
     """Run the pass-2 schedule and write the table to ``output_path`` (CSV).
 
@@ -321,6 +333,13 @@ def run_pass_two(
     blocks a checkpoint already holds) and after each block, so a caller can time
     this run's blocks alone.  ``stop_after_blocks`` ends the run early for tests and
     returns ``None``.
+
+    ``workers`` above 1 runs that many blocks at once in forked worker processes, each with its
+    own resident horizons (memory scales with ``workers``; see ``estimate_block_memory_bytes``)
+    and ``numba_threads_per_worker`` numba threads (default: the CPU count divided by
+    ``workers``).  Only this process writes the checkpoint, as blocks finish in any order, and
+    the table is the same for any ``workers`` and after a resume with a different one.  The first
+    Ctrl-C stops handing out blocks and waits for the running ones; a second stops at once.
     """
     output = Path(output_path)
     if output.exists() and not overwrite:
@@ -368,31 +387,35 @@ def run_pass_two(
 
     months = _month_labels(time)
     transform = np.asarray(dem.geo_transform, dtype=np.float64)
-    residency = HorizonResidency(
-        lambda patch: read_patch_horizons(horizon_store, patch[0] * PATCH_SIZE, patch[1] * PATCH_SIZE, observer_height_m)
-    )
+    if int(workers) != workers or workers < 1:
+        raise ValueError("workers must be a positive integer")
+    workers = int(workers)
+
+    def load_patch(patch):
+        return read_patch_horizons(horizon_store, patch[0] * PATCH_SIZE, patch[1] * PATCH_SIZE, observer_height_m)
+
     plan_counts, flood_counts = PlanCounts(), PassTwoCounts()
     for entry in done.values():
         _add_counts(plan_counts, entry["plan_counts"])
         _add_counts(flood_counts, entry["flood_counts"])
+    pending = [block for block in order if block not in done]
+    run_arguments = dict(
+        dem=dem, horizon_store=horizon_store, stage1=stage1, time=time, grid=grid, parameters=parameters,
+        flood_steps=flood_steps, halo=halo, cell_size=cell_size, months=months, transform=transform,
+        compiled=compiled, observer_height_m=observer_height_m,
+        earth_elevation_threshold_deg=earth_elevation_threshold_deg,
+        sunlight_fraction_threshold=sunlight_fraction_threshold, merge_gap_hours=merge_gap_hours,
+        sun_vectors_at=sun_vectors_at, earth_vectors_at=earth_vectors_at,
+    )
     ran = 0
     if progress is not None:
         progress(len(done), len(order))
-    for block in order:
-        if block in done:
-            continue
-        if stop_after_blocks is not None and ran >= stop_after_blocks:
-            return None
-        block_plan, block_flood, rows = _run_block(
-            by_block[block], dem=dem, horizon_store=horizon_store, stage1=stage1, time=time, grid=grid,
-            parameters=parameters, flood_steps=flood_steps, halo=halo, cell_size=cell_size,
-            residency=residency, months=months, transform=transform, compiled=compiled,
-            observer_height_m=observer_height_m, earth_elevation_threshold_deg=earth_elevation_threshold_deg,
-            sunlight_fraction_threshold=sunlight_fraction_threshold, merge_gap_hours=merge_gap_hours,
-            sun_vectors_at=sun_vectors_at, earth_vectors_at=earth_vectors_at,
-        )
+
+    def finish(block, block_plan: dict, block_flood: dict, rows: list) -> None:
+        """Record a finished block: checkpoint (flushed to disk), counts, progress."""
+        nonlocal ran
         entry = {"type": "block", "block": list(block), "rows": rows,
-                 "plan_counts": asdict(block_plan), "flood_counts": asdict(block_flood)}
+                 "plan_counts": block_plan, "flood_counts": block_flood}
         with checkpoint.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry) + "\n")
             handle.flush()
@@ -404,6 +427,25 @@ def run_pass_two(
         if progress is not None:
             progress(len(done), len(order))
 
+    horizon_loads = peak_resident = 0
+    if workers == 1:
+        residency = HorizonResidency(load_patch)
+        with _graceful_interrupt() as interrupts:
+            for block in pending:
+                if interrupts or (stop_after_blocks is not None and ran >= stop_after_blocks):
+                    return None
+                block_plan, block_flood, rows = _run_block(
+                    by_block[block], residency=residency, **run_arguments)
+                finish(block, asdict(block_plan), asdict(block_flood), rows)
+        horizon_loads, peak_resident = residency.loads, residency.peak_resident
+    else:
+        stopped_early, horizon_loads, peak_resident = _run_blocks_in_workers(
+            pending, by_block, run_arguments, finish, workers=workers,
+            numba_threads=numba_threads_per_worker, stop_after_blocks=stop_after_blocks,
+        )
+        if stopped_early:
+            return None
+
     all_rows = [row for entry in done.values() for row in entry["rows"]]
     all_rows.sort(key=lambda r: (r["cell_row"], r["cell_col"], r["month"], r["rank"]))
     staging = output.with_name(output.name + ".partial")
@@ -414,11 +456,172 @@ def run_pass_two(
     os.replace(staging, output)
     checkpoint.unlink()
     return PassTwoReport(
-        blocks_total=len(order), blocks_resumed=len(order) - ran, horizon_loads=residency.loads,
-        peak_resident_patches=residency.peak_resident, flood_step_minutes=grid.step_minutes,
+        blocks_total=len(order), blocks_resumed=len(order) - ran, horizon_loads=horizon_loads,
+        peak_resident_patches=peak_resident, flood_step_minutes=grid.step_minutes,
         flood_steps=flood_steps, plan=plan_counts, flood=flood_counts, rows=len(all_rows),
-        output_path=str(output),
+        output_path=str(output), workers=workers,
     )
+
+
+@contextlib.contextmanager
+def _graceful_interrupt():
+    """Yield a list that fills with each SIGINT received. The first interrupt only records
+    itself (and logs), so the run can finish what is in progress; the second raises
+    ``KeyboardInterrupt``. Python's default handler would raise inside whatever compiled numba
+    call is running, which surfaces as a ``SystemError``. Outside the main thread nothing is
+    installed and the list stays empty."""
+    interrupts: list[int] = []
+    previous = None
+    if threading.current_thread() is threading.main_thread():
+        def on_interrupt(signum, frame):
+            interrupts.append(signum)
+            if len(interrupts) > 1:
+                raise KeyboardInterrupt
+            logger.warning("Interrupt received: no new blocks will be started; waiting for the running "
+                           "blocks to finish (interrupt again to stop at once).")
+
+        previous = signal.signal(signal.SIGINT, on_interrupt)
+    try:
+        yield interrupts
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGINT, previous)
+
+
+# ---------------------------------------------------------------------------
+# Running blocks in worker processes
+# ---------------------------------------------------------------------------
+
+#: What a forked worker needs, set by the parent before the workers are created.
+_WORKER: dict = {}
+
+
+def estimate_block_memory_bytes(block_patches: int, halo_patches: int = 1) -> int:
+    """Float32 horizons held by a worker for one block: ``(block + 2 * halo)`` patches squared,
+    94 MB each.  Windows, the lit store and the DEM come on top (the DEM is shared by the workers)."""
+    side = block_patches + 2 * halo_patches
+    return side * side * PATCH_SIZE * PATCH_SIZE * 1440 * 4
+
+
+def _loaded_spice_kernels() -> list[str]:
+    """The SPICE kernel files loaded in this process, in load order, without the meta-kernels
+    that merely name them (their contents are listed separately). Empty if SPICE was not used."""
+    spiceypy = sys.modules.get("spiceypy")
+    if spiceypy is None:
+        return []
+    files = []
+    for index in range(spiceypy.ktotal("ALL")):
+        name, kind, _source, _handle = spiceypy.kdata(index, "ALL")
+        if kind != "META":
+            files.append(name)
+    return files
+
+
+def _refurnish_spice(files: list[str]) -> None:
+    """Give a forked worker its own open kernel files. A forked process shares the parent's
+    file descriptors, and with them the file offsets CSPICE reads through, so workers reading
+    the same kernel concurrently get wrong values or ``SPICE(INVALIDRADIUS)``. Clearing the pool
+    closes this process's descriptors and loading the files again opens its own."""
+    if not files:
+        return
+    import spiceypy
+
+    spiceypy.kclear()
+    for name in files:
+        spiceypy.furnsh(name)
+
+
+def threads_per_worker(workers: int, requested: int | None = None) -> int:
+    """Numba threads for each worker: the request, or the CPU count divided among the workers."""
+    if requested is not None:
+        if int(requested) != requested or requested < 1:
+            raise ValueError("numba_threads_per_worker must be a positive integer")
+        return int(requested)
+    return max(1, (os.cpu_count() or workers) // workers)
+
+
+def _worker_init(numba_threads: int | None, spice_kernels: list[str]) -> None:
+    signal.signal(signal.SIGINT, signal.SIG_IGN)        # the parent decides what an interrupt means
+    _refurnish_spice(spice_kernels)
+    if numba_threads:
+        import numba
+
+        numba.set_num_threads(numba_threads)
+    state = _WORKER
+    state["residency"] = HorizonResidency(
+        lambda patch: read_patch_horizons(
+            state["arguments"]["horizon_store"], patch[0] * PATCH_SIZE, patch[1] * PATCH_SIZE,
+            state["arguments"]["observer_height_m"])
+    )
+
+
+def _worker_task(block: tuple[int, int]):
+    state = _WORKER
+    residency = state["residency"]
+    loads_before = residency.loads
+    plan_counts, flood_counts, rows = _run_block(
+        state["by_block"][block], residency=residency, **state["arguments"])
+    return block, asdict(plan_counts), asdict(flood_counts), rows, residency.loads - loads_before, residency.peak_resident
+
+
+def _run_blocks_in_workers(pending, by_block, run_arguments, finish, *, workers, numba_threads,
+                           stop_after_blocks):
+    """Run ``pending`` blocks in ``workers`` forked processes, calling ``finish`` here for each
+    result as it arrives. Returns ``(stopped_early, horizon_loads, peak_resident)``.
+
+    At most ``workers`` blocks are handed out at a time. The first interrupt stops handing out
+    blocks and waits for the running ones (their results are kept); a second one terminates the
+    workers. A failure in a worker is raised after the blocks that did finish are recorded.
+    """
+    numba_threads = threads_per_worker(workers, numba_threads)
+    _WORKER.clear()
+    _WORKER.update(by_block=by_block, arguments=run_arguments)
+    context = multiprocessing.get_context("fork")
+    results: queue.Queue = queue.Queue()
+    pool = context.Pool(workers, initializer=_worker_init,
+                        initargs=(numba_threads, _loaded_spice_kernels()))
+    horizon_loads = peak_resident = 0
+    first_error: BaseException | None = None
+    running = 0
+    handed_out = 0
+    remaining = list(pending)
+    try:
+        with _graceful_interrupt() as interrupts:
+            while True:
+                while (running < workers and remaining and not interrupts and first_error is None
+                       and (stop_after_blocks is None or handed_out < stop_after_blocks)):
+                    block = remaining.pop(0)
+                    pool.apply_async(
+                        _worker_task, (block,),
+                        callback=lambda value: results.put(("ok", value)),
+                        error_callback=lambda error, block=block: results.put(("error", (block, error))),
+                    )
+                    running += 1
+                    handed_out += 1
+                if running == 0:
+                    break
+                try:
+                    kind, value = results.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                running -= 1
+                if kind == "ok":
+                    block, block_plan, block_flood, rows, loads, peak = value
+                    horizon_loads += loads
+                    peak_resident = max(peak_resident, peak)
+                    finish(block, block_plan, block_flood, rows)
+                elif first_error is None:
+                    first_error = value[1]
+                    logger.error("Block %s failed in a worker: %s: %s; waiting for the running blocks.",
+                                 value[0], type(value[1]).__name__, value[1])
+            if first_error is not None:
+                raise first_error
+            stopped_early = bool(remaining)
+        return stopped_early, horizon_loads, peak_resident
+    finally:
+        pool.terminate()
+        pool.join()
+        _WORKER.clear()
 
 
 def _run_block(

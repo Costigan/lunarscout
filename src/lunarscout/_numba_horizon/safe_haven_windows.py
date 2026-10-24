@@ -524,6 +524,7 @@ class CandidateEvaluator:
             int(math.ceil(parameters.operational_hours / step)) + 2,
         )
         self.forward = int(math.ceil(15.0 * 24.0 / step))
+        self.back_extension = int(math.ceil(30.0 * 24.0 / step))
         self.after_samples = int(math.ceil(parameters.operational_hours / step)) + 1 + self.window
 
     def evaluate(self, row: int, column: int, month: int) -> PixelRecord | str:
@@ -561,10 +562,17 @@ class CandidateEvaluator:
                     continue
                 return "no_record"
             if found.open_start:
-                raise PlanConsistencyError(
-                    f"pixel ({row}, {column}) month {month}: a shadow run reaches back "
-                    "past the examined span"
-                )
+                # A candidate's shadow run begins before the span, so its score is only a lower
+                # bound and it may not be the month's best. Look further back until every run
+                # that touches the winning hibernation is closed (a run at the start of the
+                # series is closed by definition, so this ends).
+                if start == 0:
+                    raise PlanConsistencyError(
+                        f"pixel ({row}, {column}) month {month}: a shadow run reaches back "
+                        "past the start of the series"
+                    )
+                start = max(0, start - self.back_extension)
+                continue
             record = found.record
             needed = record.outage_last + 1 + self.after_samples
             if stop < count and (found.open_end or stop <= needed):

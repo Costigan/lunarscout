@@ -838,3 +838,74 @@ def test_a_rejected_window_is_counted_and_ends_the_cell_month_after_the_failure_
     assert seeds == []
     assert counts.invalid_earth_window == counts.timelines_evaluated == 3
     assert counts.cell_months_abandoned == 1
+
+
+# --- a shadow run that begins before the examined span ---------------------------------------------------
+
+
+def timeline_evaluator(fraction, margin, **parameters):
+    count = len(margin)
+    stamps = np.datetime64("2027-01-01T00:00:00", "us") + np.arange(count) * np.timedelta64(6, "h")
+
+    def indexed(values):
+        steps = (np.asarray(values).astype("datetime64[us]") - stamps[0]) // np.timedelta64(6, "h")
+        return np.stack([steps, 0 * steps, 0 * steps], axis=1).astype(float)
+
+    time = windows.TimeContext.build(stamps, indexed, indexed)
+    settings = WindowParameters(cell_patches=1, rover_speed_m_s=1.0 / 1800.0,
+                                degenerate_outage_window_hours=0.0, operational_hours=12.0, **parameters)
+    return windows.CandidateEvaluator(
+        TimelineSignals(np.asarray(fraction, float), np.asarray(margin, float)), time, settings,
+        earth_elevation_threshold_deg=2.0, sunlight_fraction_threshold=0.2, merge_gap_hours=24.0,
+    ), time
+
+
+def two_candidates_in_february(first_run=(60, 140), outage_a=130):
+    """January is samples 0..123 and February 124..235. Candidate A, an outage at ``outage_a`` in
+    a shadow run that starts well before February's lookback; candidate B at sample 200 in a
+    50 sample run. A's true score is its whole run; its truncated score is lower than B's."""
+    count = 300
+    fraction = np.ones(count)
+    fraction[first_run[0]:first_run[1] + 1] = 0.0           # A's run: 81 samples
+    fraction[190:240] = 0.0                                 # B's run: 50 samples
+    margin = np.full(count, 3.0)
+    margin[outage_a] = 1.0
+    margin[200] = 1.0
+    return fraction, margin
+
+
+def test_a_candidate_whose_shadow_run_starts_before_the_span_does_not_beat_a_better_one() -> None:
+    fraction, margin = two_candidates_in_february()
+    evaluator, _time = timeline_evaluator(fraction, margin)
+    assert evaluator.lookback < 124 - 60                      # A's run does begin before the first span
+    record = evaluator.evaluate(0, 0, 1)
+    assert not isinstance(record, str)
+    assert (record.outage_first, record.outage_last) == (200, 200)       # B, not the truncated A
+    assert record.score_hours == 50 * 6.0
+
+
+def test_the_span_extends_back_to_the_start_of_the_series_and_then_stops() -> None:
+    fraction, margin = two_candidates_in_february(first_run=(0, 140))     # A's run begins at the first sample
+    evaluator, _time = timeline_evaluator(fraction, margin)
+    record = evaluator.evaluate(0, 0, 1)
+    assert record.score_hours == 50 * 6.0 and record.outage_first == 200
+    # With only A in the month, its run reaching the series start is closed by definition.
+    margin_a = margin.copy()
+    margin_a[200] = 3.0
+    only_a, _time = timeline_evaluator(fraction, margin_a)
+    assert only_a.evaluate(0, 0, 1).score_hours == 141 * 6.0
+
+
+def test_the_extension_is_taken_in_steps_of_30_days() -> None:
+    evaluator, _time = timeline_evaluator(*two_candidates_in_february())
+    assert evaluator.back_extension == 120                    # 30 days at 6 hours
+
+
+def test_the_span_is_extended_in_one_big_step_not_sample_by_sample() -> None:
+    fraction, margin = two_candidates_in_february()
+    evaluator, _time = timeline_evaluator(fraction, margin)
+    calls = []
+    real = evaluator.signals.series
+    evaluator.signals.series = lambda *args, **kwargs: calls.append(1) or real(*args, **kwargs)
+    assert evaluator.evaluate(0, 0, 1).outage_first == 200
+    assert len(calls) <= 4                    # two passes (the span and one extension), sun and Earth each

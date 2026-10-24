@@ -120,6 +120,7 @@ def test_the_stage_three_script_defaults_and_importing_it_starts_nothing() -> No
     module = load_run_script()
     assert module.OUTPUT_PATH.name == "safe_haven_degenerate_windows.csv" and module.OVERWRITE is False
     assert module.PARAMETERS.block_patches % module.PARAMETERS.cell_patches == 0
+    assert module.WORKERS == 2 and module.NUMBA_THREADS_PER_WORKER is None
     assert module.PARAMETERS.survival_limit_hours == 72.0 and module.PARAMETERS.operational_hours == 48.0
     assert module.CELLS is None and module.CELL_LIST_PATH.name == "safe_haven_degenerate_haven_cells.json"
 
@@ -314,3 +315,37 @@ def load_stage_two_script():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def test_stage_three_passes_its_worker_settings_on_and_reports_the_memory_it_expects(
+        tmp_path: Path, monkeypatch, capsys) -> None:
+    from types import SimpleNamespace
+
+    module = load_run_script()
+    stage_three_setup(module, monkeypatch, tmp_path, cells=[(0, 0)])
+    seen = {}
+    monkeypatch.setattr(module, "run_pass_two", lambda **kwargs: seen.update(kwargs)
+                        or SimpleNamespace(as_dict=lambda: {}))
+    monkeypatch.setattr(module, "WORKERS", 3)
+    monkeypatch.setattr(module, "NUMBA_THREADS_PER_WORKER", 4)
+    monkeypatch.setattr(module, "_available_memory_bytes", lambda: 10**12)
+    assert module.main() == 0
+    assert (seen["workers"], seen["numba_threads_per_worker"]) == (3, 4)
+    log = (tmp_path / "windows.csv.log").read_text()
+    assert "3 worker(s), block_patches 1: about 3 GB of horizons" in log and "WARNING" not in log
+
+
+def test_stage_three_warns_when_the_workers_will_not_fit_in_memory(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    module = load_run_script()
+    stage_three_setup(module, monkeypatch, tmp_path, cells=[(0, 0)])
+    monkeypatch.setattr(module, "run_pass_two", lambda **kwargs: SimpleNamespace(as_dict=lambda: {}))
+    monkeypatch.setattr(module, "WORKERS", 40)
+    monkeypatch.setattr(module, "_available_memory_bytes", lambda: 8 * 10**9)
+    assert module.main() == 0
+    assert "WARNING" in (tmp_path / "windows.csv.log").read_text() and "lower WORKERS" in (tmp_path / "windows.csv.log").read_text()
+    monkeypatch.setattr(module, "_available_memory_bytes", lambda: None)             # unreadable: no warning, no crash
+    monkeypatch.setattr(module, "OVERWRITE", True)
+    assert module.main() == 0
+    assert module._available_memory_bytes() is None
