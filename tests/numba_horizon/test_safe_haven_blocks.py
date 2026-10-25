@@ -778,6 +778,8 @@ def test_the_report_file_describes_the_table_and_the_run(prepared, tables) -> No
     assert document["flood_counts"] == tables[1][1].as_dict()["flood_counts"]
     assert document["cells"] == 4 and document["blocks_total"] == 4 and document["blocks_resumed_from_a_checkpoint"] == 0
     assert document["lighting_of_the_last_run"] == "cpu" and document["pipeline_of_the_last_run"] is None
+    assert document["horizon_patches_decoded_in_the_last_run"] == result.horizon_loads > 0
+    assert document["peak_decoded_patches_held_in_the_last_run"] == result.peak_resident_patches > 0
     assert document["settings"]["parameters"]["operational_hours"] == OPERATIONAL_HOURS
     assert document["settings"]["table_columns"] == NEW_COLUMNS and "cells" not in document["settings"]
     assert [entry[1] > 0 for entry in document["settings"]["stage1"]] == [True, True]      # path, size, mtime

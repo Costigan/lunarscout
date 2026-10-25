@@ -234,6 +234,8 @@ def _report_document(report: PassTwoReport, *, fingerprint: dict, pipeline, elap
         "lighting_of_the_last_run": report.lighting,         # a resumed table can mix runs
         "pipeline_of_the_last_run": asdict(pipeline) if pipeline is not None else None,
         "workers_of_the_last_run": report.workers,
+        "horizon_patches_decoded_in_the_last_run": report.horizon_loads,
+        "peak_decoded_patches_held_in_the_last_run": report.peak_resident_patches,
         "flood_step_minutes": report.flood_step_minutes,
         "flood_steps": report.flood_steps,
         "settings": settings,
