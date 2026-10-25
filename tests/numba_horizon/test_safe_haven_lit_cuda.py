@@ -161,3 +161,47 @@ def test_auto_picks_the_gpu_when_there_is_one(prepared, tables) -> None:
     assert stage3.select_lighting(settings, SPC) is not None
     base.blocks.run_pass_two(**base.parallel_kwargs(prepared, "pipe_cuda_auto", 1, pipeline=settings))
     assert (prepared.directory / "pipe_cuda_auto.csv").read_bytes() == tables[1][0].read_bytes()
+
+
+# --- stage 0: the three thresholded planes ---------------------------------------------------------
+
+
+def _plane_inputs(count: int):
+    stamps = np.datetime64("2027-01-10T00:00", "us") + np.arange(count) * np.timedelta64(2, "h")
+    return scene.sun_vectors(stamps), scene.earth_vectors(stamps)
+
+
+@pytest.mark.parametrize("batch", [(7, 3), (16, 1), (150, 1)])       # remainders, one step per chunk, one batch
+def test_gpu_planes_are_bit_identical_to_the_cpu_planes(prepared, batch) -> None:
+    from lunarscout._numba_horizon import safe_haven_lightstore as lightstore
+    from lunarscout._numba_horizon.safe_haven_lit_cuda import LitCudaSession
+
+    gpu = LitCudaSession(steps_per_chunk=batch[0], chunks_per_batch=batch[1])
+    cpu = LightmapCpuSession()
+    settings = lightstore.LightStoreSettings(shadow_fraction=0.2, operating_fraction=1.0, earth_elevation_deg=2.0)
+    sun, earth = _plane_inputs(150)                              # 150 steps: not a multiple of most batches
+    seen = np.zeros(3, dtype=bool), np.zeros(3, dtype=bool)        # each plane has set and clear bits somewhere
+    for patch in [(0, 0), (1, 1), (2, 2), (2, 1)]:               # includes the partial last row and column
+        horizons = read_patch_horizons(prepared.store, patch[0] * PATCH_SIZE, patch[1] * PATCH_SIZE, 0.0)
+        expected = lightstore.light_patch_planes(cpu, prepared.dem, horizons, patch[0], patch[1], sun, earth, settings)
+        actual = lightstore.light_patch_planes(gpu, prepared.dem, horizons, patch[0], patch[1], sun, earth, settings)
+        assert actual.shape == expected.shape == (3, 150, PATCH_SIZE, 2) and actual.dtype == np.uint64
+        assert np.array_equal(actual, expected), patch
+        for plane in range(3):
+            seen[0][plane] |= bool(actual[plane].any())
+            seen[1][plane] |= bool((~actual[plane]).any())
+    assert seen[0].all() and seen[1].all()
+
+
+def test_gpu_planes_reject_mismatched_inputs(prepared) -> None:
+    from lunarscout._numba_horizon import safe_haven_lightstore as lightstore
+    from lunarscout._numba_horizon.safe_haven_lit_cuda import LitCudaSession
+    from lunarscout.errors import InputError
+
+    gpu = LitCudaSession(steps_per_chunk=8, chunks_per_batch=1)
+    horizons = read_patch_horizons(prepared.store, 0, 0, 0.0)
+    sun, earth = _plane_inputs(10)
+    with pytest.raises(InputError):
+        lightstore.light_patch_planes(gpu, prepared.dem, horizons, 0, 0, sun, earth[:-1])
+    with pytest.raises(InputError):
+        lightstore.light_patch_planes(gpu, prepared.dem, horizons, 99, 99, sun, earth)

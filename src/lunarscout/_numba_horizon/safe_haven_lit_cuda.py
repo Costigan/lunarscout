@@ -10,6 +10,12 @@ whose Sun fraction lies within a few float32 steps of the lit threshold: there t
 can differ by up to about three ulps and the bit can fall either way (3 bits in 106 million pixel-steps
 in one traced cell window; 12 of 4,181 table rows differ, each by one pixel).
 
+Stage 0 uses the same session for the thresholded-lighting store (``safe_haven_lightstore``):
+``light_patch_planes`` runs the production kernel on the Sun vectors (two packings, at the shadow and
+operating fractions) and again on the Earth vectors with the margin output on (one packing, at the
+outage elevation), so three bit-planes per step come back and nothing else crosses the bus. The general
+lighting paths are not touched.
+
 The packing kernel has a fixed trip count (64 bits per word), checks every index against its array
 bounds and launches exactly one thread per output word, so it cannot loop without end or write out
 of range.
@@ -26,6 +32,7 @@ from .cuda_backend import cuda_session_setup
 from .file_format import AZIMUTH_COUNT, PATCH_SIZE
 from .lightmap_cuda import LightmapCudaSession
 from .psr import _validate_vectors
+from .safe_haven_lightstore import PLANE_COUNT, LightStoreSettings, plane_thresholds
 
 WORDS_PER_ROW = PATCH_SIZE // 64
 THREADS = 128
@@ -86,6 +93,8 @@ class LitCudaSession(LightmapCudaSession):
             self.chunks_per_batch = int(chunks_per_batch)
             self._bits = self._cuda.device_array(
                 (self.time_batch_size, PATCH_SIZE, WORDS_PER_ROW), dtype=np.uint64)
+            self._planes = self._cuda.device_array(
+                (PLANE_COUNT, self.time_batch_size, PATCH_SIZE, WORDS_PER_ROW), dtype=np.uint64)
 
     def light_patch(
         self,
@@ -148,3 +157,71 @@ class LitCudaSession(LightmapCudaSession):
                 for first in range(0, count, spc):
                     units.append(np.ascontiguousarray(host[first:first + spc]))
         return units
+
+    def light_patch_planes(
+        self,
+        dem,
+        horizons_deg: npt.ArrayLike,
+        sun_vectors: npt.ArrayLike,
+        earth_vectors: npt.ArrayLike,
+        settings: LightStoreSettings,
+        *,
+        tile_y: int,
+        tile_x: int,
+        valid_height: int,
+        valid_width: int,
+    ) -> npt.NDArray[np.uint64]:
+        """The store's three packed planes for one patch, ``(3, steps, 128, 2)``, in batches of
+        ``time_batch_size`` steps. The patch's inputs go to the device once. A pixel outside the valid
+        ``valid_height`` x ``valid_width`` area has every bit clear."""
+        if not 1 <= valid_width <= PATCH_SIZE or not 1 <= valid_height <= PATCH_SIZE:
+            raise ValueError("valid patch dimensions must be between 1 and 128")
+        sun = np.ascontiguousarray(_validate_vectors(sun_vectors), dtype=np.float32)
+        earth = np.ascontiguousarray(_validate_vectors(earth_vectors), dtype=np.float32)
+        if sun.shape != earth.shape:
+            raise ValueError("the Sun and Earth vectors must have the same shape")
+        horizons = np.ascontiguousarray(horizons_deg, dtype=np.float32)
+        if horizons.shape != (PATCH_SIZE, PATCH_SIZE, AZIMUTH_COUNT):
+            raise ValueError("horizons must have shape (128, 128, 1440)")
+        patch_dem = np.zeros((PATCH_SIZE, PATCH_SIZE), dtype=np.float32)
+        patch_dem[:valid_height, :valid_width] = dem.elevation_m[
+            tile_y:tile_y + valid_height, tile_x:tile_x + valid_width]
+        projection = np.asarray((
+            dem.projection.radius_m, dem.projection.latitude_origin_rad, dem.projection.longitude_origin_rad,
+            dem.projection.scale, dem.projection.false_easting_m, dem.projection.false_northing_m,
+        ), dtype=np.float64)
+        shadow, operating, outage = plane_thresholds(settings)
+        total = sun.shape[0]
+        blocks = (PATCH_SIZE * PATCH_SIZE + THREADS - 1) // THREADS
+        planes = np.zeros((PLANE_COUNT, total, PATCH_SIZE, WORDS_PER_ROW), dtype=np.uint64)
+        with self._lock:
+            self._dem.copy_to_device(patch_dem)
+            self._geotransform.copy_to_device(dem.geo_transform)
+            self._projection.copy_to_device(projection)
+            self._horizons.copy_to_device(horizons)
+            device_sun = self._cuda.to_device(sun)
+            device_earth = self._cuda.to_device(earth)
+            self._vectors = None
+            self._vector_key = None                       # the base class's cached vectors are not these
+            self._input_owner = None
+            for start in range(0, total, self.time_batch_size):
+                count = min(self.time_batch_size, total - start)
+                pack_blocks = (count * PATCH_SIZE * WORDS_PER_ROW + THREADS - 1) // THREADS
+                self._kernel[blocks, THREADS](
+                    self._dem, self._geotransform, self._projection, device_sun, self._horizons,
+                    start, count, tile_x, tile_y, valid_width, valid_height,
+                    self._output, self._fraction_output, self._margin_output, False)
+                for plane, threshold in ((0, shadow), (1, operating)):
+                    self._pack[pack_blocks, THREADS](
+                        self._fraction_output, count, valid_width, valid_height, np.float64(threshold),
+                        self._planes[plane])
+                self._kernel[blocks, THREADS](
+                    self._dem, self._geotransform, self._projection, device_earth, self._horizons,
+                    start, count, tile_x, tile_y, valid_width, valid_height,
+                    self._output, self._fraction_output, self._margin_output, True)
+                self._pack[pack_blocks, THREADS](
+                    self._margin_output, count, valid_width, valid_height, np.float64(outage), self._planes[2])
+                self._cuda.synchronize()
+                for plane in range(PLANE_COUNT):
+                    planes[plane, start:start + count] = self._planes[plane][:count].copy_to_host()
+        return planes

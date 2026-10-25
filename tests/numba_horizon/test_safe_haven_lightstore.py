@@ -20,7 +20,7 @@ CODECS = ["none", "zlib-1", "zstd-1", "zstd-3", "zstd-9", "lz4", "lz4-9", "snapp
 
 
 def structured_planes(steps: int, seed: int = 3) -> np.ndarray:
-    """Planes with long runs in time and space, so deltas are mostly zero but not all of them."""
+    """Planes with long runs in time and space, so that they compress well but not trivially."""
     rng = np.random.default_rng(seed)
     rows = np.arange(PATCH_SIZE)[None, :, None]
     cols = np.arange(PATCH_SIZE)[None, None, :]
@@ -38,26 +38,19 @@ def structured_planes(steps: int, seed: int = 3) -> np.ndarray:
     return words
 
 
-def settings_for(codec: str, delta: bool = True, **kwargs) -> LightStoreSettings:
-    return LightStoreSettings(codec=codec, delta=delta, steps_per_chunk=kwargs.pop("steps_per_chunk", 96), **kwargs)
+def settings_for(codec: str, **kwargs) -> LightStoreSettings:
+    return LightStoreSettings(codec=codec, steps_per_chunk=kwargs.pop("steps_per_chunk", 96), **kwargs)
 
 
 # --- encoding ---------------------------------------------------------------------------------------
 
 
-def test_delta_is_an_inverse_and_keeps_the_first_step() -> None:
-    planes = structured_planes(10)
-    encoded = store.delta_encode(planes)
-    assert np.array_equal(encoded[:, 0], planes[:, 0])
-    assert np.array_equal(encoded[:, 3], planes[:, 3] ^ planes[:, 2])
-    assert np.array_equal(store.delta_decode(encoded), planes)
-    assert (encoded[:, 1:] == 0).mean() > (planes[:, 1:] == 0).mean()      # it does make zeros
-
-
-@pytest.mark.parametrize("delta", [False, True])
 @pytest.mark.parametrize("codec", CODECS)
-def test_every_codec_round_trips_across_chunk_edges(tmp_path, codec, delta) -> None:
-    settings = settings_for(codec, delta)
+def test_every_codec_round_trips_across_chunk_edges(tmp_path, codec) -> None:
+    try:
+        settings = settings_for(codec)
+    except ProductStorageError as error:                       # lz4 and snappy are optional
+        pytest.skip(str(error))
     planes = structured_planes(250)                           # chunks of 96, 96 and 58 steps
     path = tmp_path / "patch.lit"
     size = store.write_patch(path, planes, settings, patch_row=4, patch_column=9, first_step=96 * 7)
@@ -73,11 +66,9 @@ def test_every_codec_round_trips_across_chunk_edges(tmp_path, codec, delta) -> N
 
 
 def test_a_real_codec_makes_the_file_much_smaller(tmp_path) -> None:
-    # Whether delta also helps depends on the data (it doubles isolated flips), so it is measured on
-    # real patches (scripts/measure_light_store.py), not asserted here.
     planes = structured_planes(192)
-    raw = store.write_patch(tmp_path / "a", planes, settings_for("none", False), patch_row=0, patch_column=0, first_step=0)
-    packed = store.write_patch(tmp_path / "b", planes, settings_for("zstd-3", False), patch_row=0, patch_column=0, first_step=0)
+    raw = store.write_patch(tmp_path / "a", planes, settings_for("none"), patch_row=0, patch_column=0, first_step=0)
+    packed = store.write_patch(tmp_path / "b", planes, settings_for("zstd-3"), patch_row=0, patch_column=0, first_step=0)
     assert packed < raw / 4
 
 
@@ -285,7 +276,7 @@ def test_planes_equal_the_per_pixel_thresholds_and_the_edges_are_clear(lit_scene
 
 
 def test_a_produced_patch_survives_the_file(tmp_path, lit_scene) -> None:
-    settings = LightStoreSettings(steps_per_chunk=48, codec="zstd-3", delta=True)
+    settings = LightStoreSettings(steps_per_chunk=48, codec="zstd-3")
     planes = store.light_patch_planes(
         LightmapCpuSession(time_batch_size=16), lit_scene["dem"], lit_scene["horizons"], 0, 0,
         lit_scene["sun"], lit_scene["earth"], settings,
@@ -307,3 +298,26 @@ def test_the_producer_rejects_bad_vectors_and_patches(lit_scene) -> None:
         store.light_patch_planes(session, lit_scene["dem"], lit_scene["horizons"], 5, 5,
                                  lit_scene["sun"], lit_scene["earth"])
     assert outside.value.code == "light_store_patch_outside"
+
+
+def test_a_session_with_its_own_planes_method_is_used_and_given_the_patch_geometry(lit_scene) -> None:
+    calls = []
+
+    class FakeSession:
+        def light_patch_planes(self, dem, horizons, sun, earth, settings, **geometry):
+            calls.append((sun.shape, earth.shape, settings, geometry))
+            return np.zeros((3, sun.shape[0], PATCH_SIZE, 2), dtype=np.uint64)
+
+    settings = LightStoreSettings(shadow_fraction=0.3)
+    result = store.light_patch_planes(FakeSession(), lit_scene["dem"], lit_scene["horizons"], 0, 0,
+                                      lit_scene["sun"], lit_scene["earth"], settings)
+    assert result.shape == (3, 150, PATCH_SIZE, 2)
+    shapes_sun, shapes_earth, used, geometry = calls[0]
+    assert shapes_sun == shapes_earth == (150, 3) and used is settings
+    assert geometry == dict(tile_y=0, tile_x=0, valid_height=scene.SIZE, valid_width=scene.SIZE)
+
+
+def test_plane_thresholds_carry_the_stage_one_fuzz() -> None:
+    shadow, operating, earth = store.plane_thresholds(LightStoreSettings(
+        shadow_fraction=0.25, operating_fraction=0.9, earth_elevation_deg=3.5))
+    assert (shadow, earth) == (0.25, 3.5) and operating == pytest.approx(0.9 - 1e-6)

@@ -7,7 +7,8 @@ Measures what the stage-0 thresholded-lighting store would cost on real patches
 (src/lunarscout/_numba_horizon/safe_haven_lightstore.py). For each patch in PATCHES it reads the
 horizon tile, lights the whole time range on the CPU (Sun fraction and Earth margin thresholded into
 three bit-planes, 2-hour steps by default), then compresses the planes with every combination of
-codec, delta on or off, and chunk length, and reports the compressed size, the size extrapolated to
+codec and chunk length (an earlier version also tried storing each step as the exclusive-or of the
+one before; it made zstd files about 10% larger and was dropped), and reports the compressed size, the size extrapolated to
 every patch of the raster, and the time to read one month back. It uses the CPU only: no GPU, no
 CUDA, no network. SPICE supplies the Sun and Earth positions.
 
@@ -64,7 +65,6 @@ PATCHES = [
 ]
 CODECS = ["zlib-6", "snappy", "lz4", "lz4-9", "zstd-1", "zstd-3", "zstd-9", "zstd-19"]
 CHUNK_DAYS = [1, 4, 8, 16]
-DELTAS = [False, True]
 THREADS = 12                  # compression runs in threads; the codecs release the GIL
 TIMING_CHUNK_DAYS = 8         # chunk length of the timed single-thread read and write
 RASTER_PATCHES = 237 * 237
@@ -109,20 +109,20 @@ def plane_statistics(planes) -> dict:
     return out
 
 
-def compressed_size(planes, steps_per_chunk, codec, delta) -> int:
+def compressed_size(planes, steps_per_chunk, codec) -> int:
     settings = lightstore.LightStoreSettings(
-        step_minutes=STEP_MINUTES, steps_per_chunk=steps_per_chunk, codec=codec, delta=delta)
+        step_minutes=STEP_MINUTES, steps_per_chunk=steps_per_chunk, codec=codec)
     total = 0
     for start in range(0, planes.shape[1], steps_per_chunk):
         total += len(lightstore.encode_chunk(np.asarray(planes[:, start:start + steps_per_chunk]), settings))
     return total
 
 
-def timed_round_trip(planes, first_step, codec, delta, steps_per_chunk):
+def timed_round_trip(planes, first_step, codec, steps_per_chunk):
     """Single-thread write time, whole-file read time and one-month read time and bytes."""
     settings = lightstore.LightStoreSettings(
-        step_minutes=STEP_MINUTES, steps_per_chunk=steps_per_chunk, codec=codec, delta=delta)
-    path = WORK_DIR / f"timing_{codec}_{int(delta)}.lit"
+        step_minutes=STEP_MINUTES, steps_per_chunk=steps_per_chunk, codec=codec)
+    path = WORK_DIR / f"timing_{codec}.lit"
     started = clock.monotonic()
     size = lightstore.write_patch(path, np.asarray(planes), settings, patch_row=0, patch_column=0,
                                   first_step=first_step)
@@ -198,20 +198,19 @@ def _run() -> int:
             LOG.warning("skipping %s: %s", codec, error)
             continue
         for days in CHUNK_DAYS:
-            for delta in DELTAS:
-                configs.append((codec, days, delta))
+            configs.append((codec, days))
     started = clock.monotonic()
     tasks = [(patch_index, config) for patch_index in range(len(patches)) for config in configs]
 
     def work(task):
-        patch_index, (codec, days, delta) = task
+        patch_index, (codec, days) = task
         spc = days * 24 * 60 // STEP_MINUTES
-        return task, compressed_size(patches[patch_index][1], spc, codec, delta)
+        return task, compressed_size(patches[patch_index][1], spc, codec)
 
     with ThreadPoolExecutor(THREADS) as pool:
         for done, (task, size) in enumerate(pool.map(work, tasks), 1):
-            patch_index, (codec, days, delta) = task
-            results["sizes"].setdefault(f"{codec}|{days}d|delta={int(delta)}", {})[patch_index] = size
+            patch_index, (codec, days) = task
+            results["sizes"].setdefault(f"{codec}|{days}d", {})[patch_index] = size
             if done % 50 == 0:
                 LOG.info("compressed %d of %d (%.0f s)", done, len(tasks), clock.monotonic() - started)
 
@@ -222,7 +221,7 @@ def _run() -> int:
     rows.sort(key=lambda row: row[1])
     LOG.info("compressed size per patch for %d steps (raw %.1f MB); all-raster = mean x %d", steps.size,
              raw / 1e6, RASTER_PATCHES)
-    LOG.info("%-28s %10s %8s %10s %10s %12s", "codec|chunk|delta", "mean MB", "ratio", "min MB", "max MB",
+    LOG.info("%-28s %10s %8s %10s %10s %12s", "codec|chunk", "mean MB", "ratio", "min MB", "max MB",
              "raster TB")
     for key, mean, low, high in rows:
         LOG.info("%-28s %10.2f %8.1f %10.2f %10.2f %12.2f", key, mean / 1e6, raw / mean, low / 1e6, high / 1e6,
@@ -234,16 +233,15 @@ def _run() -> int:
         LOG.info("single-thread timing on patch (%d, %d), %d-day chunks:", patch[0], patch[1], TIMING_CHUNK_DAYS)
         spc = TIMING_CHUNK_DAYS * 24 * 60 // STEP_MINUTES
         for codec in CODECS:
-            for delta in DELTAS:
-                try:
-                    lightstore.codec_functions(codec)
-                except LunarscoutError:
-                    continue
-                t = timed_round_trip(planes, first_step, codec, delta, spc)
-                results["timing"][f"{codec}|delta={int(delta)}"] = t
-                LOG.info("  %-9s delta=%d: file %6.2f MB, write %5.2f s, read all %5.2f s, read 30 days %6.3f s (%.2f MB stored)",
-                         codec, delta, t["file_bytes"] / 1e6, t["write_s"], t["read_all_s"], t["read_month_s"],
-                         t["read_month_bytes_stored"] / 1e6)
+            try:
+                lightstore.codec_functions(codec)
+            except LunarscoutError:
+                continue
+            t = timed_round_trip(planes, first_step, codec, spc)
+            results["timing"][codec] = t
+            LOG.info("  %-9s: file %6.2f MB, write %5.2f s, read all %5.2f s, read 30 days %6.3f s (%.2f MB stored)",
+                     codec, t["file_bytes"] / 1e6, t["write_s"], t["read_all_s"], t["read_month_s"],
+                     t["read_month_bytes_stored"] / 1e6)
 
     (WORK_DIR / "results.json").write_text(json.dumps(results, indent=1, default=float))
     LOG.info("wrote %s", WORK_DIR / "results.json")

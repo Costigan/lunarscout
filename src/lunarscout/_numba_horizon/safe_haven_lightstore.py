@@ -24,15 +24,18 @@ One file holds one patch. The layout, little-endian throughout::
 
 A chunk is the planes of its steps, array shape ``(3, steps, 128, 2)`` of ``<u8``, compressed on
 its own so that a reader needs only the chunks of the days it asks for: it slices the memory-mapped
-file between two offsets and decompresses those. With ``delta`` set each plane is stored as the
-exclusive-or of consecutive steps (the first step of a chunk as is), which turns "this pixel did
-not change" into zero bytes for the codec to remove; decoding is a running exclusive-or inside the
-chunk. The header names the codec, the time grid, the thresholds and the patch, and a reader that
-is asked for different ones refuses the file. A file is written to a staging name and renamed when
+file between two offsets and decompresses those. Measured on eight real patches (8 years at 2 hours),
+zstd level 3 on 8-day chunks stores a patch in 3.6 MB on average (60 times smaller than the raw
+215 MB); storing each step as the exclusive-or of the one before made zstd files about 10% larger,
+so the planes are stored as they are. The header names the codec, the time grid, the thresholds and
+the patch, and a reader that is asked for different ones refuses the file. A file is written to a staging name and renamed when
 complete, so a failure never leaves a partial file or damages an earlier one.
 
 The producer, :func:`light_patch_planes`, is the CPU lightmap followed by the three thresholds in
-compiled loops that release the GIL. Both steps use the stage-1 comparisons exactly.
+compiled loops that release the GIL, or, when given a session that has a ``light_patch_planes``
+method (``safe_haven_lit_cuda.LitCudaSession``), that session's CUDA route. Both use the stage-1
+comparisons exactly; they can differ at pixel-steps whose value lies within a few float32 steps of
+a threshold.
 """
 
 from __future__ import annotations
@@ -78,7 +81,8 @@ def _split_codec(name: str) -> tuple[str, int | None]:
 
 def _missing(base: str):
     return ProductStorageError(
-        f"the {base!r} codec needs its Python package, which is not installed",
+        f"the {base!r} codec needs its Python package, which is not installed"
+        + (' (pip install "lunarscout[lightstore]")' if base == "zstd" else ""),
         code="light_store_codec_unavailable", details={"codec": base},
     )
 
@@ -136,7 +140,6 @@ class LightStoreSettings:
     earth_elevation_deg: float = 2.0
     observer_height_m: float = 0.0
     codec: str = "zstd-3"
-    delta: bool = True
 
     def __post_init__(self) -> None:
         if self.step_minutes < 1 or 1440 % self.step_minutes:
@@ -149,6 +152,34 @@ class LightStoreSettings:
             raise InputError("need 0 <= shadow_fraction <= operating_fraction <= 1",
                              code="light_store_threshold_invalid")
         codec_functions(self.codec)           # an unknown or missing codec fails here, not mid-file
+
+
+def patch_geometry(dem, patch_row: int, patch_column: int) -> tuple[int, int, int, int]:
+    """``(tile_y, tile_x, valid_height, valid_width)`` of a patch, which must overlap the DEM."""
+    tile_y, tile_x = patch_row * PATCH_SIZE, patch_column * PATCH_SIZE
+    valid_height = min(PATCH_SIZE, dem.elevation_m.shape[0] - tile_y)
+    valid_width = min(PATCH_SIZE, dem.elevation_m.shape[1] - tile_x)
+    if valid_height < 1 or valid_width < 1 or tile_y < 0 or tile_x < 0:
+        raise InputError("the patch lies outside the DEM", code="light_store_patch_outside",
+                         details={"patch": [patch_row, patch_column]})
+    return tile_y, tile_x, valid_height, valid_width
+
+
+def plane_thresholds(settings: LightStoreSettings) -> tuple[float, float, float]:
+    """``(shadow, operating, earth)``: a plane bit is set where the value is at least its threshold.
+    The operating threshold carries the stage-1 fuzz."""
+    return (float(settings.shadow_fraction), float(settings.operating_fraction) - OPERATING_FUZZ,
+            float(settings.earth_elevation_deg))
+
+
+def checked_vectors(sun_vectors_m: npt.ArrayLike, earth_vectors_m: npt.ArrayLike):
+    sun = np.asarray(sun_vectors_m, dtype=np.float64)
+    earth = np.asarray(earth_vectors_m, dtype=np.float64)
+    if sun.ndim != 2 or sun.shape != earth.shape or sun.shape[1] != 3:
+        raise InputError("the Sun and Earth vectors must both have shape (steps, 3)",
+                         code="light_store_vectors_invalid",
+                         details={"sun_shape": list(sun.shape), "earth_shape": list(earth.shape)})
+    return sun, earth
 
 
 def light_patch_planes(
@@ -164,25 +195,19 @@ def light_patch_planes(
     """The three packed planes of one patch for the given Sun and Earth vectors.
 
     Returns ``(3, steps, 128, 2)`` uint64 in ``PLANE_NAMES`` order. ``session`` is a
-    ``LightmapCpuSession``; the vectors are Moon-ME, one row per step. Pixels outside the DEM stay
-    clear in every plane.
+    ``LightmapCpuSession``, or a session with its own ``light_patch_planes`` method (the CUDA
+    route); the vectors are Moon-ME, one row per step. Pixels outside the DEM stay clear in every
+    plane.
     """
-    sun = np.asarray(sun_vectors_m, dtype=np.float64)
-    earth = np.asarray(earth_vectors_m, dtype=np.float64)
-    if sun.ndim != 2 or sun.shape != earth.shape or sun.shape[1] != 3:
-        raise InputError("the Sun and Earth vectors must both have shape (steps, 3)",
-                         code="light_store_vectors_invalid",
-                         details={"sun_shape": list(sun.shape), "earth_shape": list(earth.shape)})
-    tile_y, tile_x = patch_row * PATCH_SIZE, patch_column * PATCH_SIZE
-    valid_height = min(PATCH_SIZE, dem.elevation_m.shape[0] - tile_y)
-    valid_width = min(PATCH_SIZE, dem.elevation_m.shape[1] - tile_x)
-    if valid_height < 1 or valid_width < 1:
-        raise InputError("the patch lies outside the DEM", code="light_store_patch_outside",
-                         details={"patch": [patch_row, patch_column]})
+    sun, earth = checked_vectors(sun_vectors_m, earth_vectors_m)
+    tile_y, tile_x, valid_height, valid_width = patch_geometry(dem, patch_row, patch_column)
+    if hasattr(session, "light_patch_planes"):
+        return session.light_patch_planes(
+            dem, horizons, sun, earth, settings, tile_y=tile_y, tile_x=tile_x,
+            valid_height=valid_height, valid_width=valid_width)
     pack = _threshold_and_pack(True)
+    shadow, operating, earth_threshold = plane_thresholds(settings)
     bits = np.zeros((PLANE_COUNT, sun.shape[0], PATCH_SIZE, WORDS_PER_ROW), dtype=np.uint64)
-    shadow = float(settings.shadow_fraction)
-    operating = float(settings.operating_fraction) - OPERATING_FUZZ
     done = 0
     for fractions in session.iter_patch_fraction_batches(
         dem, horizons, sun, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width,
@@ -196,7 +221,7 @@ def light_patch_planes(
         dem, horizons, earth, tile_y=tile_y, tile_x=tile_x, valid_height=valid_height, valid_width=valid_width,
     ):
         stop = done + margins.shape[0]
-        pack(margins, valid_height, valid_width, float(settings.earth_elevation_deg), bits[2, done:stop])
+        pack(margins, valid_height, valid_width, earth_threshold, bits[2, done:stop])
         done = stop
     return bits
 
@@ -204,18 +229,6 @@ def light_patch_planes(
 # ---------------------------------------------------------------------------
 # Chunk encoding
 # ---------------------------------------------------------------------------
-
-
-def delta_encode(planes: npt.NDArray[np.uint64]) -> npt.NDArray[np.uint64]:
-    """Each step exclusive-or'd with the one before it; the first step is kept as it is."""
-    encoded = np.array(planes, dtype=np.uint64, copy=True)
-    encoded[:, 1:] ^= planes[:, :-1]
-    return encoded
-
-
-def delta_decode(encoded: npt.NDArray[np.uint64]) -> npt.NDArray[np.uint64]:
-    """Inverse of :func:`delta_encode`."""
-    return np.bitwise_xor.accumulate(encoded, axis=1)
 
 
 def chunk_raw_size(steps: int) -> int:
@@ -228,9 +241,8 @@ def encode_chunk(planes: npt.NDArray[np.uint64], settings: LightStoreSettings) -
     if planes.ndim != 4 or planes.shape[0] != PLANE_COUNT or planes.shape[2:] != (PATCH_SIZE, WORDS_PER_ROW):
         raise InputError("a chunk must have shape (3, steps, 128, 2)", code="light_store_chunk_shape",
                          details={"shape": list(planes.shape)})
-    body = delta_encode(planes) if settings.delta else planes
     compress, _ = codec_functions(settings.codec)
-    return compress(np.ascontiguousarray(body, dtype=_WORD).tobytes())
+    return compress(np.ascontiguousarray(planes, dtype=_WORD).tobytes())
 
 
 def decode_chunk(data: bytes | memoryview, steps: int, settings: LightStoreSettings) -> npt.NDArray[np.uint64]:
@@ -240,8 +252,7 @@ def decode_chunk(data: bytes | memoryview, steps: int, settings: LightStoreSetti
     if len(raw) != chunk_raw_size(steps):
         raise ProductStorageError("a chunk decompressed to the wrong size", code="light_store_corrupt",
                                   details={"expected": chunk_raw_size(steps), "actual": len(raw)})
-    body = np.frombuffer(raw, dtype=_WORD).reshape(PLANE_COUNT, steps, PATCH_SIZE, WORDS_PER_ROW)
-    return delta_decode(body).astype(np.uint64, copy=False) if settings.delta else body.astype(np.uint64)
+    return np.frombuffer(raw, dtype=_WORD).reshape(PLANE_COUNT, steps, PATCH_SIZE, WORDS_PER_ROW).astype(np.uint64)
 
 
 # ---------------------------------------------------------------------------
@@ -474,5 +485,5 @@ def write_patch(path: str | Path, planes: npt.NDArray[np.uint64], settings: Ligh
 
 __all__ = [
     "FORMAT", "PLANE_NAMES", "LightStore", "LightStoreSettings", "LightStoreWriter", "codec_functions",
-    "decode_chunk", "delta_decode", "delta_encode", "encode_chunk", "light_patch_planes", "write_patch",
+    "decode_chunk", "encode_chunk", "light_patch_planes", "patch_geometry", "plane_thresholds", "write_patch",
 ]

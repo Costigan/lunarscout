@@ -73,12 +73,17 @@ plot = [
 console = [
     "rich>=13",
 ]
+# the stage-0 thresholded-lighting store for the safe-haven analysis (zstd-compressed chunks)
+lightstore = [
+    "zstandard>=0.22",
+]
 dev = [
     "build>=1.2",
     "coverage>=7.0",
     "pytest>=8.0",
     "rich>=13",
     "twine>=6.0",
+    "zstandard>=0.22",
 ]
 
 [project.scripts]

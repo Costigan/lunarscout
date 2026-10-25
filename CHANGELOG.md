@@ -6,6 +6,20 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Safe-haven stage 0: the thresholded-lighting store.** New private modules
+  `safe_haven_lightstore.py` and `safe_haven_stage0.py`, and `scripts/run_safe_haven_stage0.py`, light every
+  128 x 128 patch once for the whole time range (2-hour steps, 2024 to 2031) and store three packed
+  bit-planes per step in one compressed file per patch: Sun fraction at least 0.2, at least 1.0 (with the
+  stage-1 fuzz), and Earth above 2 degrees over the pixel's own horizon. Files hold independently
+  compressed 8-day chunks behind an offset table in the header, so a reader fetches only the days it needs;
+  they are written to a staging name and renamed. On eight real patches zstd level 3 stored a patch in 3.6 MB
+  on average against 215 MB raw (about 0.2 to 0.45 TB for all 56,169 patches); storing each step as the
+  exclusive-or of the one before made zstd files about 10% larger, so it is not used. The CUDA route is a new
+  `LitCudaSession.light_patch_planes` that reuses the production lightmap kernel and the fixed-trip-count
+  packing kernel unchanged (the general lighting paths are not touched). The run is restartable, bounded in
+  memory, refuses a directory made with other settings, time range or DEM, and writes a report. New optional
+  extra `lunarscout[lightstore]` (zstandard). Stages 1 and 3 do not read the store yet.
+
 - **Safe-haven products: degenerate outage (changes results).** An Earth cycle in
   which Earth stays above `earth_elevation_threshold_deg` used to have no
   hibernation. `ls.generate_safe_haven_products` and `scenario.safe_haven_products`
