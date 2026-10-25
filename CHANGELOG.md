@@ -30,6 +30,18 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   The rate counts only the patches the current run finished, so it is right after
   a resume, and it follows the most recent 1,000 patches, so a slow start drops out
   of the estimate. It reads `ETA pending` for the first few patches.
+- **The stage-3 table is named for what it scores.** The output is now
+  `safe_haven_operating_opportunity_scores.csv` and its columns say what they hold:
+  `operating_opportunity_score` (the sum of `lit_reachable_pixels_before` and
+  `lit_reachable_pixels_after`, the lit pixels that can reach the safe haven in the 48 hours before the
+  non-operations period and that it can reach in the 48 hours after), `non_operations_start_utc`,
+  `non_operations_end_utc`, `before_window_end_utc` and `after_window_start_utc` (they were
+  `score`, `count_before`, `count_after`, `outage_start_utc`, `outage_end_utc`, `boundary_before_utc`
+  and `boundary_after_utc`). `rename_table_columns` converts a table made under the old names, and a
+  checkpoint written under them is refused. `run_pass_two(report_path=...)` writes a JSON report next
+  to the table (`...scores.report.json`): what a row is, the columns, the settings and stage-1 files, the
+  lighting of the last run and the counts of the whole run. `scripts/run_safe_haven_stage3.py` writes
+  both.
 - **Safe-haven stage 3 can light on the GPU (`LIGHTING = "auto" | "cuda" | "cpu"`).**
   `safe_haven_lit_cuda.LitCudaSession` runs the production CUDA lightmap and a new packing kernel
   (fixed 64-iteration loop, bounds-checked, one thread per output word) so that only packed lit bits

@@ -459,12 +459,17 @@ class _Coordinator:
 
 
 def _run_blocks_in_pipeline(pending, by_block, run_arguments, finish, *, settings: PipelineSettings,
-                            stop_after_blocks):
+                            stop_after_blocks, details: dict | None = None):
     """Run the ``pending`` blocks through the pipeline, calling ``finish`` for each completed block.
 
     Returns ``(stopped_early, horizon_loads, peak_resident)``. The first interrupt stops feeding after
     the cells of the block being fed and lets everything in flight finish; a second stops at once.
     """
+    if not pending or stop_after_blocks == 0:
+        if details is not None:
+            details["lighting"] = "none (every block was already in the checkpoint)" if not pending else "none"
+        return bool(pending), 0, 0
+
     import numba
 
     from .lightmap_cpu import LightmapCpuSession
@@ -481,9 +486,6 @@ def _run_blocks_in_pipeline(pending, by_block, run_arguments, finish, *, setting
     plan_blocks = list(pending if stop_after_blocks is None else pending[:stop_after_blocks])
     stopped_early = len(plan_blocks) < len(pending)
     plan_by_block = {block: by_block[block] for block in plan_blocks}
-    if not plan_blocks:
-        return stopped_early, 0, 0
-
     # PLAN processes first, before any thread exists (forking a threaded process is unsafe).
     _PLAN.clear()
     _PLAN["arguments"] = dict(run_arguments)
@@ -491,6 +493,8 @@ def _run_blocks_in_pipeline(pending, by_block, run_arguments, finish, *, setting
         settings.plan_workers, initializer=_plan_init, initargs=(_loaded_spice_kernels(),))
     light_vectors = _Locked(arguments["sun_vectors_at"])                    # the LIGHT threads' source
     gpu = select_lighting(settings, grid.steps_per_chunk)                   # after the fork: CUDA is not fork safe
+    if details is not None:
+        details["lighting"] = f"cuda device {settings.gpu_device_id}" if gpu is not None else "cpu"
     logger.info("Pipeline lighting: %s", "CUDA device %d, %d feeder threads, %d chunks per launch" % (
         settings.gpu_device_id, settings.gpu_light_workers, settings.gpu_chunks_per_batch)
         if gpu is not None else "CPU, %d threads" % settings.light_workers)

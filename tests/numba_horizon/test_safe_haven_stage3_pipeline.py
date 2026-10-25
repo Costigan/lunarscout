@@ -415,3 +415,28 @@ def test_the_lighting_settings_are_validated() -> None:
         with pytest.raises(ValueError, match="gpu_device_id"):
             PipelineSettings(gpu_device_id=bad)
     assert PipelineSettings().lighting == "auto" and PipelineSettings(gpu_device_id=1).gpu_device_id == 1
+
+
+def test_the_report_names_the_lighting_and_settings_of_the_last_run(prepared, monkeypatch) -> None:
+    import json
+
+    path = prepared.directory / "pipe_report.csv"
+    report_path = path.with_suffix(".report.json")
+    settings = PipelineSettings(**dict(FAST, lighting="cpu"))
+    blocks.run_pass_two(**base.parallel_kwargs(prepared, "pipe_report", 1, pipeline=settings, report_path=report_path))
+    document = json.loads(report_path.read_text())
+    assert document["lighting_of_the_last_run"] == "cpu"
+    assert document["pipeline_of_the_last_run"]["lighting"] == "cpu" and document["pipeline_of_the_last_run"]["plan_workers"] == 2
+    fake = CpuStandInSession()
+    monkeypatch.setattr(stage3, "_make_gpu_session", lambda settings, spc: fake)
+    gpu_settings = PipelineSettings(**dict(FAST, lighting="cuda", gpu_device_id=0))
+    blocks.run_pass_two(**base.parallel_kwargs(prepared, "pipe_report_gpu", 1, pipeline=gpu_settings,
+                                               report_path=prepared.directory / "pipe_report_gpu.report.json"))
+    assert json.loads((prepared.directory / "pipe_report_gpu.report.json").read_text())["lighting_of_the_last_run"] == "cuda device 0"
+
+
+def test_a_run_with_nothing_left_to_do_says_so(prepared) -> None:
+    details = {}
+    result = stage3._run_blocks_in_pipeline([], {}, {}, lambda *args: None, settings=PipelineSettings(**FAST),
+                                            stop_after_blocks=None, details=details)
+    assert result == (False, 0, 0) and "already in the checkpoint" in details["lighting"]
