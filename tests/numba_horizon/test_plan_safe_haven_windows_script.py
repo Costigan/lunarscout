@@ -118,7 +118,8 @@ def load_run_script():
 
 def test_the_stage_three_script_defaults_and_importing_it_starts_nothing() -> None:
     module = load_run_script()
-    assert module.OUTPUT_PATH.name == "safe_haven_degenerate_windows.csv" and module.OVERWRITE is False
+    assert module.OUTPUT_PATH.name == "safe_haven_operating_opportunity_scores.csv" and module.OVERWRITE is False
+    assert module.REPORT_PATH is None and module._report_path().name == "safe_haven_operating_opportunity_scores.report.json"
     assert module.PARAMETERS.block_patches % module.PARAMETERS.cell_patches == 0
     assert (module.PLAN_WORKERS, module.LIGHT_WORKERS, module.NUMBA_THREADS_PER_LIGHT_WORKER) == (4, 12, 2)
     assert module.FLOOD_WORKERS == 2 and module.STORE_BUDGET_GB == 8.0 and module.CELLS_IN_FLIGHT == 24
@@ -250,6 +251,7 @@ def test_the_scripts_log_to_a_file_next_to_their_output_and_clean_up_after_thems
     log = (tmp_path / "windows.csv.log").read_text()
     assert "INFO    lunarscout.scripts.stage3: Stage 3: 0/1 blocks already in the checkpoint." in log
     assert "Stage 3: 1/1 blocks" in log and f"Table written to: {tmp_path / 'windows.csv'}" in log
+    assert f"Report written to: {tmp_path / 'windows.report.json'}" in log
     assert "\x1b[" not in log
     out = capsys.readouterr().out
     assert "Stage 3: 1/1 blocks" in out and '"rows":' in out                      # the JSON report is still printed

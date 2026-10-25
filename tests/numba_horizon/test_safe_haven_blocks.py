@@ -154,11 +154,11 @@ def test_the_table_is_identical_for_any_block_size(tables) -> None:
         assert report.flood.seeds_boundary_mismatch == 0
 
 
-def test_a_row_belongs_to_the_month_its_outage_starts_in(tables) -> None:
+def test_a_row_belongs_to_the_month_its_non_operations_period_starts_in(tables) -> None:
     rows = read_rows(tables[1][0])
     assert {r["month"] for r in rows} == {"2027-01", "2027-02", "2027-03"}
     for row in rows:
-        assert row["outage_start_utc"][:7] == row["month"]
+        assert row["non_operations_start_utc"][:7] == row["month"]
 
 
 def test_rows_are_ranked_within_their_cell_month(tables) -> None:
@@ -168,11 +168,11 @@ def test_rows_are_ranked_within_their_cell_month(tables) -> None:
         groups.setdefault((row["cell_row"], row["cell_col"], row["month"]), []).append(row)
     for group in groups.values():
         assert [int(r["rank"]) for r in group] == list(range(1, len(group) + 1))
-        keys = [(-int(r["score"]), int(r["seed_row"]), int(r["seed_col"])) for r in group]
+        keys = [(-int(r["operating_opportunity_score"]), int(r["seed_row"]), int(r["seed_col"])) for r in group]
         assert keys == sorted(keys)
         assert all(int(r["valid_seeds"]) == len(group) <= int(r["candidate_seeds"]) <= 5 for r in group)
-        assert all(int(r["score"]) == int(r["count_before"]) + int(r["count_after"]) for r in group)
-        assert all(int(r["count_before"]) > 0 and int(r["count_after"]) > 0 for r in group)
+        assert all(int(r["operating_opportunity_score"]) == int(r["lit_reachable_pixels_before"]) + int(r["lit_reachable_pixels_after"]) for r in group)
+        assert all(int(r["lit_reachable_pixels_before"]) > 0 and int(r["lit_reachable_pixels_after"]) > 0 for r in group)
 
 
 def test_cell_bounds_follow_the_geotransform_including_the_partial_last_cell(tables) -> None:
@@ -187,7 +187,7 @@ def test_cell_bounds_follow_the_geotransform_including_the_partial_last_cell(tab
 
 def test_each_flood_count_equals_the_oracle_on_the_real_lit_state(prepared, tables) -> None:
     rows = read_rows(tables[2][0])
-    straddling = [r for r in rows if r["cell_row"] == "1" and r["cell_col"] == "0" and r["month"] == "2027-01"]
+    straddling = [r for r in rows if r["cell_row"] == "1" and r["cell_col"] == "0" and r["month"] == "2027-02"]
     assert straddling
     grid = FloodGrid(30)
     steps = grid.step_count(OPERATIONAL_HOURS)
@@ -198,17 +198,20 @@ def test_each_flood_count_equals_the_oracle_on_the_real_lit_state(prepared, tabl
         return int(np.datetime64(text.rstrip("Z"), "us").astype(np.int64)) // grid.step_us
 
     first_row = straddling[0]
-    before, after = step_of(first_row["boundary_before_utc"]), step_of(first_row["boundary_after_utc"])
+    before, after = step_of(first_row["before_window_end_utc"]), step_of(first_row["after_window_start_utc"])
     cube = oracle.lit_reference_cube(
         signals, scene.sun_vectors, grid, (0, 0), (bs.SIZE, bs.SIZE), before - steps, after + steps)
-    hibernation = prepared.stage1.read_hibernation_window(0, bs.SIZE, 0, bs.SIZE)[0]
+    hibernation = prepared.stage1.read_hibernation_window(0, bs.SIZE, 0, bs.SIZE)[1]
     passable = np.isfinite(hibernation)
+    asymmetric = []
     for row in straddling[:2]:
-        assert step_of(row["boundary_before_utc"]) == before and step_of(row["boundary_after_utc"]) == after
+        assert step_of(row["before_window_end_utc"]) == before and step_of(row["after_window_start_utc"]) == after
         expected = oracle.flood_seed_reference(
             lambda step: cube[step - (before - steps)], passable, (int(row["seed_row"]), int(row["seed_col"])),
             before, after, steps=steps)
-        assert (int(row["count_before"]), int(row["count_after"])) == (expected.count_before, expected.count_after)
+        assert (int(row["lit_reachable_pixels_before"]), int(row["lit_reachable_pixels_after"])) == (expected.count_before, expected.count_after)
+        asymmetric.append(expected.count_before != expected.count_after)
+    assert any(asymmetric)             # February's two sides differ, so swapping the columns would show
 
 
 def test_the_driver_reads_horizons_as_the_load_plan_says(prepared, tables) -> None:
@@ -309,7 +312,7 @@ def test_nodata_pixels_block_the_flood(prepared, tables, tmp_path) -> None:
         return int(np.datetime64(text.rstrip("Z"), "us").astype(np.int64)) // grid.step_us
 
     first = rows[0]
-    before, after = step_of(first["boundary_before_utc"]), step_of(first["boundary_after_utc"])
+    before, after = step_of(first["before_window_end_utc"]), step_of(first["after_window_start_utc"])
     cube = oracle.lit_reference_cube(
         signals, scene.sun_vectors, grid, (0, 0), (bs.SIZE, bs.SIZE), before - steps, after + steps)
     passable = np.isfinite(walled.stage1.read_hibernation_window(0, bs.SIZE, 0, bs.SIZE)[0])
@@ -319,10 +322,10 @@ def test_nodata_pixels_block_the_flood(prepared, tables, tmp_path) -> None:
         expected = oracle.flood_seed_reference(
             lambda step: cube[step - (before - steps)], passable, (int(row["seed_row"]), int(row["seed_col"])),
             before, after, steps=steps)
-        assert (int(row["count_before"]), int(row["count_after"])) == (expected.count_before, expected.count_after)
+        assert (int(row["lit_reachable_pixels_before"]), int(row["lit_reachable_pixels_after"])) == (expected.count_before, expected.count_after)
         match = next(r for r in plain if r["month"] == "2027-01" and r["seed_row"] == row["seed_row"]
                      and r["seed_col"] == row["seed_col"])
-        seen_difference |= int(match["score"]) != int(row["score"])
+        seen_difference |= int(match["operating_opportunity_score"]) != int(row["operating_opportunity_score"])
     assert seen_difference                                    # the wall cut the flood
 
 
@@ -341,7 +344,7 @@ def test_seeds_that_fail_the_flood_are_counted_and_leave_no_row(prepared, monkey
     counts = report.flood
     assert counts.seeds_boundary_mismatch == 1 and counts.seeds_without_both_sides == 2
     rows = read_rows(path)
-    assert all(r["score"] == "10" and r["count_before"] == "4" for r in rows)
+    assert all(r["operating_opportunity_score"] == "10" and r["lit_reachable_pixels_before"] == "4" for r in rows)
     first = next(r for r in rows if r["month"] == "2027-01")
     assert int(first["valid_seeds"]) == int(first["candidate_seeds"]) - 3
     monkeypatch.setattr(blocks, "flood_seed_from_store", lambda *a, **k: FloodResult(0, 0))
@@ -702,3 +705,152 @@ def test_workers_read_the_same_spice_kernels_without_corrupting_each_other() -> 
     assert done.returncode == 0, done.stdout + done.stderr
     result = json.loads(done.stdout.strip().splitlines()[-1])
     assert result == {"wrong": 0, "errors": []}
+
+
+# --- the table's names, the checkpoint's columns, the report file and the rename helper ------------------------------
+
+NEW_COLUMNS = [
+    "cell_row", "cell_col", "x_min_m", "y_min_m", "x_max_m", "y_max_m", "month", "rank",
+    "seed_row", "seed_col", "seed_x_m", "seed_y_m", "hibernation_hours",
+    "non_operations_start_utc", "non_operations_end_utc", "before_window_end_utc", "after_window_start_utc",
+    "lit_reachable_pixels_before", "lit_reachable_pixels_after", "operating_opportunity_score",
+    "nearby_haven_count", "nearby_pixel_count", "nearby_haven_fraction",
+    "candidate_seeds", "valid_seeds", "earth_visible_before_h", "earth_visible_after_h",
+]
+OLD_COLUMNS = [
+    "cell_row", "cell_col", "x_min_m", "y_min_m", "x_max_m", "y_max_m", "month", "rank",
+    "seed_row", "seed_col", "seed_x_m", "seed_y_m", "hibernation_hours",
+    "outage_start_utc", "outage_end_utc", "boundary_before_utc", "boundary_after_utc",
+    "count_before", "count_after", "score",
+    "nearby_haven_count", "nearby_pixel_count", "nearby_haven_fraction",
+    "candidate_seeds", "valid_seeds", "earth_visible_before_h", "earth_visible_after_h",
+]
+
+
+def test_the_table_columns_describe_the_operating_opportunity(tables) -> None:
+    assert list(blocks.TABLE_COLUMNS) == NEW_COLUMNS and list(blocks.OLD_TABLE_COLUMNS) == OLD_COLUMNS
+    assert len(blocks.COLUMN_RENAMES) == 7
+    header = tables[1][0].read_text().splitlines()[0].split(",")
+    assert header == NEW_COLUMNS
+    assert not set(header) & set(blocks.COLUMN_RENAMES)               # no old name is left in the file
+    rows = read_rows(tables[1][0])
+    for row in rows:
+        assert int(row["operating_opportunity_score"]) == (
+            int(row["lit_reachable_pixels_before"]) + int(row["lit_reachable_pixels_after"]))
+        # the before window ends at or before the non-operations period starts, the after window starts at or
+        # after it ends (the search for a lit time only ever moves a window away from the period); the
+        # timestamps share one fixed format, so they compare as text
+        assert row["non_operations_start_utc"] < row["non_operations_end_utc"]
+        assert row["before_window_end_utc"] <= row["non_operations_start_utc"]
+        assert row["after_window_start_utc"] >= row["non_operations_end_utc"]
+
+
+def test_a_checkpoint_written_under_other_column_names_is_refused(prepared) -> None:
+    path = prepared.directory / "old_columns.csv"
+    kwargs = base_kwargs(prepared, path)
+    assert blocks.run_pass_two(stop_after_blocks=1, **kwargs) is None
+    checkpoint = path.with_name(path.name + ".checkpoint.jsonl")
+    lines = checkpoint.read_text().splitlines()
+    header = json.loads(lines[0])
+    header["config"]["table_columns"] = OLD_COLUMNS
+    checkpoint.write_text("\n".join([json.dumps(header)] + lines[1:]) + "\n")
+    with pytest.raises(ValueError, match="different configuration"):
+        blocks.run_pass_two(**kwargs)
+
+
+def base_kwargs(prepared, path, **options):
+    return dict(
+        dem=prepared.dem, horizon_store=prepared.store, stage1=prepared.stage1, times=prepared.stamps,
+        sun_vectors_at=scene.sun_vectors, earth_vectors_at=scene.earth_vectors, output_path=path,
+        parameters=parameters(1), overwrite=True, **options)
+
+
+def test_the_report_file_describes_the_table_and_the_run(prepared, tables) -> None:
+    path = prepared.directory / "with_report.csv"
+    report_path = path.with_suffix(".report.json")
+    report_path.unlink(missing_ok=True)
+    result = blocks.run_pass_two(**base_kwargs(prepared, path, report_path=report_path))
+    document = json.loads(report_path.read_text())
+    assert document["format"] == blocks.REPORT_FORMAT and document["table"] == "with_report.csv"
+    assert document["rows"] == result.rows == len(read_rows(path)) > 0
+    assert document["columns"] == NEW_COLUMNS
+    assert document["pass_one_counts"] == tables[1][1].as_dict()["pass_one_counts"]
+    assert document["flood_counts"] == tables[1][1].as_dict()["flood_counts"]
+    assert document["cells"] == 4 and document["blocks_total"] == 4 and document["blocks_resumed_from_a_checkpoint"] == 0
+    assert document["lighting_of_the_last_run"] == "cpu" and document["pipeline_of_the_last_run"] is None
+    assert document["settings"]["parameters"]["operational_hours"] == OPERATIONAL_HOURS
+    assert document["settings"]["table_columns"] == NEW_COLUMNS and "cells" not in document["settings"]
+    assert [entry[1] > 0 for entry in document["settings"]["stage1"]] == [True, True]      # path, size, mtime
+    assert "operating_opportunity_score = lit_reachable_pixels_before + lit_reachable_pixels_after" in document["what_a_row_is"]
+    assert document["elapsed_seconds_of_the_last_run"] >= 0 and document["written_utc"].endswith("+00:00")
+    assert not report_path.with_name(report_path.name + ".partial").exists()
+
+
+def test_the_report_counts_the_whole_run_including_blocks_resumed_from_a_checkpoint(prepared, tables) -> None:
+    path = prepared.directory / "resumed_report.csv"
+    report_path = path.with_suffix(".report.json")
+    kwargs = base_kwargs(prepared, path, report_path=report_path)
+    assert blocks.run_pass_two(stop_after_blocks=2, **kwargs) is None
+    assert not report_path.exists()                                    # nothing is reported until the table is
+    result = blocks.run_pass_two(**kwargs)
+    document = json.loads(report_path.read_text())
+    assert document["blocks_resumed_from_a_checkpoint"] == 2 == result.blocks_resumed
+    assert document["pass_one_counts"] == tables[1][1].as_dict()["pass_one_counts"]       # all four blocks counted
+    assert document["flood_counts"]["rows"] == tables[1][1].rows
+
+
+def test_an_existing_report_or_a_missing_directory_is_refused_before_any_work(prepared) -> None:
+    path = prepared.directory / "refuse_report.csv"
+    report_path = path.with_suffix(".report.json")
+    report_path.write_text("keep me")
+    kwargs = base_kwargs(prepared, path, report_path=report_path)
+    kwargs["overwrite"] = False
+    path.unlink(missing_ok=True)
+    with pytest.raises(ValueError, match="exists"):
+        blocks.run_pass_two(**kwargs)
+    assert report_path.read_text() == "keep me" and not path.exists()
+    kwargs["report_path"] = prepared.directory / "nowhere" / "r.json"
+    with pytest.raises(ValueError, match="directory"):
+        blocks.run_pass_two(**kwargs)
+
+
+def test_old_tables_are_converted_without_touching_a_value(prepared, tables, tmp_path) -> None:
+    import csv
+
+    new_text = tables[1][0].read_text().splitlines()
+    old_path = tmp_path / "old.csv"
+    old_path.write_text("\n".join([",".join(OLD_COLUMNS)] + new_text[1:]) + "\n")
+    converted = tmp_path / "converted.csv"
+    count = blocks.rename_table_columns(old_path, converted)
+    assert count == len(new_text) - 1 and converted.read_text().splitlines() == new_text
+    with pytest.raises(ValueError, match="exists"):
+        blocks.rename_table_columns(old_path, converted)
+    assert blocks.rename_table_columns(old_path, converted, overwrite=True) == count
+    with pytest.raises(ValueError, match="first stage-3 table header"):
+        blocks.rename_table_columns(tables[1][0], tmp_path / "again.csv")            # already the new header
+    assert not (tmp_path / "again.csv").exists() and not (tmp_path / "again.csv.partial").exists()
+    header_only = tmp_path / "header_only.csv"
+    header_only.write_text(",".join(OLD_COLUMNS) + "\n")
+    assert blocks.rename_table_columns(header_only, tmp_path / "header_only_new.csv") == 0
+
+
+def test_a_failed_report_write_keeps_the_checkpoint_so_a_rerun_finishes_both(prepared, monkeypatch, tables) -> None:
+    path = prepared.directory / "report_fails.csv"
+    report_path = path.with_suffix(".report.json")
+    report_path.unlink(missing_ok=True)
+    kwargs = base_kwargs(prepared, path, report_path=report_path)
+    real = blocks._write_json
+
+    def broken(target, document):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(blocks, "_write_json", broken)
+    with pytest.raises(OSError, match="disk full"):
+        blocks.run_pass_two(**kwargs)
+    checkpoint = path.with_name(path.name + ".checkpoint.jsonl")
+    assert checkpoint.exists() and path.exists() and not report_path.exists()
+    monkeypatch.setattr(blocks, "_write_json", real)
+    result = blocks.run_pass_two(**kwargs)
+    assert result.blocks_resumed == 4 and report_path.exists() and not checkpoint.exists()
+    assert path.read_bytes() == tables[1][0].read_bytes()
+    assert json.loads(report_path.read_text())["blocks_resumed_from_a_checkpoint"] == 4

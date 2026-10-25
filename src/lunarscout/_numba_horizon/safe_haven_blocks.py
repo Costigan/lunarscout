@@ -29,6 +29,7 @@ import queue
 import signal
 import sys
 import threading
+import time as wall_clock
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
@@ -58,15 +59,30 @@ logger = logging.getLogger(__name__)
 Patch = tuple[int, int]
 Cell = tuple[int, int]
 
-#: The columns of the output table, in order (specification, section 7).
+#: The columns of the output table, in order (specification, section 7). Each row is a safe haven scored by
+#: its opportunity to operate before and after the non-operations period (the hibernation).
 TABLE_COLUMNS = (
     "cell_row", "cell_col", "x_min_m", "y_min_m", "x_max_m", "y_max_m", "month", "rank",
     "seed_row", "seed_col", "seed_x_m", "seed_y_m", "hibernation_hours",
-    "outage_start_utc", "outage_end_utc", "boundary_before_utc", "boundary_after_utc",
-    "count_before", "count_after", "score",
+    "non_operations_start_utc", "non_operations_end_utc", "before_window_end_utc", "after_window_start_utc",
+    "lit_reachable_pixels_before", "lit_reachable_pixels_after", "operating_opportunity_score",
     "nearby_haven_count", "nearby_pixel_count", "nearby_haven_fraction",
     "candidate_seeds", "valid_seeds", "earth_visible_before_h", "earth_visible_after_h",
 )
+
+#: The names the first stage-3 table used, and the columns they became.
+COLUMN_RENAMES = {
+    "outage_start_utc": "non_operations_start_utc",
+    "outage_end_utc": "non_operations_end_utc",
+    "boundary_before_utc": "before_window_end_utc",
+    "boundary_after_utc": "after_window_start_utc",
+    "count_before": "lit_reachable_pixels_before",
+    "count_after": "lit_reachable_pixels_after",
+    "score": "operating_opportunity_score",
+}
+OLD_TABLE_COLUMNS = tuple({v: k for k, v in COLUMN_RENAMES.items()}.get(c, c) for c in TABLE_COLUMNS)
+
+REPORT_FORMAT = "lunarscout-safe-haven-scored-table-report-v1"
 
 
 # ---------------------------------------------------------------------------
@@ -186,10 +202,77 @@ class PassTwoReport:
     rows: int
     output_path: str
     workers: int = 1
+    lighting: str = "cpu"
 
     def as_dict(self) -> dict:
         return {**{k: v for k, v in asdict(self).items() if k not in ("plan", "flood")},
                 "pass_one_counts": asdict(self.plan), "flood_counts": asdict(self.flood)}
+
+
+def _report_document(report: PassTwoReport, *, fingerprint: dict, pipeline, elapsed_seconds: float,
+                     reconstructed_note: str | None = None) -> dict:
+    """The sidecar report of a finished table: what it holds, how it was made, and the run's counts."""
+    from datetime import datetime, timezone
+
+    settings = {k: v for k, v in fingerprint.items() if k != "cells"}
+    document = {
+        "format": REPORT_FORMAT,
+        "table": Path(report.output_path).name,
+        "written_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "what_a_row_is": (
+            "a safe haven (a seed pixel) scored by its opportunity to operate before and after the "
+            "non-operations period: operating_opportunity_score = lit_reachable_pixels_before + "
+            "lit_reachable_pixels_after, the lit pixels that can reach the seed over the before window "
+            "(ending at before_window_end_utc) and that it can reach over the after window (starting at "
+            "after_window_start_utc), each operational_hours long"),
+        "rows": report.rows,
+        "columns": list(TABLE_COLUMNS),
+        "cells": len(fingerprint["cells"]),
+        "blocks_total": report.blocks_total,
+        "blocks_resumed_from_a_checkpoint": report.blocks_resumed,
+        "elapsed_seconds_of_the_last_run": round(elapsed_seconds, 1),
+        "lighting_of_the_last_run": report.lighting,         # a resumed table can mix runs
+        "pipeline_of_the_last_run": asdict(pipeline) if pipeline is not None else None,
+        "workers_of_the_last_run": report.workers,
+        "flood_step_minutes": report.flood_step_minutes,
+        "flood_steps": report.flood_steps,
+        "settings": settings,
+        "pass_one_counts": asdict(report.plan),
+        "flood_counts": asdict(report.flood),
+    }
+    if reconstructed_note:
+        document["reconstructed"] = reconstructed_note
+    return document
+
+
+def _write_json(path: Path, document: dict) -> None:
+    staging = path.with_name(path.name + ".partial")
+    staging.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    os.replace(staging, path)
+
+
+def rename_table_columns(source, destination, *, overwrite: bool = False) -> int:
+    """Copy a stage-3 table made under the first column names to ``destination`` under the current ones
+    (``COLUMN_RENAMES``), leaving every value alone. Returns the number of data rows. The source must have
+    exactly the old header; the copy goes through a staging file."""
+    source, destination = Path(source), Path(destination)
+    if destination.exists() and not overwrite:
+        raise ValueError(f"{destination} exists; pass overwrite=True to replace it")
+    staging = destination.with_name(destination.name + ".partial")
+    count = 0
+    with source.open(newline="", encoding="utf-8") as handle, staging.open("w", newline="", encoding="utf-8") as out:
+        reader = csv.reader(handle)
+        header = next(reader, None)
+        if tuple(header or ()) != OLD_TABLE_COLUMNS:
+            staging.unlink(missing_ok=True)
+            raise ValueError(f"{source} does not have the first stage-3 table header")
+        writer = csv.writer(out, lineterminator="\n")
+        writer.writerow(TABLE_COLUMNS)
+        for row in reader:
+            writer.writerow(row)
+            count += 1
+    os.replace(staging, destination)
+    return count
 
 
 def _add_counts(total, part: dict) -> None:
@@ -271,6 +354,7 @@ def _fingerprint(*, parameters, block_patches, flood_steps, time: TimeContext, c
         "earth_elevation_threshold_deg": earth_elevation_threshold_deg,
         "sunlight_fraction_threshold": sunlight_fraction_threshold,
         "merge_gap_hours": merge_gap_hours,
+        "table_columns": list(TABLE_COLUMNS),
     }
 
 
@@ -322,6 +406,7 @@ def run_pass_two(
     workers: int = 1,
     numba_threads_per_worker: int | None = None,
     pipeline=None,
+    report_path: str | Path | None = None,
 ) -> PassTwoReport | None:
     """Run the pass-2 schedule and write the table to ``output_path`` (CSV).
 
@@ -345,8 +430,19 @@ def run_pass_two(
     ``pipeline`` (a ``safe_haven_stage3.PipelineSettings``) runs the blocks through the stage-3
     pipeline instead: planning in processes, lighting, decoding and flooding in threads, joined by
     bounded queues. It replaces ``workers`` (which must then be 1) and gives the same table.
+
+    ``report_path`` (usually the table's name with ``.report.json``) gets a JSON report of the finished
+    table: what a row is, the settings and stage-1 files it was made from, the lighting used and the
+    counts of the whole run, including blocks resumed from a checkpoint.
     """
+    started = wall_clock.monotonic()
     output = Path(output_path)
+    report_file = None if report_path is None else Path(report_path)
+    if report_file is not None:
+        if report_file.exists() and not overwrite:
+            raise ValueError(f"{report_file} exists; pass overwrite=True to replace it")
+        if not report_file.parent.is_dir():
+            raise ValueError(f"the directory of {report_file} does not exist")
     if output.exists() and not overwrite:
         raise ValueError(f"{output} exists; pass overwrite=True to replace it")
     if not output.parent.is_dir():
@@ -433,6 +529,7 @@ def run_pass_two(
             progress(len(done), len(order))
 
     horizon_loads = peak_resident = 0
+    details: dict = {}
     if pipeline is not None:
         if workers != 1:
             raise ValueError("workers must be 1 when a pipeline is given")
@@ -440,6 +537,7 @@ def run_pass_two(
 
         stopped_early, horizon_loads, peak_resident = _run_blocks_in_pipeline(
             pending, by_block, run_arguments, finish, settings=pipeline, stop_after_blocks=stop_after_blocks,
+            details=details,
         )
         if stopped_early:
             return None
@@ -469,13 +567,17 @@ def run_pass_two(
         writer.writeheader()
         writer.writerows(all_rows)
     os.replace(staging, output)
-    checkpoint.unlink()
-    return PassTwoReport(
+    result = PassTwoReport(
         blocks_total=len(order), blocks_resumed=len(order) - ran, horizon_loads=horizon_loads,
         peak_resident_patches=peak_resident, flood_step_minutes=grid.step_minutes,
         flood_steps=flood_steps, plan=plan_counts, flood=flood_counts, rows=len(all_rows),
-        output_path=str(output), workers=workers,
+        output_path=str(output), workers=workers, lighting=details.get("lighting", "cpu"),
     )
+    if report_file is not None:
+        _write_json(report_file, _report_document(
+            result, fingerprint=fingerprint, pipeline=pipeline, elapsed_seconds=wall_clock.monotonic() - started))
+    checkpoint.unlink()          # last: if the report could not be written, a rerun finishes both
+    return result
 
 
 @contextlib.contextmanager
@@ -672,7 +774,7 @@ def _flood_record(
     if not results:
         flood_counts.cell_months_without_valid_seed += 1
         return []
-    results.sort(key=lambda item: (-item[1].score, item[0]["row"], item[0]["column"]))
+    results.sort(key=lambda item: (-item[1].score, item[0]["row"], item[0]["column"]))   # best operating opportunity first
     row0, col0 = cell[0] * cell_size, cell[1] * cell_size
     row1, col1 = min(dem_height, row0 + cell_size), min(dem_width, col0 + cell_size)
     rows = []
@@ -688,11 +790,13 @@ def _flood_record(
             "seed_x_m": float(transform[0] + (seed["column"] + 0.5) * transform[1]),
             "seed_y_m": float(transform[3] + (seed["row"] + 0.5) * transform[5]),
             "hibernation_hours": seed["hibernation_hours"],
-            "outage_start_utc": seed["outage_start_utc"], "outage_end_utc": seed["outage_end_utc"],
-            "boundary_before_utc": _utc(grid, seed["boundary_before_step"]),
-            "boundary_after_utc": _utc(grid, seed["boundary_after_step"]),
-            "count_before": result.count_before, "count_after": result.count_after,
-            "score": result.score,
+            "non_operations_start_utc": seed["outage_start_utc"],
+            "non_operations_end_utc": seed["outage_end_utc"],
+            "before_window_end_utc": _utc(grid, seed["boundary_before_step"]),
+            "after_window_start_utc": _utc(grid, seed["boundary_after_step"]),
+            "lit_reachable_pixels_before": result.count_before,
+            "lit_reachable_pixels_after": result.count_after,
+            "operating_opportunity_score": result.score,
             "nearby_haven_count": seed["nearby_haven_count"],
             "nearby_pixel_count": seed["nearby_pixel_count"],
             "nearby_haven_fraction": seed["nearby_haven_fraction"],

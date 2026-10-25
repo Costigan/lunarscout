@@ -287,9 +287,16 @@ both equal to `operational_hours`; the columns are kept as a check.
 
 ## 7. Output
 
-One CSV row per reported seed. A cell-month with at least one valid seed has up to
-`max_seeds_per_cell_month` rows, ranked by `score` (ties by smaller (row,
-column)). Cell-months with no valid seed are omitted.
+The table (`safe_haven_operating_opportunity_scores.csv`) has one row per scored safe haven: a seed
+pixel scored by its **opportunity to operate before and after the non-operations period** (the
+hibernation). A cell-month with at least one valid seed has up to `max_seeds_per_cell_month` rows,
+ranked by `operating_opportunity_score` (ties by smaller (row, column)). Cell-months with no valid
+seed are omitted.
+
+`operating_opportunity_score = lit_reachable_pixels_before + lit_reachable_pixels_after`: the lit
+pixels from which the seed can be reached during the `operational_hours` (48) before the
+non-operations period, plus the lit pixels the seed can reach during the 48 hours after it
+(section 6). Both must be above zero.
 
 | Column | Meaning |
 |---|---|
@@ -297,17 +304,29 @@ column)). Cell-months with no valid seed are omitted.
 | `x_min_m`, `y_min_m`, `x_max_m`, `y_max_m` | Cell bounds in the DEM projection. |
 | `month` | `YYYY-MM`. |
 | `rank` | 1 = highest score within the cell-month. |
-| `seed_row`, `seed_col`, `seed_x_m`, `seed_y_m` | The seed. |
-| `hibernation_hours` | Its stage-1 hibernation score. |
-| `outage_start_utc`, `outage_end_utc` | `T_s`, `T_e`. |
-| `boundary_before_utc`, `boundary_after_utc` | The flood start times after any shift. |
-| `count_before`, `count_after`, `score` | Section 6. |
+| `seed_row`, `seed_col`, `seed_x_m`, `seed_y_m` | The safe haven (the seed pixel). |
+| `hibernation_hours` | Its stage-1 hibernation value: the longest merged shadow run that touches the non-operations period. |
+| `non_operations_start_utc`, `non_operations_end_utc` | The non-operations period, `T_s` to `T_e`. |
+| `before_window_end_utc` | Where the before window ends and the backward flood starts: the last time the seed is lit at or before `T_s`, possibly earlier than `T_s` (section 6, boundaries). The window covers the 48 hours up to it. |
+| `after_window_start_utc` | Where the after window starts: the first time the seed is lit at or after `T_e`. The window covers the 48 hours from it. |
+| `lit_reachable_pixels_before`, `lit_reachable_pixels_after` | The pixel counts of the two windows (section 6). |
+| `operating_opportunity_score` | Their sum. |
 | `nearby_haven_count`, `nearby_pixel_count`, `nearby_haven_fraction` | Section 5, nearby-haven fraction. |
 | `candidate_seeds`, `valid_seeds` | Selected seeds, and how many were valid. |
-| `earth_visible_before_h`, `earth_visible_after_h` | Diagnostics. |
+| `earth_visible_before_h`, `earth_visible_after_h` | Diagnostics (Earth available for the whole window on each side, section 5). |
 
-There is no weighted combination of columns. Raster views can be built from the
-table later.
+The first stage-3 table used other names: `outage_start_utc`, `outage_end_utc`,
+`boundary_before_utc`, `boundary_after_utc`, `count_before`, `count_after`, `score` (see
+`safe_haven_blocks.COLUMN_RENAMES`; `rename_table_columns` converts such a table without touching a
+value). A checkpoint records the column names, so one written under the old names is refused.
+
+A report next to the table (`safe_haven_operating_opportunity_scores.report.json`) records what a row
+is, the columns, the settings and stage-1 files the table was made from (path, size and modification
+time), the lighting used by the last run, and the counts of the whole run (pass-1 and flood counts,
+including blocks resumed from a checkpoint).
+
+There is no weighted combination of columns. Raster views can be built from the table
+later.
 
 ## 8. Schedule and memory
 

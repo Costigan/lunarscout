@@ -4,8 +4,11 @@
     .venv/bin/python scripts/run_safe_haven_stage3.py
 
 Stage 3 of the safe-haven analysis (docs/safe-haven-windows-spec.md): for every 5.12 km cell
-and month with a haven, pick up to five seeds, flood each one forward and backward from its
-hibernation over the lit terrain, and write one table row per reported seed (CSV). The cells
+and month with a haven, pick up to five safe havens (seed pixels) and score each by its
+opportunity to operate before and after the non-operations period (the hibernation): the lit
+pixels that can reach the haven during the 48 hours before the period, plus the lit pixels it
+can reach during the 48 hours after it. One row per scored haven is written to a CSV table, with
+a JSON report of the run next to it. The cells
 come from the stage-2 list (scripts/run_safe_haven_stage2.py), which must be made first, or
 from CELLS below for a trial. The pole is processed in blocks in snake order; after each block
 the script appends to a checkpoint file, so running it again with the same settings resumes at
@@ -71,7 +74,10 @@ CELL_LIST_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_haven_cells.json"
 # The table. The checkpoint is OUTPUT_PATH + ".checkpoint.jsonl" next to it and is
 # removed when the table is complete. An existing OUTPUT_PATH is not replaced unless
 # OVERWRITE is True.
-OUTPUT_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_degenerate_windows.csv")
+OUTPUT_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_operating_opportunity_scores.csv")
+# A JSON report of the finished table (what a row is, the settings, the lighting used, the run's counts).
+# None writes it next to the table, with the table's name and ".report.json".
+REPORT_PATH = None
 OVERWRITE = False
 
 # Must equal the stage-1 run.
@@ -154,6 +160,10 @@ LOG = logging.getLogger("lunarscout.scripts.stage3")
 PATCH_BYTES = PATCH_SIZE * PATCH_SIZE * 1440 * 4          # one decoded float32 patch
 
 
+def _report_path() -> Path:
+    return REPORT_PATH if REPORT_PATH is not None else OUTPUT_PATH.with_suffix(".report.json")
+
+
 def _available_memory_bytes() -> int | None:
     """MemAvailable from /proc/meminfo, or None where it is not readable."""
     try:
@@ -225,6 +235,7 @@ def _run() -> int:
         sun_vectors_at=spice_vector_source("sun"),
         earth_vectors_at=spice_vector_source("earth"),
         output_path=OUTPUT_PATH,
+        report_path=_report_path(),
         parameters=PARAMETERS,
         cells=cells,
         overwrite=OVERWRITE,
@@ -244,6 +255,7 @@ def _run() -> int:
     )
     print(json.dumps(report.as_dict(), indent=2), flush=True)
     LOG.info("Table written to: %s", OUTPUT_PATH)
+    LOG.info("Report written to: %s", _report_path())
     return 0
 
 
