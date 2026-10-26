@@ -49,7 +49,6 @@ from .safe_haven_windows import (
     VectorSource,
     WindowParameters,
     cell_window,
-    flood_step_minutes,
     halo_pixels,
     iter_cell_months,
 )
@@ -453,13 +452,12 @@ def run_pass_two(
     if (stage1.height, stage1.width) != (dem.height, dem.width):
         raise ValueError("the stage-1 products and the DEM differ in size")
 
-    pixel_size = abs(float(dem.geo_transform[1]))
     sun_vectors_at = CachedVectors(sun_vectors_at)
     earth_vectors_at = CachedVectors(earth_vectors_at)
     time = TimeContext.build(times, sun_vectors_at, earth_vectors_at)
-    grid = FloodGrid(flood_step_minutes(pixel_size, parameters.rover_speed_m_s))
+    grid = FloodGrid(parameters.flood_step_minutes)
     flood_steps = grid.step_count(parameters.operational_hours)
-    halo = halo_pixels(flood_steps)
+    halo = halo_pixels(flood_steps * parameters.moves_per_step)
     cell_size = parameters.cell_patches * PATCH_SIZE
     block_cells = parameters.block_patches // parameters.cell_patches
     patch_rows, patch_columns = -(-dem.height // PATCH_SIZE), -(-dem.width // PATCH_SIZE)
@@ -765,7 +763,8 @@ def _flood_record(
             store, passable_packed, patch_window,
             (seed["row"] - window[0], seed["column"] - window[2]),
             seed["boundary_before_step"], seed["boundary_after_step"],
-            steps=flood_steps, connectivity=parameters.connectivity, compiled=compiled,
+            steps=flood_steps, connectivity=parameters.connectivity,
+            moves_per_step=parameters.moves_per_step, compiled=compiled,
         )
         if result is None:
             flood_counts.seeds_boundary_mismatch += 1

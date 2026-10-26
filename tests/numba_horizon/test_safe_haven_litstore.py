@@ -18,7 +18,7 @@ from lunarscout.products import _load_dem
 GRID = FloodGrid(30)
 SPC = GRID.steps_per_chunk
 PARAMETERS = WindowParameters(
-    cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0, seed_separation_m=4.0,
+    cell_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0, seed_separation_m=4.0,
 )
 
 

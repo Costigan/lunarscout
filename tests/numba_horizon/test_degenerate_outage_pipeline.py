@@ -26,7 +26,7 @@ from lunarscout.products import _load_dem
 
 PIXEL = (16, 2)         # inside the Earth-side corner
 PARAMETERS = WindowParameters(
-    cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0,
+    cell_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0,
     seed_separation_m=4.0,
 )
 
@@ -156,7 +156,7 @@ def test_pass_one_selects_seeds_in_the_corner_and_checks_them_against_stage_1(wi
     # corner, whose hibernations score 0, supplies every seed of those months.  Pass 1
     # raises PlanConsistencyError if its recomputed score ever differed from stage 1.
     parameters = WindowParameters(
-        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0,
+        cell_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0,
         seed_separation_m=4.0, survival_limit_hours=30.0,
     )
     records = list(windows.iter_cell_months(**options(with_rule, parameters=parameters)))
@@ -172,7 +172,7 @@ def test_pass_one_selects_seeds_in_the_corner_and_checks_them_against_stage_1(wi
 def test_pass_one_without_the_rule_disagrees_with_stage_1_where_the_rule_matters(with_rule) -> None:
     # Stage 1 was run with the rule; a pass 1 that leaves it off recomputes NODATA there.
     parameters = WindowParameters(
-        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0,
+        cell_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0,
         seed_separation_m=4.0, degenerate_outage_window_hours=0.0,
     )
     time = windows.TimeContext.build(with_rule.stamps, scene.sun_vectors, scene.earth_vectors)

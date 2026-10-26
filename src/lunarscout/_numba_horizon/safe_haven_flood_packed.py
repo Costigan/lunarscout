@@ -60,24 +60,27 @@ def build_flood(jit):
         return x | (x << one) | (below >> top) | (x >> one) | (above << top)
 
     @jit
-    def flood_packed(lit, passable, seed_row, seed_column, steps, eight):
+    def flood_packed(lit, passable, seed_row, seed_column, steps, eight, moves):
         """One side of a flood on packed bits; returns ``(count, bits)``.
 
         ``lit[j - 1]`` is the lit mask at step ``j`` along the flood (the first step away from
         the boundary is ``lit[0]``), shape ``(steps, rows, words)``; ``passable`` is
-        ``(rows, words)``.  ``eight`` selects 8 or 4 neighbours.  ``bits`` is the frontier at
-        the last step reached, all zero when it emptied.
+        ``(rows, words)``.  ``eight`` selects 8 or 4 neighbours.  A step is ``moves`` moves,
+        each into a passable pixel lit in that step, so the frontier after ``k`` moves lies
+        within ``k`` pixels of the seed.  ``bits`` is the frontier at the last move reached,
+        all zero when it emptied.
         """
         rows, words = passable.shape
         zero = np.uint64(0)
         cur = np.zeros((rows, words), dtype=np.uint64)
         nxt = np.zeros((rows, words), dtype=np.uint64)
         cur[seed_row, seed_column >> 6] = np.uint64(1) << np.uint64(seed_column & 63)
-        for j in range(1, steps + 1):
-            row_first = max(0, seed_row - j)
-            row_last = min(rows - 1, seed_row + j)
-            word_first = max(0, seed_column - j) >> 6
-            word_last = min(words * WORD_BITS - 1, seed_column + j) >> 6
+        for move in range(1, steps * moves + 1):
+            j = (move - 1) // moves + 1
+            row_first = max(0, seed_row - move)
+            row_last = min(rows - 1, seed_row + move)
+            word_first = max(0, seed_column - move) >> 6
+            word_last = min(words * WORD_BITS - 1, seed_column + move) >> 6
             any_bits = zero
             for row in range(row_first, row_last + 1):
                 for word in range(word_first, word_last + 1):
@@ -128,6 +131,7 @@ def flood_side_packed(
     *,
     steps: int,
     connectivity: int = 8,
+    moves_per_step: int = 1,
     compiled: bool = True,
 ) -> tuple[int, npt.NDArray[np.uint64]]:
     """The count and the final frontier of one side (see ``flood_packed``)."""
@@ -135,6 +139,8 @@ def flood_side_packed(
         raise ValueError("connectivity must be 4 or 8")
     if steps < 0:
         raise ValueError("steps must not be negative")
+    if int(moves_per_step) != moves_per_step or moves_per_step < 1:
+        raise ValueError("moves_per_step must be a positive integer")
     lit_packed = np.ascontiguousarray(lit_packed, dtype=np.uint64)
     passable_packed = np.ascontiguousarray(passable_packed, dtype=np.uint64)
     if lit_packed.ndim != 3 or lit_packed.shape[0] < steps or lit_packed.shape[1:] != passable_packed.shape:
@@ -144,7 +150,8 @@ def flood_side_packed(
     if not (0 <= row < rows and 0 <= column < words * WORD_BITS):
         raise ValueError("the seed lies outside the window")
     with np.errstate(over="ignore"):
-        count, bits = _kernel(compiled)(lit_packed, passable_packed, row, column, int(steps), connectivity == 8)
+        count, bits = _kernel(compiled)(
+            lit_packed, passable_packed, row, column, int(steps), connectivity == 8, int(moves_per_step))
     return int(count), bits
 
 
@@ -157,6 +164,7 @@ def flood_seed_packed(
     *,
     steps: int,
     connectivity: int = 8,
+    moves_per_step: int = 1,
     compiled: bool = True,
 ) -> FloodResult:
     """Both sides, from a ``lit_at(step)`` callable like the oracle's (packs what it needs)."""
@@ -167,6 +175,7 @@ def flood_seed_packed(
                                   for j in range(1, steps + 1)]
                                  or [np.zeros(passable.shape, dtype=bool)]))
         counts.append(flood_side_packed(
-            lit, passable_packed, seed, steps=steps, connectivity=connectivity, compiled=compiled,
+            lit, passable_packed, seed, steps=steps, connectivity=connectivity,
+            moves_per_step=moves_per_step, compiled=compiled,
         )[0])
     return FloodResult(*counts)

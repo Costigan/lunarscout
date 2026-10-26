@@ -11,7 +11,7 @@ from lunarscout._numba_horizon.safe_haven_windows import (
     WindowParameters,
     box_sums,
     disk_offsets,
-    flood_step_minutes,
+    halo_pixels,
     hibernation_of_record,
     nearby_haven_counts,
 )
@@ -24,21 +24,23 @@ EARTH_THRESHOLD = 2.0
 # --- the flood time grid -----------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("pixel_m", "speed", "minutes"),
-    [(20.0, 0.01, 32), (20.0, 0.0111111, 30), (20.0, 0.02, 16), (10.0, 0.01, 16)],
-)
-def test_the_flood_step_is_the_largest_divisor_of_a_day_not_above_the_crossing_time(
-    pixel_m, speed, minutes
-) -> None:
-    assert flood_step_minutes(pixel_m, speed) == minutes
-    assert 1440 % minutes == 0
-    assert minutes <= pixel_m / speed / 60.0 + 1e-6
+def test_the_flood_step_and_moves_are_parameters_and_the_default_is_two_hours_and_four_pixels() -> None:
+    defaults = WindowParameters()
+    assert (defaults.flood_step_minutes, defaults.moves_per_step) == (120, 4)
+    # 4 pixels of 20 m in 2 hours is 0.0111 m/s, a little above the nominal 1 cm/s.
+    assert defaults.moves_per_step * 20.0 / (defaults.flood_step_minutes * 60.0) == pytest.approx(0.01111, rel=1e-3)
+    grid = FloodGrid(defaults.flood_step_minutes)
+    steps = grid.step_count(defaults.operational_hours)
+    assert (grid.steps_per_chunk, steps, steps * defaults.moves_per_step) == (12, 24, 96)
+    assert halo_pixels(steps * defaults.moves_per_step) == 128              # one patch covers the reach
+    assert halo_pixels(129) == 256 and halo_pixels(1) == 128
 
 
-def test_a_rover_that_crosses_a_pixel_in_under_a_minute_has_no_flood_step() -> None:
+@pytest.mark.parametrize("bad", [dict(flood_step_minutes=7), dict(flood_step_minutes=0),
+                                 dict(flood_step_minutes=2.5), dict(moves_per_step=0), dict(moves_per_step=1.5)])
+def test_a_flood_step_must_divide_a_day_and_moves_must_be_a_positive_integer(bad) -> None:
     with pytest.raises(ValueError):
-        flood_step_minutes(1.0, 1.0)
+        WindowParameters(**bad)
 
 
 def test_the_flood_grid_rounds_toward_the_hibernation_correctly() -> None:

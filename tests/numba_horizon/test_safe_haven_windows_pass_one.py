@@ -28,7 +28,7 @@ from lunarscout._numba_horizon.safe_haven_windows import (
 from lunarscout.products import _load_dem
 
 PARAMETERS = WindowParameters(
-    cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0,
+    cell_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0,
     seed_separation_m=4.0,
 )
 
@@ -248,7 +248,7 @@ class StubEvaluator:
 def stub_select(monkeypatch, hibernation, joint, timing, *, scores=None, **overrides):
     settings = dict(
         cell_patches=1, seed_separation_m=5.0, haven_neighbourhood_m=2.0,
-        min_nearby_haven_fraction=0.0, rover_speed_m_s=1.0 / 1800.0,
+        min_nearby_haven_fraction=0.0, flood_step_minutes=30, moves_per_step=1,
     )
     settings.update(overrides)
     parameters = WindowParameters(**settings)
@@ -314,7 +314,7 @@ def test_timing_is_compared_at_both_ends_of_the_outage(monkeypatch) -> None:
             return record
 
     parameters = WindowParameters(cell_patches=1, seed_separation_m=5.0, haven_neighbourhood_m=2.0,
-                                  min_nearby_haven_fraction=0.0, rover_speed_m_s=1.0 / 1800.0)
+                                  min_nearby_haven_fraction=0.0, flood_step_minutes=30, moves_per_step=1)
     evaluator = EndsDiffer(parameters, lambda r, c: 0.0)
     monkeypatch.setattr(windows, "find_boundaries", lambda *args: (10, 20))
     seeds = windows.select_seeds(
@@ -410,7 +410,7 @@ def test_the_mismatch_limit_is_validated() -> None:
 def test_the_cell_core_decides_which_pixels_can_be_seeds(monkeypatch) -> None:
     hibernation = havens((12, 12))
     parameters = WindowParameters(cell_patches=1, seed_separation_m=5.0, haven_neighbourhood_m=2.0,
-                                  min_nearby_haven_fraction=0.0, rover_speed_m_s=1.0 / 1800.0)
+                                  min_nearby_haven_fraction=0.0, flood_step_minutes=30, moves_per_step=1)
     evaluator = StubEvaluator(parameters, lambda r, c: 0.0)
     monkeypatch.setattr(windows, "find_boundaries", lambda *args: (10, 20))
     seeds = windows.select_seeds(
@@ -426,7 +426,7 @@ def test_the_cell_core_decides_which_pixels_can_be_seeds(monkeypatch) -> None:
 
 def evaluator_for(prepared, stamps, **parameters):
     time = windows.TimeContext.build(stamps, scene.sun_vectors, scene.earth_vectors)
-    settings = WindowParameters(cell_patches=1, rover_speed_m_s=1.0 / 1800.0, **parameters)
+    settings = WindowParameters(cell_patches=1, flood_step_minutes=30, moves_per_step=1, **parameters)
     signals = windows.PixelSignals(prepared.dem, prepared.store)
     return windows.CandidateEvaluator(signals, time, settings)
 
@@ -673,7 +673,7 @@ def test_equality_is_neither_shadow_nor_outage() -> None:
     fraction[8] = 0.25            # equal to the threshold: not shadow
     time = windows.TimeContext.build(stamps, indexed, indexed)
     parameters = WindowParameters(
-        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, degenerate_outage_window_hours=0.0,
+        cell_patches=1, flood_step_minutes=30, moves_per_step=1, degenerate_outage_window_hours=0.0,
         operational_hours=12.0,
     )
     evaluator = windows.CandidateEvaluator(
@@ -797,7 +797,7 @@ def gate_evaluator(margin, *, operational_hours=12.0):
     fraction = np.where(margin < 2.0, 0.0, 1.0)   # dark whenever Earth is lost
     time = windows.TimeContext.build(stamps, indexed, indexed)
     parameters = WindowParameters(
-        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, degenerate_outage_window_hours=0.0,
+        cell_patches=1, flood_step_minutes=30, moves_per_step=1, degenerate_outage_window_hours=0.0,
         operational_hours=operational_hours,
     )
     return windows.CandidateEvaluator(
@@ -852,7 +852,7 @@ def timeline_evaluator(fraction, margin, **parameters):
         return np.stack([steps, 0 * steps, 0 * steps], axis=1).astype(float)
 
     time = windows.TimeContext.build(stamps, indexed, indexed)
-    settings = WindowParameters(cell_patches=1, rover_speed_m_s=1.0 / 1800.0,
+    settings = WindowParameters(cell_patches=1, flood_step_minutes=30, moves_per_step=1,
                                 degenerate_outage_window_hours=0.0, operational_hours=12.0, **parameters)
     return windows.CandidateEvaluator(
         TimelineSignals(np.asarray(fraction, float), np.asarray(margin, float)), time, settings,

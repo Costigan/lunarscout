@@ -48,12 +48,18 @@ def flood_side_reference(
     direction: int,
     steps: int,
     connectivity: int = 8,
+    moves_per_step: int = 1,
 ) -> set[Pixel]:
     """Pixels reachable at the end of one side of the flood (spec section 6).
 
-    ``R_0 = {seed}`` at ``boundary_step``; for ``j = 1 .. steps``::
+    ``R_0 = {seed}`` at ``boundary_step``; for ``j = 1 .. steps`` the rover makes
+    ``moves_per_step`` moves, each::
 
-        R_j = neighbours(R_{j-1}) AND passable AND lit(boundary_step + direction * j)
+        R <- neighbours(R) AND passable AND lit(boundary_step + direction * j)
+
+    so the lighting is constant over a step (it changes at the step boundaries) and every
+    pixel entered during the step must be lit in it.  ``R_j`` is ``R`` after the last move.
+    With one move per step this is ``R_j = neighbours(R_{j-1}) AND passable AND lit_j``.
 
     ``direction`` is ``BEFORE`` (-1, time runs backward) or ``AFTER`` (+1).  The seed
     is taken as lit at the boundary and is not tested there.  Pixels outside
@@ -64,6 +70,8 @@ def flood_side_reference(
         raise ValueError("direction must be BEFORE (-1) or AFTER (+1)")
     if steps < 0:
         raise ValueError("steps must not be negative")
+    if int(moves_per_step) != moves_per_step or moves_per_step < 1:
+        raise ValueError("moves_per_step must be a positive integer")
     passable = np.asarray(passable, dtype=bool)
     rows, columns = passable.shape
     offsets = neighbour_offsets(connectivity)
@@ -72,13 +80,16 @@ def flood_side_reference(
         lit = np.asarray(lit_at(boundary_step + direction * j), dtype=bool)
         if lit.shape != passable.shape:
             raise ValueError("a lit raster must have the shape of the passable mask")
-        following: set[Pixel] = set()
-        for row, column in reached:
-            for d_row, d_column in offsets:
-                r, c = row + d_row, column + d_column
-                if 0 <= r < rows and 0 <= c < columns and passable[r, c] and lit[r, c]:
-                    following.add((r, c))
-        reached = following
+        for _move in range(moves_per_step):
+            following: set[Pixel] = set()
+            for row, column in reached:
+                for d_row, d_column in offsets:
+                    r, c = row + d_row, column + d_column
+                    if 0 <= r < rows and 0 <= c < columns and passable[r, c] and lit[r, c]:
+                        following.add((r, c))
+            reached = following
+            if not reached:
+                break
         if not reached:
             break
     return reached
@@ -110,15 +121,16 @@ def flood_seed_reference(
     *,
     steps: int,
     connectivity: int = 8,
+    moves_per_step: int = 1,
 ) -> FloodResult:
     """The counts of both sides (spec section 6, "Count" and "Seed score")."""
     before = flood_side_reference(
         lit_at, passable, seed, boundary_before_step,
-        direction=BEFORE, steps=steps, connectivity=connectivity,
+        direction=BEFORE, steps=steps, connectivity=connectivity, moves_per_step=moves_per_step,
     )
     after = flood_side_reference(
         lit_at, passable, seed, boundary_after_step,
-        direction=AFTER, steps=steps, connectivity=connectivity,
+        direction=AFTER, steps=steps, connectivity=connectivity, moves_per_step=moves_per_step,
     )
     return FloodResult(len(before), len(after))
 

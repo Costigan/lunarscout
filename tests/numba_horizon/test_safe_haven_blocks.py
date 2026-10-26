@@ -24,7 +24,7 @@ OPERATIONAL_HOURS = 24.0
 
 def parameters(block_patches, **overrides):
     settings = dict(
-        cell_patches=1, block_patches=block_patches, rover_speed_m_s=1.0 / 1800.0,
+        cell_patches=1, block_patches=block_patches, flood_step_minutes=30, moves_per_step=1,
         haven_neighbourhood_m=3.0, seed_separation_m=4.0, operational_hours=OPERATIONAL_HOURS,
     )
     settings.update(overrides)

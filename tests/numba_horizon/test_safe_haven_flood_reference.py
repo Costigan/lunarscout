@@ -197,7 +197,7 @@ def prepared(tmp_path_factory):
 @pytest.mark.parametrize("flood_steps", [None, 5, 12])
 def test_the_flood_on_the_scene_lit_state_matches_path_existence(prepared, flood_steps) -> None:
     parameters = WindowParameters(
-        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0, seed_separation_m=4.0,
+        cell_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0, seed_separation_m=4.0,
     )
     records = list(windows.iter_cell_months(
         dem=prepared["dem"], horizon_store=prepared["store"], stage1=prepared["stage1"],

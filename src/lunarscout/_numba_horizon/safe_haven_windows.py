@@ -60,7 +60,12 @@ class WindowParameters:
 
     survival_limit_hours: float = 72.0
     operational_hours: float = 48.0
-    rover_speed_m_s: float = 0.01
+    #: The flood step in minutes (it divides 24 h): lighting is constant over a step and changes at
+    #: its boundaries. The rover makes ``moves_per_step`` one-pixel moves in a step, so its speed is
+    #: ``moves_per_step * pixel_size / (flood_step_minutes * 60)``: 4 pixels per 2 hours at 20 m is
+    #: 0.0111 m/s, a little above the nominal 1 cm/s.
+    flood_step_minutes: int = 120
+    moves_per_step: int = 4
     connectivity: int = 8
     max_seeds_per_cell_month: int = 5
     seed_separation_m: float = 250.0
@@ -90,8 +95,7 @@ class WindowParameters:
 
     def __post_init__(self) -> None:
         positive = (
-            "survival_limit_hours", "operational_hours", "rover_speed_m_s",
-            "seed_separation_m", "haven_neighbourhood_m", "boundary_search_hours",
+            "survival_limit_hours", "operational_hours", "seed_separation_m", "haven_neighbourhood_m", "boundary_search_hours",
             "operating_sunlight_fraction",
         )
         for name in positive:
@@ -106,6 +110,11 @@ class WindowParameters:
                 raise ValueError(f"{name} must be non-negative and finite")
         if self.connectivity not in (4, 8):
             raise ValueError("connectivity must be 4 or 8")
+        if (int(self.flood_step_minutes) != self.flood_step_minutes or self.flood_step_minutes < 1
+                or MINUTES_PER_DAY % self.flood_step_minutes):
+            raise ValueError("flood_step_minutes must be a whole number of minutes that divides 24 hours")
+        if int(self.moves_per_step) != self.moves_per_step or self.moves_per_step < 1:
+            raise ValueError("moves_per_step must be a positive integer")
         if not 0.0 <= self.stage1_mismatch_limit <= 1.0:
             raise ValueError("stage1_mismatch_limit must be in [0, 1]")
         if not 0.0 <= self.min_nearby_haven_fraction <= 1.0:
@@ -116,19 +125,6 @@ class WindowParameters:
                 raise ValueError(f"{name} must be a positive integer")
         if self.block_patches % self.cell_patches:
             raise ValueError("block_patches must be a whole number of cells (a multiple of cell_patches)")
-
-
-def flood_step_minutes(pixel_size_m: float, rover_speed_m_s: float) -> int:
-    """The flood step: the largest whole-minute divisor of 24 h not above the
-    time the rover needs to cross one pixel (specification, section 6)."""
-    implied = pixel_size_m / rover_speed_m_s / 60.0
-    candidates = [
-        minutes for minutes in range(1, MINUTES_PER_DAY + 1)
-        if MINUTES_PER_DAY % minutes == 0 and minutes <= implied + 1e-9
-    ]
-    if not candidates:
-        raise ValueError("the rover crosses a pixel in under a minute; no flood step fits")
-    return max(candidates)
 
 
 @dataclass(frozen=True)
@@ -678,7 +674,7 @@ def select_seeds(
     if not eligible.any():
         return []
 
-    reach = grid.step_count(parameters.operational_hours)
+    reach = grid.step_count(parameters.operational_hours) * parameters.moves_per_step
     proxy = box_sums(joint_total_hours, reach)
     rows, columns = np.nonzero(eligible)
     order = np.lexsort((columns, rows, -proxy[rows, columns]))
@@ -909,6 +905,7 @@ class PassOneReport:
         return {
             "flood_step_minutes": self.flood_step_minutes,
             "flood_steps": self.flood_steps,
+            "moves_per_step": self.parameters.moves_per_step,
             "cells": self.cells,
             "months": self.months,
             "counts": asdict(self.counts),
@@ -959,9 +956,9 @@ def iter_cell_months(
         raise ValueError(
             f"the times span {time.month_count} months but the products have {stage1.band_count} bands"
         )
-    grid = FloodGrid(flood_step_minutes(pixel_size, parameters.rover_speed_m_s))
+    grid = FloodGrid(parameters.flood_step_minutes)
     flood_steps = grid.step_count(parameters.operational_hours)
-    halo = halo_pixels(flood_steps)
+    halo = halo_pixels(flood_steps * parameters.moves_per_step)
     signals = PixelSignals(dem, horizon_store, observer_height_m)
     evaluator = CandidateEvaluator(
         signals, time, parameters,
@@ -1084,9 +1081,10 @@ def haven_cells(
     return found
 
 
-def halo_pixels(flood_steps: int) -> int:
-    """The halo around a cell, in pixels: whole patches covering the flood reach."""
-    return int(math.ceil(flood_steps / PATCH_SIZE)) * PATCH_SIZE
+def halo_pixels(reach_pixels: int) -> int:
+    """The halo around a cell, in pixels: whole patches covering the flood reach (the flood steps
+    times the moves per step)."""
+    return int(math.ceil(reach_pixels / PATCH_SIZE)) * PATCH_SIZE
 
 
 def cell_window(

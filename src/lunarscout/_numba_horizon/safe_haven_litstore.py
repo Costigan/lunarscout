@@ -330,6 +330,7 @@ def flood_seed_from_store(
     *,
     steps: int,
     connectivity: int = 8,
+    moves_per_step: int = 1,
     compiled: bool = True,
 ) -> FloodResult | None:
     """Both sides of a seed's flood from the stored lit bits, or ``None`` on a boundary mismatch.
@@ -353,7 +354,8 @@ def flood_seed_from_store(
             except LitStoreError:
                 continue
             counts.append(flood_side_packed(
-                lit, passable_packed, seed, steps=steps, connectivity=connectivity, compiled=compiled,
+                lit, passable_packed, seed, steps=steps, connectivity=connectivity,
+                moves_per_step=moves_per_step, compiled=compiled,
             )[0])
             break
         else:

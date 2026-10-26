@@ -58,7 +58,7 @@ def test_the_script_plans_the_scene_and_prints_the_report(tmp_path: Path, monkey
     monkeypatch.setattr(module, "PROGRESS_EVERY_CELLS", 1)
     monkeypatch.setattr(module, "spice_vector_source", lambda body: vectors[body])
     monkeypatch.setattr(module, "PARAMETERS", WindowParameters(
-        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0, seed_separation_m=4.0,
+        cell_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0, seed_separation_m=4.0,
     ))
 
     assert module.main() == 0
@@ -141,7 +141,7 @@ def test_the_stage_three_script_writes_the_table_and_resumes(tmp_path: Path, mon
         monkeypatch.setattr(module, name, value)
     monkeypatch.setattr(module, "spice_vector_source", lambda body: vectors[body])
     monkeypatch.setattr(module, "PARAMETERS", WindowParameters(
-        cell_patches=1, block_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0,
+        cell_patches=1, block_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0,
         seed_separation_m=4.0, operational_hours=24.0,
     ))
 
@@ -172,7 +172,7 @@ def stage_three_setup(module, monkeypatch, tmp_path, cells):
         monkeypatch.setattr(module, name, value)
     monkeypatch.setattr(module, "spice_vector_source", lambda body: vectors[body])
     monkeypatch.setattr(module, "PARAMETERS", WindowParameters(
-        cell_patches=1, block_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0,
+        cell_patches=1, block_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0,
         seed_separation_m=4.0, operational_hours=24.0,
     ))
     return products
@@ -203,7 +203,7 @@ def test_stage_three_reads_the_stage_two_list_and_refuses_a_missing_or_stale_one
         module.main()
     os.utime(products.hibernation, ns=(stat.st_atime_ns, stat.st_mtime_ns))
     monkeypatch.setattr(module, "PARAMETERS", WindowParameters(
-        cell_patches=1, block_patches=1, rover_speed_m_s=1.0 / 1800.0, survival_limit_hours=48.0,
+        cell_patches=1, block_patches=1, flood_step_minutes=30, moves_per_step=1, survival_limit_hours=48.0,
         haven_neighbourhood_m=3.0, seed_separation_m=4.0, operational_hours=24.0))
     with pytest.raises(ValueError, match="survival_limit_hours"):
         module.main()
@@ -306,7 +306,7 @@ def test_the_other_scripts_log_the_same_way(tmp_path: Path, monkeypatch, capsys)
         monkeypatch.setattr(module, name, value)
     monkeypatch.setattr(module, "spice_vector_source", lambda body: vectors[body])
     monkeypatch.setattr(module, "PARAMETERS", WindowParameters(
-        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0, seed_separation_m=4.0))
+        cell_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0, seed_separation_m=4.0))
     assert module.main() == 0
     log = (tmp_path / "plan.jsonl.log").read_text()
     assert "lunarscout.scripts.plan: Pass 1: 1/1 cells" in log and "Plan written to" in log
@@ -431,7 +431,7 @@ def test_the_other_scripts_log_the_same_way(tmp_path: Path, monkeypatch, capsys)
         monkeypatch.setattr(module, name, value)
     monkeypatch.setattr(module, "spice_vector_source", lambda body: vectors[body])
     monkeypatch.setattr(module, "PARAMETERS", WindowParameters(
-        cell_patches=1, rover_speed_m_s=1.0 / 1800.0, haven_neighbourhood_m=3.0, seed_separation_m=4.0))
+        cell_patches=1, flood_step_minutes=30, moves_per_step=1, haven_neighbourhood_m=3.0, seed_separation_m=4.0))
     assert module.main() == 0
     log = (tmp_path / "plan.jsonl.log").read_text()
     assert "lunarscout.scripts.plan: Pass 1: 1/1 cells" in log and "Plan written to" in log
