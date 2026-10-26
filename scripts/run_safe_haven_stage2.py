@@ -38,9 +38,9 @@ from lunarscout._numba_horizon.safe_haven_windows import Stage1Rasters  # noqa: 
 from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
 
 
-# Edit these paths before running. They match run_generate_safe_havens.py.
+# Edit these paths before running. They match run_safe_haven_stage1.py.
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_generate_safe_havens.py
+STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_safe_haven_stage1.py
 # The stage-1 products are bytes of two-hour counts with NODATA 255. Set both to None for
 # float products in hours.
 HOURS_PER_COUNT = 2.0

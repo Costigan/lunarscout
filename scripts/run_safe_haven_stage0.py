@@ -53,7 +53,7 @@ START_UTC = "2024-01-01T00:00:00"
 STOP_UTC = "2032-01-01T00:00:00"        # exclusive
 STEP_MINUTES = 120
 
-# The thresholds are those of stage 1 (run_generate_safe_havens.py).
+# The thresholds are those of stage 1 (run_safe_haven_stage1.py).
 SHADOW_FRACTION = 0.2                   # a sample below this Sun fraction is power-negative shadow
 OPERATING_FRACTION = 1.0                # at or above this the rover operates (with the stage-1 fuzz of 1e-6)
 EARTH_ELEVATION_DEG = 2.0               # Earth below this above the pixel's own horizon is an outage

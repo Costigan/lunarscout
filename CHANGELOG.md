@@ -26,7 +26,7 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   front of the unchanged reducer kernel) or the CPU, with no horizon read and no Sun vectors. The time samples
   must be the store's grid and the thresholds the store's, or the call raises `InputError`
   (`safe_haven_store_thresholds`, `_step_mismatch`, `_time_misaligned`, `_time_range`). The default horizon
-  route is unchanged. `scripts/run_generate_safe_havens.py` now reads the store at 2-hour steps and writes
+  route is unchanged. `scripts/run_safe_haven_stage1.py` now reads the store at 2-hour steps and writes
   products named `safe_haven_2h_*`; its windows (24 h) are 12 samples at that step, so its results differ
   from the 6-hour runs, and the stage-2 and stage-3 scripts' `STAGE1_PREFIX` follows it.
 

@@ -179,7 +179,7 @@ def test_the_stage_2_script_defaults_agree_with_stage_1_and_import_starts_nothin
 
     module = load_script()
     generate = importlib.util.spec_from_file_location(
-        "run_generate_safe_havens", Path(module.__file__).with_name("run_generate_safe_havens.py"))
+        "run_safe_haven_stage1", Path(module.__file__).with_name("run_safe_haven_stage1.py"))
     stage1 = importlib.util.module_from_spec(generate)
     generate.loader.exec_module(stage1)
     assert module.STAGE1_PREFIX == stage1.NAME_PREFIX

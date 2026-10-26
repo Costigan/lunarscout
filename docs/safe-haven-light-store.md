@@ -50,7 +50,7 @@ Earth is never visible have an empty Earth plane. `scripts/measure_light_store.p
 
 ## 5. Stage 1 on the store
 
-`ls.generate_safe_haven_products(..., light_store_path=...)` (and `scripts/run_generate_safe_havens.py`)
+`ls.generate_safe_haven_products(..., light_store_path=...)` (and `scripts/run_safe_haven_stage1.py`)
 reduces each patch from its stored planes: no horizon is read and no Sun position is needed. The per-pixel
 state machine is the one stage 1 always ran. It compares the Sun fraction with two thresholds and Earth's
 margin with one, so the planes are turned back into a fraction of 0, 0.5 or 1 and a margin of -90 or +90

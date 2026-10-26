@@ -9,7 +9,7 @@ scripts/plan_safe_haven_windows.py or scripts/run_safe_haven_stage3.py (the full
 stage 3 comes from scripts/run_safe_haven_stage2.py, which scans much faster). A haven pixel has a hibernation value at or
 below SURVIVAL_LIMIT_HOURS in some month. The script prints a table and a CELLS
 line to paste into the planning script. CPU only; it needs the stage-1 products
-from scripts/run_generate_safe_havens.py. Importing it starts no calculation.
+from scripts/run_safe_haven_stage1.py. Importing it starts no calculation.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from lunarscout.products import _load_dem  # noqa: E402
 # Edit these before running. They match plan_safe_haven_windows.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_generate_safe_havens.py
+STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_safe_haven_stage1.py
 HOURS_PER_COUNT = 2.0   # None, with STAGE1_NODATA None, for float products in hours
 STAGE1_NODATA = 255
 SURVIVAL_LIMIT_HOURS = 72.0

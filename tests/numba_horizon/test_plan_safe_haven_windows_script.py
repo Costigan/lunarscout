@@ -25,7 +25,7 @@ def load_script():
 
 def test_the_stage_two_scripts_read_the_prefix_stage_one_writes() -> None:
     generate = importlib.util.spec_from_file_location(
-        "run_generate_safe_havens", SCRIPT.parent / "run_generate_safe_havens.py")
+        "run_safe_haven_stage1", SCRIPT.parent / "run_safe_haven_stage1.py")
     module = importlib.util.module_from_spec(generate)
     generate.loader.exec_module(module)
     assert module.NAME_PREFIX != "safe_haven"                  # never overwrites the earlier run

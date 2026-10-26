@@ -10,7 +10,7 @@ seed's hibernation from the horizons, find its flood boundaries, and write the p
 as JSON lines. It prints the counts that size the later lighting work. No flood runs
 and no patch lighting is calculated.
 
-The stage-1 products must come from scripts/run_generate_safe_havens.py with the
+The stage-1 products must come from scripts/run_safe_haven_stage1.py with the
 same times, thresholds, observer height and vectors. Pass 1 recomputes each seed's
 hibernation score and stops with an error if it differs from the stage-1 raster.
 SPICE supplies Sun and Earth positions unless you replace the two vector sources.
@@ -44,11 +44,11 @@ from lunarscout._script_logging import reset_script_logging, setup_script_loggin
 from lunarscout.products import _load_dem  # noqa: E402
 
 
-# Edit these paths before running. They match run_generate_safe_havens.py.
+# Edit these paths before running. They match run_safe_haven_stage1.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_generate_safe_havens.py
+STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_safe_haven_stage1.py
 PLAN_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_2h_window_plan.jsonl")
 
 # Must equal the stage-1 run.

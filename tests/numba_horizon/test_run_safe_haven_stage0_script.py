@@ -25,7 +25,7 @@ def load(name: str):
 
 
 def test_the_script_uses_the_stage_one_thresholds_and_the_stage_three_inputs() -> None:
-    stage0, stage1, stage3 = load("run_safe_haven_stage0"), load("run_generate_safe_havens"), load("run_safe_haven_stage3")
+    stage0, stage1, stage3 = load("run_safe_haven_stage0"), load("run_safe_haven_stage1"), load("run_safe_haven_stage3")
     assert stage0.SHADOW_FRACTION == stage1.SUNLIGHT_FRACTION_THRESHOLD
     assert stage0.OPERATING_FRACTION == stage1.OPERATING_SUNLIGHT_FRACTION
     assert stage0.EARTH_ELEVATION_DEG == stage1.EARTH_ELEVATION_THRESHOLD_DEG
@@ -35,7 +35,7 @@ def test_the_script_uses_the_stage_one_thresholds_and_the_stage_three_inputs() -
 
 
 def test_the_stage_one_script_reads_the_store_the_stage_zero_script_writes() -> None:
-    stage0, stage1 = load("run_safe_haven_stage0"), load("run_generate_safe_havens")
+    stage0, stage1 = load("run_safe_haven_stage0"), load("run_safe_haven_stage1")
     assert stage1.LIGHT_STORE_PATH == stage0.OUTPUT_DIRECTORY and stage1.DEM_PATH == stage0.DEM_PATH
     assert stage1.STEP_HOURS * 60 == stage0.STEP_MINUTES
     assert stage1.OBSERVER_HEIGHT_M == stage0.OBSERVER_HEIGHT_M

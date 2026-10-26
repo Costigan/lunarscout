@@ -15,7 +15,7 @@ the script appends to a checkpoint file, so running it again with the same setti
 the next block. Run it again after a kill, a crash or Ctrl-C. A different setting, including
 BLOCK_PATCHES, needs a new OUTPUT_PATH or the checkpoint deleted.
 
-The stage-1 products must come from scripts/run_generate_safe_havens.py with the same
+The stage-1 products must come from scripts/run_safe_haven_stage1.py with the same
 times, thresholds, observer height and degenerate-outage window, and the horizons must
 be the ones stage 1 used. SPICE supplies Sun and Earth positions unless you replace the
 two vector sources.
@@ -63,11 +63,11 @@ from lunarscout._script_logging import reset_script_logging, setup_script_loggin
 from lunarscout.products import _load_dem  # noqa: E402
 
 
-# Edit these paths before running. They match run_generate_safe_havens.py.
+# Edit these paths before running. They match run_safe_haven_stage1.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_generate_safe_havens.py
+STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_safe_haven_stage1.py
 # The stage-2 list of cells with havens (scripts/run_safe_haven_stage2.py). It is refused if the
 # stage-1 files, the survival limit or the cell size have changed since it was made.
 CELL_LIST_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_haven_cells.json"

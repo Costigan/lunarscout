@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Edit the constants below, then run this script with the project environment.
 
-    .venv/bin/python scripts/run_generate_safe_havens.py
+    .venv/bin/python scripts/run_safe_haven_stage1.py
 
-Writes the three safe-haven screening products (hibernation, joint operating
+Stage 1 of the safe-haven analysis. Writes the three safe-haven screening products (hibernation, joint operating
 total, joint operating longest run) into OUTPUT_DIRECTORY from one pass.
 
 With LIGHT_STORE_PATH set (the default) the products are reduced from the stage-0
