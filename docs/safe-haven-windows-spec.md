@@ -312,7 +312,7 @@ both equal to `operational_hours`; the columns are kept as a check.
 
 ## 7. Output
 
-The table (`safe_haven_operating_opportunity_scores.csv`) has one row per scored safe haven: a seed
+The table (`safe_haven_operating_opportunity_scores.csv`, `safe_haven_2h_...` for the 2-hour runs) has one row per scored safe haven: a seed
 pixel scored by its **opportunity to operate before and after the non-operations period** (the
 hibernation). A cell-month with at least one valid seed has up to `max_seeds_per_cell_month` rows,
 ranked by `operating_opportunity_score` (ties by smaller (row, column)). Cell-months with no valid

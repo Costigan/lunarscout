@@ -77,7 +77,7 @@ CELL_LIST_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_haven_cells.json"
 # The table. The checkpoint is OUTPUT_PATH + ".checkpoint.jsonl" next to it and is
 # removed when the table is complete. An existing OUTPUT_PATH is not replaced unless
 # OVERWRITE is True.
-OUTPUT_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_operating_opportunity_scores.csv")
+OUTPUT_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_2h_operating_opportunity_scores.csv")
 # A JSON report of the finished table (what a row is, the settings, the lighting used, the run's counts).
 # None writes it next to the table, with the table's name and ".report.json".
 REPORT_PATH = None

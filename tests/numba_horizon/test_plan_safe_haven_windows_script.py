@@ -119,8 +119,8 @@ def load_run_script():
 
 def test_the_stage_three_script_defaults_and_importing_it_starts_nothing() -> None:
     module = load_run_script()
-    assert module.OUTPUT_PATH.name == "safe_haven_operating_opportunity_scores.csv" and module.OVERWRITE is False
-    assert module.REPORT_PATH is None and module._report_path().name == "safe_haven_operating_opportunity_scores.report.json"
+    assert module.OUTPUT_PATH.name == "safe_haven_2h_operating_opportunity_scores.csv" and module.OVERWRITE is False
+    assert module.REPORT_PATH is None and module._report_path().name == "safe_haven_2h_operating_opportunity_scores.report.json"
     assert module.PARAMETERS.block_patches % module.PARAMETERS.cell_patches == 0
     assert (module.PLAN_WORKERS, module.LIGHT_WORKERS, module.NUMBA_THREADS_PER_LIGHT_WORKER) == (4, 12, 2)
     assert module.FLOOD_WORKERS == 2 and module.STORE_BUDGET_GB == 8.0 and module.CELLS_IN_FLIGHT == 24
