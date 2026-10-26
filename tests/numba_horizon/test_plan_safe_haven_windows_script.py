@@ -47,6 +47,7 @@ def test_the_script_plans_the_scene_and_prints_the_report(tmp_path: Path, monkey
     vectors = {"sun": scene.sun_vectors, "earth": scene.earth_vectors}
     monkeypatch.setattr(module, "DEM_PATH", dem_path)
     monkeypatch.setattr(module, "HORIZONS_PATH", horizons_path)
+    monkeypatch.setattr(module, "LIGHT_STORE_PATH", None)         # the horizon route; the store route has its own tests
     monkeypatch.setattr(module, "STAGE1_DIRECTORY", products.hibernation.parent)
     monkeypatch.setattr(module, "STAGE1_PREFIX", "safe_haven")      # the scene's default prefix
     monkeypatch.setattr(module, "PLAN_PATH", plan)
@@ -134,7 +135,7 @@ def test_the_stage_three_script_writes_the_table_and_resumes(tmp_path: Path, mon
     output = tmp_path / "windows.csv"
     vectors = {"sun": scene.sun_vectors, "earth": scene.earth_vectors}
     for name, value in dict(
-        DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, STAGE1_DIRECTORY=products.hibernation.parent,
+        DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, LIGHT_STORE_PATH=None, STAGE1_DIRECTORY=products.hibernation.parent,
         STAGE1_PREFIX="safe_haven", OUTPUT_PATH=output, START_UTC=scene.START, STOP_UTC=scene.STOP, STEP_HOURS=scene.STEP_HOURS,
         HOURS_PER_COUNT=None, STAGE1_NODATA=None, CELLS=[(0, 0)],
     ).items():
@@ -164,7 +165,7 @@ def stage_three_setup(module, monkeypatch, tmp_path, cells):
     dem_path, horizons_path, products, _stamps = scene.stage_one(tmp_path)
     vectors = {"sun": scene.sun_vectors, "earth": scene.earth_vectors}
     for name, value in dict(
-        DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, STAGE1_DIRECTORY=products.hibernation.parent,
+        DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, LIGHT_STORE_PATH=None, STAGE1_DIRECTORY=products.hibernation.parent,
         STAGE1_PREFIX="safe_haven", OUTPUT_PATH=tmp_path / "windows.csv", CELL_LIST_PATH=tmp_path / "cells.json",
         START_UTC=scene.START, STOP_UTC=scene.STOP, STEP_HOURS=scene.STEP_HOURS, HOURS_PER_COUNT=None,
         STAGE1_NODATA=None, CELLS=cells,
@@ -298,7 +299,7 @@ def test_the_other_scripts_log_the_same_way(tmp_path: Path, monkeypatch, capsys)
     dem_path, horizons_path, products, _stamps = scene.stage_one(tmp_path)
     vectors = {"sun": scene.sun_vectors, "earth": scene.earth_vectors}
     for name, value in dict(
-        DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, STAGE1_DIRECTORY=products.hibernation.parent,
+        DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, LIGHT_STORE_PATH=None, STAGE1_DIRECTORY=products.hibernation.parent,
         STAGE1_PREFIX="safe_haven", PLAN_PATH=tmp_path / "plan.jsonl", START_UTC=scene.START,
         STOP_UTC=scene.STOP, STEP_HOURS=scene.STEP_HOURS, HOURS_PER_COUNT=None, STAGE1_NODATA=None,
         PROGRESS_EVERY_CELLS=1,
@@ -423,7 +424,7 @@ def test_the_other_scripts_log_the_same_way(tmp_path: Path, monkeypatch, capsys)
     dem_path, horizons_path, products, _stamps = scene.stage_one(tmp_path)
     vectors = {"sun": scene.sun_vectors, "earth": scene.earth_vectors}
     for name, value in dict(
-        DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, STAGE1_DIRECTORY=products.hibernation.parent,
+        DEM_PATH=dem_path, HORIZONS_PATH=horizons_path, LIGHT_STORE_PATH=None, STAGE1_DIRECTORY=products.hibernation.parent,
         STAGE1_PREFIX="safe_haven", PLAN_PATH=tmp_path / "plan.jsonl", START_UTC=scene.START,
         STOP_UTC=scene.STOP, STEP_HOURS=scene.STEP_HOURS, HOURS_PER_COUNT=None, STAGE1_NODATA=None,
         PROGRESS_EVERY_CELLS=1,

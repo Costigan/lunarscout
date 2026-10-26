@@ -18,7 +18,19 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   `LitCudaSession.light_patch_planes` that reuses the production lightmap kernel and the fixed-trip-count
   packing kernel unchanged (the general lighting paths are not touched). The run is restartable, bounded in
   memory, refuses a directory made with other settings, time range or DEM, and writes a report. New optional
-  extra `lunarscout[lightstore]` (zstandard). Stage 3 does not read the store yet.
+  extra `lunarscout[lightstore]` (zstandard).
+
+- **Safe-haven stage 3 floods on a 2-hour step with 4 moves, from the light store (changes results).** The
+  rover speed parameter is replaced by `flood_step_minutes` (default 120) and `moves_per_step` (default 4):
+  lighting is constant over a step, the rover makes up to 4 one-pixel moves in it, each into a pixel lit in
+  that step, so the reach is 96 pixels in 48 hours (0.0111 m/s at 20 m) and a side counts at most
+  193 x 193 pixels. The reference and packed floods take `moves_per_step`. `run_pass_two` and
+  `iter_cell_months` take `light_store=` (a stage-0 `LightStoreDirectory`) in place of `horizon_store=`:
+  pass 1 follows pixels through their stored bits (`StoreSignals`), the lit units are slices of the store's
+  operating plane, and the pipeline reads units instead of lighting them (about 6,000 a second per thread
+  against about 390), so no horizon is read. The checkpoint records the lighting source. The horizon route
+  stays as the reference and the tests require the same table from both. `scripts/run_safe_haven_stage3.py`
+  and `scripts/plan_safe_haven_windows.py` read the store at 2-hour steps by default.
 
 - **Safe-haven stage 1 reads the light store (changes results when used).** `ls.generate_safe_haven_products`
   takes `light_store_path` in place of `horizons_path`: each patch is reduced from its stored planes with the

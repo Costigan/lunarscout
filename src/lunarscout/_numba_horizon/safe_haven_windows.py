@@ -371,10 +371,11 @@ class PixelSignals:
         return None if patch is None else patch[row - key[0], column - key[1]]
 
     def series(self, row: int, column: int, vectors_m: npt.ArrayLike, *, margin: bool,
-               flat_elevation: bool = False):
+               flat_elevation: bool = False, times_us: npt.ArrayLike | None = None):
         """Float32 values per vector, or ``None`` when the pixel has no horizon.
 
-        ``flat_elevation`` (with ``margin``) gives the elevation above a flat horizon.
+        ``flat_elevation`` (with ``margin``) gives the elevation above a flat horizon. ``times_us``
+        (the vectors' times) is for ``StoreSignals``, which has no vectors, and is not used here.
         """
         horizon = self.horizon_column(row, column)
         if horizon is None:
@@ -400,14 +401,16 @@ class TimeContext:
     month_first: npt.NDArray[np.int64]
     month_last: npt.NDArray[np.int64]
     month_count: int
-    sun_vectors: npt.NDArray[np.float64]
+    sun_vectors: npt.NDArray[np.float64] | None
     earth_vectors: npt.NDArray[np.float64]
-    sun_vectors_at: VectorSource
+    sun_vectors_at: VectorSource | None
     earth_vectors_at: VectorSource
 
     @classmethod
-    def build(cls, times: npt.ArrayLike, sun_vectors_at: VectorSource,
+    def build(cls, times: npt.ArrayLike, sun_vectors_at: VectorSource | None,
               earth_vectors_at: VectorSource) -> "TimeContext":
+        """The stage-1 sampling and its vectors. Without a Sun source (a run from a light store, which
+        holds the lighting) the Sun vectors are ``None``."""
         stamps = np.asarray(times).astype("datetime64[us]")
         if stamps.ndim != 1 or stamps.size < 2:
             raise ValueError("times must be a one-dimensional array of at least two UTC times")
@@ -427,7 +430,7 @@ class TimeContext:
             month_first=month_first,
             month_last=month_last,
             month_count=len(bands),
-            sun_vectors=np.asarray(sun_vectors_at(stamps), dtype=np.float64),
+            sun_vectors=None if sun_vectors_at is None else np.asarray(sun_vectors_at(stamps), dtype=np.float64),
             earth_vectors=np.asarray(earth_vectors_at(stamps), dtype=np.float64),
             sun_vectors_at=sun_vectors_at,
             earth_vectors_at=earth_vectors_at,
@@ -533,17 +536,22 @@ class CandidateEvaluator:
         start = max(0, first - self.lookback)
         stop = min(count, last + 1 + self.forward)
         while True:
-            sun = self.signals.series(row, column, time.sun_vectors[start:stop], margin=False)
+            times_us = time.times_us[start:stop]
+            sun = self.signals.series(
+                row, column, None if time.sun_vectors is None else time.sun_vectors[start:stop],
+                margin=False, times_us=times_us)
             if sun is None:
                 return "no_horizon"
-            earth = self.signals.series(row, column, time.earth_vectors[start:stop], margin=True)
+            earth = self.signals.series(
+                row, column, time.earth_vectors[start:stop], margin=True, times_us=times_us)
             if not (np.isfinite(sun).all() and np.isfinite(earth).all()):
                 return "no_horizon"
             is_shadow = sun.astype(np.float64) < self.sun_threshold
             is_outage = earth.astype(np.float64) < self.earth_threshold
             if self.window > 0:
                 flat = self.signals.series(
-                    row, column, time.earth_vectors[start:stop], margin=True, flat_elevation=True
+                    row, column, time.earth_vectors[start:stop], margin=True, flat_elevation=True,
+                    times_us=times_us,
                 )
                 if not np.isfinite(flat).all():
                     return "no_horizon"
@@ -620,7 +628,9 @@ def find_boundaries(
     after_steps = np.arange(nominal_after, nominal_after + cap + 1, dtype=np.int64)
     steps = np.concatenate((before_steps, after_steps))
     fractions = signals.series(
-        record.row, record.column, time.sun_vectors_at(grid.times(steps)), margin=False
+        record.row, record.column,
+        None if time.sun_vectors_at is None else time.sun_vectors_at(grid.times(steps)),
+        margin=False, times_us=steps * grid.step_us,
     )
     if fractions is None:
         return None
@@ -923,12 +933,13 @@ def _seed_record(seed: Seed) -> dict:
 def iter_cell_months(
     *,
     dem,
-    horizon_store: HorizonTileStore,
+    horizon_store: HorizonTileStore | None = None,
     stage1: Stage1Rasters,
     times: npt.ArrayLike,
-    sun_vectors_at: VectorSource,
+    sun_vectors_at: VectorSource | None = None,
     earth_vectors_at: VectorSource,
     parameters: WindowParameters = WindowParameters(),
+    light_store=None,
     observer_height_m: float = 0.0,
     earth_elevation_threshold_deg: float = 2.0,
     sunlight_fraction_threshold: float = 0.2,
@@ -939,6 +950,11 @@ def iter_cell_months(
     time_context: "TimeContext | None" = None,
 ) -> Iterator[dict]:
     """Yield one record per cell-month that has at least one valid seed.
+
+    The pixels' lighting comes from ``horizon_store`` (with ``sun_vectors_at``: the CPU kernel on each
+    pixel's horizons) or from ``light_store`` (a stage-0 ``LightStoreDirectory``: its stored bits, no
+    horizons and no Sun vectors; its step must be the flood step and its thresholds the ones given here).
+    Give exactly one.
 
     ``cells`` lists ``(cell_row, cell_col)`` indices; the default is every cell of
     the raster.  The final :class:`PassOneReport` is appended to ``report``, and
@@ -951,7 +967,12 @@ def iter_cell_months(
     pixel_size = abs(float(dem.geo_transform[1]))
     if not math.isclose(pixel_size, abs(float(dem.geo_transform[5])), rel_tol=1e-6):
         raise ValueError("pass 1 needs square pixels")
-    time = time_context or TimeContext.build(times, sun_vectors_at, earth_vectors_at)
+    if (horizon_store is None) == (light_store is None):
+        raise ValueError("give exactly one of horizon_store and light_store")
+    if horizon_store is not None and sun_vectors_at is None:
+        raise ValueError("lighting from horizons needs sun_vectors_at")
+    time = time_context or TimeContext.build(
+        times, sun_vectors_at if horizon_store is not None else None, earth_vectors_at)
     if time.month_count != stage1.band_count:
         raise ValueError(
             f"the times span {time.month_count} months but the products have {stage1.band_count} bands"
@@ -959,7 +980,18 @@ def iter_cell_months(
     grid = FloodGrid(parameters.flood_step_minutes)
     flood_steps = grid.step_count(parameters.operational_hours)
     halo = halo_pixels(flood_steps * parameters.moves_per_step)
-    signals = PixelSignals(dem, horizon_store, observer_height_m)
+    if light_store is None:
+        signals = PixelSignals(dem, horizon_store, observer_height_m)
+    else:
+        from .safe_haven_stage3_store import StoreSignals, check_run
+
+        check_run(
+            light_store, flood_step_minutes=parameters.flood_step_minutes,
+            times=time.times_us.astype("datetime64[us]"), stage1_step_hours=time.step_hours,
+            sunlight_threshold=sunlight_fraction_threshold,
+            operating_sunlight_fraction=parameters.operating_sunlight_fraction,
+            earth_threshold_deg=earth_elevation_threshold_deg)
+        signals = StoreSignals(light_store, dem)
     evaluator = CandidateEvaluator(
         signals, time, parameters,
         earth_elevation_threshold_deg=earth_elevation_threshold_deg,

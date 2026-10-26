@@ -1,6 +1,9 @@
 # Safe-haven windows: finding 5 km cells with a good haven and reachable lit terrain
 
-Status: DRAFT SPECIFICATION FOR REVIEW. The work is run in three stages. Stage 1 is
+Status: DRAFT SPECIFICATION FOR REVIEW. The work is run in stages. **Stage 0** lights every patch
+once for the whole time range and stores the thresholded lighting (`docs/safe-haven-light-store.md`,
+`scripts/run_safe_haven_stage0.py`); stages 1 and 3 can read that store instead of lighting from the
+horizons, and the production runs do. All stages use the store's 2-hour grid. Stage 1 is
 `generate_safe_haven_products`. **Stage 2** scans the stage-1 hibernation product for the
 cells that have a haven pixel and writes the list
 (`src/lunarscout/_numba_horizon/safe_haven_cells.py`, run by
@@ -45,9 +48,10 @@ ranking is deferred.
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `survival_limit_hours` | 72 | Haven test (3 days, a multiple of 6 h). |
+| `survival_limit_hours` | 72 | Haven test (3 days, a multiple of the 2 h step). |
 | `operational_hours` | 48 | Flood duration on each side of the hibernation. |
-| `rover_speed_m_s` | 0.01 | Sets the flood step, section 6. |
+| `flood_step_minutes` | 120 | The flood step, which divides 24 h. Lighting is constant over a step (section 6). |
+| `moves_per_step` | 4 | One-pixel moves the rover makes in a step. With the defaults 4 pixels of 20 m in 2 hours, 0.0111 m/s, a little above the nominal 1 cm/s. The flood reach is `steps * moves_per_step` pixels: 96. |
 | `connectivity` | 8 | 4 or 8 neighbour moves per step. |
 | `max_seeds_per_cell_month` | 5 | Seeds selected, flooded and reported. |
 | `timing_probes_per_seed` | 8 | Nearby pixels probed for a different timing, per accepted seed. |
@@ -101,10 +105,15 @@ slope mask and the lit rule always agree with stage 1.
 ## 4. Inputs
 
 * The stage-1 `hibernation` and `joint_total` rasters.
-* The horizon store, the DEM, and a sun-vector source on the flood grid
-  (section 6) and on the stage-1 grid. The vector source is a callable taking
-  UTC times, so SPICE is touched only for the times that are needed.
-* Earth vectors on the stage-1 grid, for each seed's outage times.
+* The lighting: the stage-0 light store (`LightStoreDirectory`), whose bits give every pixel's Sun and
+  Earth state on the flood grid, or, as the reference route, the horizon store with a sun-vector source on
+  the flood grid and on the stage-1 grid (a callable taking UTC times, so SPICE is touched only for the
+  times that are needed). The DEM.
+* Earth vectors on the stage-1 grid, for the degenerate-outage rule's flat-horizon elevation (and for
+  each seed's outage times when lighting from horizons).
+* With a store, the stage-1 samples are the store's grid (a start on it, its step, inside its range), the
+  flood step is the store's step, and the thresholds are the store's; a store that cannot answer the run
+  is refused (`safe_haven_store_*`).
 
 ## 5. Pass 1: filter and seed selection
 
@@ -183,12 +192,15 @@ into one ranking is deferred.
 
 ## 6. The flood
 
-**Flood grid.** Times are `epoch + k * dt`. The step `dt` is the largest divisor
-of 24 h, in whole minutes, that is at most `pixel_size_m / rover_speed_m_s`. At
-20 m and 1 cm/s the speed-implied step is 33.3 min, so `dt` = 32 min (1,440 / 32 is
-a whole number; 33 does not divide a day). The step count is
-`n = ceil(operational_hours * 60 / dt)` (90 by default). One step moves
-the rover one pixel, so the reach is `n` pixels.
+**Flood grid.** Times are `epoch + k * dt`. The step `dt` is `flood_step_minutes`, a divisor of
+24 h: 120 minutes by default, which is also the stage-1 sampling step and the light store's step, so a
+flood step is a stored step. The lighting is taken as constant over a step and changing at its
+boundaries (shadows on the Moon do not come and go faster than that). The step count is
+`n = ceil(operational_hours * 60 / dt)` (24 by default). In a step the rover makes `moves_per_step`
+one-pixel moves (4 by default), each into a pixel that is passable and lit in that step, so the reach is
+`n * moves_per_step` pixels (96) and the largest count on one side is a 193 x 193 square, 37,249 pixels.
+(The first stage-3 runs used a 32-minute step with one move per step and a 90-pixel reach; that
+design needed every flood window's horizons in memory at once.)
 
 **Boundaries.** A flood starts at a time when the seed is lit.
 
@@ -211,11 +223,12 @@ inside a merged shadow run counts as lit; the flood does not skip it.
 **Before side.** Start at the before-boundary `t0` with `R = {seed}`. Then, for
 `j = 1 .. n`:
 
-    R(t0 - j*dt) = neighbours(R(t0 - (j-1)*dt)) AND passable AND lit(t0 - j*dt)
+    R <- neighbours(R) AND passable AND lit(t0 - j*dt)        (moves_per_step times)
 
-where `neighbours` includes the pixel itself (waiting) and the 4 or 8 adjacent
-pixels. Time runs backward, so the frontier is the set of pixels from which the
-seed is reachable by the end of the interval.
+and `R(t0 - j*dt)` is `R` after the last of the step's moves. `neighbours` includes the pixel itself
+(waiting) and the 4 or 8 adjacent pixels. With one move per step this is
+`R(t0 - j*dt) = neighbours(R(t0 - (j-1)*dt)) AND passable AND lit(t0 - j*dt)`. Time runs backward, so the
+frontier is the set of pixels from which the seed is reachable by the end of the interval.
 
 **After side.** Start at the after-boundary with `R = {seed}` and run the same
 rule forward in time.
@@ -240,11 +253,23 @@ on the synthetic scene.
 
 **Packed-bit flood.** `_numba_horizon/safe_haven_flood_packed.py` is the production
 CPU flood: rows of 64-bit words (bit `k` of word `w` is column `64 * w + k`), a
-three-row, three-bit dilation per step, an AND with the passable and lit masks, and the
-work at step `j` limited to the `j`-pixel box around the seed. It takes `lit[j - 1]`
+three-row, three-bit dilation per move, an AND with the passable and lit masks, and the
+work at move `k` limited to the `k`-pixel box around the seed. It takes `lit[j - 1]`
 as the lit mask `j` steps from the boundary, so the caller orders the before side
 backward in time. `tests/numba_horizon/test_safe_haven_flood_packed.py` checks it
 against the oracle on random inputs, including seeds and walls at word seams.
+
+**Light store route.** With a stage-0 store (`run_pass_two(light_store=...)`, `iter_cell_months(light_store=...)`)
+no horizon is read and nothing is lit. Pass 1 follows a pixel through `StoreSignals`
+(`safe_haven_stage3_store.py`): its stored bits as a Sun fraction of 0, 0.5 or 1 and an Earth margin of
+-90 or +90 degrees, which the unchanged rules threshold; the flat-horizon elevation of the degenerate
+rule is computed exactly from the Earth vectors. The lit units `(patch, 24 h chunk)` are slices of the
+store's operating plane (`unit_bits`), so the pipeline's LIGHT stage is a read (about 6,000 units a second
+per thread, against about 390 a second for the CPU lightmap). Steps outside the store's range have no data
+and count as dark; the flood windows of seeds within a day or so of the ends of the series can reach them.
+The checkpoint records the store's identity, so a checkpoint is not resumed across a change of source.
+Tests show the table is the same as the horizon route's on the block scene, for the block loop, worker
+processes and the pipeline.
 
 **Stage-3 pipeline.** `_numba_horizon/safe_haven_stage3.py` runs the schedule above as a pipeline
 with bounded queues (`run_pass_two(pipeline=PipelineSettings(...))`; the block loop stays as the
@@ -332,7 +357,7 @@ later.
 
 Per patch, the horizons are the dominant data: 128 x 128 x 1,440 azimuths as
 float32 is 94.4 MB on the device. A 24 h chunk of lit bits for one patch is
-90 KiB at the default 32 minute step (45 steps), about 1,000 times smaller.
+24 KiB at the default 2-hour step (12 steps; it was 90 KiB at the earlier 32-minute step), about 4,000 times smaller.
 
 **Lighting ranges.** The boundaries are known before any patch is lit (pass 1,
 step 7), so the lighting covers exactly what the floods use, not a worst case.
@@ -360,7 +385,7 @@ chunks, over the seed's own time range.
 
 **CPU reference store.** `_numba_horizon/safe_haven_litstore.py` implements this
 section on the CPU: `LitStore` (units keyed by patch row, patch column and chunk, packed
-as `(steps_per_chunk, 128, 2)` words; 90 KiB at 32 minutes), `fill_lit_store` (reads each
+as `(steps_per_chunk, 128, 2)` words; 24 KiB at 2 hours), `fill_lit_store` (reads each
 patch's horizons once, lights only the missing units with the CPU lightmap, applies the
 stage-1 lit threshold and packs), `LitStore.side_lit` (the masks of one flood side in
 flood order) and `flood_seed_from_store` (both sides from the store, with the boundary

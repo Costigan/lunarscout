@@ -16,17 +16,18 @@ the next block. Run it again after a kill, a crash or Ctrl-C. A different settin
 BLOCK_PATCHES, needs a new OUTPUT_PATH or the checkpoint deleted.
 
 The stage-1 products must come from scripts/run_safe_haven_stage1.py with the same
-times, thresholds, observer height and degenerate-outage window, and the horizons must
-be the ones stage 1 used. SPICE supplies Sun and Earth positions unless you replace the
-two vector sources.
+times, thresholds, observer height and degenerate-outage window. With LIGHT_STORE_PATH set (the
+default) all lighting comes from the stage-0 light store (scripts/run_safe_haven_stage0.py), which
+must be the one stage 1 read: no horizon is read, no lighting is calculated and no GPU is used. The
+flood is a 2-hour step in which the rover makes 4 one-pixel moves (the PARAMETERS below); lighting is
+constant over a step. With LIGHT_STORE_PATH None the units are lit from the horizons instead, as before
+(HORIZONS_PATH, and the LIGHTING settings below). SPICE supplies Earth positions (and the Sun's when
+lighting from horizons) unless you replace the vector sources.
 
-This runs as a pipeline with bounded queues (PLAN_WORKERS and its neighbours below). Lighting uses
-the NVIDIA GPU when LIGHTING is "auto" and one can be set up, or "cuda" (a compatible NVIDIA device
-and driver are required, and there is no fallback); with "cpu" or an "auto" fallback it needs no GPU
-and runs on all CPU cores. The flood is always on the CPU. It loads the CPU heavily for
-many hours and reads the horizon tiles from disk throughout: watch scripts/monitor_temperatures.py
-in a second terminal for the first 10 to 20 minutes. Memory is the units in flight, not a block of
-horizons: the script logs its estimate at the start and warns when it exceeds what is free. Set
+This runs as a pipeline with bounded queues (PLAN_WORKERS and its neighbours below). It loads the CPU
+heavily for many hours and reads the store's files from disk throughout: watch
+scripts/monitor_temperatures.py in a second terminal for the first 10 to 20 minutes. Memory is the units
+in flight: the script logs its estimate at the start and warns when it exceeds what is free. Set
 CELLS for a trial before running every cell (scripts/list_safe_haven_cells.py prints a CELLS
 line). Ctrl-C once stops feeding cells after the block being fed and lets everything in flight
 finish (finished blocks are checkpointed); Ctrl-C again stops at once. Importing this file starts
@@ -53,6 +54,7 @@ from lunarscout._numba_horizon.file_format import HorizonTileStore  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_blocks import run_pass_two  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_stage3 import PipelineSettings  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_cells import read_cell_list  # noqa: E402
+from lunarscout._numba_horizon.safe_haven_stage0 import LightStoreDirectory  # noqa: E402
 from lunarscout._numba_horizon.file_format import PATCH_SIZE  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_windows import (  # noqa: E402
     Stage1Rasters,
@@ -65,7 +67,8 @@ from lunarscout.products import _load_dem  # noqa: E402
 
 # Edit these paths before running. They match run_safe_haven_stage1.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
-HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
+HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")   # used only without a light store
+LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")      # stage 0; None lights from the horizons
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
 STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_safe_haven_stage1.py
 # The stage-2 list of cells with havens (scripts/run_safe_haven_stage2.py). It is refused if the
@@ -82,8 +85,8 @@ OVERWRITE = False
 
 # Must equal the stage-1 run.
 START_UTC = "2024-01-01T00:00:00Z"
-STOP_UTC = "2031-12-31T18:00:00Z"
-STEP_HOURS = 6.0
+STOP_UTC = "2031-12-31T22:00:00Z"
+STEP_HOURS = 2.0
 EARTH_ELEVATION_THRESHOLD_DEG = 2.0
 SUNLIGHT_FRACTION_THRESHOLD = 0.2
 MERGE_GAP_HOURS = 24.0
@@ -180,7 +183,7 @@ def _warn_if_memory_is_short(dem_bytes: int) -> None:
     """Log the expected memory and warn when it exceeds what is available. The estimate is the DEM, the
     decode cache, the lit-unit budget and about 2 GB for each planning process (measured: 16 GB for the
     settings above), so treat it as a guide."""
-    cache = DECODE_CACHE_PATCHES * PATCH_BYTES
+    cache = 0 if LIGHT_STORE_PATH is not None else DECODE_CACHE_PATCHES * PATCH_BYTES
     expected = dem_bytes + cache + STORE_BUDGET_GB * 2**30 + PLAN_WORKERS * 2 * 2**30
     available = _available_memory_bytes()
     LOG.info("Stage 3: about %.0f GB expected (DEM, %d cached patches, %.0f GB of units, %d planning "
@@ -228,13 +231,16 @@ def _run() -> int:
             done, total, elapsed / 60, remaining / 60,
         )
 
+    lighting = (
+        dict(horizon_store=HorizonTileStore(HORIZONS_PATH), sun_vectors_at=spice_vector_source("sun"))
+        if LIGHT_STORE_PATH is None else dict(light_store=LightStoreDirectory(LIGHT_STORE_PATH, dem))
+    )
     report = run_pass_two(
         dem=dem,
-        horizon_store=HorizonTileStore(HORIZONS_PATH),
         stage1=stage1,
         times=times.values,
-        sun_vectors_at=spice_vector_source("sun"),
         earth_vectors_at=spice_vector_source("earth"),
+        **lighting,
         output_path=OUTPUT_PATH,
         report_path=_report_path(),
         parameters=PARAMETERS,

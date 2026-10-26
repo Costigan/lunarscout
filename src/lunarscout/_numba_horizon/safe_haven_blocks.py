@@ -41,6 +41,8 @@ from .file_format import PATCH_SIZE, HorizonTileStore, read_patch_horizons
 from .safe_haven_flood_packed import pack_bits
 from .safe_haven_cells import scan_cells
 from .safe_haven_litstore import LitStore, fill_lit_store, flood_seed_from_store
+from .safe_haven_stage3_store import check_run, fill_lit_store_from_light_store
+from .safe_haven_stage1_store import store_identity
 from .safe_haven_windows import (
     FloodGrid,
     PlanCounts,
@@ -346,8 +348,10 @@ def _checkpoint_cells(path: Path) -> list[Cell] | None:
 
 
 def _fingerprint(*, parameters, block_patches, flood_steps, time: TimeContext, cells, stage1,
-                 earth_elevation_threshold_deg, sunlight_fraction_threshold, merge_gap_hours) -> dict:
+                 earth_elevation_threshold_deg, sunlight_fraction_threshold, merge_gap_hours,
+                 light_store=None) -> dict:
     return {
+        "lighting_source": "horizons" if light_store is None else store_identity(light_store),
         "parameters": asdict(parameters), "block_patches": block_patches, "flood_steps": flood_steps,
         "times": [int(time.times_us[0]), int(time.times_us[-1]), int(len(time.times_us))],
         "cells": [list(c) for c in cells],
@@ -387,10 +391,11 @@ def _read_checkpoint(path: Path, fingerprint: dict) -> dict[tuple[int, int], dic
 def run_pass_two(
     *,
     dem,
-    horizon_store: HorizonTileStore,
+    horizon_store: HorizonTileStore | None = None,
+    light_store=None,
     stage1: Stage1Rasters,
     times: npt.ArrayLike,
-    sun_vectors_at: VectorSource,
+    sun_vectors_at: VectorSource | None = None,
     earth_vectors_at: VectorSource,
     output_path: str | Path,
     parameters: WindowParameters = WindowParameters(),
@@ -410,6 +415,13 @@ def run_pass_two(
     report_path: str | Path | None = None,
 ) -> PassTwoReport | None:
     """Run the pass-2 schedule and write the table to ``output_path`` (CSV).
+
+    The lighting comes from ``horizon_store`` (the CPU lightmap of each patch's horizons, with
+    ``sun_vectors_at``; the reference route) or from ``light_store`` (a stage-0
+    ``LightStoreDirectory``: stored bits for pass 1 and for the lit units, no horizons and no Sun
+    vectors). Give exactly one. A store needs the flood step to be its step, its thresholds to be the
+    ones given here, and ``times`` on its grid; ``safe_haven_stage3_store`` says what steps outside
+    its range mean.
 
     ``cells`` limits the run to those ``(cell_row, cell_column)`` indices; the default is
     every cell with a haven pixel.  A checkpoint (``<output>.checkpoint.jsonl`` by
@@ -437,6 +449,10 @@ def run_pass_two(
     counts of the whole run, including blocks resumed from a checkpoint.
     """
     started = wall_clock.monotonic()
+    if (horizon_store is None) == (light_store is None):
+        raise ValueError("give exactly one of horizon_store and light_store")
+    if horizon_store is not None and sun_vectors_at is None:
+        raise ValueError("lighting from horizons needs sun_vectors_at")
     output = Path(output_path)
     report_file = None if report_path is None else Path(report_path)
     if report_file is not None:
@@ -452,9 +468,15 @@ def run_pass_two(
     if (stage1.height, stage1.width) != (dem.height, dem.width):
         raise ValueError("the stage-1 products and the DEM differ in size")
 
-    sun_vectors_at = CachedVectors(sun_vectors_at)
+    sun_vectors_at = None if light_store is not None else CachedVectors(sun_vectors_at)
     earth_vectors_at = CachedVectors(earth_vectors_at)
     time = TimeContext.build(times, sun_vectors_at, earth_vectors_at)
+    if light_store is not None:
+        check_run(
+            light_store, flood_step_minutes=parameters.flood_step_minutes, times=time.times_us.astype("datetime64[us]"),
+            stage1_step_hours=time.step_hours, sunlight_threshold=sunlight_fraction_threshold,
+            operating_sunlight_fraction=parameters.operating_sunlight_fraction,
+            earth_threshold_deg=earth_elevation_threshold_deg)
     grid = FloodGrid(parameters.flood_step_minutes)
     flood_steps = grid.step_count(parameters.operational_hours)
     halo = halo_pixels(flood_steps * parameters.moves_per_step)
@@ -481,6 +503,7 @@ def run_pass_two(
         parameters=parameters, block_patches=parameters.block_patches, flood_steps=flood_steps, time=time,
         cells=cells, stage1=stage1, earth_elevation_threshold_deg=earth_elevation_threshold_deg,
         sunlight_fraction_threshold=sunlight_fraction_threshold, merge_gap_hours=merge_gap_hours,
+        light_store=light_store,
     )
     done = _read_checkpoint(checkpoint, fingerprint)
     if not checkpoint.exists() or checkpoint.stat().st_size == 0:
@@ -501,7 +524,7 @@ def run_pass_two(
         _add_counts(flood_counts, entry["flood_counts"])
     pending = [block for block in order if block not in done]
     run_arguments = dict(
-        dem=dem, horizon_store=horizon_store, stage1=stage1, time=time, grid=grid, parameters=parameters,
+        dem=dem, horizon_store=horizon_store, light_store=light_store, stage1=stage1, time=time, grid=grid, parameters=parameters,
         flood_steps=flood_steps, halo=halo, cell_size=cell_size, months=months, transform=transform,
         compiled=compiled, observer_height_m=observer_height_m,
         earth_elevation_threshold_deg=earth_elevation_threshold_deg,
@@ -530,6 +553,8 @@ def run_pass_two(
 
     horizon_loads = peak_resident = 0
     details: dict = {}
+    if light_store is not None:
+        details["lighting"] = "light store"
     if pipeline is not None:
         if workers != 1:
             raise ValueError("workers must be 1 when a pipeline is given")
@@ -542,7 +567,7 @@ def run_pass_two(
         if stopped_early:
             return None
     elif workers == 1:
-        residency = HorizonResidency(load_patch)
+        residency = HorizonResidency(load_patch) if light_store is None else None
         with _graceful_interrupt() as interrupts:
             for block in pending:
                 if interrupts or (stop_after_blocks is not None and ran >= stop_after_blocks):
@@ -550,7 +575,8 @@ def run_pass_two(
                 block_plan, block_flood, rows = _run_block(
                     by_block[block], residency=residency, **run_arguments)
                 finish(block, asdict(block_plan), asdict(block_flood), rows)
-        horizon_loads, peak_resident = residency.loads, residency.peak_resident
+        if residency is not None:
+            horizon_loads, peak_resident = residency.loads, residency.peak_resident
     else:
         stopped_early, horizon_loads, peak_resident = _run_blocks_in_workers(
             pending, by_block, run_arguments, finish, workers=workers,
@@ -665,7 +691,7 @@ def _worker_init(numba_threads: int | None, spice_kernels: list[str]) -> None:
 
         numba.set_num_threads(numba_threads)
     state = _WORKER
-    state["residency"] = HorizonResidency(
+    state["residency"] = None if state.get("arguments", {}).get("light_store") is not None else HorizonResidency(
         lambda patch: read_patch_horizons(
             state["arguments"]["horizon_store"], patch[0] * PATCH_SIZE, patch[1] * PATCH_SIZE,
             state["arguments"]["observer_height_m"])
@@ -675,9 +701,11 @@ def _worker_init(numba_threads: int | None, spice_kernels: list[str]) -> None:
 def _worker_task(block: tuple[int, int]):
     state = _WORKER
     residency = state["residency"]
-    loads_before = residency.loads
+    loads_before = 0 if residency is None else residency.loads
     plan_counts, flood_counts, rows = _run_block(
         state["by_block"][block], residency=residency, **state["arguments"])
+    if residency is None:
+        return block, asdict(plan_counts), asdict(flood_counts), rows, 0, 0
     return block, asdict(plan_counts), asdict(flood_counts), rows, residency.loads - loads_before, residency.peak_resident
 
 
@@ -809,7 +837,7 @@ def _flood_record(
 
 
 def _run_block(
-    block_cells_list: list[Cell], *, dem, horizon_store, stage1, time, grid, parameters, flood_steps,
+    block_cells_list: list[Cell], *, dem, horizon_store, light_store, stage1, time, grid, parameters, flood_steps,
     halo, cell_size, residency, months, transform, compiled, observer_height_m,
     earth_elevation_threshold_deg, sunlight_fraction_threshold, merge_gap_hours,
     sun_vectors_at, earth_vectors_at,
@@ -817,7 +845,8 @@ def _run_block(
     """One block: pass-1 seeds for its cells, then lit store and floods month by month."""
     report: list = []
     records = list(iter_cell_months(
-        dem=dem, horizon_store=horizon_store, stage1=stage1, times=time.times_us.astype("datetime64[us]"),
+        dem=dem, horizon_store=horizon_store, light_store=light_store, stage1=stage1,
+        times=time.times_us.astype("datetime64[us]"),
         sun_vectors_at=sun_vectors_at, earth_vectors_at=earth_vectors_at, parameters=parameters,
         observer_height_m=observer_height_m, earth_elevation_threshold_deg=earth_elevation_threshold_deg,
         sunlight_fraction_threshold=sunlight_fraction_threshold, merge_gap_hours=merge_gap_hours,
@@ -832,11 +861,12 @@ def _run_block(
             window, _core = cell_window(cell[0], cell[1], cell_size=cell_size, halo=halo,
                                         height=dem.height, width=dem.width)
             windows[cell] = (window, _window_patches(window), stage1.read_hibernation_window(*window))
-    residency.set_resident(
-        (pr, pc)
-        for _window, (pr0, pc0, prows, pcols), _hibernation in windows.values()
-        for pr in range(pr0, pr0 + prows) for pc in range(pc0, pc0 + pcols)
-    )
+    if residency is not None:
+        residency.set_resident(
+            (pr, pc)
+            for _window, (pr0, pc0, prows, pcols), _hibernation in windows.values()
+            for pr in range(pr0, pr0 + prows) for pc in range(pc0, pc0 + pcols)
+        )
     rows: list[dict] = []
     for month in sorted({record["month"] for record in records}):
         store = LitStore(grid, (dem.height, dem.width))
@@ -848,12 +878,16 @@ def _run_block(
                 for pr in range(patch_window[0], patch_window[0] + patch_window[2])
                 for pc in range(patch_window[1], patch_window[1] + patch_window[3])
             ]
-            counts = fill_lit_store(
-                store, dem=dem, horizon_store=horizon_store, patches=patches, chunks=record["chunks"],
-                sun_vectors_at=sun_vectors_at,
-                operating_sunlight_fraction=parameters.operating_sunlight_fraction,
-                observer_height_m=observer_height_m, horizons_for=residency.get,
-            )
+            if light_store is not None:
+                counts = fill_lit_store_from_light_store(
+                    store, directory=light_store, patches=patches, chunks=record["chunks"])
+            else:
+                counts = fill_lit_store(
+                    store, dem=dem, horizon_store=horizon_store, patches=patches, chunks=record["chunks"],
+                    sun_vectors_at=sun_vectors_at,
+                    operating_sunlight_fraction=parameters.operating_sunlight_fraction,
+                    observer_height_m=observer_height_m, horizons_for=residency.get,
+                )
             flood_counts.lit_units_computed += counts.computed
             flood_counts.lit_units_reused += counts.reused
             passable_packed = _passable_packed(np.isfinite(hibernation[month]), patch_window)

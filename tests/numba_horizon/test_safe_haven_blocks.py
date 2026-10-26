@@ -626,7 +626,7 @@ def test_a_worker_limits_its_numba_threads_and_ignores_interrupts() -> None:
     answers = context.Queue()
 
     def child():
-        blocks._WORKER.update(arguments={"horizon_store": None, "observer_height_m": 0.0})
+        blocks._WORKER.update(arguments={"horizon_store": None, "light_store": None, "observer_height_m": 0.0})
         blocks._worker_init(2, [])
         answers.put((numba.get_num_threads(), signal.getsignal(signal.SIGINT) == signal.SIG_IGN))
 

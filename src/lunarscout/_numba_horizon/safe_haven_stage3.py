@@ -197,7 +197,7 @@ def _plan_cell(cell: Cell):
     a = _PLAN["arguments"]
     report: list = []
     records = list(iter_cell_months(
-        dem=a["dem"], horizon_store=a["horizon_store"], stage1=a["stage1"],
+        dem=a["dem"], horizon_store=a["horizon_store"], light_store=a["light_store"], stage1=a["stage1"],
         times=a["time"].times_us.astype("datetime64[us]"),
         sun_vectors_at=a["sun_vectors_at"], earth_vectors_at=a["earth_vectors_at"],
         parameters=a["parameters"], observer_height_m=a["observer_height_m"],
@@ -491,18 +491,23 @@ def _run_blocks_in_pipeline(pending, by_block, run_arguments, finish, *, setting
     _PLAN["arguments"] = dict(run_arguments)
     pool = multiprocessing.get_context("fork").Pool(
         settings.plan_workers, initializer=_plan_init, initargs=(_loaded_spice_kernels(),))
-    light_vectors = _Locked(arguments["sun_vectors_at"])                    # the LIGHT threads' source
-    gpu = select_lighting(settings, grid.steps_per_chunk)                   # after the fork: CUDA is not fork safe
+    light_store = arguments["light_store"]
+    light_vectors = None if light_store is not None else _Locked(arguments["sun_vectors_at"])   # the LIGHT threads' source
+    # CUDA is not fork safe, so a device session is made after the fork. A light store needs no lighting.
+    gpu = None if light_store is not None else select_lighting(settings, grid.steps_per_chunk)
     if details is not None:
-        details["lighting"] = f"cuda device {settings.gpu_device_id}" if gpu is not None else "cpu"
-    logger.info("Pipeline lighting: %s", "CUDA device %d, %d feeder threads, %d chunks per launch" % (
-        settings.gpu_device_id, settings.gpu_light_workers, settings.gpu_chunks_per_batch)
-        if gpu is not None else "CPU, %d threads" % settings.light_workers)
+        details["lighting"] = ("light store" if light_store is not None
+                               else f"cuda device {settings.gpu_device_id}" if gpu is not None else "cpu")
+    logger.info("Pipeline lighting: %s", "the light store, %d reader threads" % settings.light_workers
+                if light_store is not None else
+                "CUDA device %d, %d feeder threads, %d chunks per launch" % (
+                    settings.gpu_device_id, settings.gpu_light_workers, settings.gpu_chunks_per_batch)
+                if gpu is not None else "CPU, %d threads" % settings.light_workers)
 
     store = LitStore(grid, (dem.height, dem.width))
     coordinator = _Coordinator(store=store, settings=settings, by_block=plan_by_block, finish=finish)
     cache = HorizonCache(
-        lambda patch: read_patch_horizons(
+        lambda patch: None if light_store is not None else read_patch_horizons(
             arguments["horizon_store"], patch[0] * PATCH_SIZE, patch[1] * PATCH_SIZE,
             arguments["observer_height_m"]),
         settings.decode_cache_patches,
@@ -532,6 +537,24 @@ def _run_blocks_in_pipeline(pending, by_block, run_arguments, finish, *, setting
                 bits = light_patch_chunks_fused(
                     session, dem, horizons, patch[0], patch[1], grid, chunks, light_vectors,
                     parameters.operating_sunlight_fraction, compiled=True)
+            coordinator.publish(patch, bits)
+
+    def store_worker() -> None:
+        """Read a patch's units from the light store: a slice of a decoded chunk each, no lighting."""
+        from .safe_haven_stage3_store import unit_bits
+
+        spc = grid.steps_per_chunk
+        while True:
+            task = coordinator.take_lighting_task()
+            if task is None:
+                return
+            patch, chunks = task
+            opened = light_store.open_patch(*patch)
+            if opened is None:                          # a patch without a file is never lit
+                bits = {chunk: np.zeros(store.chunk_shape, dtype=np.uint64) for chunk in chunks}
+            else:
+                with opened:
+                    bits = {chunk: unit_bits(opened, chunk, spc) for chunk in chunks}
             coordinator.publish(patch, bits)
 
     def gpu_light_worker() -> None:
@@ -604,8 +627,10 @@ def _run_blocks_in_pipeline(pending, by_block, run_arguments, finish, *, setting
                 snapshot["unit_gb_requested"], snapshot["units_lit"], len(cache._items), snapshot["blocks_left"])
 
     threads = (
-        [threading.Thread(target=guarded(light_worker if gpu is None else gpu_light_worker),
-                          name=f"light-{i}", daemon=True)
+        [threading.Thread(
+            target=guarded(store_worker if light_store is not None
+                           else light_worker if gpu is None else gpu_light_worker),
+            name=f"light-{i}", daemon=True)
          for i in range(settings.light_workers if gpu is None else settings.gpu_light_workers)]
         + [threading.Thread(target=guarded(flood_worker), name=f"flood-{i}", daemon=True)
            for i in range(settings.flood_workers)]

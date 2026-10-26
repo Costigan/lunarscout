@@ -546,7 +546,7 @@ class StepSignals:
     def __init__(self, fraction_of_step):
         self.fraction_of_step = fraction_of_step
 
-    def series(self, row, column, vectors, *, margin):
+    def series(self, row, column, vectors, *, margin, times_us=None):
         steps = np.asarray(vectors)[:, 0].astype(np.int64)
         return np.array([self.fraction_of_step(step) for step in steps], dtype=np.float32)
 
@@ -652,7 +652,7 @@ class TimelineSignals:
     def __init__(self, fraction, margin):
         self.fraction, self.margin = np.asarray(fraction, np.float32), np.asarray(margin, np.float32)
 
-    def series(self, row, column, vectors, *, margin, flat_elevation=False):
+    def series(self, row, column, vectors, *, margin, flat_elevation=False, times_us=None):
         indices = np.asarray(vectors)[:, 0].astype(int)
         return (self.margin if margin else self.fraction)[indices]
 

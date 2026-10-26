@@ -43,7 +43,6 @@ from ..errors import InputError, ProductStorageError
 from . import safe_haven_lightstore as lightstore
 from .file_format import PATCH_SIZE, read_patch_horizons
 from .lightmap_cpu import LightmapCpuSession
-from .safe_haven_blocks import _graceful_interrupt
 from .safe_haven_lightstore import LightStore, LightStoreSettings
 from .safe_haven_windows import FloodGrid
 
@@ -107,6 +106,13 @@ def patch_file(directory: str | Path, patch_row: int, patch_column: int) -> Path
 def patch_grid_shape(dem) -> tuple[int, int]:
     height, width = dem.elevation_m.shape
     return -(-height // PATCH_SIZE), -(-width // PATCH_SIZE)
+
+
+def _graceful_interrupt():
+    """The block driver's interrupt handler, imported when used: that module imports this one."""
+    from .safe_haven_blocks import _graceful_interrupt as handler
+
+    return handler()
 
 
 def dem_identity(dem) -> dict:

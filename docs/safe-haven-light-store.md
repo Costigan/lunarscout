@@ -75,10 +75,19 @@ Measured on three to five real patches of the full 8 years (35,064 steps): about
 GPU (device reduction, including decoding the file), against 6 to 10 s on the CPU while the machine was
 busy; the haven-pixel counts agree between the two. The whole store is 211 GB (3.7 MB per patch on average).
 
-## 6. Planned: stage 3 on the store, 2-hour step, 4 pixels per step
+## 6. Stage 3 on the store, 2-hour step, 4 pixels per step
 
-The flood would step every 2 hours with the lighting of a step taken as constant over it, and the rover
-moves up to 4 pixels per step (80 m per 7,200 s, 0.0111 m/s, about 11% above the nominal 1 cm/s), each
-move into a pixel that is passable and lit in that step. The 48-hour reach is then 24 steps x 4 = 96 pixels
-and the per-side footprint ceiling 193 x 193 = 37,249 pixels. Stage 3 would read lit bits from the store
-rather than lighting patches, so the window is no longer limited by how many horizons fit in memory.
+The flood steps every 2 hours with the lighting of a step taken as constant over it, and the rover makes up
+to 4 one-pixel moves per step (80 m per 7,200 s, 0.0111 m/s, about 11% above the nominal 1 cm/s), each move
+into a pixel that is passable and lit in that step. The 48-hour reach is 24 steps x 4 = 96 pixels and the
+per-side footprint ceiling 193 x 193 = 37,249 pixels. `flood_step_minutes` and `moves_per_step` are
+`WindowParameters` (they replace the rover speed).
+
+Stage 3 reads the store: `run_pass_two(light_store=...)` (and `scripts/run_safe_haven_stage3.py`,
+`scripts/plan_safe_haven_windows.py`) take pass 1's pixel timelines from `StoreSignals` and the lit units
+from the store's operating plane, so no horizon is read and the window is not limited by how many horizons
+fit in memory. The unit reads run at about 6,000 a second per thread on the real store (a pixel timeline of
+700 samples takes about 1.5 ms), against about 390 units a second for the CPU lightmap the pipeline used
+before. The horizon route (`horizon_store=`) stays as the reference: the tests build a store from a scene
+and require the same table from both routes, for the block loop, worker processes and the pipeline. The
+details are in `docs/safe-haven-windows-spec.md`, "Light store route".

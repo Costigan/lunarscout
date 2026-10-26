@@ -6,9 +6,11 @@
 Stage 3, pass 1 of the safe-haven window analysis (docs/safe-haven-windows-spec.md), the
 seed-planning half of scripts/run_safe_haven_stage3.py run on its own for a trial:
 for every 5.12 km cell and month with a haven, pick up to five seeds, recompute each
-seed's hibernation from the horizons, find its flood boundaries, and write the plan
-as JSON lines. It prints the counts that size the later lighting work. No flood runs
-and no patch lighting is calculated.
+seed's hibernation, find its flood boundaries, and write the plan as JSON lines. It
+prints the counts that size the later lighting work. No flood runs and no patch lighting
+is calculated. With LIGHT_STORE_PATH set (the default) a pixel's lighting comes from the
+stage-0 light store (scripts/run_safe_haven_stage0.py) and no horizon is read; set it to
+None to follow each pixel through its horizons (HORIZONS_PATH) instead.
 
 The stage-1 products must come from scripts/run_safe_haven_stage1.py with the
 same times, thresholds, observer height and vectors. Pass 1 recomputes each seed's
@@ -34,6 +36,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import lunarscout as ls  # noqa: E402
 from lunarscout._numba_horizon.file_format import HorizonTileStore  # noqa: E402
+from lunarscout._numba_horizon.safe_haven_stage0 import LightStoreDirectory  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_windows import (  # noqa: E402
     Stage1Rasters,
     WindowParameters,
@@ -46,15 +49,16 @@ from lunarscout.products import _load_dem  # noqa: E402
 
 # Edit these paths before running. They match run_safe_haven_stage1.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
-HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
+HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")   # used only without a light store
+LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")      # stage 0; None uses the horizons
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
 STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_safe_haven_stage1.py
 PLAN_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_2h_window_plan.jsonl")
 
 # Must equal the stage-1 run.
 START_UTC = "2024-01-01T00:00:00Z"
-STOP_UTC = "2031-12-31T18:00:00Z"
-STEP_HOURS = 6.0
+STOP_UTC = "2031-12-31T22:00:00Z"
+STEP_HOURS = 2.0
 EARTH_ELEVATION_THRESHOLD_DEG = 2.0
 SUNLIGHT_FRACTION_THRESHOLD = 0.2
 MERGE_GAP_HOURS = 24.0
@@ -105,6 +109,10 @@ def _run() -> int:
         nodata=STAGE1_NODATA,
     )
     times = ls.times(START_UTC, STOP_UTC, step_hours=STEP_HOURS)
+    lighting = (
+        dict(horizon_store=HorizonTileStore(HORIZONS_PATH), sun_vectors_at=spice_vector_source("sun"))
+        if LIGHT_STORE_PATH is None else dict(light_store=LightStoreDirectory(LIGHT_STORE_PATH, dem))
+    )
     started = clock.monotonic()
 
     def progress(done: int, total: int) -> None:
@@ -120,11 +128,10 @@ def _run() -> int:
     report = run_pass_one(
         plan_path=PLAN_PATH,
         dem=dem,
-        horizon_store=HorizonTileStore(HORIZONS_PATH),
         stage1=stage1,
         times=times.values,
-        sun_vectors_at=spice_vector_source("sun"),
         earth_vectors_at=spice_vector_source("earth"),
+        **lighting,
         parameters=PARAMETERS,
         observer_height_m=OBSERVER_HEIGHT_M,
         earth_elevation_threshold_deg=EARTH_ELEVATION_THRESHOLD_DEG,
