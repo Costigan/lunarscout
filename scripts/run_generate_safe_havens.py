@@ -6,10 +6,17 @@
 Writes the three safe-haven screening products (hibernation, joint operating
 total, joint operating longest run) into OUTPUT_DIRECTORY from one pass.
 
-The default vector settings use SPICE Sun/Earth positions and the configured
-default kernels. Horizons must already exist for the DEM and observer height.
-Explicit backend="cuda" requires a compatible NVIDIA device and driver;
-backend="auto" may use CPU instead. Importing this script starts no calculation.
+With LIGHT_STORE_PATH set (the default) the products are reduced from the stage-0
+light store made by scripts/run_safe_haven_stage0.py: no horizon is read and no
+Sun position is needed, so the run is much faster. The samples must then be the
+store's 2-hour grid and the thresholds below the store's. Set LIGHT_STORE_PATH to
+None to light from the horizons instead (HORIZONS_PATH must then exist for the DEM
+and observer height).
+
+Earth positions come from SPICE and the configured default kernels (the Sun's too
+when lighting from the horizons). Explicit backend="cuda" requires a compatible
+NVIDIA device and driver; backend="auto" may use CPU instead. Importing this script
+starts no calculation.
 """
 
 from __future__ import annotations
@@ -27,24 +34,28 @@ import numpy as np  # noqa: E402
 
 # Edit these paths before running. These match the neighboring mosaic scripts.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
-HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
+HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")   # used only without a light store
+LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")      # stage 0; None lights from the horizons
 OUTPUT_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
 # Output files are <NAME_PREFIX>_hibernation_hours.tif and so on. This prefix differs from the
-# earlier run (without the degenerate-outage rule, prefix "safe_haven") so the two never
-# overwrite each other. Set the same value as STAGE1_PREFIX in the stage-2 scripts.
-NAME_PREFIX = "safe_haven_degenerate"
+# earlier runs (prefixes "safe_haven" and "safe_haven_degenerate": 6-hour samples) so the
+# products never overwrite each other. Set the same value as STAGE1_PREFIX in the stage-2 scripts.
+NAME_PREFIX = "safe_haven_2h"
 
 # UTC timestamps; STOP_UTC is inclusive when it falls on the sampling grid.
 # A stop at midnight on the first day of another month also creates a band
 # for that partially sampled month.
+# With a light store these must be on the store's grid and inside its range (2-hour steps from
+# 2024-01-01 to 2032-01-01 exclusive, so the last sample is 22:00 on 2031-12-31).
 START_UTC = "2024-01-01T00:00:00Z"
-STOP_UTC = "2031-12-31T18:00:00Z"
-STEP_HOURS = 6.0
+STOP_UTC = "2031-12-31T22:00:00Z"
+STEP_HOURS = 2.0
 
 # Outage / low-Sun conditions use strict less-than comparisons.
 EARTH_ELEVATION_THRESHOLD_DEG = 2.0
 SUNLIGHT_FRACTION_THRESHOLD = 0.2
 OPERATING_SUNLIGHT_FRACTION = 1.0  # Sun fraction at or above which the rover operates.
+# The two windows below are in hours and become whole samples at STEP_HOURS (12 at 2 hours).
 MERGE_GAP_HOURS = 24.0  # Shadow runs closer than this are one run (0 disables).
 # An Earth cycle in which Earth never drops below the threshold has no outage; it gets a
 # one-sample outage at Earth's lowest elevation if Earth stays above the threshold for this
@@ -91,8 +102,9 @@ def main() -> int:
     print(f"Generating safe havens from {times.time_count} UTC samples...", flush=True)
     result = ls.generate_safe_haven_products(
         DEM_PATH,
-        HORIZONS_PATH,
+        None if LIGHT_STORE_PATH is not None else HORIZONS_PATH,
         OUTPUT_DIRECTORY,
+        light_store_path=LIGHT_STORE_PATH,
         name_prefix=NAME_PREFIX,
         times=times,
         sun_vectors_m=SUN_VECTORS_M,

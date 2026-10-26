@@ -35,7 +35,7 @@ def test_the_stage_two_scripts_read_the_prefix_stage_one_writes() -> None:
 
 def test_importing_the_script_starts_nothing() -> None:
     module = load_script()
-    assert module.PLAN_PATH.name == "safe_haven_degenerate_window_plan.jsonl"
+    assert module.PLAN_PATH.name == "safe_haven_2h_window_plan.jsonl"
     assert module.PARAMETERS.survival_limit_hours == 72.0
     assert module.PARAMETERS.max_seeds_per_cell_month == 5
 
@@ -125,7 +125,7 @@ def test_the_stage_three_script_defaults_and_importing_it_starts_nothing() -> No
     assert module.FLOOD_WORKERS == 2 and module.STORE_BUDGET_GB == 8.0 and module.CELLS_IN_FLIGHT == 24
     assert (module.LIGHTING, module.GPU_DEVICE_ID, module.GPU_LIGHT_WORKERS, module.GPU_CHUNKS_PER_BATCH) == ("auto", 0, 6, 4)
     assert module.PARAMETERS.survival_limit_hours == 72.0 and module.PARAMETERS.operational_hours == 48.0
-    assert module.CELLS is None and module.CELL_LIST_PATH.name == "safe_haven_degenerate_haven_cells.json"
+    assert module.CELLS is None and module.CELL_LIST_PATH.name == "safe_haven_2h_haven_cells.json"
 
 
 def test_the_stage_three_script_writes_the_table_and_resumes(tmp_path: Path, monkeypatch, capsys) -> None:

@@ -241,12 +241,13 @@ def _preflight_product_paths(
     output_path: str | Path,
     *,
     overwrite: bool,
+    input_name: str = "horizons",
 ) -> tuple[Path, Path]:
     horizons = Path(horizons_path).expanduser().resolve()
     output = Path(output_path).expanduser().resolve()
     if not horizons.is_dir():
         raise InputError(
-            "The horizons path does not identify a directory.",
+            f"The {input_name} path does not identify a directory.",
             code="product_horizons_not_found",
             details={"path": str(horizons)},
         )
@@ -1186,10 +1187,11 @@ class SafeHavenProducts:
 
 def generate_safe_haven_products(
     dem_path: str | Path,
-    horizons_path: str | Path,
+    horizons_path: str | Path | None,
     output_directory: str | Path,
     *,
     times: TimeRange,
+    light_store_path: str | Path | None = None,
     sun_vectors_m: npt.ArrayLike | None = None,
     earth_vectors_m: npt.ArrayLike | None = None,
     earth_elevation_threshold_deg: float = 2.0,
@@ -1385,6 +1387,15 @@ def generate_safe_haven_products(
     ``backend="cuda"`` keeps all lighting batches and run state on the device;
     memory is bounded by the patch, time-batch and month counts, not by the
     number of samples.
+
+    ``light_store_path`` replaces ``horizons_path`` (pass ``None`` for it) with a
+    stage-0 light store: a directory of per-patch thresholded lighting made by
+    ``scripts/run_safe_haven_stage0.py``.  The patches are then reduced from the
+    stored Sun and Earth bits, with no horizon read and no Sun vectors
+    (``sun_vectors_m`` is ignored); Earth vectors are still used for the
+    degenerate-outage rule.  ``times`` must lie on the store's step grid and the
+    thresholds must be the ones the store was made with.  ``backend`` chooses where
+    the stored bits are reduced (the device, or all CPU cores).  See ``docs/safe-haven-light-store.md``.
     """
 
     _validate_output_conversion(
@@ -1466,29 +1477,39 @@ def generate_safe_haven_products(
         directory / f"{name_prefix}_joint_operating_total_hours.tif",
         directory / f"{name_prefix}_joint_operating_longest_hours.tif",
     )
+    if (horizons_path is None) == (light_store_path is None):
+        raise InputError(
+            "Give exactly one of horizons_path and light_store_path.",
+            code="safe_haven_input_ambiguous",
+        )
     horizons = None
     for candidate in output_paths:
         horizons, _checked = _preflight_product_paths(
-            horizons_path, candidate, overwrite=overwrite
+            horizons_path if light_store_path is None else light_store_path,
+            candidate,
+            overwrite=overwrite,
+            input_name="horizons" if light_store_path is None else "light store",
         )
     dem, georef = _load_dem(dem_path)
     time_values = times
-    sun = _resolve_vectors(
-        "sun",
-        vectors_m=sun_vectors_m,
-        times=time_values,
-    )
+    sun = None
+    if light_store_path is None:
+        sun = _resolve_vectors(
+            "sun",
+            vectors_m=sun_vectors_m,
+            times=time_values,
+        )
     earth = _resolve_vectors(
         "earth",
         vectors_m=earth_vectors_m,
         times=time_values,
     )
-    if sun.times_utc != earth.times_utc:
+    if sun is not None and sun.times_utc != earth.times_utc:
         raise ProductTimeError(
             "Sun and Earth vectors must use the same UTC timestamps.",
             code="safe_haven_times_mismatch",
         )
-    if len(sun.times_utc) < 2:
+    if len(earth.times_utc) < 2:
         raise ProductTimeError(
             "Safe-haven generation requires at least two time samples.",
             code="safe_haven_times_insufficient",
@@ -1496,7 +1517,7 @@ def generate_safe_haven_products(
     steps = np.asarray(
         [
             (right - left).total_seconds() / 3600.0
-            for left, right in zip(sun.times_utc, sun.times_utc[1:])
+            for left, right in zip(earth.times_utc, earth.times_utc[1:])
         ],
         dtype=np.float64,
     )
@@ -1516,6 +1537,22 @@ def generate_safe_haven_products(
         run_safe_haven_products,
     )
 
+    light_store = None
+    if light_store_path is not None:
+        from ._numba_horizon.safe_haven_stage0 import LightStoreDirectory
+
+        from ._numba_horizon import safe_haven_stage1_store as from_store
+
+        light_store = LightStoreDirectory(horizons, dem)
+        # Refuse a store that cannot answer this request here, as input errors, rather than from
+        # inside the run.
+        from_store.check_thresholds(
+            light_store,
+            sunlight_threshold=sunlight_fraction_threshold,
+            operating_sunlight_fraction=float(operating_sunlight_fraction),
+            earth_threshold_deg=earth_elevation_threshold_deg,
+        )
+        from_store.first_store_step(light_store, earth.times_utc, float(steps[0]))
     try:
         window_samples = degenerate_window_samples(
             degenerate_outage_window_hours, float(steps[0])
@@ -1540,10 +1577,11 @@ def generate_safe_haven_products(
         return SafeHavenProducts(*run_safe_haven_products(
             dem=dem,
             georef=georef,
-            horizon_store=HorizonTileStore(horizons),
+            horizon_store=None if light_store is not None else HorizonTileStore(horizons),
+            light_store=light_store,
             output_paths=output_paths,
-            times_utc=sun.times_utc,
-            sun_vectors_m=sun.vectors_m,
+            times_utc=earth.times_utc,
+            sun_vectors_m=None if sun is None else sun.vectors_m,
             earth_vectors_m=earth.vectors_m,
             time_step_hours=float(steps[0]),
             earth_threshold_deg=earth_elevation_threshold_deg,

@@ -26,6 +26,7 @@ from .safe_haven import (
 
 _REDUCER = None
 _FINALIZER = None
+_EXPANDER = None
 _REDUCER_LOCK = threading.Lock()
 
 
@@ -119,6 +120,41 @@ def _build_finalizer(cuda):
     return _cuda_jit_cached(cuda, finalizer)
 
 
+def _build_expander(cuda):
+    """Turn stored bit-planes into the signals the reducer reads, on the device.
+
+    One thread per pixel loops over at most ``count`` steps (the caller keeps ``count`` within the
+    buffers). Bit ``column & 63`` of word ``column >> 6`` holds the pixel's flag, as in
+    ``safe_haven_lightstore``. Plane 0 is Sun fraction at least the shadow threshold, plane 1 at least
+    the operating threshold, plane 2 Earth above the outage elevation. The reducer only compares the
+    fraction with those two thresholds and the margin with the outage elevation, so a fraction of 0,
+    ``partial`` or 1 and a margin of -clear or +clear carry exactly what the planes know.
+    """
+    from numba import float32, uint64
+
+    def expander(planes, flat, start, count, partial, clear, fractions, margins, elevations):
+        pixel = cuda.grid(1)
+        if pixel >= PATCH_SIZE * PATCH_SIZE:
+            return
+        line = pixel // PATCH_SIZE
+        column = pixel % PATCH_SIZE
+        word = column >> 6
+        shift = uint64(column & 63)
+        one = uint64(1)
+        for offset in range(count):
+            if (planes[1, offset, line, word] >> shift) & one:
+                fraction = float32(1.0)
+            elif (planes[0, offset, line, word] >> shift) & one:
+                fraction = partial
+            else:
+                fraction = float32(0.0)
+            fractions[offset, pixel] = fraction
+            margins[offset, pixel] = clear if (planes[2, offset, line, word] >> shift) & one else -clear
+            elevations[offset, pixel] = flat[start + offset]
+
+    return _cuda_jit_cached(cuda, expander)
+
+
 class SafeHavenCudaCancelled(RuntimeError):
     """Cancellation observed at a CUDA batch boundary."""
 
@@ -128,15 +164,19 @@ class SafeHavenCudaSession(LightmapCudaSession):
 
     def __init__(self, *, device_id: int = 0, time_batch_size: int = 32) -> None:
         super().__init__(device_id=device_id, time_batch_size=time_batch_size)
-        global _REDUCER, _FINALIZER
+        global _REDUCER, _FINALIZER, _EXPANDER
         with cuda_session_setup("Safe-haven CUDA session"):
             with _REDUCER_LOCK:
                 if _REDUCER is None:
                     _REDUCER = _build_reducer(self._cuda)
                 if _FINALIZER is None:
                     _FINALIZER = _build_finalizer(self._cuda)
+                if _EXPANDER is None:
+                    _EXPANDER = _build_expander(self._cuda)
             self._reducer = _REDUCER
             self._finalizer = _FINALIZER
+            self._expander = _EXPANDER
+            self._planes = None
             n = PATCH_SIZE * PATCH_SIZE
             self._month_map = None
             self._month_map_key = None
@@ -155,6 +195,164 @@ class SafeHavenCudaSession(LightmapCudaSession):
             self._host_state = new_state(n)
             self._outputs = None
             self._output_months = 0
+
+    def _begin_reduction(self, month_count, month_index_of, invalid_pixels, valid_height, valid_width) -> None:
+        """Reset the device state and upload the pixel mask and month map; the caller holds the lock."""
+        n = PATCH_SIZE * PATCH_SIZE
+        pixel_valid = np.ones((PATCH_SIZE, PATCH_SIZE), dtype=np.uint8)
+        if invalid_pixels is not None:
+            invalid = np.asarray(invalid_pixels, dtype=np.bool_)
+            if invalid.shape != (valid_height, valid_width):
+                raise ValueError("invalid_pixels must have the patch's valid shape")
+            pixel_valid[:valid_height, :valid_width][invalid] = 0
+        if self._state_months != month_count:
+            shape = (month_count, n)
+            self._best = self._cuda.device_array(shape, dtype=np.int32)
+            self._have = self._cuda.device_array(shape, dtype=np.uint8)
+            self._joint_total = self._cuda.device_array(shape, dtype=np.int32)
+            self._joint_best = self._cuda.device_array(shape, dtype=np.int32)
+            self._state_months = month_count
+            self._host_best_init = np.full(shape, UNSET, dtype=np.int32)
+            self._host_zero_bytes = np.zeros(shape, dtype=np.uint8)
+            self._host_zero_ints = np.zeros(shape, dtype=np.int32)
+        self._best.copy_to_device(self._host_best_init)
+        self._have.copy_to_device(self._host_zero_bytes)
+        self._joint_total.copy_to_device(self._host_zero_ints)
+        self._joint_best.copy_to_device(self._host_zero_ints)
+        self._state.copy_to_device(self._host_state)
+        if self._outputs is None or self._output_months != month_count:
+            self._outputs = tuple(
+                self._cuda.device_array((month_count, n), dtype=np.float32)
+                for _ in range(3)
+            )
+            self._output_months = month_count
+        self._error_flag.copy_to_device(np.zeros(1, dtype=np.int32))
+        self._pixel_valid.copy_to_device(np.ascontiguousarray(pixel_valid.reshape(-1)))
+        month_map = np.ascontiguousarray(month_index_of, dtype=np.int32)
+        month_key = month_map.tobytes()
+        if self._month_map_key != month_key:
+            self._month_map = self._cuda.to_device(month_map)
+            self._month_map_key = month_key
+
+    def _finish_reduction(self, month_count, time_step_hours, valid_height, valid_width):
+        """Check the error flag, turn the counters into hours and return the per-band tiles."""
+        n = PATCH_SIZE * PATCH_SIZE
+        threads = 128
+        blocks = (n + threads - 1) // threads
+        if int(self._error_flag.copy_to_host()[0]) == 1:
+            raise ValueError("non-finite CUDA lighting signal")
+        self._finalizer[blocks, threads](
+            self._best, self._have, self._joint_total, self._joint_best,
+            *self._outputs, month_count, np.float32(time_step_hours),
+            self._error_flag,
+        )
+        self._cuda.synchronize()
+        if int(self._error_flag.copy_to_host()[0]) == 2:
+            raise ValueError("internal error: a hibernation was never scored")
+        hosts = [output.copy_to_host() for output in self._outputs]
+        results = []
+        for host in hosts:
+            results.append(tuple(
+                np.ascontiguousarray(
+                    host[band].reshape(PATCH_SIZE, PATCH_SIZE)[:valid_height, :valid_width]
+                )
+                for band in range(month_count)
+            ))
+        return tuple(results)
+
+    def reduce_patch_planes(
+        self, planes_at: Callable[[int, int], npt.NDArray[np.uint64]],
+        flat_elevation: npt.ArrayLike | None, *,
+        valid_height: int, valid_width: int,
+        month_bands: tuple[tuple[datetime, datetime], ...],
+        month_index_of: npt.NDArray[np.int32], time_count: int,
+        sunlight_threshold: float, earth_threshold_deg: float,
+        operating_sunlight_fraction: float, merge_gap_hours: float,
+        time_step_hours: float, cancellation_requested: Callable[[], bool] | None = None,
+        invalid_pixels: npt.ArrayLike | None = None,
+        degenerate_window_samples: int = 0, partial_fraction: float = 0.5,
+        clear_margin_deg: float = 90.0,
+    ) -> tuple[tuple[npt.NDArray[np.float32], ...], ...]:
+        """As :meth:`reduce_patch`, from stored planes instead of lighting.
+
+        ``planes_at(first, stop)`` returns the stored planes of samples ``first <= i < stop`` as
+        ``(3, stop - first, 128, 2)`` uint64 (``safe_haven_lightstore``). ``flat_elevation`` is one
+        flat-horizon Earth elevation per sample for the degenerate-outage rule (``None`` when the
+        rule is off). The thresholds must be the ones the planes were made with; the reducer kernel
+        and the machine are the ones ``reduce_patch`` runs.
+        """
+        if (
+            int(degenerate_window_samples) != degenerate_window_samples
+            or not 0 <= degenerate_window_samples <= MAX_DEGENERATE_WINDOW
+        ):
+            raise ValueError(
+                f"degenerate_window_samples must be an integer from 0 to {MAX_DEGENERATE_WINDOW}"
+            )
+        if time_count < 1 or len(month_bands) < 1:
+            raise ValueError("time_count and month bands must be positive")
+        if not 1 <= valid_width <= PATCH_SIZE or not 1 <= valid_height <= PATCH_SIZE:
+            raise ValueError("valid patch dimensions must be between 1 and 128")
+        if month_index_of.shape != (time_count,):
+            raise ValueError("month_index_of must have shape (time_count,)")
+        if not 0.0 <= sunlight_threshold <= 1.0 or not 0.0 <= operating_sunlight_fraction <= 1.0:
+            raise ValueError("the Sun thresholds must be between zero and one")
+        if not np.isfinite(earth_threshold_deg):
+            raise ValueError("earth_threshold_deg must be finite")
+        if not np.isfinite(merge_gap_hours) or merge_gap_hours < 0.0:
+            raise ValueError("merge_gap_hours must be finite and nonnegative")
+        if not np.isfinite(time_step_hours) or time_step_hours <= 0:
+            raise ValueError("time_step_hours must be positive and finite")
+        if np.any(month_index_of < -1) or np.any(month_index_of >= len(month_bands)):
+            raise ValueError("month_index_of contains an invalid band index")
+        if not sunlight_threshold < partial_fraction < operating_sunlight_fraction - OPERATING_FUZZ:
+            raise ValueError("the partial fraction must lie between the two Sun thresholds")
+        if not abs(clear_margin_deg) > abs(earth_threshold_deg) + 1.0:
+            raise ValueError("the clear margin must lie well on both sides of the outage elevation")
+        if degenerate_window_samples > 0:
+            flat = np.ascontiguousarray(np.asarray(flat_elevation, dtype=np.float32))
+            if flat.shape != (time_count,) or not np.all(np.isfinite(flat)):
+                raise ValueError("flat_elevation must be one finite value per sample")
+        else:
+            flat = np.zeros(time_count, dtype=np.float32)
+        month_count = len(month_bands)
+        n = PATCH_SIZE * PATCH_SIZE
+        gap_limit = merge_gap_limit(merge_gap_hours, time_step_hours)
+        operating_threshold = np.float32(operating_sunlight_fraction - OPERATING_FUZZ)
+        batch = self.time_batch_size
+        threads = 128
+        blocks = (n + threads - 1) // threads
+        with self._lock:
+            self._begin_reduction(month_count, month_index_of, invalid_pixels, valid_height, valid_width)
+            if self._planes is None:
+                self._planes = self._cuda.device_array((3, batch, PATCH_SIZE, 2), dtype=np.uint64)
+                self._host_planes = np.zeros((3, batch, PATCH_SIZE, 2), dtype=np.uint64)
+            device_flat = self._cuda.to_device(flat)
+            for start in range(0, time_count, batch):
+                if cancellation_requested and cancellation_requested():
+                    raise SafeHavenCudaCancelled("safe-haven generation was cancelled")
+                count = min(batch, time_count - start)
+                planes = np.asarray(planes_at(start, start + count))
+                if planes.shape != (3, count, PATCH_SIZE, 2):
+                    raise ValueError("the stored planes have the wrong shape")
+                self._host_planes[:, :count] = planes
+                self._planes.copy_to_device(self._host_planes)
+                self._expander[blocks, threads](
+                    self._planes, device_flat, np.int32(start), np.int32(count),
+                    np.float32(partial_fraction), np.float32(clear_margin_deg),
+                    self._fraction_output, self._margin_output, self._elevation_output,
+                )
+                self._reducer[blocks, threads](
+                    self._fraction_output, self._margin_output, self._elevation_output,
+                    self._month_map, start, count, start + count == time_count,
+                    time_count, np.int32(degenerate_window_samples), valid_width,
+                    valid_height, np.float32(sunlight_threshold),
+                    np.float32(earth_threshold_deg), operating_threshold,
+                    np.int32(gap_limit), self._state, self._ring, self._best,
+                    self._have, self._joint_total, self._joint_best, self._error_flag,
+                    self._pixel_valid,
+                )
+                self._cuda.synchronize()
+            return self._finish_reduction(month_count, time_step_hours, valid_height, valid_width)
 
     def reduce_patch(
         self, dem, horizons_deg, sun_vectors_m, earth_vectors_m, *,
@@ -208,43 +406,10 @@ class SafeHavenCudaSession(LightmapCudaSession):
             raise ValueError("vectors must be finite")
         month_count = len(month_bands)
         n = PATCH_SIZE * PATCH_SIZE
-        pixel_valid = np.ones((PATCH_SIZE, PATCH_SIZE), dtype=np.uint8)
-        if invalid_pixels is not None:
-            invalid = np.asarray(invalid_pixels, dtype=np.bool_)
-            if invalid.shape != (valid_height, valid_width):
-                raise ValueError("invalid_pixels must have the patch's valid shape")
-            pixel_valid[:valid_height, :valid_width][invalid] = 0
         gap_limit = merge_gap_limit(merge_gap_hours, time_step_hours)
         operating_threshold = np.float32(operating_sunlight_fraction - OPERATING_FUZZ)
         with self._lock:
-            if self._state_months != month_count:
-                shape = (month_count, n)
-                self._best = self._cuda.device_array(shape, dtype=np.int32)
-                self._have = self._cuda.device_array(shape, dtype=np.uint8)
-                self._joint_total = self._cuda.device_array(shape, dtype=np.int32)
-                self._joint_best = self._cuda.device_array(shape, dtype=np.int32)
-                self._state_months = month_count
-                self._host_best_init = np.full(shape, UNSET, dtype=np.int32)
-                self._host_zero_bytes = np.zeros(shape, dtype=np.uint8)
-                self._host_zero_ints = np.zeros(shape, dtype=np.int32)
-            self._best.copy_to_device(self._host_best_init)
-            self._have.copy_to_device(self._host_zero_bytes)
-            self._joint_total.copy_to_device(self._host_zero_ints)
-            self._joint_best.copy_to_device(self._host_zero_ints)
-            self._state.copy_to_device(self._host_state)
-            if self._outputs is None or self._output_months != month_count:
-                self._outputs = tuple(
-                    self._cuda.device_array((month_count, n), dtype=np.float32)
-                    for _ in range(3)
-                )
-                self._output_months = month_count
-            self._error_flag.copy_to_device(np.zeros(1, dtype=np.int32))
-            self._pixel_valid.copy_to_device(np.ascontiguousarray(pixel_valid.reshape(-1)))
-            month_map = np.ascontiguousarray(month_index_of, dtype=np.int32)
-            month_key = month_map.tobytes()
-            if self._month_map_key != month_key:
-                self._month_map = self._cuda.to_device(month_map)
-                self._month_map_key = month_key
+            self._begin_reduction(month_count, month_index_of, invalid_pixels, valid_height, valid_width)
             sun_key = sun.tobytes()
             if self._sun_vectors_key != sun_key:
                 self._sun_vectors = self._cuda.to_device(sun)
@@ -288,23 +453,4 @@ class SafeHavenCudaSession(LightmapCudaSession):
                 self._cuda.synchronize()
                 if cancellation_requested and cancellation_requested():
                     raise SafeHavenCudaCancelled("safe-haven generation was cancelled")
-            if int(self._error_flag.copy_to_host()[0]) == 1:
-                raise ValueError("non-finite CUDA lighting signal")
-            self._finalizer[blocks, threads](
-                self._best, self._have, self._joint_total, self._joint_best,
-                *self._outputs, month_count, np.float32(time_step_hours),
-                self._error_flag,
-            )
-            self._cuda.synchronize()
-            if int(self._error_flag.copy_to_host()[0]) == 2:
-                raise ValueError("internal error: a hibernation was never scored")
-            hosts = [output.copy_to_host() for output in self._outputs]
-        results = []
-        for host in hosts:
-            results.append(tuple(
-                np.ascontiguousarray(
-                    host[band].reshape(PATCH_SIZE, PATCH_SIZE)[:valid_height, :valid_width]
-                )
-                for band in range(month_count)
-            ))
-        return tuple(results)
+            return self._finish_reduction(month_count, time_step_hours, valid_height, valid_width)

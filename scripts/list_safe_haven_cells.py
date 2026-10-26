@@ -33,7 +33,7 @@ from lunarscout.products import _load_dem  # noqa: E402
 # Edit these before running. They match plan_safe_haven_windows.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_degenerate"  # must equal NAME_PREFIX in run_generate_safe_havens.py
+STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_generate_safe_havens.py
 HOURS_PER_COUNT = 2.0   # None, with STAGE1_NODATA None, for float products in hours
 STAGE1_NODATA = 255
 SURVIVAL_LIMIT_HOURS = 72.0

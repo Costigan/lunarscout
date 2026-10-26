@@ -48,11 +48,32 @@ decompresses only the chunks covering the steps it asks for. Files are renamed i
 The sample is eight patches, one of them a permanently dark crater floor. Patches far from the pole where
 Earth is never visible have an empty Earth plane. `scripts/measure_light_store.py` repeats the measurement.
 
-## 5. Planned: stage 1 on the store
+## 5. Stage 1 on the store
 
-Stage 1 would read the planes at 2-hour steps and run the same state machine, so its window parameters
-scale with the step (the 4-sample degenerate-outage window and the 24 h merge gap become 12 samples). Its
-results change slightly with the finer step, so it would be rerun.
+`ls.generate_safe_haven_products(..., light_store_path=...)` (and `scripts/run_generate_safe_havens.py`)
+reduces each patch from its stored planes: no horizon is read and no Sun position is needed. The per-pixel
+state machine is the one stage 1 always ran. It compares the Sun fraction with two thresholds and Earth's
+margin with one, so the planes are turned back into a fraction of 0, 0.5 or 1 and a margin of -90 or +90
+degrees, which carry exactly what the planes know. The machine's window parameters are given in hours and
+become whole samples at the 2-hour step (the degenerate-outage window and the 24 h merge gap are 12 samples
+each). With `backend="auto"` or `"cuda"` the planes are expanded on the device by a small kernel
+(`safe_haven_cuda._build_expander`) and reduced by the production reducer kernel; `"cpu"` runs the same
+machine on all cores.
+
+What the store route requires and checks, as input errors before any work starts: the thresholds given to
+stage 1 are the store's; the time samples are the store's step, start on its grid and lie inside its range;
+the store was made for this DEM. A patch with no file (it had no horizon tile) is an invalid patch, as
+without a store.
+
+One input is not in the planes: the degenerate-outage rule looks for minima of Earth's elevation above a
+flat horizon. That series differs by a few thousandths of a degree across a patch, so it is computed once,
+at the valid pixel nearest the patch centre, and used for every pixel. A minimum within a step of a tie can
+fall a step differently for a pixel away from the centre; on the test scenes the products are identical to
+the horizon route's.
+
+Measured on three to five real patches of the full 8 years (35,064 steps): about 0.15 s per patch on the
+GPU (device reduction, including decoding the file), against 6 to 10 s on the CPU while the machine was
+busy; the haven-pixel counts agree between the two. The whole store is 211 GB (3.7 MB per patch on average).
 
 ## 6. Planned: stage 3 on the store, 2-hour step, 4 pixels per step
 

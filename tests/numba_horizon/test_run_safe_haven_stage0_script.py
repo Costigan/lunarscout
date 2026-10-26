@@ -34,6 +34,20 @@ def test_the_script_uses_the_stage_one_thresholds_and_the_stage_three_inputs() -
     assert stage0.PATCHES is None and stage0.LIGHTING == "auto"
 
 
+def test_the_stage_one_script_reads_the_store_the_stage_zero_script_writes() -> None:
+    stage0, stage1 = load("run_safe_haven_stage0"), load("run_generate_safe_havens")
+    assert stage1.LIGHT_STORE_PATH == stage0.OUTPUT_DIRECTORY and stage1.DEM_PATH == stage0.DEM_PATH
+    assert stage1.STEP_HOURS * 60 == stage0.STEP_MINUTES
+    assert stage1.OBSERVER_HEIGHT_M == stage0.OBSERVER_HEIGHT_M
+    # The samples are the store's grid: from its first step to the step before its stop.
+    first = np.datetime64(stage1.START_UTC.rstrip("Z"))
+    last = np.datetime64(stage1.STOP_UTC.rstrip("Z"))
+    assert first == np.datetime64(stage0.START_UTC)
+    assert last == np.datetime64(stage0.STOP_UTC) - np.timedelta64(stage0.STEP_MINUTES, "m")
+    # The windows are in hours, so they scale with the step: 12 samples each at two hours.
+    assert stage1.MERGE_GAP_HOURS / stage1.STEP_HOURS == 12 and stage1.DEGENERATE_OUTAGE_WINDOW_HOURS / stage1.STEP_HOURS == 12
+
+
 def test_the_script_writes_a_readable_store(tmp_path: Path, monkeypatch) -> None:
     module = load("run_safe_haven_stage0")
     dem_path, horizons_path = bs.write_inputs(tmp_path)

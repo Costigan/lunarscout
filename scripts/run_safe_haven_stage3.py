@@ -67,7 +67,7 @@ from lunarscout.products import _load_dem  # noqa: E402
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_degenerate"  # must equal NAME_PREFIX in run_generate_safe_havens.py
+STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_generate_safe_havens.py
 # The stage-2 list of cells with havens (scripts/run_safe_haven_stage2.py). It is refused if the
 # stage-1 files, the survival limit or the cell size have changed since it was made.
 CELL_LIST_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_haven_cells.json"

@@ -18,7 +18,17 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   `LitCudaSession.light_patch_planes` that reuses the production lightmap kernel and the fixed-trip-count
   packing kernel unchanged (the general lighting paths are not touched). The run is restartable, bounded in
   memory, refuses a directory made with other settings, time range or DEM, and writes a report. New optional
-  extra `lunarscout[lightstore]` (zstandard). Stages 1 and 3 do not read the store yet.
+  extra `lunarscout[lightstore]` (zstandard). Stage 3 does not read the store yet.
+
+- **Safe-haven stage 1 reads the light store (changes results when used).** `ls.generate_safe_haven_products`
+  takes `light_store_path` in place of `horizons_path`: each patch is reduced from its stored planes with the
+  same per-pixel state machine, on the device (`backend="auto"`/`"cuda"`, a new bounded expander kernel in
+  front of the unchanged reducer kernel) or the CPU, with no horizon read and no Sun vectors. The time samples
+  must be the store's grid and the thresholds the store's, or the call raises `InputError`
+  (`safe_haven_store_thresholds`, `_step_mismatch`, `_time_misaligned`, `_time_range`). The default horizon
+  route is unchanged. `scripts/run_generate_safe_havens.py` now reads the store at 2-hour steps and writes
+  products named `safe_haven_2h_*`; its windows (24 h) are 12 samples at that step, so its results differ
+  from the 6-hour runs, and the stage-2 and stage-3 scripts' `STAGE1_PREFIX` follows it.
 
 - **Safe-haven products: degenerate outage (changes results).** An Earth cycle in
   which Earth stays above `earth_elevation_threshold_deg` used to have no

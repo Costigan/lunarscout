@@ -183,7 +183,7 @@ def test_the_stage_2_script_defaults_agree_with_stage_1_and_import_starts_nothin
     stage1 = importlib.util.module_from_spec(generate)
     generate.loader.exec_module(stage1)
     assert module.STAGE1_PREFIX == stage1.NAME_PREFIX
-    assert module.CELL_LIST_PATH.name == "safe_haven_degenerate_haven_cells.json"
+    assert module.CELL_LIST_PATH.name == "safe_haven_2h_haven_cells.json"
     assert module.SURVIVAL_LIMIT_HOURS == 72.0 and module.CELL_SIZE == 256 and module.OVERWRITE is False
 
 

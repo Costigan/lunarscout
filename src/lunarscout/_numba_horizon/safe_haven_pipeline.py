@@ -19,7 +19,7 @@ import numpy.typing as npt
 
 from lunarscout.georeference import GeoReference
 
-from .file_format import HorizonTileStore, read_patch_horizons
+from .file_format import PATCH_SIZE, HorizonTileStore, read_patch_horizons
 from .geometry import DemGrid
 from .lightmap_cpu import LightmapCpuSession
 from .pipeline import PatchDescriptor, enumerate_patches
@@ -105,10 +105,10 @@ def run_safe_haven_products(
     *,
     dem: DemGrid,
     georef: GeoReference,
-    horizon_store: HorizonTileStore,
+    horizon_store: HorizonTileStore | None,
     output_paths: Sequence[str | Path],
     times_utc: Sequence[datetime | str],
-    sun_vectors_m: npt.ArrayLike,
+    sun_vectors_m: npt.ArrayLike | None,
     earth_vectors_m: npt.ArrayLike,
     time_step_hours: float,
     earth_threshold_deg: float = 2.0,
@@ -130,6 +130,7 @@ def run_safe_haven_products(
     elevation_calculator: MarginCalculator | None = None,
     flat_elevation_calculator: MarginCalculator | None = None,
     degenerate_window_samples: int = 0,
+    light_store=None,
     backend: Literal["auto", "cpu", "cuda"] = "auto",
     cancellation_requested: Callable[[], bool] | None = None,
     progress_callback: Callable[[SafeHavenProgress], None] | None = None,
@@ -140,15 +141,27 @@ def run_safe_haven_products(
     Each product has one band per calendar month, written as its own resumable
     GeoTIFF.  A patch is calculated once and skipped only when all three
     products already hold it.  ``output_paths`` are in ``PRODUCT_KINDS`` order.
+
+    With ``light_store`` (a stage-0 ``LightStoreDirectory``) the patches are not lit: each patch's
+    stored planes are reduced (on the device, or the CPU), no horizon is read, and ``horizon_store`` and
+    ``sun_vectors_m`` are ``None``.  ``earth_vectors_m`` is still needed, for the degenerate-outage
+    rule's flat-horizon elevation.  The time samples must lie on the store's grid, and the thresholds
+    must be the store's (see ``safe_haven_stage1_store``).
     """
     if (georef.width, georef.height) != (dem.width, dem.height):
         raise ValueError("GeoReference and DEM dimensions do not match")
     if len(output_paths) != len(PRODUCT_KINDS):
         raise ValueError("output_paths must name one file per product kind")
     timestamps = tuple(times_utc)
-    sun_vectors = _validate_vectors(sun_vectors_m)
+    if light_store is None:
+        if horizon_store is None or sun_vectors_m is None:
+            raise ValueError("horizon_store and sun_vectors_m are required without a light_store")
+    elif (fraction_calculator is not None or elevation_calculator is not None
+          or flat_elevation_calculator is not None):
+        raise ValueError("a light_store takes no injected calculators")
+    sun_vectors = None if sun_vectors_m is None else _validate_vectors(sun_vectors_m)
     earth_vectors = _validate_vectors(earth_vectors_m)
-    if not len(timestamps) == len(sun_vectors) == len(earth_vectors):
+    if len(timestamps) != len(earth_vectors) or (sun_vectors is not None and len(sun_vectors) != len(timestamps)):
         raise ValueError("timestamps, Sun vectors, and Earth vectors must align")
     if max_slope_deg is not None and not (np.isfinite(max_slope_deg) and max_slope_deg > 0.0):
         raise ValueError("max_slope_deg must be positive and finite, or None")
@@ -170,7 +183,17 @@ def run_safe_haven_products(
     month_index_of = _month_indices_map(timestamps, month_bands)
 
     patches = enumerate_patches(dem.width, dem.height)
-    inventory = _inventory_identity(horizon_store, patches, observer_elevation_m)
+    first_store_step = 0
+    if light_store is None:
+        inventory = _inventory_identity(horizon_store, patches, observer_elevation_m)
+    else:
+        from . import safe_haven_stage1_store as from_store
+
+        from_store.check_thresholds(
+            light_store, sunlight_threshold=sunlight_threshold,
+            operating_sunlight_fraction=operating_sunlight_fraction, earth_threshold_deg=earth_threshold_deg)
+        first_store_step = from_store.first_store_step(light_store, timestamps, time_step_hours)
+        inventory = from_store.store_identity(light_store)
     if backend not in ("auto", "cpu", "cuda"):
         raise ValueError("backend must be 'auto', 'cpu', or 'cuda'")
     if time_batch_size < 1:
@@ -182,7 +205,22 @@ def run_safe_haven_products(
     selected_backend: Literal["cpu", "cuda"] | None = None
     cuda_session = None
     cpu_session = None
-    if fraction_calculator is not None or elevation_calculator is not None:
+    if light_store is not None:
+        # The CPU session gives the flat-horizon series and the CPU reduction; with a device the
+        # planes are reduced there instead.
+        cpu_session = LightmapCpuSession(time_batch_size=time_batch_size)
+        selected_backend = "cpu"
+        if backend != "cpu":
+            from .cuda_backend import CudaBackendError
+            from .safe_haven_cuda import SafeHavenCudaSession, SafeHavenCudaCancelled
+
+            try:
+                cuda_session = SafeHavenCudaSession(time_batch_size=from_store.CUDA_STEPS_PER_BATCH)
+                selected_backend = "cuda"
+            except CudaBackendError:
+                if backend == "cuda":
+                    raise
+    elif fraction_calculator is not None or elevation_calculator is not None:
         # Any injected calculator selects the reference streaming path.  Fill
         # the other signal with the compiled CPU implementation below.
         if fraction_calculator is not None:
@@ -226,7 +264,7 @@ def run_safe_haven_products(
         "month_bands": [
             [start.isoformat(), stop.isoformat()] for start, stop in month_bands
         ],
-        "sun_vectors_sha256": hashlib.sha256(
+        "sun_vectors_sha256": None if sun_vectors is None else hashlib.sha256(
             sun_vectors.astype("<f8", copy=False).tobytes()
         ).hexdigest(),
         "earth_vectors_sha256": hashlib.sha256(
@@ -296,6 +334,9 @@ def run_safe_haven_products(
 
     def read_tile(patch: PatchDescriptor):
         report(patch, "read")
+        if light_store is not None:
+            # A patch without a file had no horizon tile: an invalid patch, as without a store.
+            return light_store.open_patch(patch.tile_y // PATCH_SIZE, patch.tile_x // PATCH_SIZE)
         # A missing tile is an invalid patch; an existing tile that cannot be
         # read raises HorizonFormatError (re-raised, unchanged, by future.result()).
         return read_patch_horizons(
@@ -331,11 +372,40 @@ def run_safe_haven_products(
             valid_height=patch.height, valid_width=patch.width,
         )
 
+        def check_cancelled() -> None:
+            if cancelled():
+                raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
+
         def checked(tiles: Iterable[npt.ArrayLike]) -> Iterable[npt.ArrayLike]:
             for tile in tiles:
-                if cancelled():
-                    raise SafeHavenPipelineCancelled("safe-haven generation was cancelled")
+                check_cancelled()
                 yield tile
+
+        if light_store is not None:
+            try:
+                flat = None
+                if degenerate_window_samples > 0:
+                    flat = from_store.flat_earth_elevation(
+                        dem, earth_vectors, patch.height, patch.width, patch.tile_y, patch.tile_x, cpu_session)
+                if cuda_session is not None:
+                    try:
+                        return cuda_session.reduce_patch_planes(
+                            lambda first, stop: horizons.read_steps(
+                                first_store_step + first, first_store_step + stop),
+                            flat, valid_height=patch.height, valid_width=patch.width,
+                            month_bands=month_bands, degenerate_window_samples=degenerate_window_samples,
+                            time_count=len(timestamps), cancellation_requested=cancelled,
+                            partial_fraction=from_store.PARTIAL_FRACTION,
+                            clear_margin_deg=from_store.CLEAR_MARGIN_DEG, **options)
+                    except SafeHavenCudaCancelled as error:
+                        raise SafeHavenPipelineCancelled(str(error)) from error
+                return from_store.reduce_patch_from_store(
+                    horizons, first_store_step, len(timestamps), patch.height, patch.width,
+                    flat_elevation=flat, month_bands=month_bands,
+                    degenerate_window_samples=degenerate_window_samples, check_cancelled=check_cancelled,
+                    **options)
+            finally:
+                horizons.close()
 
         if cuda_session is not None and fraction_calculator is None and elevation_calculator is None:
             try:

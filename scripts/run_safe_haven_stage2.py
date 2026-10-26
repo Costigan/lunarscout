@@ -40,7 +40,7 @@ from lunarscout._script_logging import reset_script_logging, setup_script_loggin
 
 # Edit these paths before running. They match run_generate_safe_havens.py.
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_degenerate"  # must equal NAME_PREFIX in run_generate_safe_havens.py
+STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_generate_safe_havens.py
 # The stage-1 products are bytes of two-hour counts with NODATA 255. Set both to None for
 # float products in hours.
 HOURS_PER_COUNT = 2.0
