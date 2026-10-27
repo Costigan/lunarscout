@@ -20,6 +20,14 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   memory, refuses a directory made with other settings, time range or DEM, and writes a report. New optional
   extra `lunarscout[lightstore]` (zstandard).
 
+- **PSR ids and sizes as reusable products.** `scripts/generate_psr_regions.py` (module
+  `safe_haven_psr.py`) gives every connected permanently shadowed region of a PSR map its own id and writes an
+  int32 id GeoTIFF on the map's grid (ids 1, 2, ... in raster-scan order on the region's pixels, 0 elsewhere)
+  and a CSV with one row per id: pixels, area in square metres, bounding box and centroid. Only the PSR pixels
+  are labelled (the map must hold only 0 and the PSR value, under half of it marked, or the script stops),
+  and regions are connected through eight neighbours, as the flood moves. On the 70 degree south map: 1,375,303
+  regions from 60.4 million PSR pixels, the largest 1,077 km2; 59% of the regions are a single pixel.
+
 - **Safe-haven stage 3 floods on a 2-hour step with 4 moves, from the light store (changes results).** The
   rover speed parameter is replaced by `flood_step_minutes` (default 120) and `moves_per_step` (default 4):
   lighting is constant over a step, the rover makes up to 4 one-pixel moves in it, each into a pixel lit in
