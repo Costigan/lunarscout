@@ -57,14 +57,13 @@ from lunarscout.products import _load_dem  # noqa: E402
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")      # stage 0
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_2h"
-SEEDS_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_plan_seeds.csv"             # stage 2
+SEEDS_PATH = STAGE1_DIRECTORY / "safe_haven_stage_2_plan_seeds.csv"           # stage 2
 # The PSR products (scripts/generate_psr_regions.py).
 PSR_IDS_PATH = Path("/e/lunar_analyst_scenarios/70south/psr_ids.tif")
 PSR_TABLE_PATH = Path("/e/lunar_analyst_scenarios/70south/psr_regions.csv")
-PASSABLE_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_passable_mask.npy"
-OUTPUT_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_floods.csv"
-EDGES_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_edges.csv"
+PASSABLE_PATH = STAGE1_DIRECTORY / "safe_haven_stage_3_passable_mask.npy"
+OUTPUT_PATH = STAGE1_DIRECTORY / "safe_haven_stage_3_floods.csv"
+EDGES_PATH = STAGE1_DIRECTORY / "safe_haven_stage_3_edges.csv"
 OVERWRITE = False       # existing tables are not replaced unless this is True
 
 SETTINGS = FloodSettings(

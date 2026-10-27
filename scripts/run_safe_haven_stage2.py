@@ -56,9 +56,9 @@ from lunarscout.products import _load_dem  # noqa: E402
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")      # stage 0
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_safe_haven_stage1.py
+STAGE1_PREFIX = "safe_haven_stage_1"  # must equal NAME_PREFIX in run_safe_haven_stage1.py
 # The seed table. An existing table (or report) is not replaced unless OVERWRITE is True.
-OUTPUT_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_plan_seeds.csv"
+OUTPUT_PATH = STAGE1_DIRECTORY / "safe_haven_stage_2_plan_seeds.csv"
 OVERWRITE = False
 
 # Must equal the stage-1 run.

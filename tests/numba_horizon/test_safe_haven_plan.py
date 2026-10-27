@@ -310,7 +310,7 @@ def test_importing_the_script_starts_nothing_and_its_defaults_match_stage_one() 
     one = importlib.util.module_from_spec(stage1)
     stage1.loader.exec_module(one)
     assert module.STAGE1_PREFIX == one.NAME_PREFIX and module.LIGHT_STORE_PATH == one.LIGHT_STORE_PATH
-    assert module.OUTPUT_PATH.name == "safe_haven_2h_plan_seeds.csv" and module.OVERWRITE is False
+    assert module.OUTPUT_PATH.name == "safe_haven_stage_2_plan_seeds.csv" and module.OVERWRITE is False
     assert module.PARAMETERS.forward_only is True and module.PARAMETERS.max_seeds_per_cell_month == 5
     assert module.PARAMETERS.survival_limit_hours == 72.0 and module.CELLS is None
 

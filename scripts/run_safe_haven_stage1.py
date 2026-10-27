@@ -37,10 +37,11 @@ DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")   # used only without a light store
 LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")      # stage 0; None lights from the horizons
 OUTPUT_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-# Output files are <NAME_PREFIX>_hibernation_hours.tif and so on. This prefix differs from the
-# earlier runs (prefixes "safe_haven" and "safe_haven_degenerate": 6-hour samples) so the
-# products never overwrite each other. Set the same value as STAGE1_PREFIX in the stage-2 scripts.
-NAME_PREFIX = "safe_haven_2h"
+# Output files are <NAME_PREFIX>_hibernation_hours.tif and so on. Every stage names its outputs
+# safe_haven_stage_<n>_<description>. This prefix differs from the earlier runs (prefixes "safe_haven"
+# and "safe_haven_degenerate": 6-hour samples) so the products never overwrite each other. Set the same
+# value as STAGE1_PREFIX in the stage-2 script.
+NAME_PREFIX = "safe_haven_stage_1"
 
 # UTC timestamps; STOP_UTC is inclusive when it falls on the sampling grid.
 # A stop at midnight on the first day of another month also creates a band
