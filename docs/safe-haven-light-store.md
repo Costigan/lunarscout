@@ -92,22 +92,24 @@ before. The horizon route (`horizon_store=`) stays as the reference: the tests b
 and require the same table from both routes, for the block loop, worker processes and the pipeline. The
 details are in `docs/safe-haven-windows-spec.md`, "Light store route".
 
-## 7. Lander sites: the longest continuous Sun that starts in each month
+## 7. Lander sites: the longest continuous Sun from a landing in each month
 
 A lander that carries no rover stays where it lands, so what matters is how long the Sun can stay up without a
-break. `scripts/run_lander_sun_stage1.py` reads only this store and writes, for every pixel and calendar month,
-the duration of the longest period of continuous Sun that starts in that month (the Sun plane of the threshold:
-1.0 or 0.2, the two the store holds). It is independent of the rover chain.
+break. `scripts/run_lander_continuous_sun.py` reads only this store and writes, for every pixel and calendar month,
+the longest continuous Sun from a landing in that month: land at the best moment of the month and the Sun stays
+up for N hours (the Sun plane of the threshold: 1.0 or 0.2, the two the store holds). It is independent of the rover chain.
 
-* A period is consecutive 2-hour steps in Sun; one step out of Sun ends it (no bridging). It belongs to the month
-  of its first step and counts in full when it runs into later months. A month in which no period starts is 0.
-* A period under way at the first step has an unknown start and is credited to no month. A period under way at
-  the last step is credited with the length seen, a lower bound, so the last months read low.
+* A period is consecutive 2-hour steps in Sun; one step out of Sun ends it (no bridging). Landing at a step in
+  Sun gives the rest of the period from that step; a month's value is the longest such remainder over its steps.
+  A period that starts in the month counts in full; one already under way at the month's first step counts from
+  that step, so a long period decays by one month per band (it never reads 0 inside the period). A month with
+  no step in Sun is 0.
+* A period under way at the first step of the range counts from it. A period under way at the last step is
+  credited with the length seen, a lower bound, so the last months read low.
 * The product is a 96-band uint16 GeoTIFF (counts of steps, hours = value x 2; 65534 saturates; 65535 is nodata
-  where there is no valid terrain). A text file with zeros omitted would not be sparse: 88% to 98% of the
-  pixel-months in the patches tried have a period starting in them.
-* Measured on real patches: 0.4 to 0.8 s of one core per patch, and 0.0 to 1.1 MB per patch compressed (33 GB
-  for the whole raster). A patch near the pole has a run of 156 days.
+  where there is no valid terrain). Few pixel-months are 0 (a month with no step in Sun).
+* Measured on real patches: 0.4 to 0.8 s of one core per patch, and 0.0 to 1.1 MB per patch compressed (about 33 GB for the whole raster estimated from them). The full run
+  wrote 45 GB in 3,602 s with 16 workers. A patch near the pole has a run of 156 days.
 
 The reduction walks the packed bits one step at a time with per-pixel state (steps outermost, so the words and
 the state are read in order), never unpacking a patch's 35,064 steps at once. The tests compare it with a

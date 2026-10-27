@@ -19,7 +19,7 @@ apart; the "next" seeds of a seed are the seeds of the next cycle. A JSON report
 written next to the table.
 
 The stage-1 products must come from scripts/run_safe_haven_stage1.py, and the light store from
-scripts/run_safe_haven_stage0.py, with the same times, thresholds and degenerate-outage window. SPICE
+scripts/run_light_store.py, with the same times, thresholds and degenerate-outage window. SPICE
 supplies Earth's positions. This is CPU only (PLAN_WORKERS processes) and needs no NVIDIA device. It
 is not resumable: it writes the table at the end, so run it again after an interruption. Importing it
 starts nothing.

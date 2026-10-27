@@ -7,7 +7,7 @@ Stage 3 of the rover safe-haven chain: flood forward in time from every plan see
 (scripts/run_safe_haven_stage2.py). The rover starts at the seed pixel on the seed's after boundary and, in each
 2-hour step, makes 4 one-pixel moves, each into a passable pixel that is lit in that step (or stays on its pixel
 if that is lit). The flood ends when no lit pixel can be reached or after MAX_DAYS. Lit pixels are read from the
-stage-0 light store (scripts/run_safe_haven_stage0.py), 24 hours of one patch at a time, as the flood needs them.
+stage-0 light store (scripts/run_light_store.py), 24 hours of one patch at a time, as the flood needs them.
 
 One row per seed is written to OUTPUT_PATH:
 

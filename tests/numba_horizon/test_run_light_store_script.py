@@ -1,4 +1,4 @@
-"""scripts/run_safe_haven_stage0.py builds the thresholded-lighting store end to end on a synthetic scene."""
+"""scripts/run_light_store.py builds the thresholded-lighting store end to end on a synthetic scene."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def load(name: str):
 
 
 def test_the_script_uses_the_stage_one_thresholds_and_the_stage_two_inputs() -> None:
-    stage0, stage1, stage2 = load("run_safe_haven_stage0"), load("run_safe_haven_stage1"), load("run_safe_haven_stage2")
+    stage0, stage1, stage2 = load("run_light_store"), load("run_safe_haven_stage1"), load("run_safe_haven_stage2")
     assert stage0.SHADOW_FRACTION == stage1.SUNLIGHT_FRACTION_THRESHOLD
     assert stage0.OPERATING_FRACTION == stage1.OPERATING_SUNLIGHT_FRACTION
     assert stage0.EARTH_ELEVATION_DEG == stage1.EARTH_ELEVATION_THRESHOLD_DEG
@@ -35,7 +35,7 @@ def test_the_script_uses_the_stage_one_thresholds_and_the_stage_two_inputs() -> 
 
 
 def test_the_stage_one_script_reads_the_store_the_stage_zero_script_writes() -> None:
-    stage0, stage1 = load("run_safe_haven_stage0"), load("run_safe_haven_stage1")
+    stage0, stage1 = load("run_light_store"), load("run_safe_haven_stage1")
     assert stage1.LIGHT_STORE_PATH == stage0.OUTPUT_DIRECTORY and stage1.DEM_PATH == stage0.DEM_PATH
     assert stage1.STEP_HOURS * 60 == stage0.STEP_MINUTES
     assert stage1.OBSERVER_HEIGHT_M == stage0.OBSERVER_HEIGHT_M
@@ -49,7 +49,7 @@ def test_the_stage_one_script_reads_the_store_the_stage_zero_script_writes() -> 
 
 
 def test_the_script_writes_a_readable_store(tmp_path: Path, monkeypatch) -> None:
-    module = load("run_safe_haven_stage0")
+    module = load("run_light_store")
     dem_path, horizons_path = bs.write_inputs(tmp_path)
     out = tmp_path / "store"
     vectors = {"sun": scene.sun_vectors, "earth": scene.earth_vectors}
@@ -80,7 +80,7 @@ def test_the_script_writes_a_readable_store(tmp_path: Path, monkeypatch) -> None
 
 
 def test_an_interrupted_run_returns_nonzero(tmp_path: Path, monkeypatch) -> None:
-    module = load("run_safe_haven_stage0")
+    module = load("run_light_store")
     dem_path, horizons_path = bs.write_inputs(tmp_path)
     out = tmp_path / "store"
     vectors = {"sun": scene.sun_vectors, "earth": scene.earth_vectors}

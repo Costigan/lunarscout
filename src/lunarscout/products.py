@@ -1390,7 +1390,7 @@ def generate_safe_haven_products(
 
     ``light_store_path`` replaces ``horizons_path`` (pass ``None`` for it) with a
     stage-0 light store: a directory of per-patch thresholded lighting made by
-    ``scripts/run_safe_haven_stage0.py``.  The patches are then reduced from the
+    ``scripts/run_light_store.py``.  The patches are then reduced from the
     stored Sun and Earth bits, with no horizon read and no Sun vectors
     (``sun_vectors_m`` is ignored); Earth vectors are still used for the
     degenerate-outage rule.  ``times`` must lie on the store's step grid and the

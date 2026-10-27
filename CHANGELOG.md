@@ -32,7 +32,7 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   `docs/safe-haven-light-store.md`, section 8).
 
 - **Safe-haven stage 0: the thresholded-lighting store.** New private modules
-  `safe_haven_lightstore.py` and `safe_haven_stage0.py`, and `scripts/run_safe_haven_stage0.py`, light every
+  `safe_haven_lightstore.py` and `safe_haven_stage0.py`, and `scripts/run_light_store.py`, light every
   128 x 128 patch once for the whole time range (2-hour steps, 2024 to 2031) and store three packed
   bit-planes per step in one compressed file per patch: Sun fraction at least 0.2, at least 1.0 (with the
   stage-1 fuzz), and Earth above 2 degrees over the pixel's own horizon. Files hold independently
@@ -45,13 +45,14 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   memory, refuses a directory made with other settings, time range or DEM, and writes a report. New optional
   extra `lunarscout[lightstore]` (zstandard).
 
-- **Lander sites, stage 1: the longest continuous Sun that starts in each pixel-month.** New
-  `scripts/run_lander_sun_stage1.py` (module `lander_sun_duration.py`) reads only the stage-0 light store and
+- **Lander sites: the longest continuous Sun from a landing in each pixel-month.** New
+  `scripts/run_lander_continuous_sun.py` (module `lander_sun_duration.py`) reads only the light store and
   writes a resumable 96-band uint16 GeoTIFF, one band per UTC calendar month: the duration, in 2-hour steps, of the
-  longest run of consecutive steps with Sun fraction at least a threshold that starts in the month (the run
-  counts in full when it continues into later months; one step out of Sun ends it; a month with no run starting
-  is 0). The threshold must be one the store holds (1.0 or 0.2). A run under way at the first step is credited to
-  no month, and one still under way at the last step is credited with the length seen, a lower bound. Pixels
+  longest run of consecutive steps with Sun fraction at least a threshold that a landing in the month leaves (land
+  at the best moment of the month: a run that starts in it counts in full, one already under way at the month's
+  first step counts from there, so a long run decays by a month per band; one step out of Sun ends a run; a month
+  with no step in Sun is 0). The threshold must be one the store holds (1.0 or 0.2). A run under way at the first
+  step counts from it, and one still under way at the last step is credited with the length seen, a lower bound. Pixels
   without valid terrain are 65535. Measured: 0.4 to 0.8 s of one core per patch, about 33 GB of output. It is
   independent of the rover chain (stages 1 to 4); a clustering stage follows it.
 

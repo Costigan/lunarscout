@@ -1,18 +1,21 @@
-"""Lander sites, stage 1: the longest continuous Sun that starts in each month (private).
+"""Lander sites, continuous Sun: the longest mission a lander can have from each month (private).
 
 A lander that carries no rover stays where it lands, so what matters at a pixel is how long the Sun can
-stay up without a break. For every pixel and calendar month this stage gives the duration of the longest
-period of continuous Sun that *starts* in that month. It reads only the stage-0 light store.
+stay up without a break after it lands. For every pixel and calendar month this stage gives the duration
+of the longest continuous Sun *from a landing time in that month*: land at the best moment of the month
+and the Sun then stays up for N steps. It reads only the light store.
 
 * Sun is the store's plane for the threshold: Sun fraction at least the threshold. The store holds two
   thresholds, the shadow fraction (0.2) and the operating fraction (1.0, with the stage-1 fuzz of 1e-6);
   the threshold parameter must be one of them, because any other would need the store lit again.
 * A period is consecutive steps all in Sun. Gaps are not bridged: one step out of Sun ends a period.
-* A period belongs to the UTC calendar month of its first step, and it counts in full even when it runs
-  into later months. A month in which no period starts is 0.
-* A period already under way at the first step has an unknown start and is credited to no month, as in the
-  hibernation product of stage 1. A period still under way at the last step is credited with the length
-  seen, which is a lower bound: the last months of the range read low.
+* Landing at a step in Sun gives the rest of the period from that step. The value of a month is the
+  longest such remainder over the month's steps. A period that starts in the month counts in full; a
+  period already under way at the month's first step counts from that step, so a long period decays by the
+  length of a month per band instead of reading 0 after its first month. A month with no step in Sun is 0.
+* A period already under way at the first step of the range counts from that step (its remainder is
+  known). A period still under way at the last step is credited with the length seen, which is a lower
+  bound: the last months of the range read low.
 * The product is a GeoTIFF with one uint16 band per month holding the duration as a count of steps
   (hours are the count times ``step_minutes / 60``, ``65534`` saturates), and 65535 where there is no
   valid terrain (an invalid DEM node, or a patch without a store file).
@@ -143,45 +146,57 @@ def month_bands(first_step: int, stop_step: int, step_minutes: int):
 _KERNELS: dict = {}
 
 
-def advance_python(planes, first_index, month_of, cur_len, cur_month, best, max_count):
-    """Walk ``planes`` ((steps, 128, 2) packed words of one plane) one step at a time.
-
-    ``cur_len[p]`` is the length so far of the period in Sun at pixel ``p`` (0: not in Sun) and
-    ``cur_month[p]`` the month it was credited to (-1: no month, its start is unknown). ``best[month, p]``
-    is the longest period credited to the month, saturated at ``max_count``. Pixel ``p`` is
-    ``row * 128 + column``; bit ``column & 63`` of word ``column >> 6`` of the row holds it, and
-    ``p & 63`` is ``column & 63``. Steps are the outer loop so that the words and the state are read in
-    order.
-    """
-    one = np.uint64(1)
-    steps = planes.shape[0]
-    for k in range(steps):
-        index = first_index + k
-        month = month_of[index]
-        for p in range(planes.shape[1] * 128):
-            word = planes[k, p >> 7, (p & 127) >> 6]
-            if (word >> np.uint64(p & 63)) & one:
-                if cur_len[p] > 0:
-                    cur_len[p] += 1
-                else:
-                    cur_len[p] = 1
-                    cur_month[p] = month if index > 0 else -1       # nothing is known before the first step
-            elif cur_len[p] > 0:
-                if cur_month[p] >= 0:
-                    length = cur_len[p] if cur_len[p] < max_count else max_count
-                    if length > best[cur_month[p], p]:
-                        best[cur_month[p], p] = length
-                cur_len[p] = 0
+def _credit_python(best, month_of, month_first, p, start, stop, max_count):
+    """Credit the period ``[start, stop)`` at pixel ``p`` to every month it touches: the remainder from the
+    month's first step inside the period."""
+    for month in range(month_of[start], month_of[stop - 1] + 1):
+        landing = month_first[month] if month_first[month] > start else start
+        remaining = stop - landing
+        if remaining > max_count:
+            remaining = max_count
+        if remaining > best[month, p]:
+            best[month, p] = remaining
 
 
-def finish_python(cur_len, cur_month, best, max_count):
-    """Credit the periods still under way after the last step (their length is a lower bound)."""
-    for p in range(cur_len.shape[0]):
-        if cur_len[p] > 0 and cur_month[p] >= 0:
-            length = cur_len[p] if cur_len[p] < max_count else max_count
-            if length > best[cur_month[p], p]:
-                best[cur_month[p], p] = length
-        cur_len[p] = 0
+def _make_kernels(credit):
+    """``(advance, finish)`` calling ``credit``: the plain functions take ``_credit_python`` and the compiled
+    ones its compiled twin (``numba`` cannot call a plain Python function)."""
+
+    def advance(planes, first_index, month_of, month_first, run_start, best, max_count):
+        """Walk ``planes`` ((steps, 128, 2) packed words of one plane) one step at a time.
+
+        ``run_start[p]`` is the index (within the range) of the first step of the period in Sun at pixel
+        ``p`` (-1: not in Sun). When a period ends it is credited to the months it touches;
+        ``month_first[m]`` is the index of month ``m``'s first step, and ``best[month, p]`` the longest
+        remainder credited to the month, saturated at ``max_count``. Pixel ``p`` is ``row * 128 + column``;
+        bit ``column & 63`` of word ``column >> 6`` of the row holds it, and ``p & 63`` is ``column & 63``.
+        Steps are the outer loop so that the words and the state are read in order.
+        """
+        one = np.uint64(1)
+        steps = planes.shape[0]
+        for k in range(steps):
+            index = first_index + k
+            for p in range(planes.shape[1] * 128):
+                word = planes[k, p >> 7, (p & 127) >> 6]
+                if (word >> np.uint64(p & 63)) & one:
+                    if run_start[p] < 0:
+                        run_start[p] = index
+                elif run_start[p] >= 0:
+                    credit(best, month_of, month_first, p, run_start[p], index, max_count)
+                    run_start[p] = -1
+
+    def finish(end_index, month_of, month_first, run_start, best, max_count):
+        """Credit the periods still under way after the last step (``end_index`` is one past it; their
+        length is a lower bound)."""
+        for p in range(run_start.shape[0]):
+            if run_start[p] >= 0:
+                credit(best, month_of, month_first, p, run_start[p], end_index, max_count)
+                run_start[p] = -1
+
+    return advance, finish
+
+
+advance_python, finish_python = _make_kernels(_credit_python)
 
 
 def _kernels(compiled: bool = True):
@@ -190,8 +205,9 @@ def _kernels(compiled: bool = True):
     if not _KERNELS:
         from numba import njit
 
-        _KERNELS["advance"] = njit(cache=False, nogil=True)(advance_python)
-        _KERNELS["finish"] = njit(cache=False, nogil=True)(finish_python)
+        advance, finish = _make_kernels(njit(cache=False, nogil=True)(_credit_python))
+        _KERNELS["advance"] = njit(cache=False, nogil=True)(advance)
+        _KERNELS["finish"] = njit(cache=False, nogil=True)(finish)
     return _KERNELS["advance"], _KERNELS["finish"]
 
 
@@ -200,18 +216,18 @@ def reduce_patch(
     month_count: int, valid_height: int, valid_width: int, *, compiled: bool = True,
 ) -> npt.NDArray[np.uint16]:
     """``(month_count, valid_height, valid_width)`` uint16: per month, the longest run of steps (in Sun
-    in ``plane``) that starts in it."""
+    in ``plane``) that a landing in the month leaves."""
     advance, finish = _kernels(compiled)
     pixels = PATCH_SIZE * PATCH_SIZE
-    cur_len = np.zeros(pixels, dtype=np.int32)
-    cur_month = np.full(pixels, -1, dtype=np.int16)
+    run_start = np.full(pixels, -1, dtype=np.int32)
     best = np.zeros((month_count, pixels), dtype=np.uint16)
     month_of = np.ascontiguousarray(month_of, dtype=np.int16)
+    month_first = np.searchsorted(month_of, np.arange(month_count)).astype(np.int32)
     for start in range(first_step, stop_step, STEPS_PER_READ):
         stop = min(start + STEPS_PER_READ, stop_step)
         planes = np.ascontiguousarray(opened.read_steps(start, stop)[plane])
-        advance(planes, start - first_step, month_of, cur_len, cur_month, best, MAX_COUNT)
-    finish(cur_len, cur_month, best, MAX_COUNT)
+        advance(planes, start - first_step, month_of, month_first, run_start, best, MAX_COUNT)
+    finish(stop_step - first_step, month_of, month_first, run_start, best, MAX_COUNT)
     return np.ascontiguousarray(best.reshape(month_count, PATCH_SIZE, PATCH_SIZE)[:, :valid_height, :valid_width])
 
 
@@ -239,15 +255,16 @@ def generate_sun_duration(
     report = SunDurationReport(bands=len(month_starts), first_step=first_step, step_count=stop_step - first_step,
                                output_path=str(output_path))
     configuration = {
-        "product": "lander-sun-longest-period-v1", "threshold": settings.threshold, "plane": plane,
+        "product": "lander-sun-longest-mission-v2", "threshold": settings.threshold, "plane": plane,
         "step_minutes": directory.settings.step_minutes, "first_step": first_step, "step_count": stop_step - first_step,
         "units": "steps: hours = value * step_minutes / 60", "nodata": NODATA, "saturates_at": MAX_COUNT,
-        "unknown_start": "not credited", "unfinished_at_end": "credited, a lower bound",
+        "semantics": "longest continuous Sun from a landing step in the month",
+        "unfinished_at_end": "credited, a lower bound",
     }
     job = ProductJob(
         georef=georef, dtype=np.uint16, band_count=len(month_starts),
         timestamps_utc=tuple(f"{month}-01T00:00:00+00:00" for month in month_starts.astype(str)),
-        invalid_value=NODATA, nodata=NODATA, algorithm="lander-sun-longest-period-by-start-month",
+        invalid_value=NODATA, nodata=NODATA, algorithm="lander-sun-longest-mission-by-landing-month",
         configuration=configuration, horizon_inventory_identity=store_identity(directory))
     product = ResumableTiledProduct(
         output_path, job, overwrite=overwrite, start_fresh=start_fresh, backend="cpu",

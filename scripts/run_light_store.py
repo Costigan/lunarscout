@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Edit the constants below, then run this script with the project environment.
 
-    .venv/bin/python scripts/run_safe_haven_stage0.py
+    .venv/bin/python scripts/run_light_store.py
 
 Stage 0 of the safe-haven analysis: light every 128 x 128 patch once, for the whole time range, and
 store the three thresholded planes (Sun fraction at least 0.2, at least 1.0, and Earth above the outage
@@ -40,7 +40,7 @@ from lunarscout._numba_horizon.safe_haven_windows import spice_vector_source  # 
 from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
 from lunarscout.products import _load_dem  # noqa: E402
 
-LOG = logging.getLogger("lunarscout.scripts.run_safe_haven_stage0")
+LOG = logging.getLogger("lunarscout.scripts.run_light_store")
 
 # Edit these paths before running. They match run_safe_haven_stage2.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")

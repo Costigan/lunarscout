@@ -7,7 +7,7 @@ Stage 1 of the safe-haven analysis. Writes the three safe-haven screening produc
 total, joint operating longest run) into OUTPUT_DIRECTORY from one pass.
 
 With LIGHT_STORE_PATH set (the default) the products are reduced from the stage-0
-light store made by scripts/run_safe_haven_stage0.py: no horizon is read and no
+light store made by scripts/run_light_store.py: no horizon is read and no
 Sun position is needed, so the run is much faster. The samples must then be the
 store's 2-hour grid and the thresholds below the store's. Set LIGHT_STORE_PATH to
 None to light from the horizons instead (HORIZONS_PATH must then exist for the DEM

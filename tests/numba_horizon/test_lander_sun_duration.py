@@ -1,4 +1,4 @@
-"""Lander stage 1: the longest continuous Sun that starts in each pixel-month, from the light store."""
+"""Lander continuous Sun: the longest continuous Sun from a landing in each pixel-month, from the light store."""
 
 from __future__ import annotations
 
@@ -47,18 +47,18 @@ def hand_planes():
         for first, last in spans:
             lit[first:last + 1, row, column] = True
 
-    run(0, 0, (0, 4))               # under way at the first step: unknown start, credited to no month
+    run(0, 0, (0, 4))               # under way at the first step: its remainder from step 0 is known, 5 steps
     run(0, 1, (10, 13))             # 4 steps in January
     run(0, 2, (22, 30))             # starts in January (step 22 is Jan 31 20:00), 9 steps, runs into February
     run(0, 3, (5, 5), (7, 8))       # one step out of Sun ends a run: 1 and 2, never merged
     run(0, 4, (14, 16), (30, 35), (40, 41))    # January 3; February 6 and 2
-    run(0, 5, (55, 59))             # still under way at the last step: credited, a lower bound
-    run(0, 6, (0, STEPS - 1))       # Sun the whole time: its start is unknown, so 0 in both months
+    run(0, 5, (55, 59))             # still under way at the last step: credited, a lower bound (5 steps in February)
+    run(0, 6, (0, STEPS - 1))       # Sun the whole time: 60 steps from January's first, 36 from February's
     run(0, 7)                       # never in Sun
     run(0, 8, (59, 59))             # lit only at the last step
     run(0, 70, (10, 12))            # the second word of the row
     run(127, 127, (24, 27))         # the first step of February, in the last corner
-    run(5, 5, (23, 23), (24, 24))   # one run across midnight of Feb 1: starts in January (step 23), 2 steps
+    run(5, 5, (23, 23), (24, 24))   # one run across midnight of Feb 1: 2 steps from January's last step, 1 from February's first
     planes = np.zeros((3, STEPS, PATCH_SIZE, 2), dtype=np.uint64)
     planes[0] = pack_bits(np.ones((STEPS, PATCH_SIZE, PATCH_SIZE), dtype=bool))
     planes[1] = pack_bits(lit)
@@ -73,25 +73,25 @@ def hand_file(tmp_path_factory):
 
 
 @pytest.mark.parametrize("compiled", [True, False])
-def test_the_longest_run_starting_in_each_month_on_hand_built_cases(hand_file, compiled) -> None:
+def test_the_longest_run_from_a_landing_in_each_month_on_hand_built_cases(hand_file, compiled) -> None:
     month_of, starts = sun.month_bands(FIRST, FIRST + STEPS, 120)
     assert list(starts.astype(str)) == ["2027-01", "2027-02"] and month_of[23] == 0 and month_of[24] == 1
     with LightStore(hand_file) as opened:
         out = sun.reduce_patch(opened, 1, FIRST, FIRST + STEPS, month_of, 2, PATCH_SIZE, PATCH_SIZE, compiled=compiled)
     assert out.shape == (2, PATCH_SIZE, PATCH_SIZE) and out.dtype == np.uint16
     january, february = out[0], out[1]
-    assert (january[0, 0], february[0, 0]) == (0, 0)             # unknown start
+    assert (january[0, 0], february[0, 0]) == (5, 0)             # under way at the first step: known remainder
     assert (january[0, 1], february[0, 1]) == (4, 0)
-    assert (january[0, 2], february[0, 2]) == (9, 0)             # the full 9 steps, counted in January
+    assert (january[0, 2], february[0, 2]) == (9, 7)             # 9 steps from step 22; 7 remain at February's first step (24..30)
     assert (january[0, 3], february[0, 3]) == (2, 0)             # no gap bridging
     assert (january[0, 4], february[0, 4]) == (3, 6)
     assert (january[0, 5], february[0, 5]) == (0, 5)             # truncated at the end, credited
-    assert (january[0, 6], february[0, 6]) == (0, 0)
+    assert (january[0, 6], february[0, 6]) == (60, 36)           # a period decays by a month per band, never 0 inside it
     assert (january[0, 7], february[0, 7]) == (0, 0)
     assert (january[0, 8], february[0, 8]) == (0, 1)
     assert (january[0, 70], february[0, 70]) == (3, 0)           # a pixel in the second word
     assert (january[127, 127], february[127, 127]) == (0, 4)
-    assert (january[5, 5], february[5, 5]) == (2, 0)
+    assert (january[5, 5], february[5, 5]) == (2, 1)
     untouched = np.ones((PATCH_SIZE, PATCH_SIZE), dtype=bool)
     for row, column in [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (0, 6), (0, 7), (0, 8), (0, 70), (127, 127), (5, 5)]:
         untouched[row, column] = False
@@ -102,7 +102,7 @@ def test_the_plane_decides_what_sun_is(hand_file) -> None:
     month_of, _ = sun.month_bands(FIRST, FIRST + STEPS, 120)
     with LightStore(hand_file) as opened:
         partial = sun.reduce_patch(opened, 0, FIRST, FIRST + STEPS, month_of, 2, PATCH_SIZE, PATCH_SIZE)
-    assert not partial.any()                    # plane 0 is lit at every step: every run starts unknown
+    assert (partial == np.array([60, 36], dtype=np.uint16)[:, None, None]).all()      # plane 0 is lit at every step
 
 
 def test_a_valid_window_crops_the_tile(hand_file) -> None:
@@ -114,13 +114,12 @@ def test_a_valid_window_crops_the_tile(hand_file) -> None:
 
 def test_a_run_longer_than_the_count_saturates() -> None:
     planes = pack_bits(np.ones((10, 1, 128), dtype=bool)).reshape(10, 1, 2)
-    cur_len, cur_month = np.zeros(128, np.int32), np.full(128, -1, np.int16)
+    run_start = np.full(128, -1, np.int32)
     best = np.zeros((1, 128), np.uint16)
-    month_of = np.zeros(11, dtype=np.int16)
-    off = np.zeros((1, 1, 2), dtype=np.uint64)
-    sun.advance_python(off, 0, month_of, cur_len, cur_month, best, 3)               # a dark first step, so the run starts known
-    sun.advance_python(planes, 1, month_of, cur_len, cur_month, best, 3)
-    sun.finish_python(cur_len, cur_month, best, 3)
+    month_of = np.zeros(10, dtype=np.int16)
+    month_first = np.zeros(1, dtype=np.int32)
+    sun.advance_python(planes, 0, month_of, month_first, run_start, best, 3)
+    sun.finish_python(10, month_of, month_first, run_start, best, 3)
     assert (best == 3).all()
 
 
@@ -151,7 +150,7 @@ def test_the_threshold_must_be_one_the_store_holds() -> None:
 
 
 def reference(prepared, first, stop, plane):
-    """The product by an independent route: unpack every patch, find each pixel's runs with ``numpy``."""
+    """The product by an independent route: unpack every patch and, for every step in Sun, take the rest of its run."""
     month_of, starts = sun.month_bands(first, stop, 120)
     out = np.zeros((len(starts), prepared.dem.height, prepared.dem.width), dtype=np.uint16)
     for pr in range(3):
@@ -166,10 +165,9 @@ def reference(prepared, first, stop, plane):
                     begins = np.flatnonzero(~padded[:-1] & padded[1:])
                     ends = np.flatnonzero(padded[:-1] & ~padded[1:])
                     for begin, end in zip(begins, ends):
-                        if begin == 0:
-                            continue
-                        cell = out[month_of[begin], pr * PATCH_SIZE + r, pc * PATCH_SIZE + c]
-                        out[month_of[begin], pr * PATCH_SIZE + r, pc * PATCH_SIZE + c] = max(cell, end - begin)
+                        for step in range(begin, end):            # land at every step in Sun: the rest of the run
+                            cell = out[month_of[step], pr * PATCH_SIZE + r, pc * PATCH_SIZE + c]
+                            out[month_of[step], pr * PATCH_SIZE + r, pc * PATCH_SIZE + c] = max(cell, end - step)
     return out
 
 
@@ -204,7 +202,7 @@ def test_the_product_equals_the_reference_on_the_scene(prepared, threshold, plan
     assert values.dtype == np.uint16 and values.shape == (5, prepared.dem.height, prepared.dem.width)
     expected = reference(prepared, first, stop, plane)
     assert np.array_equal(values, expected)
-    assert values.any() and (values == 0).any() and values.max() > 12            # runs of more than a day, and dark pixel-months
+    assert values.max() > 12 and len(np.unique(values)) > 2                      # runs of more than a day, and varied values
     assert dataset.nodata == sun.NODATA and not (values == sun.NODATA).any()
     stamps = dataset.tags["LUNARSCOUT_TIMESTAMPS_UTC"]
     assert stamps.count("T00:00:00") == 5 and "2026-12-01" in stamps and "2027-04-01" in stamps
@@ -321,14 +319,14 @@ def test_a_different_threshold_or_range_is_not_resumed(prepared, monkeypatch) ->
 
 def test_the_script_writes_the_product_and_importing_it_starts_nothing(prepared, tmp_path, monkeypatch) -> None:
     spec = importlib.util.spec_from_file_location(
-        "run_lander_sun_stage1", Path(__file__).resolve().parents[2] / "scripts" / "run_lander_sun_stage1.py")
+        "run_lander_continuous_sun", Path(__file__).resolve().parents[2] / "scripts" / "run_lander_continuous_sun.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    assert module.THRESHOLD == 1.0 and module.LIGHT_STORE_PATH == load_stage0_output() and module.OVERWRITE is False
+    assert module.THRESHOLD == 1.0 and module.LIGHT_STORE_PATH == load_stage0_output() and module.OVERWRITE is True      # the rerun replaces the old product
     out = tmp_path / "lander.tif"
     for name, value in dict(DEM_PATH=prepared.directory / "dem.tif", LIGHT_STORE_PATH=prepared.store_directory,
-                            OUTPUT_PATH=out, WORKERS=2, CHECKPOINT_PATCHES=3, STATUS_SECONDS=0.0).items():
+                            OUTPUT_PATH=out, WORKERS=2, CHECKPOINT_PATCHES=3, STATUS_SECONDS=0.0, OVERWRITE=False).items():
         monkeypatch.setattr(module, name, value)
     assert module.main() == 0
     assert np.array_equal(read_all(out)[0], reference(prepared, prepared.light_store.first_step, prepared.light_store.stop_step, 1))
@@ -339,7 +337,7 @@ def test_the_script_writes_the_product_and_importing_it_starts_nothing(prepared,
 
 def load_stage0_output():
     spec = importlib.util.spec_from_file_location(
-        "run_safe_haven_stage0", Path(__file__).resolve().parents[2] / "scripts" / "run_safe_haven_stage0.py")
+        "run_light_store", Path(__file__).resolve().parents[2] / "scripts" / "run_light_store.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.OUTPUT_DIRECTORY

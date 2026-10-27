@@ -2,7 +2,7 @@
 
 Status: DRAFT SPECIFICATION FOR REVIEW. The work is run in stages. **Stage 0** lights every patch
 once for the whole time range and stores the thresholded lighting (`docs/safe-haven-light-store.md`,
-`scripts/run_safe_haven_stage0.py`); stages 1 and 3 can read that store instead of lighting from the
+`scripts/run_light_store.py`); stages 1 and 3 can read that store instead of lighting from the
 horizons, and the production runs do. All stages use the store's 2-hour grid. Stage 1 is
 `generate_safe_haven_products`. **Stage 2** scans the stage-1 hibernation product for the
 cells that have a haven pixel and writes the list
