@@ -20,6 +20,16 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   memory, refuses a directory made with other settings, time range or DEM, and writes a report. New optional
   extra `lunarscout[lightstore]` (zstandard).
 
+- **Lander sites, stage 1: the longest continuous Sun that starts in each pixel-month.** New
+  `scripts/run_lander_sun_stage1.py` (module `lander_sun_duration.py`) reads only the stage-0 light store and
+  writes a resumable 96-band uint16 GeoTIFF, one band per UTC calendar month: the duration, in 2-hour steps, of the
+  longest run of consecutive steps with Sun fraction at least a threshold that starts in the month (the run
+  counts in full when it continues into later months; one step out of Sun ends it; a month with no run starting
+  is 0). The threshold must be one the store holds (1.0 or 0.2). A run under way at the first step is credited to
+  no month, and one still under way at the last step is credited with the length seen, a lower bound. Pixels
+  without valid terrain are 65535. Measured: 0.4 to 0.8 s of one core per patch, about 33 GB of output. It is
+  independent of the rover chain (stages 1 to 4); a clustering stage follows it.
+
 - **PSR ids and sizes as reusable products.** `scripts/generate_psr_regions.py` (module
   `safe_haven_psr.py`) gives every connected permanently shadowed region of a PSR map its own id and writes an
   int32 id GeoTIFF on the map's grid (ids 1, 2, ... in raster-scan order on the region's pixels, 0 elsewhere)
