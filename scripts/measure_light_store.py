@@ -42,7 +42,7 @@ from lunarscout.products import _load_dem  # noqa: E402
 
 LOG = logging.getLogger("lunarscout.scripts.measure_light_store")
 
-# Edit these paths before running. They match run_safe_haven_stage3.py.
+# Edit these paths before running. They match run_safe_haven_stage2.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
 WORK_DIR = Path("/tmp/lunarscout_light_store_measurement")      # planes cache, written files, results

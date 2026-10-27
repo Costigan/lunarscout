@@ -3,7 +3,7 @@
 
     .venv/bin/python scripts/monitor_temperatures.py
 
-Run this in a second terminal when you start a long job (scripts/run_safe_haven_stage3.py,
+Run this in a second terminal when you start a long job (scripts/run_safe_haven_stage3.py or run_safe_haven_stage2.py,
 for example) and watch the first 10 to 20 minutes before you leave it running. It prints one
 line every INTERVAL_SECONDS and writes the same readings to a CSV, then prints the minimum,
 mean and maximum of each reading when you stop it with Ctrl-C (or after --duration seconds).

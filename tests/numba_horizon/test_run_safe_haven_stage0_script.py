@@ -24,12 +24,12 @@ def load(name: str):
     return module
 
 
-def test_the_script_uses_the_stage_one_thresholds_and_the_stage_three_inputs() -> None:
-    stage0, stage1, stage3 = load("run_safe_haven_stage0"), load("run_safe_haven_stage1"), load("run_safe_haven_stage3")
+def test_the_script_uses_the_stage_one_thresholds_and_the_stage_two_inputs() -> None:
+    stage0, stage1, stage2 = load("run_safe_haven_stage0"), load("run_safe_haven_stage1"), load("run_safe_haven_stage2")
     assert stage0.SHADOW_FRACTION == stage1.SUNLIGHT_FRACTION_THRESHOLD
     assert stage0.OPERATING_FRACTION == stage1.OPERATING_SUNLIGHT_FRACTION
     assert stage0.EARTH_ELEVATION_DEG == stage1.EARTH_ELEVATION_THRESHOLD_DEG
-    assert (stage0.DEM_PATH, stage0.HORIZONS_PATH) == (stage3.DEM_PATH, stage3.HORIZONS_PATH)
+    assert stage0.DEM_PATH == stage2.DEM_PATH and stage2.LIGHT_STORE_PATH == stage0.OUTPUT_DIRECTORY
     assert stage0.STEP_MINUTES == 120 and stage0.CODEC == "zstd-3" and stage0.STEPS_PER_CHUNK == 96
     assert stage0.PATCHES is None and stage0.LIGHTING == "auto"
 

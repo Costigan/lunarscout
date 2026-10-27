@@ -152,3 +152,39 @@ from the assigned minimum run from -13.6 to +14.4 days, with a median of 11.7 da
 label is a consistent ordering, but where a cycle starts and ends cuts through real outages at an arbitrary
 phase, so a rule that links only seeds of consecutive cycle numbers can miss links that a rule based on outage
 times would find. The table holds the outage times, so stage 3 or 4 can use either.
+
+## 9. Rover chain, stage 3: the forward floods
+
+`scripts/run_safe_haven_stage3.py` (module `safe_haven_floods.py`) replaces the earlier stage 3 (the block and
+pipeline route that scored a haven by the lit pixels around it 48 hours before and after its outage). It floods
+forward in time from every seed of stage 2 and reads lit bits from the store as it goes.
+
+* **The flood.** The rover starts on the seed pixel at the seed's `after_step`. In each 2-hour step it makes
+  4 one-pixel moves (8-neighbour), each into a passable pixel that is lit (operating plane, Sun fraction 1.0) in
+  that step; staying on a lit pixel counts. The frontier is every pixel it can be on. The flood ends when the
+  frontier is empty or after 28 days. Lighting is read 24 hours of one patch at a time (one stored 8-day chunk is
+  decoded and its days kept in a per-worker cache), so a flood that dies in a day reads a day. A flood reaches at
+  most 4 x 336 = 1,344 pixels, so its window is 25 x 25 patches.
+* **Passable.** Valid height, Horn slope at most 20 degrees, and a patch with a store file. It does not depend on
+  the month. It is made once (about 40 s on the real raster) and kept as a 115 MB packed file; it is remade when
+  the slope limit or the store changes. A seed on a pixel that is not passable is flagged (`seed_passable` 0); the
+  rover still starts there and moves off it.
+* **`lit_endurance_hours`.** From the after boundary through the last step with a non-empty frontier, at most
+  28 days = 672 h; a value at the cap is a lower bound. **`reach48_pixels`**: the frontier's size after 24 steps.
+* **PSR first touch.** Per size class, the hours after the boundary at which a passable PSR pixel of that class is
+  next to the frontier (a PSR pixel is never lit, so it is never in the frontier), and that region's id. Small is
+  under 40 m2, medium 40 to 1,000,000 m2, large above (parameters). At 20 m a pixel is 400 m2, so no region is small.
+* **Edges.** A seed A has an edge to a seed B of the next Earth cycle when B has a before boundary within the
+  flood's 28 days and B's pixel is in A's frontier at that step (a rover that is on a lit pixel until then can wait
+  there). `edge_rule="any_later"` links to every seed that is due later instead (see the caveat on cycle labels in
+  section 8). Edges, with the hours from the after boundary, are in a second table.
+* **Resume.** The run checkpoints after every cell-month (cell and month of the seeds) and resumes from
+  the same inputs and settings; the tables do not depend on the number of workers.
+
+Tests compare the kernel with a plain dilation of unpacked bits (SciPy) on the scene store: the endurance, the
+48-hour count, every touch and every edge, for 4 and 8 neighbours, with walls in the passable mask, with targets due
+at the last step the frontier lives, and with the lit units read both aligned with the store's chunks and not.
+
+Measured on 218 of the 1,740 seeds of the first real stage-2 trial block (8 workers, store cold): about 8 s of
+flooding, after 40 s to make the mask and load the PSR ids; 39% of the seeds reach the 28-day cap, the median
+endurance is 401 h, the median 48-hour reach is 5,115 pixels, 835 edges.

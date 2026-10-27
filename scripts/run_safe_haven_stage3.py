@@ -3,35 +3,33 @@
 
     .venv/bin/python scripts/run_safe_haven_stage3.py
 
-Stage 3 of the safe-haven analysis (docs/safe-haven-windows-spec.md): for every 5.12 km cell
-and month with a haven, pick up to five safe havens (seed pixels) and score each by its
-opportunity to operate before and after the non-operations period (the hibernation): the lit
-pixels that can reach the haven during the 48 hours before the period, plus the lit pixels it
-can reach during the 48 hours after it. One row per scored haven is written to a CSV table, with
-a JSON report of the run next to it. The cells
-come from the stage-2 list (scripts/run_safe_haven_stage2.py), which must be made first, or
-from CELLS below for a trial. The pole is processed in blocks in snake order; after each block
-the script appends to a checkpoint file, so running it again with the same settings resumes at
-the next block. Run it again after a kill, a crash or Ctrl-C. A different setting, including
-BLOCK_PATCHES, needs a new OUTPUT_PATH or the checkpoint deleted.
+Stage 3 of the rover safe-haven chain: flood forward in time from every plan seed of stage 2
+(scripts/run_safe_haven_stage2.py). The rover starts at the seed pixel on the seed's after boundary and, in each
+2-hour step, makes 4 one-pixel moves, each into a passable pixel that is lit in that step (or stays on its pixel
+if that is lit). The flood ends when no lit pixel can be reached or after MAX_DAYS. Lit pixels are read from the
+stage-0 light store (scripts/run_safe_haven_stage0.py), 24 hours of one patch at a time, as the flood needs them.
 
-The stage-1 products must come from scripts/run_safe_haven_stage1.py with the same
-times, thresholds, observer height and degenerate-outage window. With LIGHT_STORE_PATH set (the
-default) all lighting comes from the stage-0 light store (scripts/run_safe_haven_stage0.py), which
-must be the one stage 1 read: no horizon is read, no lighting is calculated and no GPU is used. The
-flood is a 2-hour step in which the rover makes 4 one-pixel moves (the PARAMETERS below); lighting is
-constant over a step. With LIGHT_STORE_PATH None the units are lit from the horizons instead, as before
-(HORIZONS_PATH, and the LIGHTING settings below). SPICE supplies Earth positions (and the Sun's when
-lighting from horizons) unless you replace the vector sources.
+One row per seed is written to OUTPUT_PATH:
 
-This runs as a pipeline with bounded queues (PLAN_WORKERS and its neighbours below). It loads the CPU
-heavily for many hours and reads the store's files from disk throughout: watch
-scripts/monitor_temperatures.py in a second terminal for the first 10 to 20 minutes. Memory is the units
-in flight: the script logs its estimate at the start and warns when it exceeds what is free. Set
-CELLS for a trial before running every cell (scripts/list_safe_haven_cells.py prints a CELLS
-line). Ctrl-C once stops feeding cells after the block being fed and lets everything in flight
-finish (finished blocks are checkpointed); Ctrl-C again stops at once. Importing this file starts
-nothing.
+* lit_endurance_hours: how long the rover can stay on lit terrain from the after boundary, at most MAX_DAYS
+  (a value at the cap is a lower bound);
+* reach48_pixels: the pixels the rover can be on 48 hours after the boundary;
+* touch_small / touch_medium / touch_large: the hours after the boundary at which a passable pixel of a small,
+  medium or large permanently shadowed region (PSR) is next to the frontier, and that region's id (from
+  scripts/generate_psr_regions.py); blank if none is reached. Small is under PSR_SMALL_MAX_M2, medium up to
+  PSR_MEDIUM_MAX_M2, large above;
+* seed_passable: 0 if the seed pixel is not passable terrain (a seed on a slope over MAX_SLOPE_DEG). The rover
+  still starts there and moves off it, but it cannot stay on that pixel.
+
+EDGES_PATH lists the seeds a flood arrives at (seed_id, target_id, arrival_hours): the seeds of the next Earth
+cycle (EDGE_RULE) whose pixel is in the frontier at the target's before boundary. Stage 4 chains them.
+
+The passable mask (valid height, slope at most MAX_SLOPE_DEG, a light-store file for the patch) is made once
+and kept at PASSABLE_PATH (about 115 MB); it is remade when the slope limit or the store changes. The run
+checkpoints to OUTPUT_PATH + ".checkpoint.jsonl" after every cell-month, so run it again after a kill, a crash
+or Ctrl-C with the same settings to resume (a different setting needs the checkpoint deleted). Memory is
+about UNIT_CACHE_MIB per worker plus the PSR id raster (3.7 GB, shared). It is CPU only, reads the store's
+files throughout and needs no NVIDIA device. Importing it starts nothing.
 
 Progress and status messages are logged: to the console, colored with rich on a terminal when
 `pip install "lunarscout[console]"` is installed and plain when piped, and to a plain-text log
@@ -49,110 +47,41 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-import lunarscout as ls  # noqa: E402
-from lunarscout._numba_horizon.file_format import HorizonTileStore  # noqa: E402
-from lunarscout._numba_horizon.safe_haven_blocks import run_pass_two  # noqa: E402
-from lunarscout._numba_horizon.safe_haven_stage3 import PipelineSettings  # noqa: E402
-from lunarscout._numba_horizon.safe_haven_cells import read_cell_list  # noqa: E402
+from lunarscout._numba_horizon.safe_haven_floods import FloodSettings, run_floods  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_stage0 import LightStoreDirectory  # noqa: E402
-from lunarscout._numba_horizon.file_format import PATCH_SIZE  # noqa: E402
-from lunarscout._numba_horizon.safe_haven_windows import (  # noqa: E402
-    Stage1Rasters,
-    WindowParameters,
-    spice_vector_source,
-)
 from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
 from lunarscout.products import _load_dem  # noqa: E402
 
 
-# Edit these paths before running. They match run_safe_haven_stage1.py.
+# Edit these paths before running. They match run_safe_haven_stage2.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
-HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")   # used only without a light store
-LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")      # stage 0; None lights from the horizons
+LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")      # stage 0
 STAGE1_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
-STAGE1_PREFIX = "safe_haven_2h"  # must equal NAME_PREFIX in run_safe_haven_stage1.py
-# The stage-2 list of cells with havens (scripts/run_safe_haven_stage2.py). It is refused if the
-# stage-1 files, the survival limit or the cell size have changed since it was made.
-CELL_LIST_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_haven_cells.json"
-# The table. The checkpoint is OUTPUT_PATH + ".checkpoint.jsonl" next to it and is
-# removed when the table is complete. An existing OUTPUT_PATH is not replaced unless
-# OVERWRITE is True.
-OUTPUT_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_2h_operating_opportunity_scores.csv")
-# A JSON report of the finished table (what a row is, the settings, the lighting used, the run's counts).
-# None writes it next to the table, with the table's name and ".report.json".
-REPORT_PATH = None
-OVERWRITE = False
+STAGE1_PREFIX = "safe_haven_2h"
+SEEDS_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_plan_seeds.csv"             # stage 2
+# The PSR products (scripts/generate_psr_regions.py).
+PSR_IDS_PATH = Path("/e/lunar_analyst_scenarios/70south/psr_ids.tif")
+PSR_TABLE_PATH = Path("/e/lunar_analyst_scenarios/70south/psr_regions.csv")
+PASSABLE_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_passable_mask.npy"
+OUTPUT_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_floods.csv"
+EDGES_PATH = STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_edges.csv"
+OVERWRITE = False       # existing tables are not replaced unless this is True
 
-# Must equal the stage-1 run.
-START_UTC = "2024-01-01T00:00:00Z"
-STOP_UTC = "2031-12-31T22:00:00Z"
-STEP_HOURS = 2.0
-EARTH_ELEVATION_THRESHOLD_DEG = 2.0
-SUNLIGHT_FRACTION_THRESHOLD = 0.2
-MERGE_GAP_HOURS = 24.0
-OBSERVER_HEIGHT_M = 0.0
-# The stage-1 products are bytes of two-hour counts with NODATA 255. Set both to
-# None for float products in hours.
-HOURS_PER_COUNT = 2.0
-STAGE1_NODATA = 255
-
-# Stage-2 parameters (the specification, section 2). Operating fraction must equal
-# the stage-1 value, and the degenerate-outage window the stage-1 run's.
-PARAMETERS = WindowParameters(
-    survival_limit_hours=72.0,
-    operational_hours=48.0,
-    flood_step_minutes=120,    # lighting is constant over a 2-hour step ...
-    moves_per_step=4,          # ... and the rover moves 4 pixels in it (0.0111 m/s at 20 m)
+SETTINGS = FloodSettings(
+    max_days=28.0,              # the flood and the endurance end here
+    moves_per_step=4,           # 4 pixels per 2-hour step: 0.0111 m/s at 20 m
     connectivity=8,
-    max_seeds_per_cell_month=5,
-    seed_separation_m=250.0,
-    seed_timing_tolerance_hours=6.0,
-    haven_neighbourhood_m=100.0,
-    min_nearby_haven_fraction=0.05,
-    boundary_search_hours=24.0,
-    operating_sunlight_fraction=1.0,
-    cell_patches=2,
-    block_patches=8,                        # a multiple of cell_patches; memory scales with it
-    degenerate_outage_window_hours=24.0,
+    max_slope_deg=20.0,
+    psr_small_max_m2=40.0,      # small: [0, 40) m2; at 20 m a pixel is 400 m2, so no region is small
+    psr_medium_max_m2=1_000_000.0,
+    reach_hours=48.0,
+    edge_rule="next_cycle",     # or "any_later"
+    unit_cache_mib=1024,        # per worker
 )
 
-# The pipeline (src/lunarscout/_numba_horizon/safe_haven_stage3.py): cells are planned (pass 1) in
-# PLAN_WORKERS processes, the lighting units they need are lit by LIGHT_WORKERS threads (each calling
-# the CPU lightmap with NUMBA_THREADS_PER_LIGHT_WORKER threads), and each cell-month is flooded by
-# FLOOD_WORKERS threads as soon as its units are lit. Bounded queues join them: at most
-# CELLS_IN_FLIGHT cells are planned and not yet flooded, and at most STORE_BUDGET_GB of lit units
-# are requested at a time, so memory is the units in flight plus DECODE_CACHE_PATCHES decoded
-# patches (94 MB each), not a block of horizons per worker. STATUS_SECONDS logs where work is
-# waiting; when LIGHT is the stage with a long queue and the flood has nothing ready, lighting is the
-# limit, as it is on the CPU: LIGHT_WORKERS x NUMBA_THREADS_PER_LIGHT_WORKER should be about the CPU
-# count. Measured on 10 dense blocks (this laptop, idle, same table every time): the block loop took
-# 1179 s, the pipeline 498 s (2.4x), 16 GB, with lighting at about 390 units/s, the CPU kernel's
-# ceiling. A checkpoint resumes with any of these settings.
-# Where lighting runs. "auto" uses the NVIDIA GPU when it can be set up and otherwise falls back to
-# the CPU with a warning; "cuda" requires a compatible NVIDIA device and driver and fails if there
-# is none (it never falls back); "cpu" never probes CUDA. On the GPU the lightmap and the bit packing
-# run on the device (the same kernel stage 1 uses), GPU_LIGHT_WORKERS threads decode horizons and
-# feed it, and each launch lights GPU_CHUNKS_PER_BATCH days. A GPU run gives the CPU run's table except
-# for rare one-pixel differences where a pixel's Sun fraction sits within a rounding step of the lit
-# threshold (12 of 4,181 rows in the trial, each off by one pixel). Measured on 10 dense blocks: the
-# CPU pipeline took 536 s, the GPU pipeline 52 s (10x); the GPU needs about 1 GB of device memory.
-LIGHTING = "auto"
-GPU_DEVICE_ID = 0
-GPU_LIGHT_WORKERS = 6
-GPU_CHUNKS_PER_BATCH = 4
-PLAN_WORKERS = 4
-LIGHT_WORKERS = 12
-NUMBA_THREADS_PER_LIGHT_WORKER = 2
-FLOOD_WORKERS = 2
-DECODE_CACHE_PATCHES = 32
-CELLS_IN_FLIGHT = 24
-STORE_BUDGET_GB = 8.0
-STATUS_SECONDS = 60.0
-
-# None runs every cell in the stage-2 list. For a trial, list (cell_row, cell_column) pairs, for
-# example the CELLS line printed by scripts/list_safe_haven_cells.py; the stage-2 list is then
-# not needed.
-CELLS = None
+SEED_IDS = None         # None floods every seed. For a trial, list seed ids.
+FLOOD_WORKERS = 16
+PROGRESS_EVERY_GROUPS = 200
 
 # Messages go to the console (colored with rich on a terminal when "lunarscout[console]" is
 # installed; plain when piped) and to a plain-text log file, which replaces `| tee`. LOG_PATH
@@ -161,108 +90,27 @@ LOG_PATH = None
 COLOR = "auto"
 LOG_LEVEL = "INFO"
 LOG = logging.getLogger("lunarscout.scripts.stage3")
-PATCH_BYTES = PATCH_SIZE * PATCH_SIZE * 1440 * 4          # one decoded float32 patch
-
-
-def _report_path() -> Path:
-    return REPORT_PATH if REPORT_PATH is not None else OUTPUT_PATH.with_suffix(".report.json")
-
-
-def _available_memory_bytes() -> int | None:
-    """MemAvailable from /proc/meminfo, or None where it is not readable."""
-    try:
-        for line in Path("/proc/meminfo").read_text().splitlines():
-            if line.startswith("MemAvailable:"):
-                return int(line.split()[1]) * 1024
-    except (OSError, ValueError, IndexError):
-        pass
-    return None
-
-
-def _warn_if_memory_is_short(dem_bytes: int) -> None:
-    """Log the expected memory and warn when it exceeds what is available. The estimate is the DEM, the
-    decode cache, the lit-unit budget and about 2 GB for each planning process (measured: 16 GB for the
-    settings above), so treat it as a guide."""
-    cache = 0 if LIGHT_STORE_PATH is not None else DECODE_CACHE_PATCHES * PATCH_BYTES
-    expected = dem_bytes + cache + STORE_BUDGET_GB * 2**30 + PLAN_WORKERS * 2 * 2**30
-    available = _available_memory_bytes()
-    LOG.info("Stage 3: about %.0f GB expected (DEM, %d cached patches, %.0f GB of units, %d planning "
-             "processes; an estimate)%s.", expected / 1e9, DECODE_CACHE_PATCHES, STORE_BUDGET_GB,
-             PLAN_WORKERS, "" if available is None else ", %.0f GB available" % (available / 1e9))
-    if available is not None and expected > available:
-        LOG.warning("Stage 3: about %.0f GB expected but only %.0f GB is available; lower "
-                    "STORE_BUDGET_GB, DECODE_CACHE_PATCHES or PLAN_WORKERS.", expected / 1e9, available / 1e9)
 
 
 def _run() -> int:
-    dem, _georef = _load_dem(DEM_PATH)
-    stage1 = Stage1Rasters(
-        STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_hibernation_hours.tif",
-        STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_joint_operating_total_hours.tif",
-        hours_per_count=HOURS_PER_COUNT,
-        nodata=STAGE1_NODATA,
-    )
-    cells = CELLS
-    if cells is None:
-        if not CELL_LIST_PATH.exists():
-            raise ValueError(f"{CELL_LIST_PATH} does not exist; run scripts/run_safe_haven_stage2.py first "
-                             "or set CELLS for a trial")
-        found = read_cell_list(
-            CELL_LIST_PATH, stage1, survival_limit_hours=PARAMETERS.survival_limit_hours,
-            cell_size=PARAMETERS.cell_patches * 128,
-        )
-        cells = [(entry["cell_row"], entry["cell_col"]) for entry in found]
-        LOG.info("Stage 3: %d cells from %s", len(cells), CELL_LIST_PATH)
-    _warn_if_memory_is_short(int(dem.elevation_m.nbytes))
-    times = ls.times(START_UTC, STOP_UTC, step_hours=STEP_HOURS)
+    dem, georef = _load_dem(DEM_PATH)
     started = clock.monotonic()
-    baseline: list[int] = []
 
     def progress(done: int, total: int) -> None:
-        if not baseline:
-            baseline.append(done)
-            LOG.info("Stage 3: %d/%d blocks already in the checkpoint.", done, total)
+        if done % PROGRESS_EVERY_GROUPS and done != total:
             return
-        ran = done - baseline[0]
         elapsed = clock.monotonic() - started
-        remaining = elapsed / ran * (total - done) if ran else float("nan")
-        LOG.info(
-            "Stage 3: %d/%d blocks, %.1f min elapsed, about %.1f min left (rate from this run only)",
-            done, total, elapsed / 60, remaining / 60,
-        )
+        LOG.info("Stage 3: %d/%d cell-months, %.1f min elapsed, about %.1f min left (rate from this run only)",
+                 done, total, elapsed / 60, elapsed / done * (total - done) / 60)
 
-    lighting = (
-        dict(horizon_store=HorizonTileStore(HORIZONS_PATH), sun_vectors_at=spice_vector_source("sun"))
-        if LIGHT_STORE_PATH is None else dict(light_store=LightStoreDirectory(LIGHT_STORE_PATH, dem))
-    )
-    report = run_pass_two(
-        dem=dem,
-        stage1=stage1,
-        times=times.values,
-        earth_vectors_at=spice_vector_source("earth"),
-        **lighting,
-        output_path=OUTPUT_PATH,
-        report_path=_report_path(),
-        parameters=PARAMETERS,
-        cells=cells,
-        overwrite=OVERWRITE,
-        observer_height_m=OBSERVER_HEIGHT_M,
-        earth_elevation_threshold_deg=EARTH_ELEVATION_THRESHOLD_DEG,
-        sunlight_fraction_threshold=SUNLIGHT_FRACTION_THRESHOLD,
-        merge_gap_hours=MERGE_GAP_HOURS,
-        progress=progress,
-        pipeline=PipelineSettings(
-            plan_workers=PLAN_WORKERS, light_workers=LIGHT_WORKERS,
-            numba_threads_per_light_worker=NUMBA_THREADS_PER_LIGHT_WORKER, flood_workers=FLOOD_WORKERS,
-            decode_cache_patches=DECODE_CACHE_PATCHES, cells_in_flight=CELLS_IN_FLIGHT,
-            store_budget_bytes=int(STORE_BUDGET_GB * 2**30), status_seconds=STATUS_SECONDS,
-            lighting=LIGHTING, gpu_device_id=GPU_DEVICE_ID, gpu_light_workers=GPU_LIGHT_WORKERS,
-            gpu_chunks_per_batch=GPU_CHUNKS_PER_BATCH,
-        ),
-    )
+    report = run_floods(
+        OUTPUT_PATH, EDGES_PATH,
+        seeds_path=SEEDS_PATH, dem=dem, georef=georef, directory=LightStoreDirectory(LIGHT_STORE_PATH, dem),
+        psr_ids_path=PSR_IDS_PATH, psr_table_path=PSR_TABLE_PATH, passable_path=PASSABLE_PATH,
+        settings=SETTINGS, seed_ids=SEED_IDS, workers=FLOOD_WORKERS, overwrite=OVERWRITE, progress=progress)
     print(json.dumps(report.as_dict(), indent=2), flush=True)
-    LOG.info("Table written to: %s", OUTPUT_PATH)
-    LOG.info("Report written to: %s", _report_path())
+    LOG.info("%d seeds flooded, %d edges; tables written to: %s and %s", report.seeds, report.edges,
+             OUTPUT_PATH, EDGES_PATH)
     return 0
 
 

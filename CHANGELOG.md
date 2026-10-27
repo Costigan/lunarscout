@@ -6,6 +6,18 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Rover chain stage 3: forward floods from the plan seeds.** `scripts/run_safe_haven_stage3.py` is now the flood
+  stage (new private module `safe_haven_floods.py`), replacing the earlier block/pipeline stage 3 script and
+  `plan_safe_haven_windows.py` and `list_safe_haven_cells.py`, which are removed with their script tests. For every
+  stage-2 seed it floods forward up to 28 days from the after boundary (4 one-pixel moves per 2-hour step), reading
+  lit bits from the light store a day of one patch at a time, and writes a per-seed table (lit endurance in hours,
+  the 48-hour reach in pixels, the first touch of a small, medium and large PSR with the PSR id) and an edge table
+  (the next-cycle seeds each flood arrives at, at their before boundary). The passable mask (valid height, slope at
+  most 20 degrees, patch present) is made once and cached. The run is resumable and gives the same tables for any
+  number of workers. The earlier stage-3 internals (`safe_haven_blocks`, `safe_haven_stage3`,
+  `safe_haven_litstore`, the flood oracle) are still in the tree, used by the GPU lighting tests and stage 0, and
+  can be removed in a separate change.
+
 - **Rover chain stage 2: the plan seeds.** `scripts/run_safe_haven_stage2.py` is now the seed planner (new private
   module `safe_haven_plan.py`; the cell-list scan it replaces is gone from the script and its tests, and
   `safe_haven_cells.py` stays only for the earlier stage 3 until that is replaced). It reads the stage-1

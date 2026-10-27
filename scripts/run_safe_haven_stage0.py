@@ -42,7 +42,7 @@ from lunarscout.products import _load_dem  # noqa: E402
 
 LOG = logging.getLogger("lunarscout.scripts.run_safe_haven_stage0")
 
-# Edit these paths before running. They match run_safe_haven_stage3.py.
+# Edit these paths before running. They match run_safe_haven_stage2.py.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 HORIZONS_PATH = Path("/e/lunar_analyst_scenarios/70south/lighting/horizons")
 OUTPUT_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/light_store")     # about 0.2 to 0.45 TB for every patch
