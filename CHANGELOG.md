@@ -6,6 +6,19 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Rover chain stage 2: the plan seeds.** `scripts/run_safe_haven_stage2.py` is now the seed planner (new private
+  module `safe_haven_plan.py`; the cell-list scan it replaces is gone from the script and its tests, and
+  `safe_haven_cells.py` stays only for the earlier stage 3 until that is replaced). It reads the stage-1
+  hibernation product and the light store and writes one CSV row per seed (up to five per 5.12 km cell and
+  month): the pixel, the hibernation, the kind of its outage (`earth_never_sets`, `outage_sun_lit`,
+  `outage_in_shadow`), its Earth cycle (minima of Earth's elevation at the raster centre, refused unless one per
+  cycle), the outage's start and end, and the flood steps of the first lit step after the outage (required) and
+  the last lit step before it (kept for chains, blank when there is none). There is no Earth gate. New
+  `WindowParameters.forward_only` selects this; the earlier pass-1 behaviour is the default and unchanged.
+  Planning runs in forked worker processes and gives the same table for any number. On two real 36-cell blocks
+  it took about 10 s each; on real data the outage midpoints are spread over the whole Earth cycle (see
+  `docs/safe-haven-light-store.md`, section 8).
+
 - **Safe-haven stage 0: the thresholded-lighting store.** New private modules
   `safe_haven_lightstore.py` and `safe_haven_stage0.py`, and `scripts/run_safe_haven_stage0.py`, light every
   128 x 128 patch once for the whole time range (2-hour steps, 2024 to 2031) and store three packed

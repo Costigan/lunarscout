@@ -113,3 +113,42 @@ The reduction walks the packed bits one step at a time with per-pixel state (ste
 the state are read in order), never unpacking a patch's 35,064 steps at once. The tests compare it with a
 brute-force reference that unpacks each patch and finds each pixel's runs with NumPy, on hand-built bits (every
 edge above) and on the scene store, and check resume, worker independence and the nodata cases.
+
+## 8. Rover chain, stage 2: the plan seeds
+
+`scripts/run_safe_haven_stage2.py` (module `safe_haven_plan.py`) replaces the earlier stage 2 (a list of cells) and
+the planning half of the earlier stage 3. It picks the seeds that stage 3 floods from and stage 4 chains. It reads
+the stage-1 hibernation product and the store (never a horizon) and writes one CSV row per seed, plus a JSON
+report of the counts next to it.
+
+* **Which pixels.** The earlier rules, unchanged: per 5.12 km cell and month with a haven pixel (hibernation at
+  most 72 h), up to five seeds, best first by the joint operating total within the flood reach, at least 250 m
+  apart unless their outage timing differs by more than 6 h, and with at least 5% of the pixels within 100 m also
+  havens. Each seed's hibernation is recomputed from the store and must equal the stage-1 value (a disagreement
+  is counted, and the run stops when it exceeds 1% of the timelines).
+* **No Earth gate.** A seed need not have Earth available for 48 hours on either side
+  (`WindowParameters.forward_only`). Seeds that the gate used to drop stay in.
+* **Boundaries.** `after_step` is the first step lit at or after the outage ends, within 24 h; a seed with none is
+  dropped. It is where stage 3's flood starts. `before_step` is the last lit step at or before the outage starts,
+  within 24 h; it is where a rover arriving from an earlier seed must be, and is blank when the seed is not lit
+  before its outage (it can then start a chain but not continue one). Steps count the flood step (120 minutes)
+  from 1970-01-01T00:00:00Z.
+* **Outage kind.** `earth_never_sets`: the one-sample outage the degenerate-outage rule defines at the Earth
+  elevation minimum where Earth stays up through its whole cycle. `outage_sun_lit`: a real outage that no shadow
+  touches (hibernation 0 h). `outage_in_shadow`: a real outage a shadow touches. A real outage that lasts a single
+  sample (a ridge crossing) is `outage_sun_lit` or `outage_in_shadow`, not `earth_never_sets`: with the
+  degenerate rule off it is still an outage.
+* **Earth cycle.** The minima of Earth's elevation above a flat horizon at the valid pixel nearest the raster's
+  centre, numbered from 0 (`earth_cycle`). The run is refused unless they are one per cycle, 20 to 35 days apart
+  (the real series has 107 minima 27.0 to 27.3 days apart over 2024 to 2031). A seed takes the cycle of the
+  minimum nearest the midpoint of its outage, or -1 when none is within 15 days.
+* **Order and ids.** Rows are ordered by month, row and column and numbered from 1 in that order, so the table does
+  not depend on the number of workers.
+
+Measured on two 36-cell blocks of the real raster (8 workers): 1,740 and 500 seeds, the first block in 10 s. In the polar block 16%
+of the seeds have no before boundary (23 of 500 in the other); no seed has cycle -1. **Caveat on the cycle label:**
+the midpoints of real outages are spread over the whole cycle, not clustered at the pole's Earth minimum (offsets
+from the assigned minimum run from -13.6 to +14.4 days, with a median of 11.7 days before it in the second block), because the outage is set by the terrain horizon and Earth's azimuth as well as its elevation. The
+label is a consistent ordering, but where a cycle starts and ends cuts through real outages at an arbitrary
+phase, so a rule that links only seeds of consecutive cycle numbers can miss links that a rule based on outage
+times would find. The table holds the outage times, so stage 3 or 4 can use either.

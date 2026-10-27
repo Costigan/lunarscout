@@ -34,6 +34,14 @@ MINUTES_PER_DAY = 1440
 MICROSECONDS_PER_MINUTE = 60_000_000
 MICROSECONDS_PER_HOUR = 3_600_000_000
 
+#: What the outage of a hibernation of record is. ``earth_never_sets``: Earth stays up through its whole
+#: cycle and the outage is the one sample the degenerate-outage rule defines at the cycle's minimum.
+#: ``outage_sun_lit``: a real outage that no shadow touches (a score of 0). ``outage_in_shadow``: a real
+#: outage that a shadow run touches.
+KIND_EARTH_NEVER_SETS = "earth_never_sets"
+KIND_OUTAGE_SUN_LIT = "outage_sun_lit"
+KIND_OUTAGE_IN_SHADOW = "outage_in_shadow"
+
 VectorSource = Callable[[npt.NDArray[np.datetime64]], npt.ArrayLike]
 
 
@@ -92,6 +100,10 @@ class WindowParameters:
     #: The stage-1 degenerate-outage window in hours (``None``: the stage-1 default);
     #: it must equal the stage-1 run's.
     degenerate_outage_window_hours: float | None = None
+    #: Forward-only seeds (the stage-2 planner): Earth need not be available for ``operational_hours``
+    #: on either side, and only the after boundary must be lit; the before boundary is kept when there
+    #: is one (the target of a chain) and is ``None`` when there is not.
+    forward_only: bool = False
 
     def __post_init__(self) -> None:
         positive = (
@@ -457,6 +469,7 @@ class PixelRecord:
     outage_end_us: int            # T_e: the first Earth-available sample after it
     earth_visible_before_hours: float
     earth_visible_after_hours: float
+    outage_kind: str = ""
 
 
 @dataclass(frozen=True)
@@ -468,13 +481,14 @@ class Seed:
     hibernation_hours: float
     outage_start_us: int
     outage_end_us: int
-    boundary_before_step: int
+    boundary_before_step: int | None
     boundary_after_step: int
     nearby_haven_count: int
     nearby_pixel_count: int
     nearby_haven_fraction: float
     earth_visible_before_hours: float
     earth_visible_after_hours: float
+    outage_kind: str = ""
 
 
 @dataclass
@@ -548,6 +562,7 @@ class CandidateEvaluator:
                 return "no_horizon"
             is_shadow = sun.astype(np.float64) < self.sun_threshold
             is_outage = earth.astype(np.float64) < self.earth_threshold
+            real_outage = is_outage
             if self.window > 0:
                 flat = self.signals.series(
                     row, column, time.earth_vectors[start:stop], margin=True, flat_elevation=True,
@@ -585,13 +600,17 @@ class CandidateEvaluator:
             break
         if record.outage_last + 1 >= count:
             return "outage_unclosed"
+        degenerate = (is_outage & ~real_outage)[record.outage_first - start]
+        kind = (KIND_EARTH_NEVER_SETS if degenerate
+                else KIND_OUTAGE_SUN_LIT if record.score_samples == 0 else KIND_OUTAGE_IN_SHADOW)
         available = ~is_outage
         before = _contiguous_true(available[: record.outage_first - start][::-1])
         after = _contiguous_true(available[record.outage_last + 1 - start:])
         cap = self.parameters.operational_hours
         # Earth must be available for the whole operational window on each side
         # (section 5, step 5); a window cut short by the series is not verified.
-        if before * time.step_hours < cap - 1e-9 or after * time.step_hours < cap - 1e-9:
+        if (not self.parameters.forward_only
+                and (before * time.step_hours < cap - 1e-9 or after * time.step_hours < cap - 1e-9)):
             return "earth_window"
         return PixelRecord(
             row=row, column=column,
@@ -602,6 +621,7 @@ class CandidateEvaluator:
             outage_end_us=int(time.times_us[record.outage_last + 1]),
             earth_visible_before_hours=min(cap, before * time.step_hours),
             earth_visible_after_hours=min(cap, after * time.step_hours),
+            outage_kind=kind,
         )
 
 
@@ -618,9 +638,11 @@ def find_boundaries(
     grid: FloodGrid,
     record: PixelRecord,
     parameters: WindowParameters,
-) -> tuple[int, int] | None:
+) -> tuple[int | None, int] | None:
     """The before and after flood boundaries as flood-grid step indices (section 6),
-    or ``None`` when the seed is not lit within ``boundary_search_hours``."""
+    or ``None`` when the seed is not lit within ``boundary_search_hours``. With
+    ``parameters.forward_only`` only the after boundary is required and the before one is ``None``
+    when the seed is not lit before the outage."""
     cap = int(math.floor(parameters.boundary_search_hours * 60.0 / grid.step_minutes + 1e-9))
     nominal_before = grid.floor_index(record.outage_start_us)
     nominal_after = grid.ceil_index(record.outage_end_us)
@@ -637,9 +659,10 @@ def find_boundaries(
     lit = fractions.astype(np.float64) >= parameters.operating_sunlight_fraction - OPERATING_FUZZ
     before_lit = np.flatnonzero(lit[: before_steps.size])
     after_lit = np.flatnonzero(lit[before_steps.size:])
-    if before_lit.size == 0 or after_lit.size == 0:
+    if after_lit.size == 0 or (before_lit.size == 0 and not parameters.forward_only):
         return None
-    return int(before_steps[before_lit[-1]]), int(after_steps[after_lit[0]])
+    before = int(before_steps[before_lit[-1]]) if before_lit.size else None
+    return before, int(after_steps[after_lit[0]])
 
 
 def select_seeds(
@@ -772,6 +795,7 @@ def select_seeds(
             nearby_haven_fraction=float(fraction[row, column]),
             earth_visible_before_hours=record.earth_visible_before_hours,
             earth_visible_after_hours=record.earth_visible_after_hours,
+            outage_kind=record.outage_kind,
         ))
     counts.seeds_valid += len(seeds)
     if seeds:
