@@ -293,7 +293,7 @@ def test_the_script_defaults_follow_stage_3_and_importing_it_starts_nothing() ->
     three.loader.exec_module(stage3)
     assert module.SEEDS_PATH == stage3.SEEDS_PATH and module.FLOODS_PATH == stage3.OUTPUT_PATH
     assert module.EDGES_PATH == stage3.EDGES_PATH and module.OUTPUT_PATH.name == "safe_haven_stage_4_chains.csv"
-    assert module.STEP_MINUTES == 120 and module.OVERWRITE is False
+    assert module.STEP_MINUTES == 120 and module.OVERWRITE is True
     assert module.LIGHT_STORE_PATH == stage3.LIGHT_STORE_PATH and module.PASSABLE_PATH == stage3.PASSABLE_PATH
     assert module.PSR_IDS_PATH == stage3.PSR_IDS_PATH and module.PSR_TABLE_PATH == stage3.PSR_TABLE_PATH
     for name in ("max_days", "moves_per_step", "connectivity", "max_slope_deg", "psr_small_max_m2", "psr_medium_max_m2"):

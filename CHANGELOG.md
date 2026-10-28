@@ -23,6 +23,8 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   next to (stage 4 now reconstructs the routes, needing the light store, the passable mask and the PSR products).
   The PSR small class is now up to and including 400 m2 (one pixel at 20 m; it was under 40 m2, which no region
   reached), so one-pixel regions are small; stage 3's `touch_small_*` columns need a stage-3 rerun to follow it.
+  The stage 3, stage 4 and chain-map scripts now default to `OVERWRITE = True`, so a rerun replaces the tables and
+  images (the lander script already did); set it to False to refuse to replace existing files.
 
 - **Pixel-centre coordinates in the seed tables.** The stage-2 seed table and the stage-4 final table gain `x_m` and
   `y_m`, the seed pixel's centre in the DEM's CRS (after `column`). Stage 2 writes them from the DEM it plans on;

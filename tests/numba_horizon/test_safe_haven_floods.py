@@ -506,7 +506,7 @@ def test_importing_the_script_starts_nothing_and_its_defaults_match_the_earlier_
     assert module.OUTPUT_PATH.name == "safe_haven_stage_3_floods.csv" and module.EDGES_PATH.name == "safe_haven_stage_3_edges.csv"
     assert module.SETTINGS.max_days == 28.0 and module.SETTINGS.psr_small_max_m2 == 400.0
     assert module.SETTINGS.psr_medium_max_m2 == 1_000_000.0 and module.SETTINGS.max_slope_deg == 20.0
-    assert module.SEED_IDS is None and module.OVERWRITE is False
+    assert module.SEED_IDS is None and module.OVERWRITE is True        # a rerun replaces the tables
 
 
 def test_the_script_writes_the_tables_and_prints_the_report(prepared, seeds, regions, full_run, tmp_path, monkeypatch, capsys) -> None:  # noqa: F811
@@ -524,5 +524,7 @@ def test_the_script_writes_the_tables_and_prints_the_report(prepared, seeds, reg
     printed = capsys.readouterr().out
     assert '"seeds": 54' in printed and "Stage 3:" in printed
     assert (tmp_path / "floods.csv").read_bytes() == (full_run[0] / "a.csv").read_bytes()
+    assert module.main() == 0                                          # the default is to replace the tables
+    monkeypatch.setattr(module, "OVERWRITE", False)
     with pytest.raises(InputError, match="exists"):
         module.main()

@@ -75,7 +75,7 @@ FLOOD_SETTINGS = FloodSettings(max_days=28.0, moves_per_step=4, connectivity=8, 
                                psr_small_max_m2=400.0, psr_medium_max_m2=1_000_000.0)
 ROUTE_WORKERS = 16
 PROGRESS_EVERY_SEEDS = 500
-OVERWRITE = False       # an existing table is not replaced unless this is True
+OVERWRITE = True        # an existing table is replaced when the run completes; False refuses to replace it
 
 # Messages go to the console (colored with rich on a terminal when "lunarscout[console]" is
 # installed; plain when piped) and to a plain-text log file, which replaces `| tee`. LOG_PATH

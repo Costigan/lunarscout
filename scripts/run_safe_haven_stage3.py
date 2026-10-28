@@ -64,7 +64,7 @@ PSR_TABLE_PATH = Path("/e/lunar_analyst_scenarios/70south/psr_regions.csv")
 PASSABLE_PATH = STAGE1_DIRECTORY / "safe_haven_stage_3_passable_mask.npy"
 OUTPUT_PATH = STAGE1_DIRECTORY / "safe_haven_stage_3_floods.csv"
 EDGES_PATH = STAGE1_DIRECTORY / "safe_haven_stage_3_edges.csv"
-OVERWRITE = False       # existing tables are not replaced unless this is True
+OVERWRITE = True        # existing tables are replaced when the run completes; False refuses to replace them
 
 SETTINGS = FloodSettings(
     max_days=28.0,              # the flood and the endurance end here

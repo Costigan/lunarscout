@@ -35,7 +35,8 @@ route would be thousands of short segments).
 
 The run takes minutes with routes (seconds without), uses about 6 GB of memory for a full-resolution image plus the
 flood buffers, and writes the files through staging files, so a failure leaves any earlier file untouched. An existing
-file is not replaced unless OVERWRITE is True. It is CPU only and needs no NVIDIA device. Importing it starts nothing.
+file is replaced as its new version is complete (OVERWRITE True; False refuses to replace files). It is CPU only and
+needs no NVIDIA device. Importing it starts nothing.
 
 Progress and status messages are logged: to the console, colored with rich on a terminal when
 `pip install "lunarscout[console]"` is installed and plain when piped, and to a plain-text log
@@ -71,7 +72,7 @@ RASTER_ROUTES = True    # False: the rasters use straight lines (quick, no light
 ROUTE_WORKERS = 16
 OUTPUT_DIRECTORY = STAGE_DIRECTORY
 DILATE_PIXELS = 2       # the dilated rasters' lines are 2 * DILATE_PIXELS + 1 pixels wide
-OVERWRITE = False       # existing files are not replaced unless this is True
+OVERWRITE = True        # existing files are replaced as the new ones are complete; False refuses to replace them
 PROGRESS_EVERY_SEEDS = 500
 
 # Messages go to the console (colored with rich on a terminal when "lunarscout[console]" is

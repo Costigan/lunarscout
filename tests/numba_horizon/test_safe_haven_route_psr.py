@@ -214,5 +214,7 @@ def test_the_script_writes_the_table_with_the_psr_counts(prepared, full_run, see
     assert '"psr_counts"' in printed and '"longest_chain"' in printed
     final = chains.read_chain_table(tmp_path / "final.csv")
     assert any(r["chain_psr_medium"] for r in final) and "Routes:" in (tmp_path / "final.csv.log").read_text()
+    assert module.main() == 0                                          # the default is to replace the tables
+    monkeypatch.setattr(module, "OVERWRITE", False)
     with pytest.raises(InputError, match="exists"):
         module.main()

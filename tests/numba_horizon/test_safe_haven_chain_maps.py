@@ -535,7 +535,7 @@ def test_the_script_defaults_follow_stage_4_and_importing_it_starts_nothing() ->
     stage4 = importlib.util.module_from_spec(four)
     four.loader.exec_module(stage4)
     assert module.CHAINS_PATH == stage4.OUTPUT_PATH and module.DEM_PATH == stage4.DEM_PATH
-    assert module.DILATE_PIXELS == 2 and module.OVERWRITE is False and module.RASTER_ROUTES is True
+    assert module.DILATE_PIXELS == 2 and module.OVERWRITE is True and module.RASTER_ROUTES is True
     assert module.PSR_IDS_PATH == stage4.PSR_IDS_PATH
     three = importlib.util.spec_from_file_location("run_safe_haven_stage3", SCRIPT.parent / "run_safe_haven_stage3.py")
     stage3 = importlib.util.module_from_spec(three)
@@ -557,6 +557,8 @@ def test_the_script_writes_the_six_files_and_prints_the_report(tables, monkeypat
     assert len(list((tables / "out").glob("*.tif"))) == 4 and len(list((tables / "out").glob("*.gpkg"))) == 2
     assert not list((tables / "out").glob("*.qml"))
     assert "six files written" in (tables / "out" / "safe_haven_stage_4_chain_maps.log").read_text()
+    assert module.main() == 0                                          # the default is to replace the tables
+    monkeypatch.setattr(module, "OVERWRITE", False)
     with pytest.raises(InputError, match="exists"):
         module.main()
 
