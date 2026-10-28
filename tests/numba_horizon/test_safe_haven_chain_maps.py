@@ -317,6 +317,51 @@ def test_gdal_reads_the_geopackages(tables) -> None:
     assert "POINT (1430" in extent and "-650" in extent
 
 
+def qml_of(connection, table):
+    from xml.etree import ElementTree
+
+    rows = connection.execute("SELECT styleQML, useAsDefault, f_geometry_column FROM layer_styles WHERE f_table_name = ?",
+                              (table,)).fetchall()
+    assert len(rows) == 1 and rows[0][1] == 1 and rows[0][2] == "geom"
+    return ElementTree.fromstring(rows[0][0].split("\n", 1)[1])            # the text after the DOCTYPE line
+
+
+def test_the_line_layers_carry_a_default_style_by_chain_length(tables) -> None:
+    run(tables)
+    for name, table in (("predecessor_edges", "predecessor_edges"), ("longest_chain_per_root", "chains")):
+        connection = sqlite3.connect(tables / "out" / f"safe_haven_stage_4_{name}.gpkg")
+        renderer = qml_of(connection, table).find("renderer-v2")
+        assert renderer.get("type") == "categorizedSymbol" and renderer.get("attr") == "chain_length"
+        assert renderer.get("enableorderby") == "1"
+        assert renderer.find("orderby/orderByClause").get("asc") == "1" and renderer.find("orderby/orderByClause").text == "chain_length"
+        categories = renderer.findall("categories/category")
+        assert [c.get("value") for c in categories] == [str(n) for n in range(2, 11)] + [""]       # 2 to 10, then the rest
+        assert [c.get("label") for c in categories][:2] == ["2 seeds", "3 seeds"]
+        symbols = {s.get("name"): s for s in renderer.findall("symbols/symbol")}
+        assert {c.get("symbol") for c in categories} == set(symbols)
+        widths, colours = [], []
+        for category in categories[:-1]:
+            options = {o.get("name"): o.get("value") for o in symbols[category.get("symbol")].find("layer/Option")}
+            widths.append(float(options["line_width"]))
+            colours.append(tuple(int(v) for v in options["line_color"].split(",")[:3]))
+        assert widths == sorted(widths) and len(set(widths)) == 9                    # longer chains are wider
+        luminance = [0.299 * r + 0.587 * g + 0.114 * b for r, g, b in colours]
+        assert luminance == sorted(luminance) and len(set(colours)) == 9             # and brighter, every length distinct
+        assert luminance[-1] - luminance[0] > 150
+
+
+def test_the_dots_are_small_translucent_grey_and_come_first_in_the_file(tables) -> None:
+    run(tables)
+    connection = sqlite3.connect(tables / "out" / "safe_haven_stage_4_longest_chain_per_root.gpkg")
+    assert [r[0] for r in connection.execute("SELECT table_name FROM gpkg_contents ORDER BY rowid")] == ["isolated_seeds", "chains"]
+    renderer = qml_of(connection, "isolated_seeds").find("renderer-v2")
+    options = {o.get("name"): o.get("value") for o in renderer.find("symbols/symbol/layer/Option")}
+    red, green, blue, alpha = (int(v) for v in options["color"].split(","))
+    assert renderer.get("type") == "singleSymbol" and red == green == blue and alpha < 255
+    assert float(options["size"]) < 1.5 and options["outline_style"] == "no" and options["name"] == "circle"
+    assert connection.execute("SELECT count(*) FROM layer_styles").fetchone()[0] == 2
+
+
 def test_refusals_and_a_failure_leaves_earlier_files_alone(tables) -> None:
     run(tables)
     with pytest.raises(InputError) as caught:
@@ -364,13 +409,19 @@ def test_the_script_defaults_follow_stage_4_and_importing_it_starts_nothing() ->
     stage4 = importlib.util.module_from_spec(four)
     four.loader.exec_module(stage4)
     assert module.CHAINS_PATH == stage4.OUTPUT_PATH and module.DEM_PATH == stage4.DEM_PATH
-    assert module.DILATE_PIXELS == 2 and module.OVERWRITE is False
+    assert module.DILATE_PIXELS == 2 and module.OVERWRITE is False and module.RASTER_ROUTES is True
+    three = importlib.util.spec_from_file_location("run_safe_haven_stage3", SCRIPT.parent / "run_safe_haven_stage3.py")
+    stage3 = importlib.util.module_from_spec(three)
+    three.loader.exec_module(stage3)
+    assert module.LIGHT_STORE_PATH == stage3.LIGHT_STORE_PATH and module.PASSABLE_PATH == stage3.PASSABLE_PATH
+    for name in ("max_days", "moves_per_step", "connectivity", "max_slope_deg"):          # what the flood followed
+        assert getattr(module.FLOOD_SETTINGS, name) == getattr(stage3.SETTINGS, name)
 
 
 def test_the_script_writes_the_six_files_and_prints_the_report(tables, monkeypatch, capsys) -> None:
     module = load_script()
     for name, value in dict(DEM_PATH=tables / "dem.tif", CHAINS_PATH=tables / "chains.csv",
-                            OUTPUT_DIRECTORY=tables / "out").items():
+                            OUTPUT_DIRECTORY=tables / "out", RASTER_ROUTES=False).items():
         monkeypatch.setattr(module, name, value)
     assert module.main() == 0
     printed = capsys.readouterr().out

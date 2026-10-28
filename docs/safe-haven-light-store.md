@@ -233,7 +233,8 @@ consecutive Earth cycles. The mission percentiles are 24 h (p10), 136 h (median)
 `scripts/run_safe_haven_chain_maps.py` (module `safe_haven_chain_maps.py`) draws the stage-4 chains: two chain sets,
 each as a raster on the DEM's grid, a raster copy with dilated lines and a GeoPackage, six files named
 `safe_haven_stage_4_<set>{,_dilated}.tif` and `safe_haven_stage_4_<set>.gpkg`. It reads the stage-4 table (with its
-`x_m`/`y_m` columns) and the DEM's header, and takes about 35 s on the real table.
+`x_m`/`y_m` columns), the light store with stage 3's cached passable mask (for the routes) and the DEM's header. On
+the real table it takes about 70 s (about 35 s of it the routes).
 
 * **`predecessor_edges`:** one straight segment from each seed that has a predecessor to the seed (38,447 on the
   real table); every edge of the label forest once, branches included. An edge has the length of the longest chain
@@ -252,10 +253,30 @@ each as a raster on the DEM's grid, a raster copy with dilated lines and a GeoPa
   chain length, mission hours and root start), or `chains` (one line through the seed centres of each chain with root,
   end seed, length, mission, start and the seed ids) plus `isolated_seeds` points. The CRS is the DEM's, stored as
   WKT; `ogrinfo` reads both files.
-* **Straight lines.** Segments join seed pixel centres: a schematic, not the rover's path, and they may cross terrain
-  the rover cannot. Stage 3 keeps frontiers, not paths; reconstructing paths would mean flooding again from every
-  seed on a chain.
+* **QGIS styles.** Each GeoPackage layer carries a default style in QGIS's `layer_styles` table (`chain_map_styles.py`),
+  applied when QGIS adds the layer. The line layers are categorized by `chain_length`: one colour and one width for
+  each of 2 to 10 seeds (and "more"), from a dark purple through red and orange to pale yellow (brighter and wider is
+  longer; 0.26 mm at 2 seeds to 1.4 mm at 10), drawn shortest first so the long chains are on top. The isolated seeds
+  are 0.9 mm translucent grey dots. The file lists `isolated_seeds` before `chains`, so QGIS, which stacks each layer it
+  adds above the previous one, draws the dots under the lines. The styles were checked by loading both files in
+  QGIS 3.34 (default style applied, 10 categories, feature ordering on) and rendering them.
+* **Rover routes in the rasters.** Stage 3 keeps frontiers, not paths, so the raster segment of an edge is found by
+  flooding the predecessor again exactly as stage 3 did, keeping the frontier and the lit-and-passable mask after
+  every step (boxes of `4 * step` pixels around the seed, about 100 MB for a 28-day flood), and tracing back from the
+  successor's pixel at its before boundary (`safe_haven_paths.py`). One step of the trace recomputes the four
+  sub-move frontiers in a 9 x 9 window around the current pixel from the stored frontier of the step before, and
+  walks back preferring to stay, then the first neighbour in the frontier. The route is one feasible,
+  time-respecting walk (at most 4 one-pixel moves per step, every pixel entered passable and lit in its step,
+  staying only on lit pixels), not a shortest one; it has at least as many pixels as the straight line. Real table:
+  12,432 predecessor floods and 38,447 routes (5.2 million pixels) in 33 s with 16 workers; a spot check replayed 13
+  random routes against the real store and all were feasible. `RASTER_ROUTES = False` draws straight lines instead
+  (no light store needed). The flood settings and the passable mask must be stage 3's.
+* **Straight lines in the GeoPackages.** Their segments join seed pixel centres: a route would be thousands of short
+  segments, so the vectors stay straight (a schematic that may cross terrain the rover cannot).
 
 Tests check the sets against an exhaustive search over random forests, the Bresenham lines, the draw order (the
 longer chain on top in every input order), the stamps and clipping, the band values of every pixel on a hand-built
-graph, the GeoPackage tables and WKB, and `ogrinfo` on both files.
+graph, the GeoPackage tables and WKB, and `ogrinfo` on both files. The routes are tested by replaying every route of
+the scene against the light store (a schedule of at most 4 moves per step into lit, passable pixels exists), by
+running the trace kernel on random lit worlds with walls (4 and 8 neighbours, 2 to 4 moves, compiled and plain
+Python) and by comparing the rasters with a plain painter over the routes.

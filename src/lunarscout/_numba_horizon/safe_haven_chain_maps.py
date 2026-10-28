@@ -15,11 +15,14 @@ The rasters have the DEM's grid and three uint16 bands: the chain length (seeds;
 which the chain's root starts operations (1 is the table's first month) and the mission hours of the chain (the
 chain's end seed; for predecessor edges the longest mission among the seeds at or below the edge's target).
 Segments are drawn in ascending order of (length, mission), so where lines cross, all three bands come from the
-longer chain. A segment is straight between the centres of its two seed pixels: it is a schematic, not the
-rover's path (stage 3 keeps frontiers, not paths), and it may cross terrain the rover cannot. The dilated copy
-stamps a square of ``2 * dilate + 1`` pixels along every segment (dots one pixel larger).
+longer chain. In the rasters a segment is the rover's route: stage 3 keeps frontiers, not paths, so the flood of the
+edge's predecessor is run again with its frontiers kept and traced back from the seed (``safe_haven_paths``), giving
+one feasible, time-respecting route. Without a light store the segment is the straight line between the centres of
+its two seed pixels, a schematic that may cross terrain the rover cannot. The dilated copy stamps a square of
+``2 * dilate + 1`` pixels along every segment (dots one pixel larger).
 
-The GeoPackages hold the same sets as vectors, not dilated, with attributes: a ``predecessor_edges`` line layer
+The GeoPackages hold the same sets as vectors, not dilated and always straight (a route would be thousands of
+short segments), with attributes: a ``predecessor_edges`` line layer
 (one segment per edge) or a ``chains`` line layer (one line through the seeds of each chain) and an
 ``isolated_seeds`` point layer.
 """
@@ -39,6 +42,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..errors import InputError
+from .chain_map_styles import line_style_qml, point_style_qml
 from .pixel_coordinates import dem_header, pixel_centres
 from .safe_haven_chains import read_chain_table
 
@@ -57,6 +61,8 @@ class ChainMapsReport:
     chains: int                      # roots with descendants: one longest chain each
     isolated_seeds: int
     files: dict
+    raster_lines: str = "straight"   # "routes" when the rasters follow reconstructed rover routes
+    route_pixels: int = 0
     seconds: float = 0.0
 
     def as_dict(self) -> dict:
@@ -229,6 +235,19 @@ def _draw_python(bands, row0, column0, row1, column1, length, month, mission, or
                 r += sr
 
 
+def _draw_polylines_python(bands, starts, stops, rows, columns, length, month, mission, order, radius):
+    height, width = bands.shape[1], bands.shape[2]
+    for k in range(order.shape[0]):
+        i = order[k]
+        for p in range(starts[i], stops[i]):
+            r, c = rows[p], columns[p]
+            for rr in range(max(r - radius, 0), min(r + radius, height - 1) + 1):
+                for cc in range(max(c - radius, 0), min(c + radius, width - 1) + 1):
+                    bands[0, rr, cc] = length[i]
+                    bands[1, rr, cc] = month[i]
+                    bands[2, rr, cc] = mission[i]
+
+
 _KERNEL = {}
 
 
@@ -253,18 +272,38 @@ def draw_segments(bands, segments: Segments, radius: int = 0, *, compiled: bool 
          np.ascontiguousarray(segments.ascending(), dtype=np.int64), int(radius))
 
 
-def _concatenate(first: Segments, second: Segments) -> Segments:
-    return Segments(*(np.concatenate([getattr(first, f), getattr(second, f)]) for f in (
-        "row0", "column0", "row1", "column1", "length", "month", "mission")))
+def draw_polylines(bands, segments: Segments, paths, heads, radius: int = 0, *, compiled: bool = True) -> None:
+    """Draw each segment as the route ``paths`` holds for its head seed (``heads``, one id per segment), in ascending
+    order of (length, mission), a square stamp of ``2 * radius + 1`` pixels on every pixel of the route."""
+    if not len(segments.length):
+        return
+    draw = _draw_polylines_python
+    if compiled:
+        if "polylines" not in _KERNEL:
+            from numba import njit
+
+            _KERNEL["polylines"] = njit(cache=False, nogil=True)(_draw_polylines_python)
+        draw = _KERNEL["polylines"]
+    index = paths.index(heads)
+    draw(bands, np.ascontiguousarray(paths.offsets[index]), np.ascontiguousarray(paths.offsets[index + 1]),
+         np.ascontiguousarray(paths.rows, dtype=np.int32), np.ascontiguousarray(paths.columns, dtype=np.int32),
+         np.ascontiguousarray(np.minimum(segments.length, _UINT16_MAX), dtype=np.uint16),
+         np.ascontiguousarray(np.minimum(segments.month, _UINT16_MAX), dtype=np.uint16),
+         np.ascontiguousarray(np.minimum(segments.mission, _UINT16_MAX), dtype=np.uint16),
+         np.ascontiguousarray(segments.ascending(), dtype=np.int64), int(radius))
 
 
-def render(chain_set: ChainSet, height: int, width: int, radius: int, *, dots_extra: int = 1):
-    """The three bands of a set: its segments with ``radius`` and its dots (if any) one pixel larger."""
+def render(chain_set: ChainSet, height: int, width: int, radius: int, *, paths=None, dots_extra: int = 1):
+    """The three bands of a set: its segments with ``radius``, as routes when ``paths`` (a ``PathSet``) is given
+    and as straight lines otherwise, and its dots (if any) one pixel larger."""
     bands = np.zeros((3, height, width), dtype=np.uint16)
     dots = chain_set.dot_segments
     if dots is not None and len(dots.length):
         draw_segments(bands, dots, radius + (dots_extra if radius > 0 else 0))      # a dot is never a chain's seed
-    draw_segments(bands, chain_set.segments, radius)
+    if paths is None:
+        draw_segments(bands, chain_set.segments, radius)
+    else:
+        draw_polylines(bands, chain_set.segments, paths, chain_set.segment_seeds[:, 1], radius)
     return bands
 
 
@@ -310,7 +349,8 @@ def _wkb_line(xs, ys) -> bytes:
 
 def write_geopackage(path: Path, crs_wkt: str, layers: list[dict]) -> None:
     """A GeoPackage 1.3 with the given layers: ``{"name", "geometry": "LINESTRING" | "POINT", "columns":
-    [(name, sql_type)], "features": [(wkb, values...)], "bounds": (xmin, ymin, xmax, ymax)}``."""
+    [(name, sql_type)], "features": [(wkb, values...)], "bounds": (xmin, ymin, xmax, ymax), "style": QGIS QML text
+    (optional)}``. Layers with a style get it in QGIS's ``layer_styles`` table as the default style of the layer."""
     from pyproj import CRS
 
     staging = path.with_name(path.name + ".partial")
@@ -345,6 +385,8 @@ def write_geopackage(path: Path, crs_wkt: str, layers: list[dict]) -> None:
                 marks = ",".join("?" * (1 + len(layer["columns"])))
                 connection.executemany(f'INSERT INTO "{name}" (geom{"".join(f", {chr(34)}{c}{chr(34)}" for c, _ in layer["columns"])}) '
                                        f"VALUES ({marks})", layer["features"])
+                if layer.get("style"):
+                    _add_style(connection, name, layer["style"])
                 x0, y0, x1, y1 = layer["bounds"]
                 connection.execute("INSERT INTO gpkg_contents (table_name, data_type, identifier, min_x, min_y, max_x, max_y, srs_id) "
                                    "VALUES (?,?,?,?,?,?,?,?)", (name, "features", name, x0, y0, x1, y1, _SRS_ID))
@@ -354,6 +396,17 @@ def write_geopackage(path: Path, crs_wkt: str, layers: list[dict]) -> None:
         os.replace(staging, path)
     finally:
         staging.unlink(missing_ok=True)
+
+
+def _add_style(connection, table: str, qml: str) -> None:
+    """QGIS's ``layer_styles`` table (created on first use) with ``qml`` as the default style of ``table``."""
+    connection.execute("""CREATE TABLE IF NOT EXISTS layer_styles (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        f_table_catalog TEXT(256), f_table_schema TEXT(256), f_table_name TEXT(256), f_geometry_column TEXT(256),
+        styleName TEXT(30), styleQML TEXT, styleSLD TEXT, useAsDefault BOOLEAN, description TEXT, owner TEXT(30),
+        ui TEXT(30), update_time DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+    connection.execute("INSERT INTO layer_styles (f_table_catalog, f_table_schema, f_table_name, f_geometry_column, "
+                       "styleName, styleQML, styleSLD, useAsDefault, description, owner) VALUES ('', '', ?, 'geom', ?, ?, '', 1, ?, '')",
+                       (table, "chain length", qml, "Colour and width by chain length (lunarscout)"))
 
 
 def _bounds(xs, ys):
@@ -376,8 +429,14 @@ def output_paths(directory: str | Path, prefix: str = "safe_haven_stage_4") -> d
 def run_chain_maps(
     output_directory: str | Path, *, chains_path: str | Path, dem_path: str | Path, dilate_pixels: int = 2,
     prefix: str = "safe_haven_stage_4", overwrite: bool = False, compiled: bool = True,
+    light_store_path: str | Path | None = None, passable_path: str | Path | None = None,
+    flood_settings=None, workers: int = 1, progress=None,
 ) -> ChainMapsReport:
-    """Write the six products and ``<prefix>_chain_maps.report.json`` into ``output_directory``."""
+    """Write the six products and ``<prefix>_chain_maps.report.json`` into ``output_directory``.
+
+    With ``light_store_path`` (and the stage-3 ``passable_path``) the rasters follow the rover's route along every
+    predecessor edge, found by flooding the predecessors again (``workers`` processes) and tracing back; without
+    it they are straight lines between the seed pixels. ``flood_settings`` must be the ones stage 3 ran with."""
     started = clock.monotonic()
     if int(dilate_pixels) != dilate_pixels or dilate_pixels < 1:
         raise InputError("dilate_pixels must be a positive integer", code="chain_maps_setting_invalid",
@@ -397,19 +456,34 @@ def run_chain_maps(
             or arrays["column"].max() >= width:
         raise InputError("a seed lies outside the DEM's grid", code="chain_maps_grid_mismatch",
                          details={"height": height, "width": width})
+    route_set = None
+    if light_store_path is not None:
+        if passable_path is None:
+            raise InputError("routes need the passable mask stage 3 cached", code="chain_maps_setting_invalid",
+                             details={"passable_path": None})
+        from .safe_haven_floods import FloodSettings
+        from .safe_haven_paths import reconstruct_paths
+        from .safe_haven_stage0 import LightStoreDirectory
+
+        route_set = reconstruct_paths(
+            rows, directory=LightStoreDirectory(light_store_path), passable_path=passable_path,
+            dem_shape=(height, width), settings=flood_settings or FloodSettings(), workers=workers,
+            compiled=compiled, progress=progress)
     directory.mkdir(parents=True, exist_ok=True)
     origin = arrays["origin"]
     tags = {
         "LUNARSCOUT_PRODUCT": "safe-haven-chain-map-v1",
         "BANDS": "1 chain_length_seeds (0 = none); 2 root_start_month (1 = %04d-%02d); 3 mission_hours" % origin,
-        "SEGMENTS": "straight lines between seed pixel centres: a schematic, not the rover's path",
+        "SEGMENTS": ("rover routes: one feasible time-respecting route per edge, from the predecessor's pixel to "
+                     "the seed's" if route_set is not None else
+                     "straight lines between seed pixel centres: a schematic, not the rover's path"),
         "SOURCE_TABLE": Path(chains_path).name,
     }
     for set_name, chain in zip(CHAIN_SETS, (edge_set, chain_set)):
         description = {"predecessor_edges": "every seed's edge from its predecessor; value = the longest chain through the edge",
                        "longest_chain_per_root": "each root's longest chain; isolated seeds are dots of value 1"}[set_name]
         for kind, radius in (("raster", 0), ("dilated", int(dilate_pixels))):
-            bands = render(chain, height, width, radius)
+            bands = render(chain, height, width, radius, paths=route_set)
             write_raster(paths[set_name][kind], bands, transform=transform, crs_wkt=crs_wkt,
                          tags={**tags, "SET": set_name, "DESCRIPTION": description, "DILATE_PIXELS": str(radius)})
             del bands
@@ -417,7 +491,8 @@ def run_chain_maps(
     report = ChainMapsReport(
         seeds=len(rows), predecessor_edges=int(len(edge_set.segments.length)), chains=len(chain_set.lines),
         isolated_seeds=int(len(chain_set.dots)), files={n: {k: str(p) for k, p in g.items()} for n, g in paths.items()},
-        seconds=clock.monotonic() - started)
+        raster_lines="routes" if route_set is not None else "straight",
+        route_pixels=int(len(route_set.rows)) if route_set is not None else 0, seconds=clock.monotonic() - started)
     report_path.write_text(json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8")
     return report
 
@@ -435,6 +510,7 @@ def _write_vectors(paths, arrays, edge_set: ChainSet, chain_set: ChainSet, trans
                ("seed_chain_length", "INTEGER"), ("mission_hours", "REAL"), ("root_start_utc", "TEXT")]
     write_geopackage(paths["predecessor_edges"]["geopackage"], crs_wkt, [{
         "name": "predecessor_edges", "geometry": "LINESTRING", "columns": columns, "features": features,
+        "style": line_style_qml(),
         "bounds": _bounds(x[ends].ravel() if len(ends) else [], y[ends].ravel() if len(ends) else [])}])
 
     lines, line_attributes = chain_set.lines, chain_set.line_attributes
@@ -449,8 +525,12 @@ def _write_vectors(paths, arrays, edge_set: ChainSet, chain_set: ChainSet, trans
     every = np.concatenate([x[line - 1] for line in lines]) if lines else np.zeros(0)
     every_y = np.concatenate([y[line - 1] for line in lines]) if lines else np.zeros(0)
     write_geopackage(paths["longest_chain_per_root"]["geopackage"], crs_wkt, [
+        # The dots come first: QGIS adds the layers of a file in this order, each above the one before, so the lines end
+        # up above the dots.
+        {"name": "isolated_seeds", "geometry": "POINT", "features": dot_features, "bounds": _bounds(x[dots], y[dots]),
+         "columns": [("seed_id", "INTEGER"), ("root_start_utc", "TEXT"), ("mission_hours", "REAL")],
+         "style": point_style_qml()},
         {"name": "chains", "geometry": "LINESTRING", "features": chain_features, "bounds": _bounds(every, every_y),
          "columns": [("root_id", "INTEGER"), ("end_seed_id", "INTEGER"), ("chain_length", "INTEGER"),
-                     ("mission_hours", "REAL"), ("root_start_utc", "TEXT"), ("seed_ids", "TEXT")]},
-        {"name": "isolated_seeds", "geometry": "POINT", "features": dot_features, "bounds": _bounds(x[dots], y[dots]),
-         "columns": [("seed_id", "INTEGER"), ("root_start_utc", "TEXT"), ("mission_hours", "REAL")]}])
+                     ("mission_hours", "REAL"), ("root_start_utc", "TEXT"), ("seed_ids", "TEXT")],
+         "style": line_style_qml()}])

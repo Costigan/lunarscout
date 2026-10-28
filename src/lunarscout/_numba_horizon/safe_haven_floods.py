@@ -723,17 +723,33 @@ def _read_checkpoint(path: Path, fingerprint: dict):
     return rows, edges, keys
 
 
-def _load_passable(path: Path, dem, georef, directory: LightStoreDirectory, settings: FloodSettings):
-    identity = hashlib.sha256(json.dumps(
-        {"store": store_identity(directory), "slope": settings.max_slope_deg, "shape": [dem.height, dem.width]},
+def _passable_identity(directory: LightStoreDirectory, settings: FloodSettings, shape: tuple[int, int]) -> str:
+    return hashlib.sha256(json.dumps(
+        {"store": store_identity(directory), "slope": settings.max_slope_deg, "shape": [shape[0], shape[1]]},
         sort_keys=True).encode()).hexdigest()
+
+
+def load_cached_passable(path: str | Path, directory: LightStoreDirectory, settings: FloodSettings,
+                         shape: tuple[int, int]):
+    """The packed passable mask kept at ``path`` by a stage-3 run (memory-mapped), or ``None`` when there is none
+    for this store, slope limit and raster size."""
+    path = Path(path)
     sidecar = path.with_name(path.name + ".json")
     if path.exists() and sidecar.exists():
         try:
-            if json.loads(sidecar.read_text())["identity"] == identity:
+            if json.loads(sidecar.read_text())["identity"] == _passable_identity(directory, settings, shape):
                 return np.load(path, mmap_mode="r")
         except (ValueError, KeyError, OSError):
             pass
+    return None
+
+
+def _load_passable(path: Path, dem, georef, directory: LightStoreDirectory, settings: FloodSettings):
+    identity = _passable_identity(directory, settings, (dem.height, dem.width))
+    sidecar = path.with_name(path.name + ".json")
+    cached = load_cached_passable(path, directory, settings, (dem.height, dem.width))
+    if cached is not None:
+        return cached
     mask = passable_mask(dem, georef, directory, settings.max_slope_deg)
     staging = path.with_name(path.name + ".partial.npy")
     np.save(staging, mask)

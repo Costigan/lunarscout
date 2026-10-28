@@ -156,7 +156,10 @@ def test_the_script_defaults_name_the_stage_2_table_and_importing_it_starts_noth
     two = importlib.util.spec_from_file_location("run_safe_haven_stage2", SCRIPT.parent / "run_safe_haven_stage2.py")
     stage2 = importlib.util.module_from_spec(two)
     two.loader.exec_module(stage2)
-    assert module.TABLE_PATH == stage2.OUTPUT_PATH and module.DEM_PATH == stage2.DEM_PATH and module.OUTPUT_PATH is None
+    # TABLE_PATH is the constant to edit: the stage-2 table by default, the stage-4 table once it was pointed there
+    assert module.TABLE_PATH.parent == stage2.OUTPUT_PATH.parent and module.DEM_PATH == stage2.DEM_PATH
+    assert module.TABLE_PATH.name in ("safe_haven_stage_2_plan_seeds.csv", "safe_haven_stage_4_chains.csv")
+    assert module.OUTPUT_PATH is None
 
 
 def test_the_script_adds_the_columns_in_place_or_to_a_new_table(tmp_path, monkeypatch) -> None:
