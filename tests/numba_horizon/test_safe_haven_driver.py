@@ -20,7 +20,8 @@ from lunarscout._numba_horizon import safe_haven_chains as chains
 from lunarscout.products import _load_dem
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_safe_haven.py"
-STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "overview-maps")
+STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "overview-maps",
+         "quality-maps", "cluster-maps")
 
 
 def load_driver():
@@ -169,6 +170,17 @@ def test_the_steps_share_one_set_of_parameters() -> None:
     assert overview[:2] == ["safe_haven_stage_2_persistence_2024.tif", "safe_haven_stage_2_persistence_2024.png"]
     assert overview[-1] == "safe_haven_stage_2_persistence_contact_sheet.png" and len(overview) == 8 * 2 + 1
     assert steps["overview-maps"].options["years"] == list(range(2024, 2032)) and steps["overview-maps"].options["cell_patches"] == 2
+    assert set(map(str, steps["stage4"].outputs)) <= set(map(str, steps["quality-maps"].inputs))
+    quality = [p.name for p in steps["quality-maps"].outputs]
+    assert quality[:2] == ["safe_haven_stage_4_cell_quality_2024.tif", "safe_haven_stage_4_cell_quality_2024.png"]
+    assert quality[-1] == "safe_haven_stage_4_cell_quality_contact_sheet.png" and len(quality) == 8 * 2 + 1
+    assert steps["quality-maps"].options["years"] == list(range(2024, 2032)) and steps["quality-maps"].options["cell_patches"] == 2
+    assert set(map(str, steps["stage4"].outputs)) <= set(map(str, steps["cluster-maps"].inputs))
+    assert set(map(str, steps["stage3"].outputs)) & set(map(str, steps["cluster-maps"].inputs))      # the edge table
+    boxes = [p.name for p in steps["cluster-maps"].outputs]
+    assert boxes[:2] == ["safe_haven_stage_4_cluster_boxes_2024.tif", "safe_haven_stage_4_cluster_boxes_2024.png"]
+    assert boxes[-2:] == ["safe_haven_stage_4_cluster_boxes_contact_sheet.png", "safe_haven_stage_4_cluster_boxes.csv"]
+    assert steps["cluster-maps"].options["years"] == list(range(2024, 2032)) and steps["cluster-maps"].options["connect"] == "chains"
     assert [p.name for p in steps["yearly-chain-maps"].outputs] == [
         f"safe_haven_stage_4_longest_chain_per_root_{year}.tif" for year in range(2024, 2032)]
     assert steps["yearly-chain-maps"].options["years"] == list(range(2024, 2032))
@@ -299,7 +311,8 @@ def test_a_changed_input_reruns_only_what_depends_on_it(world, first_run) -> Non
     os.utime(directory / "psr.tif", None)                                       # the PSR map changed just now
     CALLS.clear()
     assert driver.run_safe_haven(**options) == 0
-    assert CALLS == ["psr-regions", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "overview-maps"]   # not the store, stage 1 or stage 2
+    assert CALLS == ["psr-regions", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "overview-maps",
+                     "quality-maps", "cluster-maps"]   # not the store, stage 1 or stage 2
     CALLS.clear()
     assert driver.run_safe_haven(**options) == 0 and CALLS == []
 
@@ -308,26 +321,26 @@ def test_a_changed_parameter_reruns_the_steps_that_use_it_and_what_follows(world
     _directory, options = world
     CALLS.clear()
     assert driver.run_safe_haven(**options, max_days=20.0) == 0
-    assert CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps"]
+    assert CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps", "quality-maps", "cluster-maps"]
     CALLS.clear()
     assert driver.run_safe_haven(**{**options, "flood_workers": 1, "route_workers": 1, "max_days": 20.0}) == 0
     assert CALLS == []                                                          # how it runs is not what it makes
-    assert driver.run_safe_haven(**options) == 0 and CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps"]    # and back again
+    assert driver.run_safe_haven(**options) == 0 and CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps", "quality-maps", "cluster-maps"]    # and back again
 
 
 def test_force_runs_a_step_and_what_depends_on_it(world, first_run) -> None:
     _directory, options = world
     CALLS.clear()
     assert driver.run_safe_haven(**options, force=("stage4",)) == 0
-    assert CALLS == ["stage4", "chain-maps", "yearly-chain-maps"]
+    assert CALLS == ["stage4", "chain-maps", "yearly-chain-maps", "quality-maps", "cluster-maps"]
 
 
 def test_run_steps_selects_a_subset_in_the_sequences_order(world, first_run) -> None:
     _directory, options = world
     CALLS.clear()
-    assert driver.run_safe_haven(**options, run_steps=("yearly-chain-maps", "chain-maps", "stage4"),
+    assert driver.run_safe_haven(**options, run_steps=("cluster-maps", "quality-maps", "yearly-chain-maps", "chain-maps", "stage4"),
                                  force=("stage4", "chain-maps")) == 0
-    assert CALLS == ["stage4", "chain-maps", "yearly-chain-maps"]           # the rebuilt table makes the yearly images stale
+    assert CALLS == ["stage4", "chain-maps", "yearly-chain-maps", "quality-maps", "cluster-maps"]   # the rebuilt table makes them stale
     CALLS.clear()
     assert driver.run_safe_haven(**options, run_steps=("chain-maps", "stage4")) == 0 and CALLS == []
 

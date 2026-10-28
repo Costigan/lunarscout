@@ -414,19 +414,117 @@ all eight years takes about 25 s.
   grids), the ramp, the block means, the hillshade and PSR backdrop, the square placement, the graticule against the
   DEM's known corner coordinates, and a run on a small scene (files, PNG decoding, replacing files, refused settings).
 
-## 13. Running the sequence: options and the driver
+## 13. Cell-quality maps
+
+`scripts/run_safe_haven_quality_maps.py` (`run_quality_maps` in `safe_haven_quality_map.py`; driver step `quality-maps`)
+is the companion of the persistence maps: where persistence says how many months a cell has havens, quality says how
+long a mission can be from them. It reads the final stage-4 table, the DEM and the PSR id raster (about 25 s for all
+eight years).
+
+* **Quality.** The quality of a 5.12 km cell in a year is the longest `mission_hours` among the seeds of the cell whose
+  `month` is in that year: the longest mission a rover can have completed by a haven in the cell. `mission_hours` is
+  the time from the first wake-up of the chain that reaches the seed to the end of the seed's lit endurance, so it counts
+  the whole chain, and a mission whose last haven is cut by the 28-day flood cap is a lower bound. Seeds are placed by
+  their own month, as in section 12, so the two maps agree on which seeds belong to a year.
+* **Files**, in `OUTPUT_DIRECTORY`: per year `safe_haven_stage_4_cell_quality_<year>.tif` (one band, float32, hours on the
+  cell grid, nan where the cell has no seed, for QGIS) and `safe_haven_stage_4_cell_quality_<year>.png`; for all years
+  `safe_haven_stage_4_cell_quality_contact_sheet.png` and `safe_haven_stage_4_cell_quality.report.json` (per year the
+  seeds, the cells with seeds, the number of cells in each class, the median and the longest). The picture has the
+  backdrop, graticule and layout of section 12.
+* **Colour key.** One orange hue, brighter for longer missions, in eight classes of days. The classes are cut at 2, 4, 7,
+  10, 14, 21 and 60 days, because the longest mission per cell and year (34,709 cell-years) has a median of 8.5 days,
+  a 90th percentile of 14.8 and a 99th of 45, with a longest of 250 days; the ramp is tints of the reference orange
+  `#d95926` chosen by eye to show on the dark hillshade, not a validated palette:
+
+  | Longest mission | Colour name | Hex |
+  |---|---|---|
+  | under 2 days | rust brown | `#a8461c` |
+  | 2 to 4 days | burnt orange | `#c4511f` |
+  | 4 to 7 days | vermilion | `#d95926` |
+  | 7 to 10 days | terracotta | `#e57444` |
+  | 10 to 14 days | coral | `#ee8f66` |
+  | 14 to 21 days | light salmon | `#f4aa88` |
+  | 21 to 60 days | pale peach | `#f8c5ac` |
+  | 60 days or more | pale apricot | `#fbe0d0` |
+  | no seed | terrain: dark grey hillshade | |
+
+* **Real run (15 degrees).** The median longest mission of the cells with seeds is 7.7 to 9.2 days in every year; the
+  cells reaching 21 days or more are 63 to 91 per year (74 in 2028, whose longest mission is 250 days). The long
+  missions are in the sunlit band toward 0 degrees and in a few cells at the pole itself.
+* **Tests.** The class edges, the colours, the longest mission per cell and year from hand-made tables, empty years,
+  bad tables and grids, and a run on a small scene (GeoTIFF values, PNG colours, a stale sidecar, refused settings).
+
+## 14. Cluster boxes: groups of connected havens
+
+`scripts/run_safe_haven_cluster_maps.py` (`run_cluster_maps` in `safe_haven_cluster_maps.py`; driver step
+`cluster-maps`) draws where havens that can reach one another are grouped, and how big each group is. It reads the final
+stage-4 table (and the stage-3 edge table with `CONNECT = "edges"`), the DEM and the PSR id raster. A real run takes
+about 100 s.
+
+* **Connected havens.** A seed that is joined to no other seed by a chain is dropped; the rest are the connected havens.
+  Two connected havens are in one cluster when a chain of any length joins them. `CONNECT` says what a chain is:
+  * `"chains"` (the default): the chains of stage 4. A seed has at most one predecessor, so a cluster is one root's whole
+    tree, the root and every seed that descends from it. At 15 degrees: 10,503 clusters holding 42,379 connected
+    havens (of 483,827 seeds).
+  * `"edges"`: every stage-3 edge, kept by stage 4 as a predecessor or not. A seed that several chains can reach joins
+    their trees, so there are fewer and larger clusters. At 15 degrees: 9,162 clusters holding 62,258 connected
+    havens (19,879 more than in trees); the largest cluster of a year has 145 to 330 havens, and the 330 of 2027 has a
+    box of about 80 by 108 km. The extra havens are ones that an edge reaches but stage 4 gave another predecessor.
+* **Years.** A cluster belongs to the UTC year of its root's operations start (`root_start_utc`), as in the yearly chain
+  maps (section 11). With `"edges"`, an edge between seeds whose roots start in different years is not used (3,046 of
+  the 110,510 edges), so a cluster never spans two years.
+* **The box.** The bounding box of a cluster is the smallest rectangle of DEM pixels that holds the pixels of its
+  havens, on the DEM's grid and axes (north up). Most clusters are small: the median box is 8 by 4 pixels (160 by
+  80 m), the 90th percentile about 240 pixels (4.8 km) and the 99th about 650 pixels (13 km).
+* **Files**, in `OUTPUT_DIRECTORY`: per year `safe_haven_stage_4_cluster_boxes_<year>.tif`, an RGBA GeoTIFF on the DEM's
+  grid with only the outline of each box drawn, `OUTLINE_PIXELS` (default 6, 120 m) wide just outside the box so the
+  havens inside stay visible, transparent elsewhere (a tile no box touches is not stored); and
+  `safe_haven_stage_4_cluster_boxes_<year>.png`, the picture (backdrop and graticule of section 12 with the boxes on
+  top; a box smaller than 4 overview pixels, 1.3 km, is drawn at that size around its centre so it can be seen, and
+  the footnote says so). For all years: `safe_haven_stage_4_cluster_boxes_contact_sheet.png`,
+  `safe_haven_stage_4_cluster_boxes.csv` (one row per cluster: year, havens, the lowest seed id, pixel and CRS bounds,
+  the longest mission; the data behind the pictures) and `safe_haven_stage_4_cluster_boxes.report.json`. At 20 m a
+  6-pixel line is thin on a whole-pole view in QGIS: zoom in or raise `OUTLINE_PIXELS`. Boxes are drawn smaller
+  clusters first, so a larger one is on top.
+* **Colour key.** The colour is the number of connected havens in the cluster (its own havens, not every haven that falls
+  inside the box, because boxes overlap). One aqua-green hue, brighter for more, in eight classes cut at 3, 4, 5, 7, 10,
+  20 and 50 havens (the median cluster has 3 and the largest 91):
+
+  | Havens in the cluster | Colour name | Hex |
+  |---|---|---|
+  | 2 | deep sea green | `#127a56` |
+  | 3 | jungle green | `#168a62` |
+  | 4 | emerald | `#199e70` |
+  | 5 to 6 | mint green | `#3cb386` |
+  | 7 to 9 | medium aquamarine | `#62c59c` |
+  | 10 to 19 | pale aquamarine | `#8ad6b6` |
+  | 20 to 49 | pale mint | `#b1e5cf` |
+  | 50 or more | very pale mint | `#d7f3e7` |
+  | outside the boxes | terrain: dark grey hillshade | |
+
+  The ramp is chosen by eye, not validated.
+* **Real run, `"chains"` (15 degrees).** Clusters per year: 944 (2024), 1,104, 1,973, 587, 1,936, 1,796, 802 and 1,361
+  (2031), holding 3,754 to 7,765 connected havens; the largest cluster in a year has 44 to 91 havens. The clusters are
+  concentrated at the top right of the image (toward 45 degrees east), with scattered small ones around the pole; 2027,
+  with the fewest clusters, has the largest share of big ones.
+* **Tests.** The clusters of both settings on a hand-made table (trees, an edge stage 4 did not keep, an edge between
+  years), bad inputs, the classes and colours, the outline drawing (just outside the box, clipped to a strip and the grid,
+  later boxes on top), and a run on a small scene (GeoTIFF colours, transparency inside a box, PNG, the table with its
+  CRS bounds, years, refused settings).
+
+## 15. Running the sequence: options and the driver
 
 **Options.** Every constant at the top of a stage script that can vary is also a command-line option,
 `--constant-name value` (lower case, hyphens), with the constant as its default; `--help` lists them. The rover's flood
 settings (`FloodSettings`) and stage 2's seed rules (`WindowParameters`) are one flag per field. Booleans are
 `--flag/--no-flag`; a list such as `--cells 0,1 2,3` takes values; `none` gives a missing value. Each script defines a
 procedure with exactly those options as keyword arguments (`run_light_store`, `run_stage1`, `run_stage2`, `run_stage3`,
-`run_stage4`, `make_chain_maps`, `run_psr_regions`) and a `default_options()` that reads the constants when it is
+`run_stage4`, `make_chain_maps`, `make_overview_maps`, `make_quality_maps`, `make_cluster_maps`, `run_psr_regions`) and a `default_options()` that reads the constants when it is
 called, so another program can load the script and call the procedure; `main(argv=())` reads the command line, sets up
 logging and calls it. The helpers are in `lunarscout._script_cli`.
 
 **The driver, `scripts/run_safe_haven.py`.** It runs `psr-regions`, `light-store`, `stage1`, `stage2`, `stage3`,
-`stage4`, `chain-maps`, `yearly-chain-maps` and `overview-maps` in that order by loading the scripts and calling their procedures with one set of shared
+`stage4`, `chain-maps`, `yearly-chain-maps`, `overview-maps`, `quality-maps` and `cluster-maps` in that order by loading the scripts and calling their procedures with one set of shared
 parameters, so a threshold is the same everywhere it is used. The values it captures: the paths (inside
 `SCENARIO_DIRECTORY` unless given), the time grid, the lighting thresholds, the rover (`MAX_SLOPE_DEG = 15`, moves per
 step, connectivity, flood days, PSR size classes, edge rule), the seed rules and the worker counts. The slope limit is

@@ -14,6 +14,8 @@ The safe-haven sequence, one step after another, with the parameters that the st
     chain-maps    scripts/run_safe_haven_chain_maps.py the colour images and GeoPackages
     yearly-chain-maps  scripts/run_safe_haven_yearly_chain_maps.py  the longest-chain image of each year
     overview-maps scripts/run_safe_haven_overview_maps.py  the persistence map of the havens around the pole, per year
+    quality-maps  scripts/run_safe_haven_quality_maps.py   the longest mission per 5.12 km cell, per year
+    cluster-maps  scripts/run_safe_haven_cluster_maps.py   bounding boxes of the groups of connected havens, per year
 
 The driver loads those scripts and calls the procedures they define (run_stage3(...) and so on) with the values below,
 so a threshold such as MAX_SLOPE_DEG (the Horn slope the rover may enter or stay on, and the limit above which stage 1
@@ -62,7 +64,8 @@ from lunarscout._numba_horizon.safe_haven_windows import WindowParameters  # noq
 from lunarscout._script_cli import Option, add_logging_options, add_options, defaults_from, options_from, run_with_logging  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parent
-STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "overview-maps")
+STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "overview-maps",
+         "quality-maps", "cluster-maps")
 
 # ---- where things are. Edit these before running; every other path is made from them.
 SCENARIO_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south")
@@ -355,6 +358,17 @@ def build_steps(p: dict) -> dict[str, Step]:
              cell_patches=p["cell_patches"], overwrite=True),
         [p["dem_path"], seeds, p["psr_ids_path"]],
         overview + [out / "safe_haven_stage_2_persistence_contact_sheet.png"])
+    quality = [out / f"safe_haven_stage_4_cell_quality_{year}{suffix}" for year in years for suffix in (".tif", ".png")]
+    add("quality-maps", "run_safe_haven_quality_maps", "make_quality_maps",
+        dict(dem_path=p["dem_path"], chains_path=chains, psr_ids_path=p["psr_ids_path"], output_directory=out,
+             years=years, cell_patches=p["cell_patches"], overwrite=True),
+        [p["dem_path"], chains, p["psr_ids_path"]], quality + [out / "safe_haven_stage_4_cell_quality_contact_sheet.png"])
+    boxes = [out / f"safe_haven_stage_4_cluster_boxes_{year}{suffix}" for year in years for suffix in (".tif", ".png")]
+    add("cluster-maps", "run_safe_haven_cluster_maps", "make_cluster_maps",
+        dict(dem_path=p["dem_path"], chains_path=chains, edges_path=edges, psr_ids_path=p["psr_ids_path"],
+             output_directory=out, years=years, cell_patches=p["cell_patches"], overwrite=True),
+        [p["dem_path"], chains, edges, p["psr_ids_path"]],
+        boxes + [out / "safe_haven_stage_4_cluster_boxes_contact_sheet.png", out / "safe_haven_stage_4_cluster_boxes.csv"])
     return steps
 
 
