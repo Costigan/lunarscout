@@ -20,7 +20,7 @@ from lunarscout._numba_horizon import safe_haven_chains as chains
 from lunarscout.products import _load_dem
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_safe_haven.py"
-STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps")
+STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "overview-maps")
 
 
 def load_driver():
@@ -164,6 +164,11 @@ def test_the_steps_share_one_set_of_parameters() -> None:
     assert set(map(str, steps["stage3"].outputs)) <= set(map(str, steps["stage4"].inputs))
     assert set(map(str, steps["stage4"].outputs)) <= set(map(str, steps["chain-maps"].inputs))
     assert set(map(str, steps["stage4"].outputs)) <= set(map(str, steps["yearly-chain-maps"].inputs))
+    assert set(map(str, steps["stage2"].outputs)) <= set(map(str, steps["overview-maps"].inputs))
+    overview = [p.name for p in steps["overview-maps"].outputs]
+    assert overview[:2] == ["safe_haven_stage_2_persistence_2024.tif", "safe_haven_stage_2_persistence_2024.png"]
+    assert overview[-1] == "safe_haven_stage_2_persistence_contact_sheet.png" and len(overview) == 8 * 2 + 1
+    assert steps["overview-maps"].options["years"] == list(range(2024, 2032)) and steps["overview-maps"].options["cell_patches"] == 2
     assert [p.name for p in steps["yearly-chain-maps"].outputs] == [
         f"safe_haven_stage_4_longest_chain_per_root_{year}.tif" for year in range(2024, 2032)]
     assert steps["yearly-chain-maps"].options["years"] == list(range(2024, 2032))
@@ -237,7 +242,8 @@ def outputs_of(directory):
             out / "safe_haven_stage_3_floods.csv", out / "safe_haven_stage_3_edges.csv",
             out / "safe_haven_stage_3_passable_mask.npy", out / "safe_haven_stage_4_chains.csv",
             out / "safe_haven_stage_4_predecessor_edges.tif", out / "safe_haven_stage_4_longest_chain_per_root.gpkg",
-            out / "safe_haven_stage_4_longest_chain_per_root_2027.tif"]
+            out / "safe_haven_stage_4_longest_chain_per_root_2027.tif", out / "safe_haven_stage_2_persistence_2027.tif",
+            out / "safe_haven_stage_2_persistence_contact_sheet.png"]
 
 
 def test_the_first_run_makes_every_product_in_order(world, first_run) -> None:
@@ -252,6 +258,8 @@ def test_the_first_run_makes_every_product_in_order(world, first_run) -> None:
     assert rows and all(r["chain_psr_small"] is not None for r in rows)          # the routes were reconstructed
     with rasterio.open(directory / "safe_havens" / "safe_haven_stage_4_longest_chain_per_root_2027.tif") as image:
         assert image.count == 4 and (image.read(4) > 0).any()                      # the year's image, with its havens
+    with rasterio.open(directory / "safe_havens" / "safe_haven_stage_2_persistence_2027.tif") as grid:
+        assert grid.dtypes == ("uint8",) and grid.read(1).max() >= 1                 # the persistence of the seeds' cells
     state = json.loads((directory / "safe_havens" / "safe_haven_run_state.json").read_text())
     assert set(state) == set(STEPS) and all(state[s]["fingerprint"] for s in STEPS)
     assert state["stage3"]["parameters"]["settings"]["max_slope_deg"] == 15.0
@@ -291,7 +299,7 @@ def test_a_changed_input_reruns_only_what_depends_on_it(world, first_run) -> Non
     os.utime(directory / "psr.tif", None)                                       # the PSR map changed just now
     CALLS.clear()
     assert driver.run_safe_haven(**options) == 0
-    assert CALLS == ["psr-regions", "stage3", "stage4", "chain-maps", "yearly-chain-maps"]           # not the store, stage 1 or stage 2
+    assert CALLS == ["psr-regions", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "overview-maps"]   # not the store, stage 1 or stage 2
     CALLS.clear()
     assert driver.run_safe_haven(**options) == 0 and CALLS == []
 

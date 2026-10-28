@@ -361,7 +361,60 @@ chains and havens year by year can be compared.
 * **Tests.** The years are disjoint and, put together, equal the whole image pixel for pixel in colour; one year holding
   every chain equals the whole image; an empty year is transparent; chosen years; refusal to replace files and bad years.
 
-## 12. Running the sequence: options and the driver
+## 12. Persistence overview maps
+
+`scripts/run_safe_haven_overview_maps.py` (`run_overview_maps` in `safe_haven_overview.py`; driver step `overview-maps`)
+shows where the groups of safe havens are around the pole in each year. It reads only the stage-2 seed table, the DEM
+(header and pixels, for the backdrop) and the PSR id raster; it does no lighting, flooding or routing. A real run for
+all eight years takes about 25 s.
+
+* **Persistence.** The persistence of a 5.12 km cell in a year is the number of months of that year (0 to 12) in which
+  the cell has at least one valid seed (`month`, `cell_row` and `cell_col` of the table). A count of seeds would mostly
+  show stage 2's cap of five seeds per cell and month, so the maps count months instead. Every seed is placed by its own
+  month, not by the year its chain's root starts (the rule of the yearly chain maps), so the seeds of a year here
+  (56,261 in 2026) differ from the havens of the yearly chain images (55,875). A cell that holds haven pixels but no
+  valid seed (stage 2 drops seeds with no lit boundary) counts as 0. `CELL_PATCHES` must be stage 2's.
+* **Files**, per year in `OUTPUT_DIRECTORY`: `safe_haven_stage_2_persistence_<year>.tif`, a one-band uint8 GeoTIFF on
+  the cell grid (119 x 119 cells of 5,120 m, the DEM's CRS and origin; value = months, 0 = none) for QGIS, and
+  `safe_haven_stage_2_persistence_<year>.png`, the picture for people (about 2,000 x 2,200 pixels). For all years:
+  `safe_haven_stage_2_persistence_contact_sheet.png` (small multiples, 4 columns, the same colour scale in every panel)
+  and `safe_haven_stage_2_persistence.report.json` (per year the seeds, the cells with seeds, the number of cells with
+  each count of months and their mean).
+* **The picture.** A dark hillshade of the DEM (block means of 16 x 16 DEM pixels, light from the north-west), the PSRs
+  darker with a muted outline (blocks that are at least 25% PSR), a polar graticule (parallels every 2 degrees from 88 to
+  80 S, meridians every 45 degrees; longitude is east-positive and 0 is toward the top of the image), and one square per
+  cell with at least one month, inset one pixel so the terrain shows between squares. Cells with no seed are left as
+  terrain.
+* **Colour key.** One blue hue, brighter for more months, on the dark surface `#1a1a19` (steps 450 to 100 of the reference
+  blue ramp, interpolated to 12; tested to be brighter at every step):
+
+  | Months with a seed | Colour name | Hex |
+  |---|---|---|
+  | 1 | strong blue | `#2a78d6` |
+  | 2 | bright blue | `#3482e0` |
+  | 3 | azure | `#418ce6` |
+  | 4 | cornflower blue | `#5296e7` |
+  | 5 | medium sky blue | `#62a0ea` |
+  | 6 | sky blue | `#72aaed` |
+  | 7 | light sky blue | `#81b3ee` |
+  | 8 | pale sky blue | `#91bdf1` |
+  | 9 | pale blue | `#a0c6f4` |
+  | 10 | powder blue | `#b0cff5` |
+  | 11 | very pale blue | `#bfd8f8` |
+  | 12 | palest blue | `#cde2fb` |
+  | 0 (no seed) | terrain: dark grey hillshade (`#121212` to `#3d3d3d`) | |
+  | PSR | near black `#0d0d0d` with a muted grey outline | |
+  | Background | charcoal `#1a1a19`; text in off-white `#f0efec` and light grey `#c3c2b7` | |
+
+* **Real run (15 degrees).** Cells with a seed in at least one month, of 14,161: 3,941 (2024), 4,430, 4,513, 3,827,
+  4,817, 4,904, 3,795 and 4,482 (2031); the mean months of those cells is 3.2 to 4.0. In 2026, 8 cells have seeds in all 12
+  months. The seeds are densest and most persistent in the band toward 0 degrees longitude at the top of the image and
+  absent from the lower half toward 180 degrees; the pattern shifts from year to year.
+* **Tests.** The persistence from hand-made tables (distinct months, years, an empty year between, bad tables and
+  grids), the ramp, the block means, the hillshade and PSR backdrop, the square placement, the graticule against the
+  DEM's known corner coordinates, and a run on a small scene (files, PNG decoding, replacing files, refused settings).
+
+## 13. Running the sequence: options and the driver
 
 **Options.** Every constant at the top of a stage script that can vary is also a command-line option,
 `--constant-name value` (lower case, hyphens), with the constant as its default; `--help` lists them. The rover's flood
@@ -373,7 +426,7 @@ called, so another program can load the script and call the procedure; `main(arg
 logging and calls it. The helpers are in `lunarscout._script_cli`.
 
 **The driver, `scripts/run_safe_haven.py`.** It runs `psr-regions`, `light-store`, `stage1`, `stage2`, `stage3`,
-`stage4`, `chain-maps` and `yearly-chain-maps` in that order by loading the scripts and calling their procedures with one set of shared
+`stage4`, `chain-maps`, `yearly-chain-maps` and `overview-maps` in that order by loading the scripts and calling their procedures with one set of shared
 parameters, so a threshold is the same everywhere it is used. The values it captures: the paths (inside
 `SCENARIO_DIRECTORY` unless given), the time grid, the lighting thresholds, the rover (`MAX_SLOPE_DEG = 15`, moves per
 step, connectivity, flood days, PSR size classes, edge rule), the seed rules and the worker counts. The slope limit is
@@ -391,6 +444,6 @@ parameters; nothing is run) or `--force STEP` (run and replace). `--dry-run` rep
 `--steps` selects a subset; a failed or interrupted step stops the sequence and is not recorded, so running the driver
 again resumes. Code changes are not tracked: `--force` after changing a script.
 
-Tests run the whole sequence on the synthetic scene (all seven steps, then nothing on a second run), touch an input
+Tests run the whole sequence on the synthetic scene (all ten steps, then nothing on a second run), touch an input
 (only the PSR step and what follows it run) and change a parameter (only stage 3 and what follows run), and cover the
 decisions on small fake steps, the shared parameters and the options of every script against its procedure.
