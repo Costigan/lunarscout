@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Edit the constants below, then run this script with the project environment.
+"""Edit the constants below or give them on the command line, then run this script with the project environment.
 
-    .venv/bin/python scripts/run_safe_haven_stage2.py
+    .venv/bin/python scripts/run_safe_haven_stage2.py [--plan-workers 8 --survival-limit-hours 72 ...]
+
+Every constant in the OPTIONS list below is a command-line option, --constant-name (lower case, hyphens), and the
+constant is its default; the seed rules of PARAMETERS are one flag per field; `--help` lists them. run_stage2(...) takes
+the same values as keyword arguments, so another script can call it (scripts/run_safe_haven.py runs the whole
+safe-haven sequence that way).
 
 Stage 2 of the rover safe-haven chain: choose the plan seeds. For every 5.12 km cell and month with a
 haven pixel in the stage-1 hibernation product (hibernation at most SURVIVAL_LIMIT_HOURS), pick up to
@@ -31,6 +36,7 @@ file next to the output (LOG_PATH, COLOR and LOG_LEVEL below), so `| tee` is not
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sys
@@ -48,7 +54,10 @@ from lunarscout._numba_horizon.safe_haven_windows import (  # noqa: E402
     WindowParameters,
     spice_vector_source,
 )
-from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
+from lunarscout._script_cli import (  # noqa: E402
+    Option, add_logging_options, add_options, add_window_parameters, defaults_from, options_from, run_with_logging,
+    window_parameters_from,
+)
 from lunarscout.products import _load_dem  # noqa: E402
 
 
@@ -106,57 +115,95 @@ LOG_LEVEL = "INFO"
 LOG = logging.getLogger("lunarscout.scripts.stage2")
 
 
-def _run() -> int:
-    dem, _georef = _load_dem(DEM_PATH)
+OPTIONS = (
+    Option("DEM_PATH", "path", "the DEM GeoTIFF"),
+    Option("LIGHT_STORE_PATH", "path", "the stage-0 light store"),
+    Option("STAGE1_DIRECTORY", "path", "where the stage-1 products are"),
+    Option("STAGE1_PREFIX", "str", "the stage-1 file prefix (NAME_PREFIX of stage 1)"),
+    Option("OUTPUT_PATH", "path", "the seed table"),
+    Option("OVERWRITE", "bool", "replace an existing table"),
+    Option("START_UTC", "str", "first sample (UTC); must equal the stage-1 run"),
+    Option("STOP_UTC", "str", "last sample (UTC); must equal the stage-1 run"),
+    Option("STEP_HOURS", "float", "sample step in hours"),
+    Option("EARTH_ELEVATION_THRESHOLD_DEG", "float", "Earth below this elevation is an outage"),
+    Option("SUNLIGHT_FRACTION_THRESHOLD", "float", "a Sun fraction below this is shadow"),
+    Option("MERGE_GAP_HOURS", "float", "shadow runs closer than this are one run"),
+    Option("HOURS_PER_COUNT", "optional_float", "the stage-1 products' unit (2 hours per count); none: hours"),
+    Option("STAGE1_NODATA", "optional_int", "the stage-1 products' nodata byte; none: float products"),
+    Option("CELLS", "pairs", "plan only these cells (cell_row,cell_column ...), a trial"),
+    Option("PLAN_WORKERS", "int", "processes planning cells in parallel"),
+    Option("PROGRESS_EVERY_CELLS", "int", "log progress every this many cells"),
+)
+
+
+def default_options() -> dict:
+    """The options with this file's constants as their values (read now), the seed rules as ``parameters``."""
+    return {**defaults_from(OPTIONS, globals()), "parameters": PARAMETERS}
+
+
+def run_stage2(*, dem_path, light_store_path, stage1_directory, stage1_prefix, output_path, overwrite, start_utc,
+               stop_utc, step_hours, earth_elevation_threshold_deg, sunlight_fraction_threshold, merge_gap_hours,
+               hours_per_count, stage1_nodata, cells, plan_workers, progress_every_cells, parameters) -> int:
+    """Write the seed table (and its report); returns 0. ``parameters`` is a ``WindowParameters`` with
+    ``forward_only`` True."""
+    dem, _georef = _load_dem(dem_path)
+    stage1_directory = Path(stage1_directory)
     stage1 = Stage1Rasters(
-        STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_hibernation_hours.tif",
-        STAGE1_DIRECTORY / f"{STAGE1_PREFIX}_joint_operating_total_hours.tif",
-        hours_per_count=HOURS_PER_COUNT,
-        nodata=STAGE1_NODATA,
+        stage1_directory / f"{stage1_prefix}_hibernation_hours.tif",
+        stage1_directory / f"{stage1_prefix}_joint_operating_total_hours.tif",
+        hours_per_count=hours_per_count,
+        nodata=stage1_nodata,
     )
-    times = ls.times(START_UTC, STOP_UTC, step_hours=STEP_HOURS)
+    times = ls.times(start_utc, stop_utc, step_hours=step_hours)
     started = clock.monotonic()
 
     def progress(done: int, total: int) -> None:
-        if done % PROGRESS_EVERY_CELLS and done != total:
+        if done % progress_every_cells and done != total:
             return
         elapsed = clock.monotonic() - started
         LOG.info("Stage 2: %d/%d cells, %.1f min elapsed, about %.1f min left (rate from this run only)",
                  done, total, elapsed / 60, elapsed / done * (total - done) / 60)
 
     report = plan_seeds(
-        OUTPUT_PATH,
+        output_path,
         dem=dem,
         stage1=stage1,
-        light_store=LightStoreDirectory(LIGHT_STORE_PATH, dem),
+        light_store=LightStoreDirectory(light_store_path, dem),
         times=times.values,
         earth_vectors_at=spice_vector_source("earth"),
-        parameters=PARAMETERS,
-        earth_elevation_threshold_deg=EARTH_ELEVATION_THRESHOLD_DEG,
-        sunlight_fraction_threshold=SUNLIGHT_FRACTION_THRESHOLD,
-        merge_gap_hours=MERGE_GAP_HOURS,
-        cells=CELLS,
-        workers=PLAN_WORKERS,
-        overwrite=OVERWRITE,
+        parameters=parameters,
+        earth_elevation_threshold_deg=earth_elevation_threshold_deg,
+        sunlight_fraction_threshold=sunlight_fraction_threshold,
+        merge_gap_hours=merge_gap_hours,
+        cells=cells,
+        workers=plan_workers,
+        overwrite=overwrite,
         progress=progress,
     )
     print(json.dumps(report.as_dict(), indent=2), flush=True)
     LOG.info("%d seeds in %d cells over %d Earth cycles; seed table written to: %s",
-             report.seeds, report.cells_with_seeds, report.earth_cycles, OUTPUT_PATH)
+             report.seeds, report.cells_with_seeds, report.earth_cycles, output_path)
     return 0
 
 
-def main() -> int:
-    log_path = LOG_PATH if LOG_PATH is not None else OUTPUT_PATH.with_name(OUTPUT_PATH.name + ".log")
-    setup_script_logging(log_path, color=COLOR, level=LOG_LEVEL)
-    try:
-        return _run()
-    except Exception as error:
-        LOG.error("Stage 2 stopped: %s: %s", type(error).__name__, error)
-        raise
-    finally:
-        reset_script_logging()
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Stage 2: the plan seeds. Every option's default is the constant of the same name at the top of "
+                    "this file.")
+    add_options(parser, OPTIONS, default_options())
+    add_window_parameters(parser, PARAMETERS)
+    add_logging_options(parser, globals())
+    return parser
+
+
+def main(argv=()) -> int:
+    """Read the options in ``argv`` (none: the defaults), set up logging and write the seed table."""
+    args = build_parser().parse_args(list(argv))
+    options = {**options_from(args, OPTIONS), "parameters": window_parameters_from(args, PARAMETERS)}
+    output_path = Path(options["output_path"])
+    return run_with_logging(args, default_log_path=output_path.with_name(output_path.name + ".log"), logger=LOG,
+                            label="Stage 2", procedure=lambda: run_stage2(**options))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

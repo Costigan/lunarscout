@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Edit the constants below, then run this script with the project environment.
+"""Edit the constants below or give them on the command line, then run this script with the project environment.
 
-    .venv/bin/python scripts/run_safe_haven_stage4.py
+    .venv/bin/python scripts/run_safe_haven_stage4.py [--flood-workers 8 --max-slope-deg 15 ...]
+
+Every constant in the OPTIONS list below is a command-line option, --constant-name (lower case, hyphens), and the
+constant is its default; the flood settings are one flag per field; `--help` lists them. run_stage4(...) takes the same values as keyword arguments, so
+another script can call it (scripts/run_safe_haven.py runs the whole safe-haven sequence that way).
 
 Stage 4 of the rover safe-haven chain: chain the plan seeds over the edges of stage 3
 (scripts/run_safe_haven_stage3.py). An edge A -> B says a rover that wakes at seed A can be on seed B's pixel
@@ -42,6 +46,7 @@ file next to the output (LOG_PATH, COLOR and LOG_LEVEL below), so `| tee` is not
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sys
@@ -54,7 +59,10 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from lunarscout._numba_horizon.pixel_coordinates import dem_header  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_chains import RouteInputs, run_chains  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_floods import FloodSettings  # noqa: E402
-from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
+from lunarscout._script_cli import (  # noqa: E402
+    Option, add_flood_settings, add_logging_options, add_options, defaults_from, flood_settings_from, options_from,
+    run_with_logging,
+)
 
 
 # Edit these paths before running. They match run_safe_haven_stage3.py.
@@ -71,7 +79,7 @@ LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")
 PASSABLE_PATH = STAGE_DIRECTORY / "safe_haven_stage_3_passable_mask.npy"
 PSR_IDS_PATH = Path("/e/lunar_analyst_scenarios/70south/psr_ids.tif")             # scripts/generate_psr_regions.py
 PSR_TABLE_PATH = Path("/e/lunar_analyst_scenarios/70south/psr_regions.csv")
-FLOOD_SETTINGS = FloodSettings(max_days=28.0, moves_per_step=4, connectivity=8, max_slope_deg=20.0,
+FLOOD_SETTINGS = FloodSettings(max_days=28.0, moves_per_step=4, connectivity=8, max_slope_deg=15.0,
                                psr_small_max_m2=400.0, psr_medium_max_m2=1_000_000.0)
 ROUTE_WORKERS = 16
 PROGRESS_EVERY_SEEDS = 500
@@ -86,40 +94,72 @@ LOG_LEVEL = "INFO"
 LOG = logging.getLogger("lunarscout.scripts.stage4")
 
 
-def _run() -> int:
+OPTIONS = (
+    Option("DEM_PATH", "path", "the DEM GeoTIFF (for the pixel coordinates and the grid)"),
+    Option("SEEDS_PATH", "path", "the stage-2 seed table"),
+    Option("FLOODS_PATH", "path", "the stage-3 flood table"),
+    Option("EDGES_PATH", "path", "the stage-3 edge table"),
+    Option("OUTPUT_PATH", "path", "the final per-seed table"),
+    Option("STEP_MINUTES", "int", "the light store's step (the unit of the steps in the seed table)"),
+    Option("LIGHT_STORE_PATH", "path", "the stage-0 light store (for the routes)"),
+    Option("PASSABLE_PATH", "path", "the passable mask stage 3 cached"),
+    Option("PSR_IDS_PATH", "path", "the PSR id raster"),
+    Option("PSR_TABLE_PATH", "path", "the PSR region table"),
+    Option("ROUTE_WORKERS", "int", "processes reconstructing routes in parallel"),
+    Option("PROGRESS_EVERY_SEEDS", "int", "log progress every this many predecessor seeds"),
+    Option("OVERWRITE", "bool", "replace an existing table when the run completes"),
+)
+
+
+def default_options() -> dict:
+    """The options with this file's constants as their values (read now), the flood settings as ``flood_settings``."""
+    return {**defaults_from(OPTIONS, globals()), "flood_settings": FLOOD_SETTINGS}
+
+
+def run_stage4(*, dem_path, seeds_path, floods_path, edges_path, output_path, step_minutes, light_store_path,
+               passable_path, psr_ids_path, psr_table_path, route_workers, progress_every_seeds, overwrite,
+               flood_settings) -> int:
+    """Chain the seeds and write the final table; returns 0. ``flood_settings`` must be stage 3's."""
     started = clock.monotonic()
 
     def progress(done: int, total: int) -> None:
-        if done % PROGRESS_EVERY_SEEDS and done != total:
+        if done % progress_every_seeds and done != total:
             return
         elapsed = clock.monotonic() - started
         LOG.info("Routes: %d/%d predecessor seeds, %.1f min elapsed, about %.1f min left (rate from this run only)",
                  done, total, elapsed / 60, elapsed / done * (total - done) / 60)
 
-    transform, width, height, _crs = dem_header(DEM_PATH)
+    transform, width, height, _crs = dem_header(dem_path)
     routes = RouteInputs(
-        light_store_path=LIGHT_STORE_PATH, passable_path=PASSABLE_PATH, psr_ids_path=PSR_IDS_PATH,
-        psr_table_path=PSR_TABLE_PATH, dem_shape=(height, width), flood_settings=FLOOD_SETTINGS,
-        workers=ROUTE_WORKERS, progress=progress)
-    report = run_chains(OUTPUT_PATH, seeds_path=SEEDS_PATH, floods_path=FLOODS_PATH, edges_path=EDGES_PATH,
-                        geo_transform=transform, step_minutes=STEP_MINUTES, overwrite=OVERWRITE, routes=routes)
+        light_store_path=light_store_path, passable_path=passable_path, psr_ids_path=psr_ids_path,
+        psr_table_path=psr_table_path, dem_shape=(height, width), flood_settings=flood_settings,
+        workers=route_workers, progress=progress)
+    report = run_chains(output_path, seeds_path=seeds_path, floods_path=floods_path, edges_path=edges_path,
+                        geo_transform=transform, step_minutes=step_minutes, overwrite=overwrite, routes=routes)
     print(json.dumps(report.as_dict(), indent=2), flush=True)
     LOG.info("%d seeds in chains over %d edges, longest chain %d seeds, longest mission %.0f h; table written to: %s",
-             report.seeds_in_chains, report.edges, report.longest_chain, report.longest_mission_hours, OUTPUT_PATH)
+             report.seeds_in_chains, report.edges, report.longest_chain, report.longest_mission_hours, output_path)
     return 0
 
 
-def main() -> int:
-    log_path = LOG_PATH if LOG_PATH is not None else OUTPUT_PATH.with_name(OUTPUT_PATH.name + ".log")
-    setup_script_logging(log_path, color=COLOR, level=LOG_LEVEL)
-    try:
-        return _run()
-    except Exception as error:
-        LOG.error("Stage 4 stopped: %s: %s", type(error).__name__, error)
-        raise
-    finally:
-        reset_script_logging()
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Stage 4: the chains. Every option's default is the constant of the same name at the top of this "
+                    "file.")
+    add_options(parser, OPTIONS, default_options())
+    add_flood_settings(parser, FLOOD_SETTINGS)
+    add_logging_options(parser, globals())
+    return parser
+
+
+def main(argv=()) -> int:
+    """Read the options in ``argv`` (none: the defaults), set up logging and write the final table."""
+    args = build_parser().parse_args(list(argv))
+    options = {**options_from(args, OPTIONS), "flood_settings": flood_settings_from(args, FLOOD_SETTINGS)}
+    output_path = Path(options["output_path"])
+    return run_with_logging(args, default_log_path=output_path.with_name(output_path.name + ".log"), logger=LOG,
+                            label="Stage 4", procedure=lambda: run_stage4(**options))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

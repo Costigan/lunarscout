@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Edit the constants below, then run this script with the project environment.
+"""Edit the constants below or give them on the command line, then run this script with the project environment.
 
-    .venv/bin/python scripts/run_safe_haven_chain_maps.py
+    .venv/bin/python scripts/run_safe_haven_chain_maps.py [--route-workers 8 --no-raster-routes ...]
+
+Every constant in the OPTIONS list below is a command-line option, --constant-name (lower case, hyphens), and the
+constant is its default; the flood settings are one flag per field; `--help` lists them. make_chain_maps(...) takes the
+same values as keyword arguments, so another script can call it (scripts/run_safe_haven.py runs the whole safe-haven
+sequence that way).
 
 Maps of the stage-4 chains (scripts/run_safe_haven_stage4.py): two chain sets, each as a colour image on the DEM's
 grid, a copy with dilated lines and a GeoPackage, six files in OUTPUT_DIRECTORY:
@@ -45,6 +50,7 @@ file in OUTPUT_DIRECTORY (LOG_PATH, COLOR and LOG_LEVEL below).
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sys
@@ -56,7 +62,10 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from lunarscout._numba_horizon.safe_haven_chain_maps import run_chain_maps  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_floods import FloodSettings  # noqa: E402
-from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
+from lunarscout._script_cli import (  # noqa: E402
+    Option, add_flood_settings, add_logging_options, add_options, defaults_from, flood_settings_from, options_from,
+    run_with_logging,
+)
 
 
 # Edit these paths before running. They match run_safe_haven_stage4.py.
@@ -67,7 +76,7 @@ LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")
 PSR_IDS_PATH = Path("/e/lunar_analyst_scenarios/70south/psr_ids.tif")        # None marks no PSR (scripts/generate_psr_regions.py)
 PASSABLE_PATH = STAGE_DIRECTORY / "safe_haven_stage_3_passable_mask.npy"      # cached by stage 3
 # Must be the settings stage 3 ran with (run_safe_haven_stage3.py).
-FLOOD_SETTINGS = FloodSettings(max_days=28.0, moves_per_step=4, connectivity=8, max_slope_deg=20.0)
+FLOOD_SETTINGS = FloodSettings(max_days=28.0, moves_per_step=4, connectivity=8, max_slope_deg=15.0)
 RASTER_ROUTES = True    # False: the rasters use straight lines (quick, no light store needed)
 ROUTE_WORKERS = 16
 OUTPUT_DIRECTORY = STAGE_DIRECTORY
@@ -84,38 +93,68 @@ LOG_LEVEL = "INFO"
 LOG = logging.getLogger("lunarscout.scripts.chain_maps")
 
 
-def _run() -> int:
+OPTIONS = (
+    Option("DEM_PATH", "path", "the DEM GeoTIFF (its grid and CRS)"),
+    Option("CHAINS_PATH", "path", "the stage-4 table"),
+    Option("OUTPUT_DIRECTORY", "path", "where the six files are written"),
+    Option("DILATE_PIXELS", "int", "the dilated images' lines are 2 * this + 1 pixels wide"),
+    Option("OVERWRITE", "bool", "replace existing files as the new ones are complete"),
+    Option("LIGHT_STORE_PATH", "path", "the stage-0 light store (for the routes)"),
+    Option("PSR_IDS_PATH", "optional_path", "the PSR id raster; none marks no PSR"),
+    Option("PASSABLE_PATH", "path", "the passable mask stage 3 cached"),
+    Option("RASTER_ROUTES", "bool", "the images follow the rover's routes; false draws straight lines"),
+    Option("ROUTE_WORKERS", "int", "processes reconstructing routes in parallel"),
+    Option("PROGRESS_EVERY_SEEDS", "int", "log progress every this many predecessor seeds"),
+)
+
+
+def default_options() -> dict:
+    """The options with this file's constants as their values (read now), the flood settings as ``flood_settings``."""
+    return {**defaults_from(OPTIONS, globals()), "flood_settings": FLOOD_SETTINGS}
+
+
+def make_chain_maps(*, dem_path, chains_path, output_directory, dilate_pixels, overwrite, light_store_path,
+                    psr_ids_path, passable_path, raster_routes, route_workers, progress_every_seeds,
+                    flood_settings) -> int:
+    """Write the six chain-map files; returns 0. ``flood_settings`` must be stage 3's."""
     started = clock.monotonic()
 
     def progress(done: int, total: int) -> None:
-        if done % PROGRESS_EVERY_SEEDS and done != total:
+        if done % progress_every_seeds and done != total:
             return
         elapsed = clock.monotonic() - started
         LOG.info("Routes: %d/%d predecessor seeds, %.1f min elapsed, about %.1f min left (rate from this run only)",
                  done, total, elapsed / 60, elapsed / done * (total - done) / 60)
 
     report = run_chain_maps(
-        OUTPUT_DIRECTORY, chains_path=CHAINS_PATH, dem_path=DEM_PATH, dilate_pixels=DILATE_PIXELS, overwrite=OVERWRITE,
-        light_store_path=LIGHT_STORE_PATH if RASTER_ROUTES else None, passable_path=PASSABLE_PATH,
-        flood_settings=FLOOD_SETTINGS, workers=ROUTE_WORKERS, progress=progress, psr_ids_path=PSR_IDS_PATH)
+        output_directory, chains_path=chains_path, dem_path=dem_path, dilate_pixels=dilate_pixels, overwrite=overwrite,
+        light_store_path=light_store_path if raster_routes else None, passable_path=passable_path,
+        flood_settings=flood_settings, workers=route_workers, progress=progress, psr_ids_path=psr_ids_path)
     print(json.dumps(report.as_dict(), indent=2), flush=True)
     LOG.info("%d predecessor edges, %d longest chains, %d isolated seeds; six files written to: %s (raster lines: %s)",
-             report.predecessor_edges, report.chains, report.isolated_seeds, OUTPUT_DIRECTORY, report.raster_lines)
+             report.predecessor_edges, report.chains, report.isolated_seeds, output_directory, report.raster_lines)
     return 0
 
 
-def main() -> int:
-    log_path = LOG_PATH if LOG_PATH is not None else OUTPUT_DIRECTORY / "safe_haven_stage_4_chain_maps.log"
-    OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    setup_script_logging(log_path, color=COLOR, level=LOG_LEVEL)
-    try:
-        return _run()
-    except Exception as error:
-        LOG.error("Chain maps stopped: %s: %s", type(error).__name__, error)
-        raise
-    finally:
-        reset_script_logging()
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="The chain maps: colour images and GeoPackages of the stage-4 chains. Every option's default is "
+                    "the constant of the same name at the top of this file.")
+    add_options(parser, OPTIONS, default_options())
+    add_flood_settings(parser, FLOOD_SETTINGS)
+    add_logging_options(parser, globals())
+    return parser
+
+
+def main(argv=()) -> int:
+    """Read the options in ``argv`` (none: the defaults), set up logging and write the chain maps."""
+    args = build_parser().parse_args(list(argv))
+    options = {**options_from(args, OPTIONS), "flood_settings": flood_settings_from(args, FLOOD_SETTINGS)}
+    output_directory = Path(options["output_directory"])
+    output_directory.mkdir(parents=True, exist_ok=True)
+    return run_with_logging(args, default_log_path=output_directory / "safe_haven_stage_4_chain_maps.log", logger=LOG,
+                            label="Chain maps", procedure=lambda: make_chain_maps(**options))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

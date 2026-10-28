@@ -505,7 +505,7 @@ def test_importing_the_script_starts_nothing_and_its_defaults_match_the_earlier_
     assert module.SEEDS_PATH == two.OUTPUT_PATH and module.LIGHT_STORE_PATH == two.LIGHT_STORE_PATH
     assert module.OUTPUT_PATH.name == "safe_haven_stage_3_floods.csv" and module.EDGES_PATH.name == "safe_haven_stage_3_edges.csv"
     assert module.SETTINGS.max_days == 28.0 and module.SETTINGS.psr_small_max_m2 == 400.0
-    assert module.SETTINGS.psr_medium_max_m2 == 1_000_000.0 and module.SETTINGS.max_slope_deg == 20.0
+    assert module.SETTINGS.psr_medium_max_m2 == 1_000_000.0 and module.SETTINGS.max_slope_deg == 15.0
     assert module.SEED_IDS is None and module.OVERWRITE is True        # a rerun replaces the tables
 
 

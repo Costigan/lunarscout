@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Edit the constants below, then run this script with the project environment.
+"""Edit the constants below or give them on the command line, then run this script with the project environment.
 
-    .venv/bin/python scripts/run_safe_haven_stage1.py
+    .venv/bin/python scripts/run_safe_haven_stage1.py [--max-slope-deg 15 --overwrite ...]
+
+Every constant in the OPTIONS list below is a command-line option, --constant-name (lower case, hyphens), and the
+constant is its default; `--help` lists them. run_stage1(...) takes the same values as keyword arguments, so another
+script can call it (scripts/run_safe_haven.py runs the whole safe-haven sequence that way).
 
 Stage 1 of the safe-haven analysis. Writes the three safe-haven screening products (hibernation, joint operating
 total, joint operating longest run) into OUTPUT_DIRECTORY from one pass.
@@ -21,8 +25,10 @@ starts no calculation.
 
 from __future__ import annotations
 
-from pathlib import Path
+import argparse
+import logging
 import sys
+from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +36,11 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import lunarscout as ls  # noqa: E402
 import numpy as np  # noqa: E402
+from lunarscout._script_cli import (  # noqa: E402
+    Option, add_logging_options, add_options, defaults_from, options_from, run_with_logging,
+)
+
+LOG = logging.getLogger("lunarscout.scripts.stage1")
 
 
 # Edit these paths before running. These match the neighboring mosaic scripts.
@@ -62,7 +73,7 @@ MERGE_GAP_HOURS = 24.0  # Shadow runs closer than this are one run (0 disables).
 # one-sample outage at Earth's lowest elevation if Earth stays above the threshold for this
 # many hours either side (0 disables). Pass 1 of the window analysis must use the same value.
 DEGENERATE_OUTAGE_WINDOW_HOURS = 24.0
-MAX_SLOPE_DEG = 20.0  # Steeper pixels are NODATA in all three products (None disables).
+MAX_SLOPE_DEG = 15.0  # Steeper pixels are NODATA in all three products (None disables). The rover's limit in stages 3 and 4.
 OBSERVER_HEIGHT_M = 0.0  # Must match the precomputed horizon tiles.
 BACKEND = "auto"  # "auto", "cpu", or "cuda"; "cpu" never probes CUDA.
 
@@ -80,13 +91,12 @@ EARTH_VECTORS_M = None
 NODATA = 255
 
 
-def hours_to_two_hour_bytes(hours: np.ndarray) -> np.ndarray:
-    """Round durations up to two-hour counts, saturate, and encode NaNs."""
+def hours_to_two_hour_bytes(hours: np.ndarray, nodata: int = NODATA) -> np.ndarray:
+    """Round durations up to two-hour counts, saturate, and encode NaNs as ``nodata``."""
     counts = np.clip(np.ceil(hours / 2.0), 0, 255)
-    return np.where(np.isnan(counts), NODATA, counts).astype(np.uint8)
+    return np.where(np.isnan(counts), nodata, counts).astype(np.uint8)
 
 
-OUTPUT_TRANSFORM = hours_to_two_hour_bytes
 OUTPUT_DTYPE = np.uint8  # GDAL GDT_Byte.
 OUTPUT_TRANSFORM_ID = "safe-haven-2h-ceil-clip-uint8-v2"
 
@@ -95,42 +105,103 @@ OVERWRITE = False  # Permit replacement of a completed product.
 START_FRESH = False  # Discard staging; otherwise resume compatible staged work.
 VERBOSE = True
 
+# Console and log file. LOG_PATH None writes <OUTPUT_DIRECTORY>/<NAME_PREFIX>.log. COLOR is "auto", "always" or "never".
+LOG_PATH = None
+COLOR = "auto"
+LOG_LEVEL = "INFO"
 
-def main() -> int:
-    if not np.isfinite(NODATA) or not 0 <= NODATA <= 255 or int(NODATA) != NODATA:
+
+OPTIONS = (
+    Option("DEM_PATH", "path", "the DEM GeoTIFF"),
+    Option("HORIZONS_PATH", "path", "horizon tiles (used only without a light store)"),
+    Option("LIGHT_STORE_PATH", "optional_path", "the stage-0 light store; none lights from the horizons"),
+    Option("OUTPUT_DIRECTORY", "path", "where the three products are written"),
+    Option("NAME_PREFIX", "str", "output file prefix (safe_haven_stage_1)"),
+    Option("START_UTC", "str", "first sample (UTC)"),
+    Option("STOP_UTC", "str", "last sample (UTC), inclusive when it is on the grid"),
+    Option("STEP_HOURS", "float", "sample step in hours"),
+    Option("EARTH_ELEVATION_THRESHOLD_DEG", "float", "Earth below this elevation is an outage"),
+    Option("SUNLIGHT_FRACTION_THRESHOLD", "float", "a Sun fraction below this is shadow"),
+    Option("OPERATING_SUNLIGHT_FRACTION", "float", "Sun fraction at or above which the rover operates"),
+    Option("MERGE_GAP_HOURS", "float", "shadow runs closer than this are one run (0 disables)"),
+    Option("DEGENERATE_OUTAGE_WINDOW_HOURS", "float", "the one-sample outage rule where Earth never sets (0 disables)"),
+    Option("MAX_SLOPE_DEG", "optional_float", "steeper pixels are NODATA in all three products (none disables)"),
+    Option("OBSERVER_HEIGHT_M", "float", "observer height (m); must match the horizon tiles"),
+    Option("BACKEND", "str", "auto, cpu or cuda", choices=("auto", "cpu", "cuda")),
+    Option("NODATA", "int", "byte value of undefined pixels (0 to 255)"),
+    Option("COMPRESS", "bool", "compress the GeoTIFFs"),
+    Option("OVERWRITE", "bool", "permit replacement of a completed product"),
+    Option("START_FRESH", "bool", "discard staging instead of resuming staged work"),
+    Option("VERBOSE", "bool", "print progress"),
+)
+
+
+def default_options() -> dict:
+    """The options with this file's constants as their values (read now)."""
+    return defaults_from(OPTIONS, globals())
+
+
+def run_stage1(*, dem_path, horizons_path, light_store_path, output_directory, name_prefix, start_utc, stop_utc,
+               step_hours, earth_elevation_threshold_deg, sunlight_fraction_threshold, operating_sunlight_fraction,
+               merge_gap_hours, degenerate_outage_window_hours, max_slope_deg, observer_height_m, backend, nodata,
+               compress, overwrite, start_fresh, verbose) -> int:
+    """Write the three stage-1 products; returns 0."""
+    if not np.isfinite(nodata) or not 0 <= nodata <= 255 or int(nodata) != nodata:
         raise ValueError("Set NODATA to an integer in [0, 255] for byte output.")
-    times = ls.times(START_UTC, STOP_UTC, step_hours=STEP_HOURS)
-    print(f"Generating safe havens from {times.time_count} UTC samples...", flush=True)
+
+    def to_bytes(hours: np.ndarray) -> np.ndarray:
+        return hours_to_two_hour_bytes(hours, nodata)
+
+    times = ls.times(start_utc, stop_utc, step_hours=step_hours)
+    LOG.info("Generating safe havens from %d UTC samples...", times.time_count)
     result = ls.generate_safe_haven_products(
-        DEM_PATH,
-        None if LIGHT_STORE_PATH is not None else HORIZONS_PATH,
-        OUTPUT_DIRECTORY,
-        light_store_path=LIGHT_STORE_PATH,
-        name_prefix=NAME_PREFIX,
+        dem_path,
+        None if light_store_path is not None else horizons_path,
+        output_directory,
+        light_store_path=light_store_path,
+        name_prefix=name_prefix,
         times=times,
         sun_vectors_m=SUN_VECTORS_M,
         earth_vectors_m=EARTH_VECTORS_M,
-        earth_elevation_threshold_deg=EARTH_ELEVATION_THRESHOLD_DEG,
-        sunlight_fraction_threshold=SUNLIGHT_FRACTION_THRESHOLD,
-        operating_sunlight_fraction=OPERATING_SUNLIGHT_FRACTION,
-        merge_gap_hours=MERGE_GAP_HOURS,
-        degenerate_outage_window_hours=DEGENERATE_OUTAGE_WINDOW_HOURS,
-        max_slope_deg=MAX_SLOPE_DEG,
-        backend=BACKEND,
-        observer_height_m=OBSERVER_HEIGHT_M,
-        nodata=NODATA,
-        output_transform=OUTPUT_TRANSFORM,
+        earth_elevation_threshold_deg=earth_elevation_threshold_deg,
+        sunlight_fraction_threshold=sunlight_fraction_threshold,
+        operating_sunlight_fraction=operating_sunlight_fraction,
+        merge_gap_hours=merge_gap_hours,
+        degenerate_outage_window_hours=degenerate_outage_window_hours,
+        max_slope_deg=max_slope_deg,
+        backend=backend,
+        observer_height_m=observer_height_m,
+        nodata=nodata,
+        output_transform=to_bytes,
         output_dtype=OUTPUT_DTYPE,
         output_transform_id=OUTPUT_TRANSFORM_ID,
-        compress=COMPRESS,
-        overwrite=OVERWRITE,
-        start_fresh=START_FRESH,
-        verbose=VERBOSE,
+        compress=compress,
+        overwrite=overwrite,
+        start_fresh=start_fresh,
+        verbose=verbose,
     )
     for path in result:
-        print(f"Safe-haven product written to: {path}", flush=True)
+        LOG.info("Safe-haven product written to: %s", path)
     return 0
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Stage 1: the three safe-haven screening products. Every option's default is the constant of the "
+                    "same name at the top of this file.")
+    add_options(parser, OPTIONS, default_options())
+    add_logging_options(parser, globals())
+    return parser
+
+
+def main(argv=()) -> int:
+    """Read the options in ``argv`` (none: the defaults), set up logging and write the products."""
+    args = build_parser().parse_args(list(argv))
+    options = options_from(args, OPTIONS)
+    default_log = Path(options["output_directory"]) / f"{options['name_prefix']}.log"
+    return run_with_logging(args, default_log_path=default_log, logger=LOG, label="Stage 1",
+                            procedure=lambda: run_stage1(**options))
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

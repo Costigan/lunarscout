@@ -69,7 +69,7 @@ class FloodSettings:
     max_days: float = 28.0
     moves_per_step: int = 4
     connectivity: int = 8
-    max_slope_deg: float = 20.0
+    max_slope_deg: float = 15.0
     #: PSR classes by area in square metres: small is up to and including small_max (400 m2 is one pixel at 20 m),
     #: medium up to and including medium_max, large above.
     psr_small_max_m2: float = 400.0

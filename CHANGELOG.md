@@ -6,6 +6,18 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Command-line options for the safe-haven scripts and a driver.** Every constant of `generate_psr_regions.py`,
+  `run_light_store.py` and `run_safe_haven_stage1.py` to `_stage4.py` and `run_safe_haven_chain_maps.py` is now also a
+  command-line option (`--constant-name`, the constant as the default; the flood settings and stage 2's seed rules one
+  flag per field), and each defines a procedure with those options as keyword arguments (`run_light_store`,
+  `run_stage1` to `run_stage4`, `make_chain_maps`, `run_psr_regions`) and `default_options()` (new private module
+  `_script_cli.py`). New `scripts/run_safe_haven.py` runs the whole sequence by loading those scripts and calling
+  the procedures with one set of shared parameters (the rover's `MAX_SLOPE_DEG = 15` in stage 1's NODATA limit and in
+  stages 3 and 4 and the chain maps, the time grid, thresholds, PSR classes, seed rules, workers) and, like make,
+  skips steps that are up to date: the parameters that change a result are fingerprinted in a state file and the files'
+  times are compared with their inputs'. Outputs it never ran are not replaced without `--adopt-existing` or `--force`;
+  `--dry-run` reports. Stage 1's default slope limit is now 15 (was 20), and its progress is logged instead of printed.
+
 - **Rover chain maps: colour images and GeoPackages.** New `scripts/run_safe_haven_chain_maps.py` (private modules
   `safe_haven_chain_maps.py`, `chain_map_styles.py`, `safe_haven_paths.py`) draws the stage-4 chains for two sets, the
   predecessor edges (coloured by the longest chain through each edge) and the longest chain of each root, as RGBA
@@ -23,6 +35,10 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
   next to (stage 4 now reconstructs the routes, needing the light store, the passable mask and the PSR products).
   The PSR small class is now up to and including 400 m2 (one pixel at 20 m; it was under 40 m2, which no region
   reached), so one-pixel regions are small; stage 3's `touch_small_*` columns need a stage-3 rerun to follow it.
+  The rover's slope limit (the Horn slope of a pixel it may enter or stay on, from the passable mask) is now 15 degrees
+  instead of 20 in stage 3, stage 4 and the chain maps; stage 1's NODATA limit for steep pixels is unchanged (20).
+  The cached passable mask is remade for the new limit by the next stage-3 run, and stages 3, 4 and the chain maps
+  need rerunning.
   The stage 3, stage 4 and chain-map scripts now default to `OVERWRITE = True`, so a rerun replaces the tables and
   images (the lander script already did); set it to False to refuse to replace existing files.
 

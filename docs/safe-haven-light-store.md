@@ -172,7 +172,7 @@ forward in time from every seed of stage 2 and reads lit bits from the store as 
   frontier is empty or after 28 days. Lighting is read 24 hours of one patch at a time (one stored 8-day chunk is
   decoded and its days kept in a per-worker cache), so a flood that dies in a day reads a day. A flood reaches at
   most 4 x 336 = 1,344 pixels, so its window is 25 x 25 patches.
-* **Passable.** Valid height, Horn slope at most 20 degrees, and a patch with a store file. It does not depend on
+* **Passable.** Valid height, Horn slope at most 15 degrees, and a patch with a store file. It does not depend on
   the month. It is made once (about 40 s on the real raster) and kept as a 115 MB packed file; it is remade when
   the slope limit or the store changes. A seed on a pixel that is not passable is flagged (`seed_passable` 0); the
   rover still starts there and moves off it.
@@ -292,3 +292,37 @@ colours of a hand-built graph, the GeoPackage tables, WKB and styles, and `ogrin
 by replaying every route of the scene against the light store (a schedule of at most 4 moves per step into lit,
 passable pixels exists), by running the trace kernel on random lit worlds with walls (4 and 8 neighbours, 2 to 4 moves,
 compiled and plain Python) and by comparing the images with a plain painter over the routes, with and without PSRs.
+
+## 12. Running the sequence: options and the driver
+
+**Options.** Every constant at the top of a stage script that can vary is also a command-line option,
+`--constant-name value` (lower case, hyphens), with the constant as its default; `--help` lists them. The rover's flood
+settings (`FloodSettings`) and stage 2's seed rules (`WindowParameters`) are one flag per field. Booleans are
+`--flag/--no-flag`; a list such as `--cells 0,1 2,3` takes values; `none` gives a missing value. Each script defines a
+procedure with exactly those options as keyword arguments (`run_light_store`, `run_stage1`, `run_stage2`, `run_stage3`,
+`run_stage4`, `make_chain_maps`, `run_psr_regions`) and a `default_options()` that reads the constants when it is
+called, so another program can load the script and call the procedure; `main(argv=())` reads the command line, sets up
+logging and calls it. The helpers are in `lunarscout._script_cli`.
+
+**The driver, `scripts/run_safe_haven.py`.** It runs `psr-regions`, `light-store`, `stage1`, `stage2`, `stage3`,
+`stage4` and `chain-maps` in that order by loading the scripts and calling their procedures with one set of shared
+parameters, so a threshold is the same everywhere it is used. The values it captures: the paths (inside
+`SCENARIO_DIRECTORY` unless given), the time grid, the lighting thresholds, the rover (`MAX_SLOPE_DEG = 15`, moves per
+step, connectivity, flood days, PSR size classes, edge rule), the seed rules and the worker counts. The slope limit is
+the rover's Horn slope limit in stages 3 and 4 and the chain maps and also the NODATA limit of stage 1 (which was 20
+before; the old stage-1 products used it).
+
+*Up to date, like make.* A step is skipped when this driver ran it with the same parameters (recorded in
+`<output>/safe_haven_run_state.json`: a fingerprint of the values that change a result, not the numbers of workers or
+the cache size), all its outputs exist, and no input is newer than its oldest output (a directory's time is that of
+the newest file in it; files a step keeps for itself, like the passable mask, must exist but are not compared). A step
+whose input was rebuilt, because an earlier step ran or a file changed, or whose parameters changed runs again, and so
+does everything that depends on what it writes. Outputs that exist but that the driver never recorded are not trusted
+and not replaced: it stops and tells you to give `--adopt-existing STEP` (record them as made with the current
+parameters; nothing is run) or `--force STEP` (run and replace). `--dry-run` reports what each step would do;
+`--steps` selects a subset; a failed or interrupted step stops the sequence and is not recorded, so running the driver
+again resumes. Code changes are not tracked: `--force` after changing a script.
+
+Tests run the whole sequence on the synthetic scene (all seven steps, then nothing on a second run), touch an input
+(only the PSR step and what follows it run) and change a parameter (only stage 3 and what follows run), and cover the
+decisions on small fake steps, the shared parameters and the options of every script against its procedure.

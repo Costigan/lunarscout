@@ -33,7 +33,7 @@ from lunarscout._script_logging import reset_script_logging, setup_script_loggin
 
 # Edit these before running. The DEM must be the one the table's rows and columns refer to.
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
-TABLE_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_stage_2_plan_seeds.csv")
+TABLE_PATH = Path("/e/lunar_analyst_scenarios/70south/safe_havens/safe_haven_stage_4_chains.csv")
 OUTPUT_PATH = None      # None replaces TABLE_PATH; set a path to write a new table instead
 
 # Messages go to the console (colored with rich on a terminal when "lunarscout[console]" is
