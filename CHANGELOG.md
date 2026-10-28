@@ -6,6 +6,13 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Rover chain maps.** New `scripts/run_safe_haven_chain_maps.py` (private module `safe_haven_chain_maps.py`)
+  draws the stage-4 chains for two sets, the predecessor edges (colour: the longest chain through each edge) and the
+  longest chain of each root (isolated seeds as dots): a three-band uint16 raster on the DEM's grid (chain length,
+  root start month, mission hours), a copy with dilated lines and a GeoPackage of line segments (or one line per
+  chain, with points for the isolated seeds), six files `safe_haven_stage_4_<set>*`. The GeoPackages are written
+  without GDAL or shapely. Segments are straight lines between seed pixel centres, a schematic, not rover paths.
+
 - **Pixel-centre coordinates in the seed tables.** The stage-2 seed table and the stage-4 final table gain `x_m` and
   `y_m`, the seed pixel's centre in the DEM's CRS (after `column`). Stage 2 writes them from the DEM it plans on;
   stage 4 makes them from the DEM's transform (`DEM_PATH`, header only), so it works on a stage-2 table made before.

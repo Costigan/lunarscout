@@ -180,7 +180,9 @@ def read_chain_table(path: str | Path) -> list[dict]:
     with Path(path).open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         if tuple(reader.fieldnames or ()) != CHAIN_COLUMNS:
-            raise InputError(f"{path} is not a chain table", code="chains_table_unreadable")
+            raise InputError(f"{path} is not a chain table (one made before x_m and y_m needs "
+                             "scripts/add_pixel_coordinates.py or a rerun of stage 4)", code="chains_table_unreadable",
+                             details={"header": reader.fieldnames})
         rows = []
         for record in reader:
             row = {}

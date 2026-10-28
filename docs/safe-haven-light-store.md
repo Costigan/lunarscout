@@ -227,3 +227,35 @@ First real run (`next_cycle` edges): 485,776 seeds are roots (a one-seed chain, 
 126 h) and 38,447 have a predecessor. Chain lengths are 2 (35,311 seeds), 3 (1,005), 4 (774), 5 (589), 6 (440),
 7 (255), 8 (50), 9 (19) and 10 (4). The longest mission is 6,008 h (250 days), a chain of 10 seeds in 10
 consecutive Earth cycles. The mission percentiles are 24 h (p10), 136 h (median), 308 h (p90) and 672 h (p99).
+
+## 11. Rover chain maps
+
+`scripts/run_safe_haven_chain_maps.py` (module `safe_haven_chain_maps.py`) draws the stage-4 chains: two chain sets,
+each as a raster on the DEM's grid, a raster copy with dilated lines and a GeoPackage, six files named
+`safe_haven_stage_4_<set>{,_dilated}.tif` and `safe_haven_stage_4_<set>.gpkg`. It reads the stage-4 table (with its
+`x_m`/`y_m` columns) and the DEM's header, and takes about 35 s on the real table.
+
+* **`predecessor_edges`:** one straight segment from each seed that has a predecessor to the seed (38,447 on the
+  real table); every edge of the label forest once, branches included. An edge has the length of the longest chain
+  that passes through it (the deepest seed at or below its target), so a chain does not change colour along its
+  length.
+* **`longest_chain_per_root`:** each root's longest chain (most seeds, then the longer mission, then the lowest seed
+  id), drawn root to end at the chain's length (11,884 chains), and the roots with no descendants as dots of value 1
+  (473,892), also a point layer.
+* **Rasters.** Three uint16 bands: chain length in seeds (0 is background), the month the chain's root starts
+  (1 is the table's first month) and the mission hours (the longest mission at or below the edge for predecessor
+  edges). Segments are drawn shortest chain first, then by mission, so where lines cross all three bands come from the
+  longer chain. The dilated copy stamps a square of `2 * DILATE_PIXELS + 1` pixels (default 5) along each segment,
+  dots one pixel larger. Full-resolution files are about 12 MB each (deflate; the product is sparse).
+* **GeoPackages.** Hand-written GeoPackage 1.3 (no GDAL or shapely dependency), not dilated: layer
+  `predecessor_edges` (a line per edge with seed, predecessor, root, chain length through the edge, the seed's own
+  chain length, mission hours and root start), or `chains` (one line through the seed centres of each chain with root,
+  end seed, length, mission, start and the seed ids) plus `isolated_seeds` points. The CRS is the DEM's, stored as
+  WKT; `ogrinfo` reads both files.
+* **Straight lines.** Segments join seed pixel centres: a schematic, not the rover's path, and they may cross terrain
+  the rover cannot. Stage 3 keeps frontiers, not paths; reconstructing paths would mean flooding again from every
+  seed on a chain.
+
+Tests check the sets against an exhaustive search over random forests, the Bresenham lines, the draw order (the
+longer chain on top in every input order), the stamps and clipping, the band values of every pixel on a hand-built
+graph, the GeoPackage tables and WKB, and `ogrinfo` on both files.

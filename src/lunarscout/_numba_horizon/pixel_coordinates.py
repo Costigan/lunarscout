@@ -45,6 +45,18 @@ def dem_geo_transform(dem_path: str | Path) -> tuple[float, ...]:
         return tuple(float(v) for v in dataset.transform.to_gdal())
 
 
+def dem_header(dem_path: str | Path):
+    """``(geo_transform, width, height, crs_wkt)`` of a DEM GeoTIFF, from its header (no pixels are loaded)."""
+    import rasterio
+
+    from ..geotiff import _resolve_dem_path
+
+    path = _resolve_dem_path(Path(dem_path).expanduser().resolve())
+    with rasterio.open(path) as dataset:
+        return (tuple(float(v) for v in dataset.transform.to_gdal()), int(dataset.width), int(dataset.height),
+                dataset.crs.to_wkt() if dataset.crs is not None else "")
+
+
 def add_coordinate_columns(
     table_path: str | Path, geo_transform: npt.ArrayLike, *, output_path: str | Path | None = None,
     row_column: str = "row", column_column: str = "column",
