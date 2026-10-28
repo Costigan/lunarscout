@@ -325,6 +325,15 @@ def test_the_images_show_every_haven_over_the_aqua_over_the_routes() -> None:
     assert colour_at(image, 0, 0) == (0, 0, 0, 0)
 
 
+def test_replacing_an_image_removes_the_sidecar_of_the_old_file(tmp_path) -> None:
+    path = tmp_path / "image.tif"
+    sidecar = tmp_path / "image.tif.aux.xml"
+    sidecar.write_text("<PAMDataset/>")                     # statistics and band names of the file being replaced
+    maps.write_image(path, planes_of(), REAL, transform=(0.0, 20.0, 0.0, 100.0, 0.0, -20.0), crs_wkt="",
+                     tags={"SET": "x"})
+    assert path.exists() and not sidecar.exists()
+
+
 def test_the_predecessor_edge_geopackage_holds_one_segment_per_edge(tables) -> None:
     run(tables)
     path = tables / "out" / "safe_haven_stage_4_predecessor_edges.gpkg"

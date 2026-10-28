@@ -345,6 +345,8 @@ def write_image(path: Path, planes, intervals, *, transform, crs_wkt: str, tags:
                 dataset.write(colour_image(strip, intervals), window=Window(0, row, planes.shape[2], strip.shape[1]))
             dataset.update_tags(**tags)
         os.replace(staging, path)
+        # A sidecar left by the file just replaced (band names, statistics) would make QGIS stretch the new colours.
+        path.with_name(path.name + ".aux.xml").unlink(missing_ok=True)
     finally:
         staging.unlink(missing_ok=True)
 

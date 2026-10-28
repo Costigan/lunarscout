@@ -6,6 +6,7 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Chain-map images no longer leave a stale `.aux.xml`.** Replacing an image removes the sidecar of the old file; its band names and statistics (from the earlier 3-band format) made QGIS stretch the new colour channels to 0-7 and show the image black and white.
 - **Command-line options for the safe-haven scripts and a driver.** Every constant of `generate_psr_regions.py`,
   `run_light_store.py` and `run_safe_haven_stage1.py` to `_stage4.py` and `run_safe_haven_chain_maps.py` is now also a
   command-line option (`--constant-name`, the constant as the default; the flood settings and stage 2's seed rules one
