@@ -19,6 +19,7 @@ import json
 import math
 import os
 import time as clock
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -56,6 +57,21 @@ def persistence_ramp() -> npt.NDArray[np.uint8]:
     return ramp
 
 
+@dataclass(frozen=True)
+class Legend:
+    """The colour key of a map: ``colours`` is ``(classes + 1, 3)`` RGB (row 0, the class of no value, is unused), one
+    label per class 1 to ``classes`` and a caption under the swatches."""
+
+    colours: npt.NDArray[np.uint8]
+    labels: tuple[str, ...]
+    caption: str
+
+
+def persistence_legend() -> Legend:
+    return Legend(persistence_ramp(), tuple(str(month) for month in range(1, MONTHS + 1)),
+                  "months with a seed (cells with none show the terrain)")
+
+
 @dataclass
 class OverviewReport:
     years: dict                      # per year: the files, the seeds, the cells with seeds and how many months they have
@@ -76,16 +92,18 @@ def cell_grid_shape(height: int, width: int, cell_pixels: int) -> tuple[int, int
     return -(-height // cell_pixels), -(-width // cell_pixels)
 
 
-def persistence_grids(seeds_path: str | Path, *, cell_shape: tuple[int, int], years=None):
-    """``({year: uint8 grid of cell rows x columns}, {year: seeds})`` from the stage-2 seed table: each cell's number of
-    distinct months of the year with a seed. ``years`` None takes every year from the first to the last in the table."""
+def read_cell_table(path: str | Path, cell_shape: tuple[int, int], value_column: str | None = None):
+    """``(month_keys, cell_rows, cell_cols, values)`` of every row of a stage-2 or stage-4 table: ``year * 12 + month - 1``,
+    the 5.12 km cell and, when ``value_column`` is named, that column as floats (else None). A table that is not one, is
+    empty, has an unreadable month or cell, or has a cell outside the grid is refused."""
     rows_n, cols_n = cell_shape
-    month_keys, cell_rows, cell_cols = [], [], []
-    with Path(seeds_path).open(encoding="utf-8", newline="") as handle:
+    month_keys, cell_rows, cell_cols, values = [], [], [], []
+    wanted = {"month", "cell_row", "cell_col"} | ({value_column} if value_column else set())
+    with Path(path).open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        missing = {"month", "cell_row", "cell_col"} - set(reader.fieldnames or ())
+        missing = wanted - set(reader.fieldnames or ())
         if missing:
-            raise InputError(f"{seeds_path} is not a seed table (no {', '.join(sorted(missing))} column)",
+            raise InputError(f"{path} is not a seed table (no {', '.join(sorted(missing))} column)",
                              code="overview_table_unreadable", details={"missing": sorted(missing)})
         for record in reader:
             try:
@@ -95,22 +113,39 @@ def persistence_grids(seeds_path: str | Path, *, cell_shape: tuple[int, int], ye
                 month_keys.append(year * MONTHS + month - 1)
                 cell_rows.append(int(record["cell_row"]))
                 cell_cols.append(int(record["cell_col"]))
+                if value_column:
+                    values.append(float(record[value_column]))
             except ValueError as error:
-                raise InputError(f"{seeds_path} has a seed with an unreadable month or cell ({record['month']!r})",
-                                 code="overview_table_unreadable", details={"month": record["month"]}) from error
+                raise InputError(f"{path} has a seed with an unreadable month, cell or {value_column or 'value'} "
+                                 f"({record['month']!r})", code="overview_table_unreadable",
+                                 details={"month": record["month"]}) from error
     if not month_keys:
-        raise InputError(f"{seeds_path} has no seeds", code="overview_table_empty", details={"path": str(seeds_path)})
-    month_keys = np.array(month_keys, dtype=np.int64)
+        raise InputError(f"{path} has no seeds", code="overview_table_empty", details={"path": str(path)})
     cell_rows, cell_cols = np.array(cell_rows, dtype=np.int64), np.array(cell_cols, dtype=np.int64)
     if cell_rows.min() < 0 or cell_cols.min() < 0 or cell_rows.max() >= rows_n or cell_cols.max() >= cols_n:
         raise InputError("a seed lies outside the cell grid; the cell size (cell patches) must be stage 2's",
                          code="overview_cell_grid_mismatch",
                          details={"cell_shape": [rows_n, cols_n], "largest_cell": [int(cell_rows.max()), int(cell_cols.max())]})
+    return (np.array(month_keys, dtype=np.int64), cell_rows, cell_cols,
+            np.array(values, dtype=np.float64) if value_column else None)
+
+
+def resolve_years(month_keys, years) -> list[int]:
+    """``years`` as a list of distinct ints, or (None) every year from the first to the last in the table."""
     in_table = sorted({int(key) // MONTHS for key in np.unique(month_keys)})
     years = list(range(in_table[0], in_table[-1] + 1)) if years is None else [int(y) for y in years]
     if not years or len(set(years)) != len(years):
         raise InputError("years must be a non-empty list of distinct years", code="overview_setting_invalid",
                          details={"years": years})
+    return years
+
+
+def persistence_grids(seeds_path: str | Path, *, cell_shape: tuple[int, int], years=None):
+    """``({year: uint8 grid of cell rows x columns}, {year: seeds})`` from the stage-2 seed table: each cell's number of
+    distinct months of the year with a seed. ``years`` None takes every year from the first to the last in the table."""
+    rows_n, cols_n = cell_shape
+    month_keys, cell_rows, cell_cols, _ = read_cell_table(seeds_path, cell_shape)
+    years = resolve_years(month_keys, years)
     grids, seeds = {}, {}
     cells = rows_n * cols_n
     for year in years:
@@ -238,10 +273,11 @@ def backdrop_rgb(elevation, psr, pixel_metres: float, *, psr_fraction: float = 0
     return image
 
 
-def compose(backdrop, grid, scale: int, *, inset: int = 1) -> npt.NDArray[np.uint8]:
-    """The backdrop with one square per cell that has a seed, coloured by its months, ``inset`` pixels in from the cell's
-    edge so the hillshade shows between the squares."""
-    ramp = persistence_ramp()
+def compose(backdrop, grid, scale: int, *, inset: int = 1, colours=None) -> npt.NDArray[np.uint8]:
+    """The backdrop with one square per cell whose class in ``grid`` is above 0, coloured by ``colours`` (rows indexed by
+    class; default: the persistence ramp), ``inset`` pixels in from the cell's edge so the hillshade shows between the
+    squares."""
+    ramp = persistence_ramp() if colours is None else colours
     values = np.kron(grid, np.ones((scale, scale), dtype=np.uint8))
     local = np.arange(values.shape[0]) % scale
     local_cols = np.arange(values.shape[1]) % scale
@@ -324,17 +360,18 @@ def draw_graticule(axes, geometry: Geometry, *, labels: bool, line_width: float)
                       fontsize=8, ha="center", va="center", path_effects=halo)
 
 
-def draw_legend(figure, rectangle, *, font: float = 9.0) -> None:
-    """The colour scale: one swatch per month count, 1 to 12, brighter for more months."""
-    ramp = persistence_ramp()
+def draw_legend(figure, rectangle, legend: Legend | None = None, *, font: float = 9.0) -> None:
+    """The colour scale: one swatch per class, with its label under it."""
+    legend = persistence_legend() if legend is None else legend
+    classes = len(legend.labels)
     axes = figure.add_axes(rectangle)
-    axes.set_xlim(0, MONTHS)
+    axes.set_xlim(0, classes)
     axes.set_ylim(0, 1)
     axes.axis("off")
-    for month in range(1, MONTHS + 1):
-        colour = tuple(ramp[month] / 255.0)
-        axes.add_patch(_rectangle(month - 1 + 0.06, 0.40, 0.88, 0.55, colour))
-        axes.text(month - 0.5, 0.12, str(month), color=SECONDARY_INK, fontsize=font, ha="center", va="center")
+    for index, label in enumerate(legend.labels):
+        colour = tuple(legend.colours[index + 1] / 255.0)
+        axes.add_patch(_rectangle(index + 0.06, 0.40, 0.88, 0.55, colour))
+        axes.text(index + 0.5, 0.12, label, color=SECONDARY_INK, fontsize=font, ha="center", va="center")
 
 
 def _rectangle(x, y, w, h, colour):
@@ -349,32 +386,37 @@ def _stats_text(grid, seeds: int) -> str:
             f"{seeds:,} seeds")
 
 
-def render_year_png(path: Path, image, grid, year: int, seeds: int, geometry: Geometry) -> None:
-    """One year's PNG: the pole with its graticule, the legend and the numbers."""
+def render_year_png(path: Path, image, geometry: Geometry, *, title: str, subtitle: str, stats: str, legend: Legend,
+                    footnote: str = "dark terrain: hillshade of the DEM; dark outlined areas: PSRs; south polar stereographic",
+                    decorate: Callable | None = None) -> None:
+    """One year's PNG: the pole with its graticule, the legend and the numbers. ``decorate(axes)`` draws anything more on
+    top of the image, in canvas pixels, before the graticule."""
     from matplotlib.figure import Figure
 
     figure = Figure(figsize=(8.4, 9.3), dpi=240, facecolor=SURFACE)
     axes = figure.add_axes([0.05, 0.17, 0.90, 0.73])
     axes.imshow(image, interpolation="nearest", extent=(0, geometry.width, geometry.height, 0))
+    if decorate is not None:
+        decorate(axes)
     draw_graticule(axes, geometry, labels=True, line_width=0.5)
     pad = 26
     axes.set_xlim(-pad, geometry.width + pad)
     axes.set_ylim(geometry.height + pad, -pad)
     axes.set_aspect("equal")
     axes.axis("off")
-    figure.text(0.05, 0.955, f"Safe-haven persistence, {year}", color=PRIMARY_INK, fontsize=15, fontweight="bold", ha="left")
-    figure.text(0.05, 0.928, "Months of the year in which a 5.12 km cell has at least one valid haven seed",
-                color=SECONDARY_INK, fontsize=9.5, ha="left")
-    figure.text(0.05, 0.905, _stats_text(grid, seeds), color=SECONDARY_INK, fontsize=9, ha="left")
-    draw_legend(figure, [0.15, 0.065, 0.70, 0.06])
-    figure.text(0.5, 0.045, "months with a seed (cells with none show the terrain)", color=MUTED_INK, fontsize=8.5, ha="center")
-    figure.text(0.95, 0.02, "dark terrain: hillshade of the DEM; dark outlined areas: PSRs; south polar stereographic",
-                color=MUTED_INK, fontsize=7, ha="right")
+    figure.text(0.05, 0.955, title, color=PRIMARY_INK, fontsize=15, fontweight="bold", ha="left")
+    figure.text(0.05, 0.928, subtitle, color=SECONDARY_INK, fontsize=9.5, ha="left")
+    figure.text(0.05, 0.905, stats, color=SECONDARY_INK, fontsize=9, ha="left")
+    draw_legend(figure, [0.15, 0.065, 0.70, 0.06], legend)
+    figure.text(0.5, 0.045, legend.caption, color=MUTED_INK, fontsize=8.5, ha="center")
+    figure.text(0.95, 0.02, footnote, color=MUTED_INK, fontsize=7, ha="right")
     _save_png(figure, path)
 
 
-def render_contact_sheet(path: Path, images: dict, grids: dict, geometry: Geometry, *, columns: int = 4) -> None:
-    """All years as small multiples with one shared colour scale."""
+def render_contact_sheet(path: Path, images: dict, notes: dict, geometry: Geometry, *, title: str, subtitle: str,
+                         legend: Legend, columns: int = 4, decorate: Callable | None = None) -> None:
+    """All years as small multiples with one shared colour scale; ``notes[year]`` is the small text at a panel's top right
+    and ``decorate(year, axes)`` draws anything more on a panel."""
     from matplotlib.figure import Figure
 
     years = list(images)
@@ -387,24 +429,25 @@ def render_contact_sheet(path: Path, images: dict, grids: dict, geometry: Geomet
         left = 0.01 + column * (0.98 / columns)
         axes = figure.add_axes([left, top - (row + 1) * panel_h - 0.005, 0.98 / columns - 0.005, panel_h - 0.045])
         axes.imshow(images[year], interpolation="antialiased", extent=(0, geometry.width, geometry.height, 0))
+        if decorate is not None:
+            decorate(year, axes)
         draw_graticule(axes, geometry, labels=False, line_width=0.3)
         axes.set_xlim(0, geometry.width)
         axes.set_ylim(geometry.height, 0)
         axes.set_aspect("equal")
         axes.axis("off")
-        grid = grids[year]
         figure.text(left + 0.005, top - row * panel_h - 0.012, str(year), color=PRIMARY_INK, fontsize=13, fontweight="bold",
                     ha="left", va="top")
-        figure.text(left + 0.98 / columns - 0.01, top - row * panel_h - 0.016, f"{int((grid > 0).sum()):,} cells",
+        figure.text(left + 0.98 / columns - 0.01, top - row * panel_h - 0.016, notes[year],
                     color=SECONDARY_INK, fontsize=9, ha="right", va="top")
-    figure.text(0.012, 1 - 0.30 / figure.get_figheight(), "Safe-haven persistence by year", color=PRIMARY_INK, fontsize=17,
+    figure.text(0.012, 1 - 0.30 / figure.get_figheight(), title, color=PRIMARY_INK, fontsize=17,
                 fontweight="bold", ha="left", va="center")
-    figure.text(0.012, 1 - 0.62 / figure.get_figheight(),
-                "Months of the year in which a 5.12 km cell has at least one valid haven seed; the same scale in every panel",
-                color=SECONDARY_INK, fontsize=10.5, ha="left", va="center")
-    draw_legend(figure, [0.25, 0.012, 0.50, 0.55 / figure.get_figheight()], font=10.0)
-    figure.text(0.5, 0.012 + 0.62 / figure.get_figheight(), "months with a seed (cells with none show the terrain)",
-                color=MUTED_INK, fontsize=9, ha="center")
+    figure.text(0.012, 1 - 0.62 / figure.get_figheight(), subtitle, color=SECONDARY_INK, fontsize=10.5, ha="left",
+                va="center")
+    wide = max(len(label) for label in legend.labels) > 3                       # long labels need wider swatches
+    width = min(0.96, len(legend.labels) * (0.0833 if wide else 1.0 / 24.0))
+    draw_legend(figure, [(1.0 - width) / 2.0, 0.012, width, 0.55 / figure.get_figheight()], legend, font=10.0)
+    figure.text(0.5, 0.012 + 0.62 / figure.get_figheight(), legend.caption, color=MUTED_INK, fontsize=9, ha="center")
     _save_png(figure, path)
 
 
@@ -420,6 +463,28 @@ def _save_png(figure, path: Path) -> None:
 # ---------------------------------------------------------------------------
 # The run
 # ---------------------------------------------------------------------------
+
+
+def check_overview_settings(cell_patches: int, overview_pixels_per_cell: int) -> int:
+    """The cell size in DEM pixels; refuses a size the overview canvas does not divide and a missing matplotlib."""
+    cell_pixels = int(cell_patches) * 128
+    if cell_patches < 1 or overview_pixels_per_cell < 4 or cell_pixels % overview_pixels_per_cell:
+        raise InputError("overview_pixels_per_cell must be at least 4 and divide the cell size in pixels (cell_patches * 128)",
+                         code="overview_setting_invalid",
+                         details={"cell_patches": cell_patches, "overview_pixels_per_cell": overview_pixels_per_cell})
+    try:
+        import matplotlib  # noqa: F401
+    except ImportError as error:
+        raise InputError("the overview maps need matplotlib (pip install \"lunarscout[plot]\")",
+                         code="overview_matplotlib_missing") from error
+    return cell_pixels
+
+
+def refuse_existing(paths, overwrite: bool) -> None:
+    for path in paths:
+        if Path(path).exists() and not overwrite:
+            raise InputError(f"{path} exists; pass overwrite=True to replace it", code="overview_output_exists",
+                             details={"path": str(path)})
 
 
 def overview_paths(directory: str | Path, years, prefix: str = "safe_haven_stage_2") -> dict:
@@ -440,26 +505,14 @@ def run_overview_maps(
     ``cell_patches * 128`` pixels); the overview has ``overview_pixels_per_cell`` canvas pixels per cell, a divisor of
     that."""
     started = clock.monotonic()
-    cell_pixels = int(cell_patches) * 128
-    if cell_patches < 1 or overview_pixels_per_cell < 4 or cell_pixels % overview_pixels_per_cell:
-        raise InputError("overview_pixels_per_cell must be at least 4 and divide the cell size in pixels (cell_patches * 128)",
-                         code="overview_setting_invalid",
-                         details={"cell_patches": cell_patches, "overview_pixels_per_cell": overview_pixels_per_cell})
-    try:
-        import matplotlib  # noqa: F401
-    except ImportError as error:
-        raise InputError("the overview maps need matplotlib (pip install \"lunarscout[plot]\")",
-                         code="overview_matplotlib_missing") from error
+    cell_pixels = check_overview_settings(cell_patches, overview_pixels_per_cell)
     transform, width, height, crs_wkt = dem_header(dem_path)
     cell_shape = cell_grid_shape(height, width, cell_pixels)
     grids, seeds = persistence_grids(seeds_path, cell_shape=cell_shape, years=years)
     directory = Path(output_directory)
     paths = overview_paths(directory, list(grids))
-    targets = [p for y in paths["years"].values() for p in y.values()] + [paths["contact_sheet"], paths["report"]]
-    for path in targets:
-        if path.exists() and not overwrite:
-            raise InputError(f"{path} exists; pass overwrite=True to replace it", code="overview_output_exists",
-                             details={"path": str(path)})
+    refuse_existing([p for y in paths["years"].values() for p in y.values()] + [paths["contact_sheet"], paths["report"]],
+                    overwrite)
     geometry = Geometry(transform, overview_pixels_per_cell, cell_pixels, cell_shape, crs_wkt)
     elevation, psr = read_backdrop(dem_path, psr_ids_path, cell_pixels=cell_pixels, scale=overview_pixels_per_cell,
                                    cell_shape=cell_shape)
@@ -476,13 +529,20 @@ def run_overview_maps(
             tags={"LUNARSCOUT_PRODUCT": "safe-haven-persistence-v1", "YEAR": str(year),
                   "DESCRIPTION": f"months of {year} in which the 5.12 km cell has at least one valid haven seed (0: none)",
                   "SOURCE_TABLE": Path(seeds_path).name, "CELL_PIXELS": str(cell_pixels)})
-        render_year_png(paths["years"][year]["png"], image, grid, year, seeds[year], geometry)
+        render_year_png(
+            paths["years"][year]["png"], image, geometry, title=f"Safe-haven persistence, {year}",
+            subtitle="Months of the year in which a 5.12 km cell has at least one valid haven seed",
+            stats=_stats_text(grid, seeds[year]), legend=persistence_legend())
         histogram = np.bincount(grid.ravel(), minlength=MONTHS + 1)
         result[year] = {"geotiff": str(paths["years"][year]["geotiff"]), "png": str(paths["years"][year]["png"]),
                         "seeds": seeds[year], "cells_with_seeds": int((grid > 0).sum()),
                         "cells_by_months": [int(v) for v in histogram],
                         "mean_months_of_cells_with_seeds": float(grid[grid > 0].mean()) if (grid > 0).any() else 0.0}
-    render_contact_sheet(paths["contact_sheet"], images, grids, geometry)
+    render_contact_sheet(
+        paths["contact_sheet"], images, {year: f"{int((grid > 0).sum()):,} cells" for year, grid in grids.items()},
+        geometry, title="Safe-haven persistence by year",
+        subtitle="Months of the year in which a 5.12 km cell has at least one valid haven seed; the same scale in every panel",
+        legend=persistence_legend())
     report = OverviewReport(years=result, cell_shape=list(cell_shape), cell_pixels=cell_pixels,
                             seconds=clock.monotonic() - started)
     paths["report"].write_text(json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8")
