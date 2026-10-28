@@ -14,9 +14,10 @@ and among edges with that same root the longer chain, then the lowest predecesso
 time order, so the result does not depend on the order of the tables. Nothing is flooded or lit again: this
 reads three small tables and finishes in seconds, CPU only, and needs no NVIDIA device.
 
-One row per seed is written to OUTPUT_PATH, the final table: the stage-2 columns (cell, month, pixel,
-hibernation, outage kind, Earth cycle, outage start and end, before and after steps), the stage-3 columns
-(seed_passable, lit_endurance_hours, reach48_pixels, the PSR touches) and
+One row per seed is written to OUTPUT_PATH, the final table: the stage-2 columns (cell, month,
+pixel, x_m and y_m: the pixel centre in the DEM's CRS, made from DEM_PATH; hibernation, outage kind, Earth
+cycle, outage start and end, before and after steps), the stage-3 columns (seed_passable, lit_endurance_hours,
+reach48_pixels, the PSR touches) and
 
 * root_id, root_start_utc: the first seed of the chain that reaches this seed and its operations start;
 * predecessor_id: the seed before this one in that chain (0 for a root);
@@ -43,11 +44,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from lunarscout._numba_horizon.pixel_coordinates import dem_geo_transform  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_chains import run_chains  # noqa: E402
 from lunarscout._script_logging import reset_script_logging, setup_script_logging  # noqa: E402
 
 
 # Edit these paths before running. They match run_safe_haven_stage3.py.
+DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")                 # for the seeds' x_m and y_m
 STAGE_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
 SEEDS_PATH = STAGE_DIRECTORY / "safe_haven_stage_2_plan_seeds.csv"             # stage 2
 FLOODS_PATH = STAGE_DIRECTORY / "safe_haven_stage_3_floods.csv"                # stage 3
@@ -67,7 +70,7 @@ LOG = logging.getLogger("lunarscout.scripts.stage4")
 
 def _run() -> int:
     report = run_chains(OUTPUT_PATH, seeds_path=SEEDS_PATH, floods_path=FLOODS_PATH, edges_path=EDGES_PATH,
-                        step_minutes=STEP_MINUTES, overwrite=OVERWRITE)
+                        geo_transform=dem_geo_transform(DEM_PATH), step_minutes=STEP_MINUTES, overwrite=OVERWRITE)
     print(json.dumps(report.as_dict(), indent=2), flush=True)
     LOG.info("%d seeds in chains over %d edges, longest chain %d seeds, longest mission %.0f h; table written to: %s",
              report.seeds_in_chains, report.edges, report.longest_chain, report.longest_mission_hours, OUTPUT_PATH)

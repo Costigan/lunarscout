@@ -144,6 +144,11 @@ report of the counts next to it.
   centre, numbered from 0 (`earth_cycle`). The run is refused unless they are one per cycle, 20 to 35 days apart
   (the real series has 107 minima 27.0 to 27.3 days apart over 2024 to 2031). A seed takes the cycle of the
   minimum nearest the midpoint of its outage, or -1 when none is within 15 days.
+* **Coordinates.** Each row names its pixel by raster `row` and `column` and by `x_m`, `y_m`: the pixel centre in the
+  DEM's CRS (projected metres, three decimals; the DEM's transform is the pixel corner, so the centre is half a pixel
+  in). `scripts/add_pixel_coordinates.py` adds the two columns to a table made before they existed (right after
+  `column`) and overwrites them where they are present; it also works on the stage-4 table. The stage-3 reader
+  accepts a seed table with or without them.
 * **Order and ids.** Rows are ordered by month, row and column and numbered from 1 in that order, so the table does
   not depend on the number of workers.
 
@@ -209,6 +214,9 @@ tables, CPU only.
   that same root the longer chain is kept, then the lowest predecessor id. The result does not depend on the order of
   the tables. Tests compare the labels with an exhaustive search over all ancestors of every seed on random graphs
   and on the scene, and check that the order of the edge file does not matter.
+* **Coordinates.** `x_m` and `y_m` (the seed pixel's centre in the DEM's CRS) are made from the DEM's transform
+  (`DEM_PATH`, header only), whatever the seed table holds, so stage 4 can be run on a stage-2 table made before the
+  coordinates were added.
 * **Columns added** to the stage-2 and stage-3 columns: `root_id`, `root_start_utc`, `predecessor_id` (0 for a
   root), `chain_length` (seeds, itself included), `mission_hours` (from the root's operations start to the end of
   this seed's lit endurance; a lower bound where the last flood hit the cap), `previous_seeds` and `next_seeds`

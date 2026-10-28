@@ -15,7 +15,8 @@ order of the tables. The labels are made in time order of ``after_step`` (an edg
 For each seed the output gives ``root_id``, ``predecessor_id`` (0 for a root), ``chain_length`` (the seeds in the
 chain, the seed itself included), the root's operations start and ``mission_hours``: the hours from the root's
 ``after_step`` to the end of this seed's lit endurance (a value whose last seed is at the 28-day flood cap is a
-lower bound). The stage-2 and stage-3 columns are carried along, so the table is the final per-seed table.
+lower bound). The stage-2 and stage-3 columns are carried along, so the table is the final per-seed table;
+its ``x_m`` and ``y_m`` are the seed pixel's centre in the DEM's CRS.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..errors import InputError
+from .pixel_coordinates import format_coordinate, pixel_centres
 from .safe_haven_floods import FLOOD_COLUMNS, read_edge_table, read_flood_table
 from .safe_haven_plan import SEED_COLUMNS, read_seed_table
 from .safe_haven_windows import FloodGrid
@@ -106,9 +108,11 @@ def _write_rows(path: Path, columns, rows) -> None:
 
 def run_chains(
     output_path: str | Path, *, seeds_path: str | Path, floods_path: str | Path, edges_path: str | Path,
-    step_minutes: int = 120, overwrite: bool = False,
+    geo_transform, step_minutes: int = 120, overwrite: bool = False,
 ) -> ChainReport:
-    """Write the final per-seed table (``CHAIN_COLUMNS``) and ``<output>.report.json``."""
+    """Write the final per-seed table (``CHAIN_COLUMNS``) and ``<output>.report.json``. ``geo_transform`` is the
+    DEM's GDAL transform: the pixel-centre coordinates ``x_m`` and ``y_m`` of each seed are made from it (a
+    seed table that already has them is overwritten)."""
     started = clock.monotonic()
     output_path = Path(output_path)
     report_path = output_path.with_name(output_path.name + ".report.json")
@@ -139,9 +143,11 @@ def run_chains(
     mission = (after - after[root - 1]) * step_hours + endurance
     root_start = np.datetime_as_string(FloodGrid(step_minutes).times(after[root - 1]), unit="us")
 
+    x, y = pixel_centres(geo_transform, [s["row"] for s in seeds], [s["column"] for s in seeds])
     rows = []
     for index, (seed, flood) in enumerate(zip(seeds, floods)):
         row = dict(seed)
+        row.update(x_m=format_coordinate(float(x[index])), y_m=format_coordinate(float(y[index])))
         row.update({name: flood[name] for name in FLOOD_COLUMNS[1:]})
         row.update(root_id=int(root[index]), predecessor_id=int(predecessor[index]), chain_length=int(length[index]),
                    root_start_utc=str(root_start[index]) + "Z", mission_hours=float(mission[index]),
@@ -183,6 +189,8 @@ def read_chain_table(path: str | Path) -> list[dict]:
                     row[name] = None
                 elif name in ("month", "outage_kind", "outage_start_utc", "outage_end_utc", "root_start_utc"):
                     row[name] = value
+                elif name in ("x_m", "y_m"):
+                    row[name] = float(value)
                 else:
                     row[name] = float(value) if "hours" in name else int(value)
             rows.append(row)

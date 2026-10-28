@@ -6,6 +6,13 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Pixel-centre coordinates in the seed tables.** The stage-2 seed table and the stage-4 final table gain `x_m` and
+  `y_m`, the seed pixel's centre in the DEM's CRS (after `column`). Stage 2 writes them from the DEM it plans on;
+  stage 4 makes them from the DEM's transform (`DEM_PATH`, header only), so it works on a stage-2 table made before.
+  The seed-table reader accepts both headers. New `scripts/add_pixel_coordinates.py` adds the columns to an existing
+  table with `row` and `column` columns (the stage-2 or stage-4 table), overwriting them where present, through a
+  staging file (new private module `pixel_coordinates.py`).
+
 - **Rover chain stage 4: the chains.** New `scripts/run_safe_haven_stage4.py` (private module
   `safe_haven_chains.py`) chains the plan seeds over the stage-3 edges. Every seed takes the label of the incoming
   edge whose root has the earliest operations start (ties: lowest root id; then the longer chain, then the lowest

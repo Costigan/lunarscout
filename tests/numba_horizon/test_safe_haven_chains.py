@@ -20,6 +20,19 @@ from test_safe_haven_floods import full_run, regions, seeds  # noqa: F401  (a re
 from test_safe_haven_stage3_store import prepared  # noqa: F401
 
 
+GT = (1000.0, 20.0, 0.0, -500.0, 0.0, -20.0)          # GDAL's transform of the pixel corner
+
+
+def write_dem_header(path):
+    """A tiny GeoTIFF whose transform is GT (the script reads only the header)."""
+    import rasterio
+    from rasterio.transform import Affine
+
+    with rasterio.open(path, "w", driver="GTiff", height=8, width=8, count=1, dtype="float32",
+                       transform=Affine.from_gdal(*GT)) as dataset:
+        dataset.write(np.zeros((1, 8, 8), dtype="float32"))
+
+
 # --- hand-built tables ---------------------------------------------------------------------------------
 
 def write_tables(directory: Path, after, edges, *, endurance=None, before=None, name="t"):
@@ -32,7 +45,7 @@ def write_tables(directory: Path, after, edges, *, endurance=None, before=None, 
         writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(plan.SEED_COLUMNS)
         for index, step in enumerate(after):
-            writer.writerow([index + 1, "2024-01", 0, 0, index, 3 * index, 0.0, "outage_sun_lit", 5,
+            writer.writerow([index + 1, "2024-01", 0, 0, index, 3 * index, -1.0, -1.0, 0.0, "outage_sun_lit", 5,
                              "2024-01-01T00:00:00.000000Z", "2024-01-01T04:00:00.000000Z",
                              "" if before is None else before[index], step])
     with floods_path.open("w", newline="") as handle:
@@ -156,7 +169,7 @@ def test_the_labels_equal_an_exhaustive_search_on_random_graphs() -> None:
 def test_the_final_table_carries_the_earlier_columns_and_the_chain_columns(tmp_path) -> None:
     after = [10, 20, 30, 40, 50]
     paths = write_tables(tmp_path, after, [(1, 3), (2, 3), (3, 5)], endurance=[10.0, 11.0, 12.0, 13.0, 14.0])
-    report = chains.run_chains(tmp_path / "final.csv", seeds_path=paths[0], floods_path=paths[1], edges_path=paths[2])
+    report = chains.run_chains(tmp_path / "final.csv", seeds_path=paths[0], floods_path=paths[1], edges_path=paths[2], geo_transform=GT)
     rows = chains.read_chain_table(tmp_path / "final.csv")
     assert tuple(rows[0]) == chains.CHAIN_COLUMNS and [r["seed_id"] for r in rows] == [1, 2, 3, 4, 5]
     third, fifth, fourth = rows[2], rows[4], rows[3]
@@ -170,6 +183,9 @@ def test_the_final_table_carries_the_earlier_columns_and_the_chain_columns(tmp_p
     assert fifth["root_start_utc"] == "1970-01-01T20:00:00.000000Z"            # step 10 of 120 minutes
     assert fifth["touch_medium_hours"] == 14.0 and fifth["touch_medium_psr"] == 7 and fifth["touch_large_hours"] is None
     assert fifth["reach48_pixels"] == 104 and fifth["outage_kind"] == "outage_sun_lit" and fifth["before_step"] is None
+    # seed 5 is pixel (row 4, column 12): the centre of GT's pixel, overwriting the stale -1 in the seed table
+    assert (fifth["x_m"], fifth["y_m"]) == (1000.0 + 20.0 * 12.5, -500.0 - 20.0 * 4.5)
+    assert [r["x_m"] for r in rows] == [1000.0 + 20.0 * (3 * i + 0.5) for i in range(5)]
     assert report.seeds == 5 and report.edges == 3 and report.roots == 3 and report.seeds_in_chains == 4
     assert report.longest_chain == 3 and report.chain_length_counts == {1: 3, 2: 1, 3: 1}
     assert report.longest_mission_hours == 94.0
@@ -180,7 +196,7 @@ def test_the_final_table_carries_the_earlier_columns_and_the_chain_columns(tmp_p
 
 def test_the_step_length_scales_the_mission(tmp_path) -> None:
     paths = write_tables(tmp_path, [10, 40], [(1, 2)], endurance=[1.0, 5.0])
-    chains.run_chains(tmp_path / "a.csv", seeds_path=paths[0], floods_path=paths[1], edges_path=paths[2], step_minutes=30)
+    chains.run_chains(tmp_path / "a.csv", seeds_path=paths[0], floods_path=paths[1], edges_path=paths[2], geo_transform=GT, step_minutes=30)
     assert chains.read_chain_table(tmp_path / "a.csv")[1]["mission_hours"] == 30 * 0.5 + 5.0
 
 
@@ -189,14 +205,14 @@ def test_the_table_does_not_depend_on_the_order_of_the_edge_file(tmp_path) -> No
     edges = [(1, 3), (2, 3), (3, 5), (4, 5), (5, 6), (1, 6)]
     first = write_tables(tmp_path, after, edges, name="x")
     second = write_tables(tmp_path, after, list(reversed(edges)), name="y")
-    chains.run_chains(tmp_path / "x.csv", seeds_path=first[0], floods_path=first[1], edges_path=first[2])
-    chains.run_chains(tmp_path / "y.csv", seeds_path=second[0], floods_path=second[1], edges_path=second[2])
+    chains.run_chains(tmp_path / "x.csv", seeds_path=first[0], floods_path=first[1], edges_path=first[2], geo_transform=GT)
+    chains.run_chains(tmp_path / "y.csv", seeds_path=second[0], floods_path=second[1], edges_path=second[2], geo_transform=GT)
     assert (tmp_path / "x.csv").read_bytes() == (tmp_path / "y.csv").read_bytes()
 
 
 def test_refusals(tmp_path) -> None:
     good = write_tables(tmp_path, [10, 20], [(1, 2)])
-    run = lambda out, paths, **kw: chains.run_chains(tmp_path / out, seeds_path=paths[0], floods_path=paths[1], edges_path=paths[2], **kw)  # noqa: E731
+    run = lambda out, paths, **kw: chains.run_chains(tmp_path / out, seeds_path=paths[0], floods_path=paths[1], edges_path=paths[2], geo_transform=GT, **kw)  # noqa: E731
     run("o.csv", good)
     with pytest.raises(InputError) as caught:
         run("o.csv", good)
@@ -228,7 +244,7 @@ def test_refusals(tmp_path) -> None:
 
 def test_no_edges_make_every_seed_a_one_seed_chain(tmp_path) -> None:
     paths = write_tables(tmp_path, [10, 20, 30], [])
-    report = chains.run_chains(tmp_path / "n.csv", seeds_path=paths[0], floods_path=paths[1], edges_path=paths[2])
+    report = chains.run_chains(tmp_path / "n.csv", seeds_path=paths[0], floods_path=paths[1], edges_path=paths[2], geo_transform=GT)
     rows = chains.read_chain_table(tmp_path / "n.csv")
     assert [r["chain_length"] for r in rows] == [1, 1, 1] and [r["mission_hours"] for r in rows] == [10.0] * 3
     assert report.roots == 3 and report.seeds_in_chains == 0 and report.longest_chain == 1
@@ -240,7 +256,7 @@ def test_the_scene_chains_are_consistent_with_the_edges_and_an_exhaustive_search
     directory, _ = full_run
     seeds_path, seed_rows = seeds
     out = tmp_path / "scene.csv"
-    report = chains.run_chains(out, seeds_path=seeds_path, floods_path=directory / "a.csv", edges_path=directory / "a_edges.csv")
+    report = chains.run_chains(out, seeds_path=seeds_path, floods_path=directory / "a.csv", edges_path=directory / "a_edges.csv", geo_transform=GT)
     rows = chains.read_chain_table(out)
     edges = [(a, b) for a, b, _ in floods.read_edge_table(directory / "a_edges.csv")]
     assert len(rows) == len(seed_rows) == report.seeds and report.edges == len(edges) > 0
@@ -281,13 +297,15 @@ def test_the_script_defaults_follow_stage_3_and_importing_it_starts_nothing() ->
 def test_the_script_writes_the_table_and_prints_the_report(tmp_path, monkeypatch, capsys) -> None:
     module = load_script()
     paths = write_tables(tmp_path, [10, 20, 30], [(1, 2), (2, 3)])
-    for name, value in dict(SEEDS_PATH=paths[0], FLOODS_PATH=paths[1], EDGES_PATH=paths[2],
+    write_dem_header(tmp_path / "dem.tif")
+    for name, value in dict(DEM_PATH=tmp_path / "dem.tif", SEEDS_PATH=paths[0], FLOODS_PATH=paths[1], EDGES_PATH=paths[2],
                             OUTPUT_PATH=tmp_path / "final.csv").items():
         monkeypatch.setattr(module, name, value)
     assert module.main() == 0
     printed = capsys.readouterr().out
     assert '"longest_chain": 3' in printed
-    assert chains.read_chain_table(tmp_path / "final.csv")[2]["chain_length"] == 3
+    final = chains.read_chain_table(tmp_path / "final.csv")
+    assert final[2]["chain_length"] == 3 and final[2]["x_m"] == 1000.0 + 20.0 * 6.5
     assert "longest chain 3 seeds" in (tmp_path / "final.csv.log").read_text()
     with pytest.raises(InputError, match="exists"):
         module.main()

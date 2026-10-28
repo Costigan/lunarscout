@@ -6,9 +6,9 @@
 Stage 2 of the rover safe-haven chain: choose the plan seeds. For every 5.12 km cell and month with a
 haven pixel in the stage-1 hibernation product (hibernation at most SURVIVAL_LIMIT_HOURS), pick up to
 five seed pixels, recompute each seed's hibernation from the stage-0 light store (it must equal the
-stage-1 value) and write one row per seed to a CSV table: its cell, month, pixel, hibernation, the
-kind of its outage, its Earth cycle, the outage's start and end, and the flood-grid steps of the
-first lit step after the outage (where stage 3 floods from) and the last lit step before it (where a
+stage-1 value) and write one row per seed to a CSV table: its cell, month, pixel (raster row and
+column, and x_m and y_m, the pixel centre in the DEM's CRS), hibernation, the kind of its outage, its Earth
+cycle, the outage's start and end, and the flood-grid steps of the first lit step after the outage (where stage 3 floods from) and the last lit step before it (where a
 rover coming from an earlier seed must arrive; blank when the seed is not lit before its outage).
 
 There is no Earth gate: a seed need not have Earth available for 48 hours on either side. The outage

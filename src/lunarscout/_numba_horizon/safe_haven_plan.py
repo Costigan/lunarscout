@@ -58,15 +58,16 @@ from .safe_haven_windows import (
     halo_pixels,
     select_seeds,
 )
+from .pixel_coordinates import COORDINATE_COLUMNS, format_coordinate, pixel_centres
 from .safe_haven_stage1_store import _INVALID_NODE_M
 
 logger = logging.getLogger(__name__)
 
 #: The table's columns. ``month`` is the UTC month of the outage start ("2027-01"); the boundaries are
 #: flood-grid steps (``flood_step_minutes`` since 1970-01-01T00:00:00Z); ``before_step`` is blank for a
-#: seed that is not lit before its outage.
+#: seed that is not lit before its outage. ``x_m`` and ``y_m`` are the pixel centre in the DEM's CRS.
 SEED_COLUMNS = (
-    "seed_id", "month", "cell_row", "cell_col", "row", "column", "hibernation_hours", "outage_kind",
+    "seed_id", "month", "cell_row", "cell_col", "row", "column", "x_m", "y_m", "hibernation_hours", "outage_kind",
     "earth_cycle", "outage_start_utc", "outage_end_utc", "before_step", "after_step",
 )
 #: Cycles are told apart by the prominence of Earth's elevation minima, so the small wiggles of the
@@ -263,16 +264,17 @@ def _plan_task(cell: tuple[int, int]):
     return cell, rows, asdict(counts)
 
 
-def _write_table(path: Path, rows: list[dict]) -> None:
+def _write_table(path: Path, rows: list[dict], geo_transform) -> None:
     staging = path.with_name(path.name + ".partial")
     try:
         with staging.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, lineterminator="\n")
             writer.writerow(SEED_COLUMNS)
             for number, row in enumerate(rows, start=1):
+                x, y = pixel_centres(geo_transform, row["row"], row["column"])
                 writer.writerow([
                     number, row["month"], row["cell_row"], row["cell_col"], row["row"], row["column"],
-                    f"{row['hibernation_hours']:g}", row["outage_kind"], row["earth_cycle"],
+                    format_coordinate(float(x)), format_coordinate(float(y)), f"{row['hibernation_hours']:g}", row["outage_kind"], row["earth_cycle"],
                     row["outage_start_utc"], row["outage_end_utc"],
                     "" if row["before_step"] is None else row["before_step"], row["after_step"]])
         os.replace(staging, path)
@@ -378,7 +380,7 @@ def plan_seeds(
         _PLAN.clear()
 
     rows.sort(key=lambda r: (r["month"], r["row"], r["column"]))
-    _write_table(output_path, rows)
+    _write_table(output_path, rows, dem.geo_transform)
     report = PlanReport(
         seeds=len(rows), cells=len(cells), cells_with_seeds=cells_with_seeds, months=time.month_count,
         cell_months_with_seeds=len({(r["cell_row"], r["cell_col"], r["month"]) for r in rows}),
@@ -396,9 +398,10 @@ def read_seed_table(path: str | Path) -> list[dict]:
     is ``None`` where blank) and ``hibernation_hours`` as a float."""
     with Path(path).open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        if tuple(reader.fieldnames or ()) != SEED_COLUMNS:
+        header = tuple(reader.fieldnames or ())
+        if header not in (SEED_COLUMNS, tuple(c for c in SEED_COLUMNS if c not in COORDINATE_COLUMNS)):
             raise InputError(f"{path} is not a seed table", code="plan_table_unreadable",
-                             details={"header": reader.fieldnames})
+                             details={"header": reader.fieldnames})   # a table made before x_m, y_m is read too
         rows = []
         for record in reader:
             row = dict(record)
@@ -406,5 +409,8 @@ def read_seed_table(path: str | Path) -> list[dict]:
                 row[name] = int(row[name])
             row["before_step"] = int(row["before_step"]) if row["before_step"] else None
             row["hibernation_hours"] = float(row["hibernation_hours"])
+            for name in COORDINATE_COLUMNS:
+                if name in row:
+                    row[name] = float(row[name])
             rows.append(row)
     return rows

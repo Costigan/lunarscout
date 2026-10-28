@@ -182,7 +182,7 @@ def test_a_seed_with_no_before_boundary_has_a_blank_before_step(tmp_path) -> Non
     rows = [dict(month="2027-01", cell_row=0, cell_col=0, row=1, column=2, hibernation_hours=0.0,
                  outage_kind="outage_sun_lit", earth_cycle=0, outage_start_utc="a", outage_end_utc="b",
                  before_step=None, after_step=7)]
-    plan._write_table(tmp_path / "t.csv", rows)
+    plan._write_table(tmp_path / "t.csv", rows, (1000.0, 20.0, 0.0, -500.0, 0.0, -20.0))
     assert tmp_path.joinpath("t.csv").read_text().splitlines()[1].endswith(",,7")
     assert plan.read_seed_table(tmp_path / "t.csv")[0]["before_step"] is None
 
