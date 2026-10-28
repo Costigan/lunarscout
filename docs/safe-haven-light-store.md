@@ -152,13 +152,24 @@ report of the counts next to it.
 * **Order and ids.** Rows are ordered by month, row and column and numbered from 1 in that order, so the table does
   not depend on the number of workers.
 
-Measured on two 36-cell blocks of the real raster (8 workers): 1,740 and 500 seeds, the first block in 10 s. In the polar block 16%
+Measured on two 36-cell blocks of the real raster (8 workers, an earlier trial before the slope limit moved to 15
+degrees): 1,740 and 500 seeds, the first block in 10 s. In the polar block 16%
 of the seeds have no before boundary (23 of 500 in the other); no seed has cycle -1. **Caveat on the cycle label:**
 the midpoints of real outages are spread over the whole cycle, not clustered at the pole's Earth minimum (offsets
 from the assigned minimum run from -13.6 to +14.4 days, with a median of 11.7 days before it in the second block), because the outage is set by the terrain horizon and Earth's azimuth as well as its elevation. The
 label is a consistent ordering, but where a cycle starts and ends cuts through real outages at an arbitrary
 phase, so a rule that links only seeds of consecutive cycle numbers can miss links that a rule based on outage
 times would find. The table holds the outage times, so stage 3 or 4 can use either.
+
+**Full real run (15-degree stage 1, 16 workers).** 483,827 seeds in 14,161 cells and 96 months, in 67.8 minutes
+(4,066 s). 6,473 cells (46%) and 121,739 cell-months have seeds, of 1,359,456 cell-months examined, 276,620 of
+which held a haven pixel. Selection gave 557,263 seeds; the 73,436 with no lit boundary within 24 h after the
+outage are dropped (`invalid_no_lit_boundary`), which leaves 483,827 (the report also counts 148,115 timelines whose
+outage never closed, and no seed lost to a missing horizon or record or to an Earth window; the light store matched the
+stage-1 value for every timeline, 0 mismatches). By outage kind: `outage_sun_lit` 393,484 (81.3%),
+`earth_never_sets` 69,564 (14.4%) and `outage_in_shadow` 20,779 (4.3%). 52,432 seeds (10.8%) have no before
+boundary and 155 have no Earth cycle (-1); there are 107 Earth cycles. The 20-degree run had 524,223 seeds; the
+15-degree NODATA limit in stage 1 removes the pixels on 15 to 20 degree slopes from the havens, so the plan has fewer.
 
 ## 9. Rover chain, stage 3: the forward floods
 
@@ -192,13 +203,17 @@ Tests compare the kernel with a plain dilation of unpacked bits (SciPy) on the s
 48-hour count, every touch and every edge, for 4 and 8 neighbours, with walls in the passable mask, with targets due
 at the last step the frontier lives, and with the lit units read both aligned with the store's chunks and not.
 
-Measured on 218 of the 1,740 seeds of the first real stage-2 trial block (8 workers, store cold): about 8 s of
+Measured on 218 of the 1,740 seeds of the first real stage-2 trial block (an earlier trial at the 20-degree limit,
+8 workers, store cold): about 8 s of
 flooding, after 40 s to make the mask and load the PSR ids; 39% of the seeds reach the 28-day cap, the median
 endurance is 401 h, the median 48-hour reach is 5,115 pixels, 835 edges.
 
-The full real run (524,223 seeds, 16 workers, light store and passable mask warm) took 13.3 minutes: 3,332 seeds
-(0.6%) reach the 28-day cap, the median endurance is 124 h, the median 48-hour reach is 22,301 pixels, and
-155,390 edges leave 40,346 seeds (`edge_rule="next_cycle"`).
+The full real run at 15 degrees (483,827 seeds, 16 workers, light store and passable mask warm) took 10.5 minutes
+(630 s): 2,436 seeds (0.5%) reach the 28-day cap, the median endurance is 118 h, the median 48-hour reach is 17,817
+pixels, and 110,510 edges leave 32,786 seeds (`edge_rule="next_cycle"`). The passable mask holds 747,218,080 pixels,
+81.2% of the raster, and 6,791 seeds (1.4%) are not on passable terrain. PSR first touches: 387,058 seeds touch a
+small region, 361,491 a medium one and 40,238 a large one. The 20-degree run (524,223 seeds) took 13.3 minutes and had
+155,390 edges leaving 40,346 seeds.
 
 ## 10. Rover chain, stage 4: the chains
 
@@ -227,14 +242,17 @@ tables, CPU only.
   shadowed regions (PSRs) of each size class that the chain's routes (root to this seed) pass next to, a PSR pixel being
   among the eight neighbours of a route pixel (`safe_haven_route_psr.py`). A root has no route and counts 0. The routes
   are the ones of section 11 (the predecessor floods run again from the light store, traced back), so stage 4 now
-  needs the light store, stage 3's passable mask, the PSR ids and the region table and takes about 45 s instead of
-  10 s. Size classes are stage 3's: small up to 400 m2 (one pixel at 20 m), medium up to 1,000,000 m2, large above.
-  On the real run the chains of 7,334 seeds pass a small PSR, 6,246 a medium one and 11 a large one.
+  needs the light store, stage 3's passable mask, the PSR ids and the region table and takes about 37 s (the
+  15-degree run) instead of 10 s. Size classes are stage 3's: small up to 400 m2 (one pixel at 20 m), medium up to 1,000,000 m2, large above.
+  On the real run at 15 degrees the chains of 5,371 seeds pass a small PSR, 4,765 a medium one and 11 a large one
+  (7,334, 6,246 and 11 at 20 degrees).
 
-First real run (`next_cycle` edges): 485,776 seeds are roots (a one-seed chain, mission = its endurance, median
-126 h) and 38,447 have a predecessor. Chain lengths are 2 (35,311 seeds), 3 (1,005), 4 (774), 5 (589), 6 (440),
-7 (255), 8 (50), 9 (19) and 10 (4). The longest mission is 6,008 h (250 days), a chain of 10 seeds in 10
-consecutive Earth cycles. The mission percentiles are 24 h (p10), 136 h (median), 308 h (p90) and 672 h (p99).
+Real run at 15 degrees (`next_cycle` edges): 451,951 of the 483,827 seeds are roots (no incoming edge; a root with no
+descendant is a one-seed chain, and its mission is its endurance, median 120 h) and 31,876 have a predecessor. The seeds
+by chain length are 2 (29,196), 3 (857), 4 (663), 5 (509), 6 (394), 7 (194), 8 (45), 9 (16) and 10 (2); the longest chain
+has 10 seeds. The longest mission is 6,008 h (250 days), a chain of 10 seeds in 10 consecutive Earth cycles. The mission
+percentiles are 22 h (p10), 128 h (median), 298 h (p90) and 572 h (p99). The 20-degree run had 38,447 seeds with a
+predecessor and the same longest mission.
 
 ## 11. Rover chain maps
 
