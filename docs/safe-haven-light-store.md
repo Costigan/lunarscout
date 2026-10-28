@@ -190,3 +190,32 @@ at the last step the frontier lives, and with the lit units read both aligned wi
 Measured on 218 of the 1,740 seeds of the first real stage-2 trial block (8 workers, store cold): about 8 s of
 flooding, after 40 s to make the mask and load the PSR ids; 39% of the seeds reach the 28-day cap, the median
 endurance is 401 h, the median 48-hour reach is 5,115 pixels, 835 edges.
+
+The full real run (524,223 seeds, 16 workers, light store and passable mask warm) took 13.3 minutes: 3,332 seeds
+(0.6%) reach the 28-day cap, the median endurance is 124 h, the median 48-hour reach is 22,301 pixels, and
+155,390 edges leave 40,346 seeds (`edge_rule="next_cycle"`).
+
+## 10. Rover chain, stage 4: the chains
+
+`scripts/run_safe_haven_stage4.py` (module `safe_haven_chains.py`) reads the stage-2 seed table and the stage-3
+flood and edge tables and writes the final per-seed table. It lights and floods nothing: about 10 s on the real
+tables, CPU only.
+
+* **Chains.** An edge A -> B means a rover that wakes at A can be on B's pixel when B's outage begins, hibernates
+  through it and wakes at B's `after_step`. Following edges gives a chain of seeds. An edge always leads to a later
+  `after_step`, so the labels are made in time order in one pass.
+* **One label per seed.** A seed with no incoming edge is its own root. Otherwise it takes the label of the incoming
+  edge whose root starts earliest (the root's `after_step`), ties broken by the lowest root id; among edges with
+  that same root the longer chain is kept, then the lowest predecessor id. The result does not depend on the order of
+  the tables. Tests compare the labels with an exhaustive search over all ancestors of every seed on random graphs
+  and on the scene, and check that the order of the edge file does not matter.
+* **Columns added** to the stage-2 and stage-3 columns: `root_id`, `root_start_utc`, `predecessor_id` (0 for a
+  root), `chain_length` (seeds, itself included), `mission_hours` (from the root's operations start to the end of
+  this seed's lit endurance; a lower bound where the last flood hit the cap), `previous_seeds` and `next_seeds`
+  (edge counts). A report beside the table gives the chain-length counts, the mission percentiles and the longest
+  chains as lists of seed ids.
+
+First real run (`next_cycle` edges): 485,776 seeds are roots (a one-seed chain, mission = its endurance, median
+126 h) and 38,447 have a predecessor. Chain lengths are 2 (35,311 seeds), 3 (1,005), 4 (774), 5 (589), 6 (440),
+7 (255), 8 (50), 9 (19) and 10 (4). The longest mission is 6,008 h (250 days), a chain of 10 seeds in 10
+consecutive Earth cycles. The mission percentiles are 24 h (p10), 136 h (median), 308 h (p90) and 672 h (p99).

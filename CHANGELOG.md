@@ -6,6 +6,15 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
+- **Rover chain stage 4: the chains.** New `scripts/run_safe_haven_stage4.py` (private module
+  `safe_haven_chains.py`) chains the plan seeds over the stage-3 edges. Every seed takes the label of the incoming
+  edge whose root has the earliest operations start (ties: lowest root id; then the longer chain, then the lowest
+  predecessor id), made in time order in one pass, so the result does not depend on the order of the tables. It
+  writes the final per-seed table (the stage-2 and stage-3 columns plus `root_id`, `root_start_utc`,
+  `predecessor_id`, `chain_length`, `mission_hours`, `previous_seeds`, `next_seeds`) and a JSON report. It lights
+  and floods nothing (about 10 s on the real tables). Outputs of stages 1 to 4 are named
+  `safe_haven_stage_<n>_<description>`.
+
 - **Rover chain stage 3: forward floods from the plan seeds.** `scripts/run_safe_haven_stage3.py` is now the flood
   stage (new private module `safe_haven_floods.py`), replacing the earlier block/pipeline stage 3 script and
   `plan_safe_haven_windows.py` and `list_safe_haven_cells.py`, which are removed with their script tests. For every
