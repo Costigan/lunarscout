@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import rasterio
 import pytest
 
 import blocks_scene as bs
@@ -19,7 +20,7 @@ from lunarscout._numba_horizon import safe_haven_chains as chains
 from lunarscout.products import _load_dem
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_safe_haven.py"
-STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps")
+STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps")
 
 
 def load_driver():
@@ -151,7 +152,7 @@ def test_the_steps_share_one_set_of_parameters() -> None:
     steps = driver.build_steps(p)
     assert tuple(steps) == STEPS
     assert steps["stage1"].options["max_slope_deg"] == 15.0
-    for name in ("stage3", "stage4", "chain-maps"):
+    for name in ("stage3", "stage4", "chain-maps", "yearly-chain-maps"):
         settings = steps[name].options.get("settings") or steps[name].options["flood_settings"]
         assert settings == steps["stage3"].options["settings"] and settings.max_slope_deg == 15.0
     assert steps["stage1"].options["stop_utc"] == "2031-12-31T22:00:00Z" == steps["stage2"].options["stop_utc"]
@@ -162,6 +163,10 @@ def test_the_steps_share_one_set_of_parameters() -> None:
     assert set(map(str, steps["stage2"].outputs)) <= set(map(str, steps["stage3"].inputs))
     assert set(map(str, steps["stage3"].outputs)) <= set(map(str, steps["stage4"].inputs))
     assert set(map(str, steps["stage4"].outputs)) <= set(map(str, steps["chain-maps"].inputs))
+    assert set(map(str, steps["stage4"].outputs)) <= set(map(str, steps["yearly-chain-maps"].inputs))
+    assert [p.name for p in steps["yearly-chain-maps"].outputs] == [
+        f"safe_haven_stage_4_longest_chain_per_root_{year}.tif" for year in range(2024, 2032)]
+    assert steps["yearly-chain-maps"].options["years"] == list(range(2024, 2032))
     assert set(map(str, steps["stage3"].caches)) <= set(map(str, steps["stage4"].inputs))
 
 
@@ -231,7 +236,8 @@ def outputs_of(directory):
             out / "safe_haven_stage_1_hibernation_hours.tif", out / "safe_haven_stage_2_plan_seeds.csv",
             out / "safe_haven_stage_3_floods.csv", out / "safe_haven_stage_3_edges.csv",
             out / "safe_haven_stage_3_passable_mask.npy", out / "safe_haven_stage_4_chains.csv",
-            out / "safe_haven_stage_4_predecessor_edges.tif", out / "safe_haven_stage_4_longest_chain_per_root.gpkg"]
+            out / "safe_haven_stage_4_predecessor_edges.tif", out / "safe_haven_stage_4_longest_chain_per_root.gpkg",
+            out / "safe_haven_stage_4_longest_chain_per_root_2027.tif"]
 
 
 def test_the_first_run_makes_every_product_in_order(world, first_run) -> None:
@@ -244,6 +250,8 @@ def test_the_first_run_makes_every_product_in_order(world, first_run) -> None:
     assert any((directory / "light_store").iterdir())
     rows = chains.read_chain_table(directory / "safe_havens" / "safe_haven_stage_4_chains.csv")
     assert rows and all(r["chain_psr_small"] is not None for r in rows)          # the routes were reconstructed
+    with rasterio.open(directory / "safe_havens" / "safe_haven_stage_4_longest_chain_per_root_2027.tif") as image:
+        assert image.count == 4 and (image.read(4) > 0).any()                      # the year's image, with its havens
     state = json.loads((directory / "safe_havens" / "safe_haven_run_state.json").read_text())
     assert set(state) == set(STEPS) and all(state[s]["fingerprint"] for s in STEPS)
     assert state["stage3"]["parameters"]["settings"]["max_slope_deg"] == 15.0
@@ -283,7 +291,7 @@ def test_a_changed_input_reruns_only_what_depends_on_it(world, first_run) -> Non
     os.utime(directory / "psr.tif", None)                                       # the PSR map changed just now
     CALLS.clear()
     assert driver.run_safe_haven(**options) == 0
-    assert CALLS == ["psr-regions", "stage3", "stage4", "chain-maps"]           # not the store, stage 1 or stage 2
+    assert CALLS == ["psr-regions", "stage3", "stage4", "chain-maps", "yearly-chain-maps"]           # not the store, stage 1 or stage 2
     CALLS.clear()
     assert driver.run_safe_haven(**options) == 0 and CALLS == []
 
@@ -292,25 +300,28 @@ def test_a_changed_parameter_reruns_the_steps_that_use_it_and_what_follows(world
     _directory, options = world
     CALLS.clear()
     assert driver.run_safe_haven(**options, max_days=20.0) == 0
-    assert CALLS == ["stage3", "stage4", "chain-maps"]
+    assert CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps"]
     CALLS.clear()
     assert driver.run_safe_haven(**{**options, "flood_workers": 1, "route_workers": 1, "max_days": 20.0}) == 0
     assert CALLS == []                                                          # how it runs is not what it makes
-    assert driver.run_safe_haven(**options) == 0 and CALLS == ["stage3", "stage4", "chain-maps"]    # and back again
+    assert driver.run_safe_haven(**options) == 0 and CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps"]    # and back again
 
 
 def test_force_runs_a_step_and_what_depends_on_it(world, first_run) -> None:
     _directory, options = world
     CALLS.clear()
     assert driver.run_safe_haven(**options, force=("stage4",)) == 0
-    assert CALLS == ["stage4", "chain-maps"]
+    assert CALLS == ["stage4", "chain-maps", "yearly-chain-maps"]
 
 
 def test_run_steps_selects_a_subset_in_the_sequences_order(world, first_run) -> None:
     _directory, options = world
     CALLS.clear()
-    assert driver.run_safe_haven(**options, run_steps=("chain-maps", "stage4"), force=("stage4", "chain-maps")) == 0
-    assert CALLS == ["stage4", "chain-maps"]
+    assert driver.run_safe_haven(**options, run_steps=("yearly-chain-maps", "chain-maps", "stage4"),
+                                 force=("stage4", "chain-maps")) == 0
+    assert CALLS == ["stage4", "chain-maps", "yearly-chain-maps"]           # the rebuilt table makes the yearly images stale
+    CALLS.clear()
+    assert driver.run_safe_haven(**options, run_steps=("chain-maps", "stage4")) == 0 and CALLS == []
 
 
 def test_outputs_the_driver_never_ran_are_not_replaced_unless_adopted_or_forced(world, first_run, tmp_path, caplog) -> None:

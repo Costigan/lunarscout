@@ -334,6 +334,87 @@ def test_replacing_an_image_removes_the_sidecar_of_the_old_file(tmp_path) -> Non
     assert path.exists() and not sidecar.exists()
 
 
+# --- the yearly images ---------------------------------------------------------------------------------
+
+def start_in_years(tables, years_of_roots) -> Path:
+    """Rewrite ``root_start_utc`` of the fixture's table so that each root's chain starts in the given year."""
+    import csv
+
+    path = tables / "chains.csv"
+    with open(path, newline="") as handle:
+        reader = csv.DictReader(handle)
+        names, rows = reader.fieldnames, list(reader)
+    for row in rows:
+        row["root_start_utc"] = f"{years_of_roots[int(row['root_id'])]}-03-04T00:00:00.000000Z"
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=names)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+def run_yearly(tables, **options):
+    return maps.run_yearly_chain_maps(tables / "out", chains_path=tables / "chains.csv", dem_path=tables / "dem.tif",
+                                      **options)
+
+
+def test_each_year_has_the_chains_that_start_in_it_and_the_years_make_up_the_whole_image(tables) -> None:
+    start_in_years(tables, {1: 2024, 6: 2025, 8: 2026})          # chains: roots 1 (4 seeds), 6 (2 seeds), 8 (alone)
+    report = run_yearly(tables, overwrite=True)
+    assert sorted(report.years) == [2024, 2025, 2026]
+    assert [report.years[y]["chains"] for y in (2024, 2025, 2026)] == [1, 1, 0]            # root 8 is isolated
+    assert [report.years[y]["havens"] for y in (2024, 2025, 2026)] == [5, 2, 1]
+    for year in (2024, 2025, 2026):
+        assert maps.yearly_path(tables / "out", year) == tables / "out" / f"safe_haven_stage_4_longest_chain_per_root_{year}.tif"
+        assert (tables / "out" / f"safe_haven_stage_4_longest_chain_per_root_{year}.tif").exists()
+    assert (tables / "out" / "safe_haven_stage_4_yearly_chain_maps.report.json").exists()
+    run(tables, overwrite=True)
+    whole, _ = read_image(tables / "out" / "safe_haven_stage_4_longest_chain_per_root.tif")
+    images = [read_image(maps.yearly_path(tables / "out", y))[0] for y in (2024, 2025, 2026)]
+    opaque = [image[3] > 0 for image in images]
+    assert not (opaque[0] & opaque[1]).any() and not (opaque[0] & opaque[2]).any() and not (opaque[1] & opaque[2]).any()
+    stacked = np.where(opaque[0] | opaque[1] | opaque[2], 1, 0)
+    assert (stacked.astype(bool) == (whole[3] > 0)).all()                    # the same pixels are drawn
+    for image, mask in zip(images, opaque):
+        assert (image[:, mask] == whole[:, mask]).all()                       # in the same colours
+    assert colour_at(images[0], 3, 9) == (255, 255, 255, 255)                 # a 2024 haven
+    assert colour_at(images[1], 3, 9) == (0, 0, 0, 0) and colour_at(images[0], 5, 15) == (0, 0, 0, 0)
+    assert colour_at(images[2], 7, 21) == (255, 255, 255, 255) and opaque[2].sum() == 1
+
+
+def test_a_year_without_chains_is_a_transparent_image_and_years_can_be_chosen(tables) -> None:
+    start_in_years(tables, {1: 2024, 6: 2025, 8: 2026})
+    report = run_yearly(tables, years=[2025, 2030], overwrite=True)
+    assert sorted(report.years) == [2025, 2030] and report.years[2030] == {
+        "file": str(maps.yearly_path(tables / "out", 2030)), "chains": 0, "segments": 0, "havens": 0}
+    image, info = read_image(maps.yearly_path(tables / "out", 2030))
+    assert image.shape[0] == 4 and not image.any()
+    assert info.colorinterp == (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha)
+    assert info.tags["YEAR"] == "2030" and info.tags["DILATE_PIXELS"] == "0" and "COLOURS" in info.tags
+    assert not maps.yearly_path(tables / "out", 2024).exists()
+
+
+def test_a_yearly_image_equals_the_whole_image_when_every_chain_starts_in_that_year(tables) -> None:
+    start_in_years(tables, {1: 2024, 6: 2024, 8: 2024})
+    run_yearly(tables, years=[2024], overwrite=True)
+    run(tables, overwrite=True)
+    year, _ = read_image(maps.yearly_path(tables / "out", 2024))
+    whole, _ = read_image(tables / "out" / "safe_haven_stage_4_longest_chain_per_root.tif")
+    assert (year == whole).all()
+
+
+def test_yearly_images_refuse_to_replace_files_and_bad_years(tables) -> None:
+    start_in_years(tables, {1: 2024, 6: 2025, 8: 2026})
+    run_yearly(tables, years=[2024], overwrite=True)
+    with pytest.raises(InputError) as error:
+        run_yearly(tables, years=[2024])
+    assert error.value.code == "chain_maps_output_exists"
+    for bad in ([], [2024, 2024]):
+        with pytest.raises(InputError) as error:
+            run_yearly(tables, years=bad, overwrite=True)
+        assert error.value.code == "chain_maps_setting_invalid"
+
+
 def test_the_predecessor_edge_geopackage_holds_one_segment_per_edge(tables) -> None:
     run(tables)
     path = tables / "out" / "safe_haven_stage_4_predecessor_edges.gpkg"

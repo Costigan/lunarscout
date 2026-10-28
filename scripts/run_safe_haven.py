@@ -12,6 +12,7 @@ The safe-haven sequence, one step after another, with the parameters that the st
     stage3        scripts/run_safe_haven_stage3.py     the forward floods and the edges
     stage4        scripts/run_safe_haven_stage4.py     the chains and the final table
     chain-maps    scripts/run_safe_haven_chain_maps.py the colour images and GeoPackages
+    yearly-chain-maps  scripts/run_safe_haven_yearly_chain_maps.py  the longest-chain image of each year
 
 The driver loads those scripts and calls the procedures they define (run_stage3(...) and so on) with the values below,
 so a threshold such as MAX_SLOPE_DEG (the Horn slope the rover may enter or stay on, and the limit above which stage 1
@@ -60,7 +61,7 @@ from lunarscout._numba_horizon.safe_haven_windows import WindowParameters  # noq
 from lunarscout._script_cli import Option, add_logging_options, add_options, defaults_from, options_from, run_with_logging  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parent
-STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps")
+STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps")
 
 # ---- where things are. Edit these before running; every other path is made from them.
 SCENARIO_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south")
@@ -340,6 +341,13 @@ def build_steps(p: dict) -> dict[str, Step]:
              overwrite=True, light_store_path=store, psr_ids_path=p["psr_ids_path"], passable_path=passable,
              raster_routes=p["raster_routes"], route_workers=p["route_workers"], flood_settings=settings),
         [p["dem_path"], chains, store, passable, p["psr_ids_path"]], maps)
+    years = list(range(int(first[:4]), int(last[:4]) + 1))
+    add("yearly-chain-maps", "run_safe_haven_yearly_chain_maps", "make_yearly_chain_maps",
+        dict(dem_path=p["dem_path"], chains_path=chains, output_directory=out, years=years, overwrite=True,
+             light_store_path=store, psr_ids_path=p["psr_ids_path"], passable_path=passable,
+             raster_routes=p["raster_routes"], route_workers=p["route_workers"], flood_settings=settings),
+        [p["dem_path"], chains, store, passable, p["psr_ids_path"]],
+        [out / f"safe_haven_stage_4_longest_chain_per_root_{year}.tif" for year in years])
     return steps
 
 

@@ -33,7 +33,7 @@ import os
 import sqlite3
 import struct
 import time as clock
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -448,6 +448,36 @@ def output_paths(directory: str | Path, prefix: str = "safe_haven_stage_4") -> d
                    "geopackage": directory / f"{prefix}_{name}.gpkg"} for name in CHAIN_SETS}
 
 
+def _reconstruct_routes(rows, light_store_path, passable_path, dem_shape, flood_settings, workers, compiled,
+                        progress):
+    """The rover's routes along every predecessor edge (None without ``light_store_path``: straight lines)."""
+    if light_store_path is None:
+        return None
+    if passable_path is None:
+        raise InputError("routes need the passable mask stage 3 cached", code="chain_maps_setting_invalid",
+                         details={"passable_path": None})
+    from .safe_haven_floods import FloodSettings
+    from .safe_haven_paths import reconstruct_paths
+    from .safe_haven_stage0 import LightStoreDirectory
+
+    return reconstruct_paths(
+        rows, directory=LightStoreDirectory(light_store_path), passable_path=passable_path, dem_shape=dem_shape,
+        settings=flood_settings or FloodSettings(), workers=workers, compiled=compiled, progress=progress)
+
+
+def _read_psr_mask(psr_ids_path, height: int, width: int):
+    """True where the PSR id raster has a region (None without ``psr_ids_path``)."""
+    if psr_ids_path is None:
+        return None
+    import rasterio
+
+    with rasterio.open(psr_ids_path) as dataset:
+        if (dataset.height, dataset.width) != (height, width):
+            raise InputError("the PSR id raster and the DEM differ in size", code="chain_maps_psr_mismatch",
+                             details={"psr": [dataset.height, dataset.width], "dem": [height, width]})
+        return dataset.read(1) > 0
+
+
 def run_chain_maps(
     output_directory: str | Path, *, chains_path: str | Path, dem_path: str | Path, dilate_pixels: int = 2,
     prefix: str = "safe_haven_stage_4", overwrite: bool = False, compiled: bool = True,
@@ -482,28 +512,9 @@ def run_chain_maps(
                          details={"height": height, "width": width})
     chain_lengths = chain_set.line_attributes["chain_length"]
     intervals = build_intervals(chain_lengths)
-    route_set = None
-    if light_store_path is not None:
-        if passable_path is None:
-            raise InputError("routes need the passable mask stage 3 cached", code="chain_maps_setting_invalid",
-                             details={"passable_path": None})
-        from .safe_haven_floods import FloodSettings
-        from .safe_haven_paths import reconstruct_paths
-        from .safe_haven_stage0 import LightStoreDirectory
-
-        route_set = reconstruct_paths(
-            rows, directory=LightStoreDirectory(light_store_path), passable_path=passable_path,
-            dem_shape=(height, width), settings=flood_settings or FloodSettings(), workers=workers,
-            compiled=compiled, progress=progress)
-    psr_mask = None
-    if psr_ids_path is not None:
-        import rasterio
-
-        with rasterio.open(psr_ids_path) as dataset:
-            if (dataset.height, dataset.width) != (height, width):
-                raise InputError("the PSR id raster and the DEM differ in size", code="chain_maps_psr_mismatch",
-                                 details={"psr": [dataset.height, dataset.width], "dem": [height, width]})
-            psr_mask = dataset.read(1) > 0
+    route_set = _reconstruct_routes(rows, light_store_path, passable_path, (height, width), flood_settings, workers,
+                                    compiled, progress)
+    psr_mask = _read_psr_mask(psr_ids_path, height, width)
     directory.mkdir(parents=True, exist_ok=True)
     tags = {
         "LUNARSCOUT_PRODUCT": "safe-haven-chain-image-v1",
@@ -539,6 +550,101 @@ def run_chain_maps(
         route_pixels=int(len(route_set.rows)) if route_set is not None else 0, psr_marked_pixels=marked,
         seconds=clock.monotonic() - started)
     report_path.write_text(json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8")
+    return report
+
+
+@dataclass
+class YearlyChainMapsReport:
+    years: dict                      # per year: the file, the chains and the havens drawn
+    intervals: list
+    raster_lines: str
+    route_pixels: int
+    seconds: float = 0.0
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+def yearly_path(directory: str | Path, year: int, prefix: str = "safe_haven_stage_4") -> Path:
+    return Path(directory) / f"{prefix}_longest_chain_per_root_{year}.tif"
+
+
+def run_yearly_chain_maps(
+    output_directory: str | Path, *, chains_path: str | Path, dem_path: str | Path, years=None,
+    prefix: str = "safe_haven_stage_4", overwrite: bool = False, compiled: bool = True,
+    light_store_path: str | Path | None = None, passable_path: str | Path | None = None,
+    flood_settings=None, workers: int = 1, progress=None, psr_ids_path: str | Path | None = None,
+) -> YearlyChainMapsReport:
+    """Write ``<prefix>_longest_chain_per_root_<year>.tif`` for each of ``years`` (None: every UTC year from the first
+    to the last in which a chain's root starts) and ``<prefix>_yearly_chain_maps.report.json``.
+
+    Each image is the non-dilated ``longest_chain_per_root`` image restricted to one year: a chain belongs to the UTC
+    year in which its root starts (``root_start_utc``; a chain that carries on into the next year stays whole in the
+    year it began), and the havens drawn are the seeds of the chains of that year, isolated ones too. The colours are
+    the intervals of all the chains, so a colour means the same length in every year. A year with no chains is a
+    transparent image. The routes, PSR marks and other arguments are those of :func:`run_chain_maps`."""
+    started = clock.monotonic()
+    directory = Path(output_directory)
+    rows = read_chain_table(chains_path)
+    transform, width, height, crs_wkt = dem_header(dem_path)
+    arrays, _edge_set, chain_set = build_chain_sets(rows)
+    if arrays["row"].min() < 0 or arrays["row"].max() >= height or arrays["column"].min() < 0 \
+            or arrays["column"].max() >= width:
+        raise InputError("a seed lies outside the DEM's grid", code="chain_maps_grid_mismatch",
+                         details={"height": height, "width": width})
+    seed_year = np.array([int(str(r["root_start_utc"])[:4]) for r in rows], dtype=np.int64)
+    line_year = np.array([int(str(t)[:4]) for t in chain_set.line_attributes["root_start_utc"]], dtype=np.int64)
+    if years is None:
+        years = range(int(seed_year.min()), int(seed_year.max()) + 1)
+    years = [int(y) for y in years]
+    if not years or len(set(years)) != len(years):
+        raise InputError("years must be a non-empty list of distinct years", code="chain_maps_setting_invalid",
+                         details={"years": years})
+    targets = [yearly_path(directory, y, prefix) for y in years] + [directory / f"{prefix}_yearly_chain_maps.report.json"]
+    for path in targets:
+        if path.exists() and not overwrite:
+            raise InputError(f"{path} exists; pass overwrite=True to replace it", code="chain_maps_output_exists",
+                             details={"path": str(path)})
+    intervals = build_intervals(chain_set.line_attributes["chain_length"])
+    route_set = _reconstruct_routes(rows, light_store_path, passable_path, (height, width), flood_settings, workers,
+                                    compiled, progress)
+    psr_mask = _read_psr_mask(psr_ids_path, height, width)
+    directory.mkdir(parents=True, exist_ok=True)
+    segment_year = np.repeat(line_year, [len(line) - 1 for line in chain_set.lines])
+    tags = {
+        "LUNARSCOUT_PRODUCT": "safe-haven-chain-image-v1",
+        "COLOURS": "intervals of chain length (seeds): " + "; ".join(f"{i.label} {i.colour}" for i in intervals)
+                   + f"; havens {HAVEN_COLOUR}; route pixels next to a PSR {PSR_COLOUR}; transparent background",
+        "SEGMENTS": ("rover routes: one feasible time-respecting route per edge, from the predecessor's pixel to "
+                     "the seed's" if route_set is not None else
+                     "straight lines between seed pixel centres: a schematic, not the rover's path"),
+        "SOURCE_TABLE": Path(chains_path).name, "SET": "longest_chain_per_root", "DILATE_PIXELS": "0",
+    }
+    result: dict = {}
+    for year in years:
+        keep = segment_year == year
+        segments = chain_set.segments
+        subset = replace(
+            chain_set, segments=Segments(segments.row0[keep], segments.column0[keep], segments.row1[keep],
+                                         segments.column1[keep], segments.length[keep]),
+            segment_seeds=chain_set.segment_seeds[keep])
+        in_year = seed_year == year
+        planes = render(subset, (arrays["row"][in_year], arrays["column"][in_year]), intervals, height, width, 0,
+                        paths=route_set, psr=psr_mask, compiled=compiled)
+        path = yearly_path(directory, year, prefix)
+        write_image(path, planes, intervals, transform=transform, crs_wkt=crs_wkt,
+                    tags={**tags, "YEAR": str(year),
+                          "DESCRIPTION": f"the longest chain of each root that starts in {year}, coloured by its length"})
+        del planes
+        result[year] = {"file": str(path), "chains": int((line_year == year).sum()), "segments": int(keep.sum()),
+                        "havens": int(in_year.sum())}
+    report = YearlyChainMapsReport(
+        years=result,
+        intervals=[{"label": i.label, "first": i.first, "last": i.last, "colour": i.colour} for i in intervals],
+        raster_lines="routes" if route_set is not None else "straight",
+        route_pixels=int(len(route_set.rows)) if route_set is not None else 0, seconds=clock.monotonic() - started)
+    (directory / f"{prefix}_yearly_chain_maps.report.json").write_text(
+        json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8")
     return report
 
 

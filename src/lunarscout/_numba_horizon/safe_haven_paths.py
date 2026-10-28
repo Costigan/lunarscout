@@ -28,6 +28,7 @@ import numpy.typing as npt
 
 from ..errors import InputError
 from .file_format import PATCH_SIZE
+from .pool_guard import guarded_results
 from .safe_haven_flood_packed import WORD_BITS
 from .safe_haven_floods import (
     FloodContext, FloodSettings, WORDS_PER_PATCH_ROW, advance_kernel, load_cached_passable,
@@ -314,7 +315,7 @@ def reconstruct_paths(
         if workers > 1 and tasks:
             _RUN["context"], _RUN["compiled"] = context, compiled
             pool = multiprocessing.get_context("fork").Pool(workers, initializer=_init)
-            results = pool.imap_unordered(_task, tasks, chunksize=1)
+            results = guarded_results(pool, pool.imap_unordered(_task, tasks, chunksize=1))
         else:
             results = (reconstruct_source(context, source, targets, compiled=compiled) for source, targets in tasks)
         for number, paths in enumerate(results, start=1):

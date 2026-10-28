@@ -293,6 +293,26 @@ by replaying every route of the scene against the light store (a schedule of at 
 passable pixels exists), by running the trace kernel on random lit worlds with walls (4 and 8 neighbours, 2 to 4 moves,
 compiled and plain Python) and by comparing the images with a plain painter over the routes, with and without PSRs.
 
+### Yearly images
+
+`scripts/run_safe_haven_yearly_chain_maps.py` (`run_yearly_chain_maps` in `safe_haven_chain_maps.py`) is the next step
+of the sequence (`yearly-chain-maps` in the driver). It writes `safe_haven_stage_4_longest_chain_per_root_<year>.tif`
+for each UTC year, non-dilated only: the `longest_chain_per_root` image restricted to one year, so the pattern of
+chains and havens year by year can be compared.
+
+* **Which year.** A chain belongs to the UTC year in which its root starts (`root_start_utc`), so every chain is in
+  exactly one image and the years together draw the whole image. A chain that carries on into the next year stays whole
+  in the year it began (on the real table 330 seeds of chains that began in 2024 are outages of 2025). The havens drawn
+  are the seeds of that year's chains (every seed has its chain's root start), isolated ones too.
+* **Colours.** The intervals are those of all the chains, so a colour means the same chain length in every year. A year
+  without chains is a transparent image. `YEARS` (`--years 2026 2027`) chooses years; none gives every year from the
+  first to the last in which a chain starts (the driver passes the years of its window, 2024 to 2031).
+* **Cost.** The routes are reconstructed again (about 35 s on the real table, the same flood settings and passable mask
+  as the chain maps), then each year's image is drawn and written (a few seconds each). Files are written through
+  staging files, replacing earlier ones as the new ones are complete.
+* **Tests.** The years are disjoint and, put together, equal the whole image pixel for pixel in colour; one year holding
+  every chain equals the whole image; an empty year is transparent; chosen years; refusal to replace files and bad years.
+
 ## 12. Running the sequence: options and the driver
 
 **Options.** Every constant at the top of a stage script that can vary is also a command-line option,
@@ -305,7 +325,7 @@ called, so another program can load the script and call the procedure; `main(arg
 logging and calls it. The helpers are in `lunarscout._script_cli`.
 
 **The driver, `scripts/run_safe_haven.py`.** It runs `psr-regions`, `light-store`, `stage1`, `stage2`, `stage3`,
-`stage4` and `chain-maps` in that order by loading the scripts and calling their procedures with one set of shared
+`stage4`, `chain-maps` and `yearly-chain-maps` in that order by loading the scripts and calling their procedures with one set of shared
 parameters, so a threshold is the same everywhere it is used. The values it captures: the paths (inside
 `SCENARIO_DIRECTORY` unless given), the time grid, the lighting thresholds, the rover (`MAX_SLOPE_DEG = 15`, moves per
 step, connectivity, flood days, PSR size classes, edge rule), the seed rules and the worker counts. The slope limit is

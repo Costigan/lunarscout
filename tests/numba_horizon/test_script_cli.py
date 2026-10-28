@@ -25,6 +25,7 @@ SCRIPT_PROCEDURES = {
     "run_safe_haven_stage3": ("run_stage3", {"settings"}),
     "run_safe_haven_stage4": ("run_stage4", {"flood_settings"}),
     "run_safe_haven_chain_maps": ("make_chain_maps", {"flood_settings"}),
+    "run_safe_haven_yearly_chain_maps": ("make_yearly_chain_maps", {"flood_settings"}),
 }
 
 
