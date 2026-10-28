@@ -244,18 +244,17 @@ each as a colour image on the DEM's grid, a copy with dilated lines and a GeoPac
 `x_m`/`y_m` columns), the light store with stage 3's cached passable mask (for the routes), the PSR id raster and the
 DEM's header. On the real table it takes about 90 s (about 35 s of it the routes).
 
-* **`predecessor_edges`:** one segment from each seed that has a predecessor to the seed (38,447 on the real table);
+* **`predecessor_edges`:** one segment from each seed that has a predecessor to the seed (31,876 on the real table at 15 degrees);
   every edge of the label forest once, branches included. An edge takes the colour of the longest chain that passes
   through it (the deepest seed at or below its target), so a chain does not change colour along its length.
 * **`longest_chain_per_root`:** each root's longest chain (most seeds, then the longer mission, then the lowest seed
-  id), drawn root to end in the colour of its length (11,884 chains).
+  id), drawn root to end in the colour of its length (10,503 chains at 15 degrees).
 * **Images, not data.** The table is the data; the rasters are pictures for people: 4-band 8-bit RGBA GeoTIFFs with a
   transparent background (no data bands, no style files). Chain lengths fall in intervals: 2 seeds, then four
   intervals cut at the quartiles of the lengths of the chains of 3 or more (the same cut points for both sets, from
-  the longest chains; repeated cut points merge). The real run gives 2 seeds (11,754 chains), 3 (39), 4-5 (45), 6 (22)
-  and 7-10 (24). Each interval is a distinct, saturated, bright hue and brighter than the one before: violet `#6a5cff`,
-  rose `#ff4f6e`, orange `#ff7a1a`, yellow `#ffcc00`, green `#7dff3a` (a test checks rising luminance, distinct hues
-  and distance from aqua and white). **Every haven is a white pixel** (every seed, isolated ones too) and **route
+  the longest chains; repeated cut points merge). Each interval is a distinct, saturated, bright hue and brighter
+  than the one before (a test checks rising luminance, distinct hues and distance from aqua and white); the colour key
+  below names them. **Every haven is a white pixel** (every seed, isolated ones too) and **route
   pixels that pass next to a PSR** (a PSR pixel among the eight neighbours) are **aqua** `#00ffff`. Paint order, bottom
   to top: routes (longer chains over shorter), aqua, havens. The dilated copy stamps a square of `2 * DILATE_PIXELS + 1`
   pixels (default 5) along each segment, havens one pixel larger (the havens' larger stamps cover much of the aqua in
@@ -266,7 +265,7 @@ DEM's header. On the real table it takes about 90 s (about 35 s of it the routes
   end seed, length, mission, start, the seed ids and the numbers of small, medium and large PSRs it passes) plus
   `isolated_seeds` points. The CRS is the DEM's, stored as WKT; `ogrinfo` reads both files.
 * **QGIS styles.** Each GeoPackage layer carries a default style in QGIS's `layer_styles` table (`chain_map_styles.py`),
-  applied when QGIS adds the layer: rule-based on `chain_length` with the same intervals and colours as the images and
+  applied when QGIS adds the layer: rule-based on `chain_length` with the same intervals and colours as the images (the colour key below) and
   a line width that grows with the interval (0.3 to 1.2 mm), drawn shortest first so the long chains are on top; the
   isolated seeds are small white dots. The file lists `isolated_seeds` before `chains`, so QGIS, which stacks each layer
   it adds above the previous one, draws the dots under the lines. The earlier styles were checked by loading the files
@@ -278,12 +277,28 @@ DEM's header. On the real table it takes about 90 s (about 35 s of it the routes
   a 9 x 9 window around the current pixel from the stored frontier of the step before, and walks back preferring to
   stay, then the first neighbour in the frontier. The route is one feasible, time-respecting walk (at most 4 one-pixel
   moves per step, every pixel entered passable and lit in its step, staying only on lit pixels), not a shortest one; it
-  has at least as many pixels as the straight line. Real table: 12,432 predecessor floods and 38,447 routes (5.2 million
-  pixels) in about 35 s with 16 workers; a spot check replayed 13 random routes against the real store and all were
+  has at least as many pixels as the straight line. Real table at 15 degrees: 10,998 predecessor floods and 31,876 routes
+  (3.5 million pixels) in about 35 s with 16 workers; a spot check replayed 13 random routes against the real store and all were
   feasible. `RASTER_ROUTES = False` draws straight lines instead (no light store needed). The flood settings and the
   passable mask must be stage 3's.
 * **Straight lines in the GeoPackages.** Their segments join seed pixel centres: a route would be thousands of short
   segments, so the vectors stay straight (a schematic that may cross terrain the rover cannot).
+
+**Colour key.** The same key applies to the images of both sets, the yearly images and the QGIS styles of the
+GeoPackages. The five chain colours run from the shortest chains to the longest. The interval limits come from the data
+(the quartiles of the chain lengths); the limits and counts below are those of the 15-degree run
+(`safe_haven_stage_4_chain_maps.report.json`), and a new run may cut them differently, but the colours stay in this order.
+
+| What is drawn | Colour name | Hex | RGB | Chains (15-degree run) |
+|---|---|---|---|---|
+| Chain of 2 seeds | violet (blue-violet) | `#6a5cff` | 106, 92, 255 | 10,383 |
+| Chain of 3 seeds | rose (pinkish red) | `#ff4f6e` | 255, 79, 110 | 30 |
+| Chain of 4 to 5 seeds | orange | `#ff7a1a` | 255, 122, 26 | 39 |
+| Chain of 6 seeds | yellow (golden) | `#ffcc00` | 255, 204, 0 | 26 |
+| Chain of 7 or more seeds (7 to 10 here) | lime green | `#7dff3a` | 125, 255, 58 | 25 |
+| Route pixel next to a permanently shadowed region (PSR) | aqua (cyan) | `#00ffff` | 0, 255, 255 | |
+| Haven: every seed, isolated ones too | white | `#ffffff` | 255, 255, 255 | |
+| Nothing drawn | transparent (alpha 0) | | | |
 
 Tests check the sets against an exhaustive search over random forests, the intervals (the real run's distribution, the
 degenerate cases), the palette, the Bresenham lines, the draw order (the longer chain on top in every input order), the
@@ -306,7 +321,22 @@ chains and havens year by year can be compared.
   are the seeds of that year's chains (every seed has its chain's root start), isolated ones too.
 * **Colours.** The intervals are those of all the chains, so a colour means the same chain length in every year. A year
   without chains is a transparent image. `YEARS` (`--years 2026 2027`) chooses years; none gives every year from the
-  first to the last in which a chain starts (the driver passes the years of its window, 2024 to 2031).
+  first to the last in which a chain starts (the driver passes the years of its window, 2024 to 2031). The colours are
+  the ones of the colour key of this section, repeated here for the yearly images:
+
+  | What is drawn | Colour name | Hex |
+  |---|---|---|
+  | Chain of 2 seeds | violet (blue-violet) | `#6a5cff` |
+  | Chain of 3 seeds | rose (pinkish red) | `#ff4f6e` |
+  | Chain of 4 to 5 seeds | orange | `#ff7a1a` |
+  | Chain of 6 seeds | yellow (golden) | `#ffcc00` |
+  | Chain of 7 or more seeds | lime green | `#7dff3a` |
+  | Route pixel next to a PSR | aqua (cyan) | `#00ffff` |
+  | Haven (a seed of that year's chains) | white | `#ffffff` |
+  | Nothing drawn | transparent | |
+
+  The chain-length limits are the 15-degree run's; the yearly report
+  (`safe_haven_stage_4_yearly_chain_maps.report.json`) lists the intervals of the run that wrote the images.
 * **Cost.** The routes are reconstructed again (about 35 s on the real table, the same flood settings and passable mask
   as the chain maps), then each year's image is drawn and written (a few seconds each). Files are written through
   staging files, replacing earlier ones as the new ones are complete.
