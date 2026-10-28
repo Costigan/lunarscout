@@ -8,12 +8,14 @@ import numpy as np
 import pytest
 import rasterio
 
+from lunarscout._numba_horizon import chain_map_styles as styles
 from lunarscout._numba_horizon import safe_haven_chain_maps as maps
 from lunarscout._numba_horizon import safe_haven_chains as chains
 from lunarscout._numba_horizon import safe_haven_paths as paths
 from lunarscout.errors import InputError
 from test_safe_haven_chains import GT
 from test_safe_haven_floods import SIZE, full_run, regions, seeds, settings  # noqa: F401
+from test_safe_haven_route_psr import scene  # noqa: F401  (PSR blocks beside some route pixels of the scene)
 from test_safe_haven_stage3_store import prepared  # noqa: F401
 
 
@@ -34,51 +36,53 @@ def run(prepared, full_run, chain_table, out, **options):  # noqa: F811
         light_store_path=prepared.store_directory, passable_path=full_run[0] / "passable.npy", **options)
 
 
-def paint(chain_set, route_set, radius, dots_extra=1):
-    """The three bands by a plain loop: dots first, then the routes shortest chain first."""
-    bands = np.zeros((3, SIZE, SIZE), dtype=np.uint16)
+def paint(chain_set, route_set, intervals, radius, rows, psr=None):
+    """The three planes by a plain loop: the routes shortest chain first, then every haven (one pixel larger when dilated)."""
+    planes = np.zeros((3, SIZE, SIZE), dtype=np.uint8)
 
-    def stamp(row, column, radius, values):
+    def stamp(plane, row, column, radius, value):
         for r in range(max(row - radius, 0), min(row + radius, SIZE - 1) + 1):
             for c in range(max(column - radius, 0), min(column + radius, SIZE - 1) + 1):
-                bands[:, r, c] = values
+                planes[plane, r, c] = value
 
-    dots = chain_set.dot_segments
-    if dots is not None:
-        for i in range(len(dots.length)):
-            stamp(int(dots.row0[i]), int(dots.column0[i]), radius + (dots_extra if radius else 0),
-                  (dots.length[i], dots.month[i], dots.mission[i]))
     segments = chain_set.segments
+    classes = styles.class_of(segments.length, intervals)
     for i in segments.ascending():
-        rows, columns = route_set.path(int(chain_set.segment_seeds[i, 1]))
-        for row, column in zip(rows, columns):
-            stamp(int(row), int(column), radius, (segments.length[i], segments.month[i], segments.mission[i]))
-    return bands
+        route_rows, route_columns = route_set.path(int(chain_set.segment_seeds[i, 1]))
+        for row, column in zip(route_rows, route_columns):
+            stamp(0, int(row), int(column), radius, classes[i])
+            if psr is not None and psr[max(row - 1, 0):row + 2, max(column - 1, 0):column + 2].any():
+                stamp(1, int(row), int(column), radius, 1)
+    for seed in rows:
+        stamp(2, seed["row"], seed["column"], radius + (1 if radius else 0), 1)
+    return planes
 
 
-def test_the_rasters_follow_the_routes_and_equal_a_plain_painter(prepared, full_run, chain_table, tmp_path) -> None:  # noqa: F811
+def test_the_images_follow_the_routes_and_equal_a_plain_painter(prepared, full_run, chain_table, tmp_path) -> None:  # noqa: F811
     report = run(prepared, full_run, chain_table, tmp_path / "out")
     rows = chains.read_chain_table(chain_table)
     _, edge_set, chain_set = maps.build_chain_sets(rows)
+    intervals = styles.build_intervals(chain_set.line_attributes["chain_length"])
     route_set = paths.reconstruct_paths(rows, directory=prepared.light_store, passable_path=full_run[0] / "passable.npy",
                                         dem_shape=(SIZE, SIZE), settings=settings(max_days=28.0))
     assert report.raster_lines == "routes" and report.route_pixels == len(route_set.rows) > 0
     assert report.predecessor_edges == len(edge_set.segments.length) > 0 and report.chains > 0
     for name, chain in zip(maps.CHAIN_SETS, (edge_set, chain_set)):
-        for kind, radius in (("raster", 0), ("dilated", 1)):
-            with rasterio.open(tmp_path / "out" / f"safe_haven_stage_4_{name}{'_dilated' if kind == 'dilated' else ''}.tif") as dataset:
-                bands, tags = dataset.read(), dataset.tags()
-            assert tags["SEGMENTS"].startswith("rover routes")
-            assert np.array_equal(bands, paint(chain, route_set, radius)), (name, kind)
+        for suffix, radius in (("", 0), ("_dilated", 1)):
+            with rasterio.open(tmp_path / "out" / f"safe_haven_stage_4_{name}{suffix}.tif") as dataset:
+                image, tags = dataset.read(), dataset.tags()
+            assert tags["SEGMENTS"].startswith("rover routes") and image.shape == (4, SIZE, SIZE)
+            assert np.array_equal(image, maps.colour_image(paint(chain, route_set, intervals, radius, rows), intervals)), (name, suffix)
     thin = rasterio.open(tmp_path / "out" / "safe_haven_stage_4_predecessor_edges.tif").read()
     by_id = {r["seed_id"]: r for r in rows}
     for row in rows:
+        assert tuple(thin[:, row["row"], row["column"]]) == (255, 255, 255, 255)       # every haven is white
         if row["predecessor_id"] > 0:
             source = by_id[row["predecessor_id"]]
             route_rows, route_columns = route_set.path(row["seed_id"])
             chebyshev = max(abs(row["row"] - source["row"]), abs(row["column"] - source["column"]))
             assert len(route_rows) >= chebyshev + 1                  # a route is never shorter than the straight line
-            assert thin[0, row["row"], row["column"]] > 0            # every chain seed's pixel is on its edge's route
+            assert thin[3, route_rows[len(route_rows) // 2], route_columns[len(route_rows) // 2]] == 255   # and is painted
 
 
 def test_the_geopackages_stay_straight_whatever_the_rasters_do(prepared, full_run, chain_table, tmp_path) -> None:  # noqa: F811
@@ -115,3 +119,18 @@ def test_the_workers_do_not_change_the_rasters(prepared, full_run, chain_table, 
             first = rasterio.open(tmp_path / "one" / f"safe_haven_stage_4_{name}{suffix}.tif").read()
             second = rasterio.open(tmp_path / "two" / f"safe_haven_stage_4_{name}{suffix}.tif").read()
             assert np.array_equal(first, second)
+
+
+def test_route_pixels_beside_the_scenes_psrs_are_aqua(prepared, full_run, chain_table, scene, tmp_path) -> None:  # noqa: F811
+    rows, route_set, ids, work, _flood_settings = scene
+    report = run(prepared, full_run, chain_table, tmp_path / "out", psr_ids_path=work / "ids.tif")
+    _, edge_set, chain_set = maps.build_chain_sets(chains.read_chain_table(chain_table))
+    intervals = styles.build_intervals(chain_set.line_attributes["chain_length"])
+    for name, chain in zip(maps.CHAIN_SETS, (edge_set, chain_set)):
+        for suffix, radius in (("", 0), ("_dilated", 1)):
+            image = rasterio.open(tmp_path / "out" / f"safe_haven_stage_4_{name}{suffix}.tif").read()
+            expected = maps.colour_image(paint(chain, route_set, intervals, radius, rows, psr=ids > 0), intervals)
+            assert np.array_equal(image, expected), (name, suffix)
+            aqua = ((image[:3] == [[[0]], [[255]], [[255]]]).all(axis=0)).sum()
+            assert aqua > 0 or radius > 0
+    assert report.psr_marked_pixels["predecessor_edges"] > 0

@@ -25,6 +25,7 @@ import csv
 import json
 import os
 import time as clock
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -33,15 +34,32 @@ import numpy.typing as npt
 
 from ..errors import InputError
 from .pixel_coordinates import format_coordinate, pixel_centres
-from .safe_haven_floods import FLOOD_COLUMNS, read_edge_table, read_flood_table
+from .safe_haven_floods import FLOOD_COLUMNS, FloodSettings, read_edge_table, read_flood_table
 from .safe_haven_plan import SEED_COLUMNS, read_seed_table
 from .safe_haven_windows import FloodGrid
 
 CHAIN_COLUMNS = (
     *SEED_COLUMNS, *FLOOD_COLUMNS[1:],
     "root_id", "predecessor_id", "chain_length", "root_start_utc", "mission_hours", "previous_seeds", "next_seeds",
+    "chain_psr_small", "chain_psr_medium", "chain_psr_large",
 )
 TOP_CHAINS = 5
+
+
+@dataclass
+class RouteInputs:
+    """What the PSR counts of a chain need: its routes are reconstructed from the light store and the passable mask
+    stage 3 cached (the flood settings must be stage 3's), and the PSRs they pass are read from the PSR id raster and
+    classed by the region table (``flood_settings.psr_small_max_m2`` and ``psr_medium_max_m2``)."""
+
+    light_store_path: str | Path
+    passable_path: str | Path
+    psr_ids_path: str | Path
+    psr_table_path: str | Path
+    dem_shape: tuple[int, int]
+    flood_settings: FloodSettings = field(default_factory=FloodSettings)
+    workers: int = 1
+    progress: Callable[[int, int], None] | None = None
 
 
 @dataclass
@@ -55,6 +73,7 @@ class ChainReport:
     longest_mission_hours: float
     mission_hours_percentiles: dict
     top_chains: list = field(default_factory=list)      # the seeds with the longest chains: ids from root to seed
+    psr_counts: dict | None = None       # seeds whose chain passes at least one PSR of each class; None: not computed
     seconds: float = 0.0
 
     def as_dict(self) -> dict:
@@ -108,11 +127,13 @@ def _write_rows(path: Path, columns, rows) -> None:
 
 def run_chains(
     output_path: str | Path, *, seeds_path: str | Path, floods_path: str | Path, edges_path: str | Path,
-    geo_transform, step_minutes: int = 120, overwrite: bool = False,
+    geo_transform, step_minutes: int = 120, overwrite: bool = False, routes: RouteInputs | None = None,
 ) -> ChainReport:
     """Write the final per-seed table (``CHAIN_COLUMNS``) and ``<output>.report.json``. ``geo_transform`` is the
     DEM's GDAL transform: the pixel-centre coordinates ``x_m`` and ``y_m`` of each seed are made from it (a
-    seed table that already has them is overwritten)."""
+    seed table that already has them is overwritten). With ``routes`` the routes of the predecessor edges are
+    reconstructed and every seed gets the numbers of small, medium and large PSRs its chain passes next to
+    (``chain_psr_*``); without it those columns are blank."""
     started = clock.monotonic()
     output_path = Path(output_path)
     report_path = output_path.with_name(output_path.name + ".report.json")
@@ -153,6 +174,16 @@ def run_chains(
                    root_start_utc=str(root_start[index]) + "Z", mission_hours=float(mission[index]),
                    previous_seeds=int(previous[index]), next_seeds=int(following[index]))
         rows.append(row)
+    psr_counts = None
+    names = ("chain_psr_small", "chain_psr_medium", "chain_psr_large")
+    if routes is not None:
+        passes = _route_psr_counts(rows, predecessor, length, routes, step_minutes)
+        for index, row in enumerate(rows):
+            row.update({name: int(passes[index, k]) for k, name in enumerate(names)})
+        psr_counts = {name[10:]: int((passes[:, k] > 0).sum()) for k, name in enumerate(names)}
+    else:
+        for row in rows:
+            row.update({name: None for name in names})
     _write_rows(output_path, CHAIN_COLUMNS, rows)
 
     top = []
@@ -170,9 +201,33 @@ def run_chains(
         chain_length_counts={int(a): int(b) for a, b in zip(lengths, counts)},
         longest_mission_hours=float(mission.max()) if count else 0.0,
         mission_hours_percentiles={f"p{p}": float(np.percentile(mission, p)) for p in (10, 50, 90, 99)} if count else {},
-        top_chains=top, seconds=clock.monotonic() - started)
+        top_chains=top, psr_counts=psr_counts, seconds=clock.monotonic() - started)
     report_path.write_text(json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8")
     return report
+
+
+def _route_psr_counts(rows, predecessor, length, routes: RouteInputs, step_minutes: int):
+    """``(seeds, 3)`` counts of the PSRs of each size class next to each seed's chain."""
+    import rasterio
+
+    from .safe_haven_floods import psr_categories
+    from .safe_haven_paths import reconstruct_paths
+    from .safe_haven_route_psr import chain_psr_counts, passed_psrs
+    from .safe_haven_stage0 import LightStoreDirectory
+
+    category = psr_categories(routes.psr_table_path, routes.flood_settings)
+    with rasterio.open(routes.psr_ids_path) as dataset:
+        if (dataset.height, dataset.width) != tuple(routes.dem_shape):
+            raise InputError("the PSR id raster and the DEM differ in size", code="chains_psr_mismatch",
+                             details={"psr": [dataset.height, dataset.width], "dem": list(routes.dem_shape)})
+        ids = dataset.read(1).astype(np.int32, copy=False)
+    if int(ids.max(initial=0)) >= len(category):
+        raise InputError("the PSR id raster holds ids the region table does not", code="chains_psr_mismatch")
+    path_set = reconstruct_paths(
+        rows, directory=LightStoreDirectory(routes.light_store_path), passable_path=routes.passable_path,
+        dem_shape=tuple(routes.dem_shape), settings=routes.flood_settings, step_minutes=step_minutes,
+        workers=routes.workers, progress=routes.progress)
+    return chain_psr_counts(predecessor, length, passed_psrs(path_set, ids), category)
 
 
 def read_chain_table(path: str | Path) -> list[dict]:

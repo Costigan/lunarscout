@@ -106,7 +106,7 @@ def reference(prepared, seed, regions, flood_settings, targets, passable=None): 
     ids = regions[2]
     table = psr.read_region_table(regions[1])
     category = np.zeros(len(table) + 1, dtype=np.int8)
-    category[1:] = np.where(table.area_m2 < flood_settings.psr_small_max_m2, 1,
+    category[1:] = np.where(table.area_m2 <= flood_settings.psr_small_max_m2, 1,
                             np.where(table.area_m2 <= flood_settings.psr_medium_max_m2, 2, 3))
     classes = category[ids]
     ok = np.ones((SIZE, SIZE), bool) if passable is None else passable
@@ -244,6 +244,12 @@ def test_the_psr_classes_follow_the_area_limits(regions) -> None:
     small, medium, large = (unpack_bits(m, SIZE) for m in masks)
     assert (small.sum(), medium.sum(), large.sum()) == (1, 9, 100)
     assert not (small & medium).any() and not (medium & large).any()
+    # a region of exactly the limit's area belongs to the smaller class (areas here are 1, 9 and 100 m2)
+    _, masks = floods.psr_class_masks(regions[0], regions[1], settings(psr_small_max_m2=9.0, psr_medium_max_m2=100.0))
+    small, medium, large = (unpack_bits(m, SIZE) for m in masks)
+    assert (small.sum(), medium.sum(), large.sum()) == (10, 100, 0)
+    assert floods.FloodSettings().psr_small_max_m2 == 400.0
+    assert floods.psr_categories(regions[1], settings(psr_small_max_m2=9.0, psr_medium_max_m2=100.0)).tolist() == [0, 1, 2, 1]
 
 
 def test_the_next_cycle_rule_and_the_any_later_rule(prepared, seeds, regions) -> None:  # noqa: F811
@@ -498,7 +504,7 @@ def test_importing_the_script_starts_nothing_and_its_defaults_match_the_earlier_
     stage2.loader.exec_module(two)
     assert module.SEEDS_PATH == two.OUTPUT_PATH and module.LIGHT_STORE_PATH == two.LIGHT_STORE_PATH
     assert module.OUTPUT_PATH.name == "safe_haven_stage_3_floods.csv" and module.EDGES_PATH.name == "safe_haven_stage_3_edges.csv"
-    assert module.SETTINGS.max_days == 28.0 and module.SETTINGS.psr_small_max_m2 == 40.0
+    assert module.SETTINGS.max_days == 28.0 and module.SETTINGS.psr_small_max_m2 == 400.0
     assert module.SETTINGS.psr_medium_max_m2 == 1_000_000.0 and module.SETTINGS.max_slope_deg == 20.0
     assert module.SEED_IDS is None and module.OVERWRITE is False
 

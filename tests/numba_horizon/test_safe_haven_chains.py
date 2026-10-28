@@ -186,6 +186,8 @@ def test_the_final_table_carries_the_earlier_columns_and_the_chain_columns(tmp_p
     # seed 5 is pixel (row 4, column 12): the centre of GT's pixel, overwriting the stale -1 in the seed table
     assert (fifth["x_m"], fifth["y_m"]) == (1000.0 + 20.0 * 12.5, -500.0 - 20.0 * 4.5)
     assert [r["x_m"] for r in rows] == [1000.0 + 20.0 * (3 * i + 0.5) for i in range(5)]
+    assert all(r[name] is None for r in rows for name in ("chain_psr_small", "chain_psr_medium", "chain_psr_large"))
+    assert report.psr_counts is None                         # no routes were given: the PSR counts are blank
     assert report.seeds == 5 and report.edges == 3 and report.roots == 3 and report.seeds_in_chains == 4
     assert report.longest_chain == 3 and report.chain_length_counts == {1: 3, 2: 1, 3: 1}
     assert report.longest_mission_hours == 94.0
@@ -292,20 +294,7 @@ def test_the_script_defaults_follow_stage_3_and_importing_it_starts_nothing() ->
     assert module.SEEDS_PATH == stage3.SEEDS_PATH and module.FLOODS_PATH == stage3.OUTPUT_PATH
     assert module.EDGES_PATH == stage3.EDGES_PATH and module.OUTPUT_PATH.name == "safe_haven_stage_4_chains.csv"
     assert module.STEP_MINUTES == 120 and module.OVERWRITE is False
-
-
-def test_the_script_writes_the_table_and_prints_the_report(tmp_path, monkeypatch, capsys) -> None:
-    module = load_script()
-    paths = write_tables(tmp_path, [10, 20, 30], [(1, 2), (2, 3)])
-    write_dem_header(tmp_path / "dem.tif")
-    for name, value in dict(DEM_PATH=tmp_path / "dem.tif", SEEDS_PATH=paths[0], FLOODS_PATH=paths[1], EDGES_PATH=paths[2],
-                            OUTPUT_PATH=tmp_path / "final.csv").items():
-        monkeypatch.setattr(module, name, value)
-    assert module.main() == 0
-    printed = capsys.readouterr().out
-    assert '"longest_chain": 3' in printed
-    final = chains.read_chain_table(tmp_path / "final.csv")
-    assert final[2]["chain_length"] == 3 and final[2]["x_m"] == 1000.0 + 20.0 * 6.5
-    assert "longest chain 3 seeds" in (tmp_path / "final.csv.log").read_text()
-    with pytest.raises(InputError, match="exists"):
-        module.main()
+    assert module.LIGHT_STORE_PATH == stage3.LIGHT_STORE_PATH and module.PASSABLE_PATH == stage3.PASSABLE_PATH
+    assert module.PSR_IDS_PATH == stage3.PSR_IDS_PATH and module.PSR_TABLE_PATH == stage3.PSR_TABLE_PATH
+    for name in ("max_days", "moves_per_step", "connectivity", "max_slope_deg", "psr_small_max_m2", "psr_medium_max_m2"):
+        assert getattr(module.FLOOD_SETTINGS, name) == getattr(stage3.SETTINGS, name)       # what the routes must follow

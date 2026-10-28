@@ -1,22 +1,25 @@
-"""Rover chain maps: the two chain sets, the rasters (full-resolution and dilated) and the GeoPackages."""
+"""Rover chain maps: the two chain sets, the colour images (thin and dilated) and the GeoPackages."""
 
 from __future__ import annotations
 
+import colorsys
 import importlib.util
 import random
 import shutil
 import sqlite3
 import struct
-from types import SimpleNamespace
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import rasterio
+from rasterio.enums import ColorInterp
 from rasterio.transform import Affine
 
+from lunarscout._numba_horizon import chain_map_styles as styles
 from lunarscout._numba_horizon import safe_haven_chain_maps as maps
 from lunarscout._numba_horizon import safe_haven_chains as chains
 from lunarscout.errors import InputError
@@ -29,11 +32,26 @@ HEIGHT, WIDTH = 12, 30
 AFTER = [10, 20, 30, 40, 50, 60, 70, 80]
 EDGES = [(1, 2), (2, 3), (3, 4), (2, 5), (6, 7)]
 
+# the lengths of the real run's longest chains: 11,754 of 2 seeds and 130 of 3 or more
+REAL_LENGTHS = [2] * 11754 + [3] * 39 + [4] * 24 + [5] * 21 + [6] * 22 + [7] * 14 + [8] * 8 + [9] + [10]
+REAL = styles.build_intervals(REAL_LENGTHS)
+RGB = lambda colour: tuple(int(colour[i:i + 2], 16) for i in (1, 3, 5))  # noqa: E731
+
 
 def write_dem(path: Path, height=HEIGHT, width=WIDTH) -> None:
     with rasterio.open(path, "w", driver="GTiff", height=height, width=width, count=1, dtype="float32", crs=CRS,
                        transform=Affine.from_gdal(*GT)) as dataset:
         dataset.write(np.zeros((1, height, width), dtype="float32"))
+
+
+def write_psr(path: Path, pixels, height=HEIGHT, width=WIDTH) -> None:
+    """A PSR id raster on the DEM's grid with one region of one pixel per entry of ``pixels``."""
+    ids = np.zeros((height, width), dtype=np.int32)
+    for number, (row, column) in enumerate(pixels, start=1):
+        ids[row, column] = number
+    with rasterio.open(path, "w", driver="GTiff", height=height, width=width, count=1, dtype="int32", crs=CRS,
+                       transform=Affine.from_gdal(*GT)) as dataset:
+        dataset.write(ids[None])
 
 
 @pytest.fixture()
@@ -49,12 +67,16 @@ def run(tables, **options):
     return maps.run_chain_maps(tables / "out", chains_path=tables / "chains.csv", dem_path=tables / "dem.tif", **options)
 
 
-def read_raster(path):
-    """``(bands, info)``: the bands and what the header says, read while the file is open."""
+def read_image(path):
+    """``(rgba, info)``: the four bands and what the header says, read while the file is open."""
     with rasterio.open(path) as dataset:
-        info = SimpleNamespace(nodata=dataset.nodata, transform=dataset.transform, crs=dataset.crs,
-                               descriptions=dataset.descriptions, tags=dataset.tags(), profile=dataset.profile)
+        info = SimpleNamespace(nodata=dataset.nodata, transform=dataset.transform, crs=dataset.crs, dtypes=dataset.dtypes,
+                               colorinterp=dataset.colorinterp, tags=dataset.tags(), profile=dataset.profile)
         return dataset.read(), info
+
+
+def colour_at(image, row, column):
+    return tuple(int(v) for v in image[:, row, column])
 
 
 # --- the chain sets --------------------------------------------------------------------------------------
@@ -82,9 +104,9 @@ def test_the_longest_chain_of_each_root_and_the_isolated_seeds(tables) -> None:
     assert chain_set.line_attributes["end_seed_id"].tolist() == [4, 7]
     assert chain_set.line_attributes["seed_ids"] == ["1,2,3,4", "6,7"]
     assert chain_set.dots.tolist() == [8]
-    # every segment of a chain has the chain's own length and mission (the end seed's), not the edge's
-    assert chain_set.segments.length.tolist() == [4, 4, 4, 2] and chain_set.segments.mission.tolist() == [70, 70, 70, 30]
-    assert chain_set.dot_segments.length.tolist() == [1] and chain_set.dot_segments.mission.tolist() == [10]
+    # every segment of a chain has the chain's own length, not the edge's
+    assert chain_set.segments.length.tolist() == [4, 4, 4, 2]
+    assert chain_set.line_attributes["chain_psr_small"] == [None, None]        # no routes were given: blank counts
 
 
 def forest(count: int, generator: random.Random):
@@ -96,7 +118,8 @@ def forest(count: int, generator: random.Random):
         np.array([e[1] for e in edges], dtype=np.int64))
     rows = [dict(seed_id=i + 1, row=i % 7, column=i % 11, predecessor_id=int(predecessor[i]), root_id=int(root[i]),
                  chain_length=int(length[i]), mission_hours=float(generator.randrange(1, 500)), month="2024-01",
-                 root_start_utc="2024-03-01T00:00:00.000000Z") for i in range(count)]
+                 root_start_utc="2024-03-01T00:00:00.000000Z", chain_psr_small=None, chain_psr_medium=None,
+                 chain_psr_large=None) for i in range(count)]
     return rows
 
 
@@ -141,7 +164,8 @@ def test_a_tie_between_two_ends_of_one_root_goes_to_the_longer_mission_then_the_
     def table(missions):
         # root 1 with children 2 and 3 (length 2 each) and a grandchild 4 of 3 only in the last case
         return [dict(seed_id=i + 1, row=i, column=2 * i, predecessor_id=p, root_id=1, chain_length=n, mission_hours=m,
-                     month="2024-01", root_start_utc="2024-01-01T00:00:00.000000Z")
+                     month="2024-01", root_start_utc="2024-01-01T00:00:00.000000Z", chain_psr_small=None,
+                     chain_psr_medium=None, chain_psr_large=None)
                 for i, (p, n, m) in enumerate(missions)]
 
     for missions, expected_end in (([(0, 1, 5), (1, 2, 50), (1, 2, 50)], 2),       # equal: the lower id
@@ -152,11 +176,55 @@ def test_a_tie_between_two_ends_of_one_root_goes_to_the_longer_mission_then_the_
         assert [list(line) for line in chain_set.lines] == [[1, expected_end]]
 
 
-def test_months_are_counted_from_the_first_month_of_the_table() -> None:
-    rows = [dict(month="2024-03", root_start_utc="2024-03-05T00:00:00.000000Z"),
-            dict(month="2024-02", root_start_utc="2024-04-01T00:00:00.000000Z")]
-    assert maps.month_origin(rows) == (2024, 2)
-    assert maps.month_index(["2024-02-01T00:00:00Z", "2025-01-31T00:00:00Z"], (2024, 2)).tolist() == [1, 12]
+
+# --- the intervals and their colours ------------------------------------------------------------------------
+
+def test_the_intervals_are_two_seeds_then_the_quartiles_of_the_longer_chains() -> None:
+    assert [(i.first, i.last, i.label) for i in REAL] == [
+        (2, 2, "2 seeds"), (3, 3, "3 seeds"), (4, 5, "4-5 seeds"), (6, 6, "6 seeds"), (7, None, "7-10 seeds")]
+    assert [i.colour for i in REAL] == list(styles.PALETTE) and [i.width_mm for i in REAL] == list(styles.LINE_WIDTHS_MM)
+    counts = [int(((np.array(REAL_LENGTHS) >= i.first) & (np.array(REAL_LENGTHS) <= (i.last or 99))).sum()) for i in REAL]
+    assert counts == [11754, 39, 45, 22, 24]                       # about a quarter of the 130 longer chains each
+    only_pairs = styles.build_intervals([2, 2, 2])
+    assert [(i.first, i.last) for i in only_pairs] == [(2, 2)] and len(only_pairs) == 1
+    same = styles.build_intervals([2, 2, 3, 3, 3])                 # all quartiles equal: the cut points merge
+    assert [(i.first, i.last) for i in same] == [(2, 2), (3, None)] and same[0].colour == styles.PALETTE[0]
+    assert same[1].colour == styles.PALETTE[-1]                    # fewer intervals spread over the whole palette
+    three = styles.build_intervals([2, 3, 3, 3, 4, 9])
+    assert [i.first for i in three] == sorted({i.first for i in three}) and three[-1].last is None
+    assert styles.build_intervals([]) [0].first == 2
+
+
+def test_class_of_puts_every_length_in_its_interval() -> None:
+    assert styles.class_of([1, 2, 3, 4, 5, 6, 7, 10, 500], REAL).tolist() == [0, 1, 2, 3, 3, 4, 5, 5, 5]
+
+
+def relative_luminance(colour):
+    channels = [c / 255 for c in RGB(colour)]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def test_the_colours_are_distinct_saturated_not_dark_and_brighter_for_longer_chains() -> None:
+    hsv = [colorsys.rgb_to_hsv(*(c / 255 for c in RGB(h))) for h in styles.PALETTE]
+    luminance = [relative_luminance(h) for h in styles.PALETTE]
+    assert luminance == sorted(luminance) and all(b - a > 0.05 for a, b in zip(luminance, luminance[1:]))
+    assert luminance[0] > 0.15                                         # nothing is dark on a black or dark-grey basemap
+    assert all(s >= 0.6 and v == 1.0 for _h, s, v in hsv)              # strongly saturated, full brightness
+    hues = sorted(h * 360 for h, _s, _v in hsv)
+    assert min(b - a for a, b in zip(hues, hues[1:])) >= 15            # distinct hues
+    everything = [np.array(RGB(c)) for c in (*styles.PALETTE, styles.PSR_COLOUR, styles.HAVEN_COLOUR)]
+    for i in range(len(everything)):
+        for j in range(i + 1, len(everything)):
+            assert np.linalg.norm(everything[i] - everything[j]) > 80, (i, j)       # also from aqua and white
+    assert styles.PSR_COLOUR == "#00ffff" and styles.HAVEN_COLOUR == "#ffffff"
+
+
+def test_the_lookup_table_has_transparent_nothing_then_the_intervals_aqua_and_white() -> None:
+    table = styles.lookup_table(REAL)
+    assert table.shape == (8, 4) and table[0].tolist() == [0, 0, 0, 0] and (table[1:, 3] == 255).all()
+    assert [tuple(table[k, :3]) for k in range(1, 6)] == [RGB(c) for c in styles.PALETTE]
+    assert tuple(table[6, :3]) == (0, 255, 255) and tuple(table[7, :3]) == (255, 255, 255)
 
 
 # --- drawing ---------------------------------------------------------------------------------------------
@@ -166,98 +234,95 @@ def segments(*items):
     return maps.Segments(*(np.array(c, dtype=np.int64) for c in columns))
 
 
+def planes_of(*shape):
+    return np.zeros((3, *(shape or (HEIGHT, WIDTH))), dtype=np.uint8)
+
+
 @pytest.mark.parametrize("compiled", [True, False])
-def test_a_segment_is_a_bresenham_line_with_its_ends_and_the_three_bands(compiled) -> None:
-    bands = np.zeros((3, 12, 30), dtype=np.uint16)
-    maps.draw_segments(bands, segments((0, 0, 3, 9, 4, 7, 70)), compiled=compiled)
-    drawn = np.argwhere(bands[0] > 0)
+def test_a_segment_is_a_bresenham_line_in_its_interval_class(compiled) -> None:
+    planes = planes_of()
+    maps.draw_segments(planes, segments((0, 0, 3, 9, 4)), REAL, compiled=compiled)
+    drawn = np.argwhere(planes[0] > 0)
     assert len(drawn) == 10 and tuple(drawn[0]) == (0, 0) and tuple(drawn[-1]) == (3, 9)
-    assert set(np.unique(bands[0][bands[0] > 0])) == {4} and set(np.unique(bands[1][bands[0] > 0])) == {7}
-    assert set(np.unique(bands[2][bands[0] > 0])) == {70}
-    assert (bands[:, bands[0] == 0] == 0).all()
+    assert set(np.unique(planes[0][planes[0] > 0])) == {3} and not planes[1].any() and not planes[2].any()
     assert np.all(np.abs(np.diff(drawn[:, 1])) <= 1) and np.all(np.abs(np.diff(drawn[:, 0])) <= 1)      # no gaps
-    single = np.zeros((3, 12, 30), dtype=np.uint16)
-    maps.draw_segments(single, segments((5, 5, 5, 5, 1, 1, 9)), compiled=compiled)
-    assert np.argwhere(single[0] > 0).tolist() == [[5, 5]]
+    single = planes_of()
+    maps.draw_segments(single, segments((5, 5, 5, 5, 2)), REAL, compiled=compiled)
+    assert np.argwhere(single[0] > 0).tolist() == [[5, 5]] and single[0, 5, 5] == 1
 
 
 def test_the_longer_chain_is_on_top_where_lines_cross_whatever_the_order() -> None:
-    items = [(0, 0, 10, 10, 2, 1, 20), (0, 10, 10, 0, 5, 2, 50), (5, 0, 5, 10, 3, 3, 30)]
+    items = [(0, 0, 10, 10, 2), (0, 10, 10, 0, 9), (5, 0, 5, 10, 4)]
     reference = None
     for order in ([0, 1, 2], [2, 1, 0], [1, 0, 2]):
-        bands = np.zeros((3, 12, 30), dtype=np.uint16)
-        maps.draw_segments(bands, segments(*[items[i] for i in order]))
-        reference = bands if reference is None else reference
-        assert np.array_equal(bands, reference)
-    assert bands[0, 5, 5] == 5 and bands[1, 5, 5] == 2 and bands[2, 5, 5] == 50       # the crossing of all three
-    assert bands[0, 5, 2] == 3 and bands[0, 2, 2] == 2                                  # where only one passes
-    assert ((bands[0] == 5) == (bands[2] == 50)).all()                                   # the bands come from one segment
-
-
-def test_equal_lengths_are_decided_by_the_longer_mission() -> None:
-    bands = np.zeros((3, 12, 30), dtype=np.uint16)
-    maps.draw_segments(bands, segments((0, 0, 10, 10, 3, 1, 40), (0, 10, 10, 0, 3, 2, 90)))
-    assert bands[0, 5, 5] == 3 and bands[2, 5, 5] == 90 and bands[1, 5, 5] == 2
+        planes = planes_of()
+        maps.draw_segments(planes, segments(*[items[i] for i in order]), REAL)
+        reference = planes if reference is None else reference
+        assert np.array_equal(planes, reference)
+    assert planes[0, 5, 5] == 5 and planes[0, 5, 2] == 3 and planes[0, 2, 2] == 1      # 9 seeds, 4 seeds, 2 seeds
 
 
 def test_a_stamp_dilates_the_line_and_is_clipped_at_the_border() -> None:
-    bands = np.zeros((3, 12, 30), dtype=np.uint16)
-    maps.draw_segments(bands, segments((6, 15, 6, 15, 1, 1, 1)), radius=2)
-    assert (bands[0] > 0).sum() == 25
-    corner = np.zeros((3, 12, 30), dtype=np.uint16)
-    maps.draw_segments(corner, segments((0, 0, 0, 0, 1, 1, 1), (11, 29, 11, 29, 1, 1, 1)), radius=2)
+    planes = planes_of()
+    maps.draw_segments(planes, segments((6, 15, 6, 15, 3)), REAL, radius=2)
+    assert (planes[0] > 0).sum() == 25
+    corner = planes_of()
+    maps.draw_segments(corner, segments((0, 0, 0, 0, 3), (11, 29, 11, 29, 3)), REAL, radius=2)
     assert (corner[0] > 0).sum() == 18
-    long = np.zeros((3, 12, 30), dtype=np.uint16)
-    maps.draw_segments(long, segments((6, 3, 6, 20, 1, 1, 1)), radius=1)
+    long = planes_of()
+    maps.draw_segments(long, segments((6, 3, 6, 20, 3)), REAL, radius=1)
     assert (long[0, 5:8, 3:21] > 0).all() and not long[0, :5].any() and not long[0, 8:].any()
+    maps.draw_segments(long, segments((-3, -3, 2, 4, 3)), REAL)                         # ends outside: clipped, no error
 
 
-def test_the_values_saturate_and_ends_outside_the_raster_are_clipped() -> None:
-    bands = np.zeros((3, 12, 30), dtype=np.uint16)
-    maps.draw_segments(bands, segments((0, 0, 0, 5, 70000, 70000, 70000)))
-    assert bands[0, 0, 3] == 65535 and bands[2, 0, 3] == 65535
-    maps.draw_segments(bands, segments((-3, -3, 2, 4, 1, 1, 1)), radius=0)           # does not raise or wrap
+def neighbours_of(mask):
+    from scipy import ndimage
+
+    return ndimage.binary_dilation(mask, structure=np.ones((3, 3), bool))
 
 
-# --- the products ----------------------------------------------------------------------------------------
-
-def test_the_rasters_hold_the_chains_on_the_dem_grid(tables) -> None:
-    report = run(tables)
-    out = tables / "out"
-    assert report.seeds == 8 and report.predecessor_edges == 5 and report.chains == 2 and report.isolated_seeds == 1
-    expected = {p.name for g in maps.output_paths(out).values() for p in g.values()} | {"safe_haven_stage_4_chain_maps.report.json"}
-    assert {p.name for p in out.iterdir()} == expected
-    edges, dataset = read_raster(out / "safe_haven_stage_4_predecessor_edges.tif")
-    assert edges.shape == (3, HEIGHT, WIDTH) and edges.dtype == np.uint16 and dataset.nodata is None
-    assert dataset.transform.to_gdal() == GT and dataset.crs is not None
-    assert list(dataset.descriptions) == list(maps.BANDS) and dataset.profile["tiled"]
-    assert dataset.tags["SEGMENTS"].startswith("straight lines") and "1 = 1970-01" in dataset.tags["BANDS"]
-    # seeds: (0,0) (1,3) (2,6) (3,9) (4,12) (5,15) (6,18) (7,21)
-    assert [int(edges[0, i, 3 * i]) for i in range(8)] == [4, 4, 4, 4, 3, 2, 2, 0]      # an edge's pixels carry its value
-    assert edges[0, 7, 21] == 0 and edges[2, 4, 12] == 90 and edges[2, 3, 9] == 70
-    longest, _ = read_raster(out / "safe_haven_stage_4_longest_chain_per_root.tif")
-    assert [int(longest[0, i, 3 * i]) for i in range(8)] == [4, 4, 4, 4, 0, 2, 2, 1]     # seed 5 (the branch) is not drawn
-    assert longest[0, 7, 21] == 1 and (longest[0] == 1).sum() == 1                       # the dot
-    assert (longest[2][longest[0] == 4] == 70).all() and (longest[2][longest[0] == 2] == 30).all()
-    assert (longest[1][longest[0] > 0] == 1).all()
-    assert not np.isin(longest[0], [3]).any() and 3 in edges[0]                           # the branch is only in the edge map
+@pytest.mark.parametrize("compiled", [True, False])
+def test_route_pixels_next_to_a_psr_are_marked(compiled) -> None:
+    psr = np.zeros((HEIGHT, WIDTH), bool)
+    psr[3, 5] = True
+    planes = planes_of()
+    maps.draw_segments(planes, segments((0, 0, 3, 9, 4)), REAL, psr=psr, compiled=compiled)
+    assert np.array_equal(planes[1] > 0, (planes[0] > 0) & neighbours_of(psr)) and planes[1].any()
+    plain = planes_of()
+    maps.draw_segments(plain, segments((0, 0, 3, 9, 4)), REAL, compiled=compiled)          # no mask: nothing is marked
+    assert not plain[1].any() and np.array_equal(plain[0], planes[0])
 
 
-def test_the_dilated_copies_are_wider_and_agree_with_the_thin_ones(tables) -> None:
-    run(tables, dilate_pixels=2)
-    out = tables / "out"
-    for name in maps.CHAIN_SETS:
-        thin, _ = read_raster(out / f"safe_haven_stage_4_{name}.tif")
-        wide, dataset = read_raster(out / f"safe_haven_stage_4_{name}_dilated.tif")
-        assert dataset.tags["DILATE_PIXELS"] == "2" and wide.shape == thin.shape
-        assert (wide[0] > 0).sum() > 3 * (thin[0] > 0).sum()
-        assert (wide[0][thin[0] > 0] > 0).all()                                      # the thin lines are inside the wide ones
-        assert ((wide[0] == 0) <= (thin[0] == 0)).all() and wide[0].max() == thin[0].max()
-        assert ((wide[0] > 0) == (wide[2] > 0)).all() and ((wide[0] > 0) == (wide[1] > 0)).all()
-    dots, _ = read_raster(out / "safe_haven_stage_4_longest_chain_per_root_dilated.tif")
-    # the dot (7 x 7, one larger than the chain stamps) shows at its corners; the chain 6>7 passes over its left edge
-    assert dots[0, 7, 21] == dots[0, 4, 24] == dots[0, 10, 24] == dots[0, 10, 21] == 1
-    assert dots[0, 11, 25] == 0 and dots[0, 3, 24] == 0 and dots[0, 7, 25] == 0
+def test_a_mark_stays_when_a_longer_chain_is_drawn_over_the_pixel() -> None:
+    psr = np.zeros((HEIGHT, WIDTH), bool)
+    psr[6, 5] = True
+    planes = planes_of()
+    maps.draw_segments(planes, segments((5, 0, 5, 10, 2), (0, 5, 11, 5, 9)), REAL, psr=psr)
+    assert planes[0, 5, 5] == 5 and planes[1, 5, 5] == 1 and planes[1, 5, 6] == 1 and planes[1, 5, 3] == 0
+
+
+def test_a_stamp_marks_the_whole_square_around_a_marked_pixel() -> None:
+    psr = np.zeros((HEIGHT, WIDTH), bool)
+    psr[8, 15] = True
+    planes = planes_of()
+    maps.draw_segments(planes, segments((6, 15, 6, 15, 3)), REAL, radius=1, psr=psr)       # two rows away: not next to it
+    assert not planes[1].any()
+    maps.draw_segments(planes, segments((7, 15, 7, 15, 3)), REAL, radius=1, psr=psr)
+    assert (planes[1, 6:9, 14:17] == 1).all() and planes[1].sum() == 9
+
+
+def test_the_images_show_every_haven_over_the_aqua_over_the_routes() -> None:
+    planes = planes_of()
+    planes[0, 2, 2] = 3
+    planes[0, 2, 3] = 3
+    planes[1, 2, 3] = 1
+    planes[1, 2, 4] = 1
+    planes[2, 2, 4] = 1
+    image = maps.colour_image(planes, REAL)
+    assert colour_at(image, 2, 2) == (*RGB(REAL[2].colour), 255)
+    assert colour_at(image, 2, 3) == (0, 255, 255, 255)                  # aqua over the route
+    assert colour_at(image, 2, 4) == (255, 255, 255, 255)                # white over aqua
+    assert colour_at(image, 0, 0) == (0, 0, 0, 0)
 
 
 def test_the_predecessor_edge_geopackage_holds_one_segment_per_edge(tables) -> None:
@@ -326,40 +391,101 @@ def qml_of(connection, table):
     return ElementTree.fromstring(rows[0][0].split("\n", 1)[1])            # the text after the DOCTYPE line
 
 
-def test_the_line_layers_carry_a_default_style_by_chain_length(tables) -> None:
-    run(tables)
+
+def qml_of(connection, table):
+    from xml.etree import ElementTree
+
+    rows = connection.execute("SELECT styleQML, useAsDefault, f_geometry_column FROM layer_styles WHERE f_table_name = ?",
+                              (table,)).fetchall()
+    assert len(rows) == 1 and rows[0][1] == 1 and rows[0][2] == "geom"
+    return ElementTree.fromstring(rows[0][0].split("\n", 1)[1])            # the text after the DOCTYPE line
+
+
+def rules_of(renderer):
+    symbols = {s.get("name"): s for s in renderer.findall("symbols/symbol")}
+    result = []
+    for rule in renderer.findall("rules/rule"):
+        options = {o.get("name"): o.get("value") for o in symbols[rule.get("symbol")].find("layer/Option")}
+        colour = "#" + "".join(f"{int(v):02x}" for v in options["line_color"].split(",")[:3])
+        result.append((rule.get("label"), rule.get("filter"), colour, float(options["line_width"])))
+    return result
+
+
+def test_the_line_style_has_a_rule_per_interval_shortest_first() -> None:
+    from xml.etree import ElementTree
+
+    renderer = ElementTree.fromstring(styles.line_style_qml(REAL).split("\n", 1)[1]).find("renderer-v2")
+    assert renderer.get("type") == "RuleRenderer"
+    assert rules_of(renderer) == [
+        ("2 seeds", '"chain_length" = 2', "#6a5cff", 0.3), ("3 seeds", '"chain_length" = 3', "#ff4f6e", 0.45),
+        ("4-5 seeds", '"chain_length" >= 4 AND "chain_length" <= 5', "#ff7a1a", 0.65),
+        ("6 seeds", '"chain_length" = 6', "#ffcc00", 0.9), ("7-10 seeds", '"chain_length" >= 7', "#7dff3a", 1.2)]
+
+
+def test_the_geopackage_layers_carry_the_styles_of_the_runs_own_intervals(tables) -> None:
+    run(tables)                                         # chains of 2 and 4 seeds: two intervals, "2 seeds" and "3-4 seeds"
+    expected = [("2 seeds", '"chain_length" = 2', "#6a5cff", 0.3), ("3-4 seeds", '"chain_length" >= 3', "#7dff3a", 1.2)]
     for name, table in (("predecessor_edges", "predecessor_edges"), ("longest_chain_per_root", "chains")):
         connection = sqlite3.connect(tables / "out" / f"safe_haven_stage_4_{name}.gpkg")
-        renderer = qml_of(connection, table).find("renderer-v2")
-        assert renderer.get("type") == "categorizedSymbol" and renderer.get("attr") == "chain_length"
-        assert renderer.get("enableorderby") == "1"
-        assert renderer.find("orderby/orderByClause").get("asc") == "1" and renderer.find("orderby/orderByClause").text == "chain_length"
-        categories = renderer.findall("categories/category")
-        assert [c.get("value") for c in categories] == [str(n) for n in range(2, 11)] + [""]       # 2 to 10, then the rest
-        assert [c.get("label") for c in categories][:2] == ["2 seeds", "3 seeds"]
-        symbols = {s.get("name"): s for s in renderer.findall("symbols/symbol")}
-        assert {c.get("symbol") for c in categories} == set(symbols)
-        widths, colours = [], []
-        for category in categories[:-1]:
-            options = {o.get("name"): o.get("value") for o in symbols[category.get("symbol")].find("layer/Option")}
-            widths.append(float(options["line_width"]))
-            colours.append(tuple(int(v) for v in options["line_color"].split(",")[:3]))
-        assert widths == sorted(widths) and len(set(widths)) == 9                    # longer chains are wider
-        luminance = [0.299 * r + 0.587 * g + 0.114 * b for r, g, b in colours]
-        assert luminance == sorted(luminance) and len(set(colours)) == 9             # and brighter, every length distinct
-        assert luminance[-1] - luminance[0] > 150
-
-
-def test_the_dots_are_small_translucent_grey_and_come_first_in_the_file(tables) -> None:
-    run(tables)
+        assert rules_of(qml_of(connection, table).find("renderer-v2")) == expected
     connection = sqlite3.connect(tables / "out" / "safe_haven_stage_4_longest_chain_per_root.gpkg")
     assert [r[0] for r in connection.execute("SELECT table_name FROM gpkg_contents ORDER BY rowid")] == ["isolated_seeds", "chains"]
     renderer = qml_of(connection, "isolated_seeds").find("renderer-v2")
     options = {o.get("name"): o.get("value") for o in renderer.find("symbols/symbol/layer/Option")}
-    red, green, blue, alpha = (int(v) for v in options["color"].split(","))
-    assert renderer.get("type") == "singleSymbol" and red == green == blue and alpha < 255
+    assert renderer.get("type") == "singleSymbol" and options["color"] == "255,255,255,255"        # havens are white
     assert float(options["size"]) < 1.5 and options["outline_style"] == "no" and options["name"] == "circle"
     assert connection.execute("SELECT count(*) FROM layer_styles").fetchone()[0] == 2
+
+
+# --- the images ------------------------------------------------------------------------------------------
+
+def test_the_images_are_transparent_rgba_geotiffs_with_routes_aqua_and_white_havens(tables) -> None:
+    write_psr(tables / "psr.tif", [(3, 6)])
+    report = run(tables, psr_ids_path=tables / "psr.tif")
+    out = tables / "out"
+    lime, violet = (*RGB(styles.PALETTE[4]), 255), (*RGB(styles.PALETTE[0]), 255)
+    assert [i["label"] for i in report.intervals] == ["2 seeds", "3-4 seeds"]
+    assert [i["chains"] for i in report.intervals] == [1, 1] and report.raster_lines == "straight"
+    expected = {p.name for g in maps.output_paths(out).values() for p in g.values()} | {"safe_haven_stage_4_chain_maps.report.json"}
+    assert {p.name for p in out.iterdir()} == expected                    # no .qml files, no data layers
+    edges, info = read_image(out / "safe_haven_stage_4_predecessor_edges.tif")
+    assert edges.shape == (4, HEIGHT, WIDTH) and edges.dtype == np.uint8 and info.nodata is None
+    assert info.colorinterp == (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha)
+    assert info.transform.to_gdal() == GT and info.crs is not None and info.profile["tiled"]
+    assert info.tags["SEGMENTS"].startswith("straight lines") and "2 seeds #6a5cff" in info.tags["COLOURS"]
+    for i in range(8):                                                    # every haven is white, isolated ones too
+        assert colour_at(edges, i, 3 * i) == (255, 255, 255, 255)
+    assert colour_at(edges, 0, 1) == lime and colour_at(edges, 1, 2) == lime        # the chain of 4 seeds: edge 1 > 2
+    assert colour_at(edges, 1, 4) == lime                                 # edge 2 > 3 (through-length 4)
+    assert colour_at(edges, 5, 16) == violet and colour_at(edges, 6, 17) == violet      # edge 6 > 7 (a chain of 2)
+    assert colour_at(edges, 2, 5) == (0, 255, 255, 255) and colour_at(edges, 2, 7) == (0, 255, 255, 255)   # beside the PSR
+    assert colour_at(edges, 3, 8) != (0, 255, 255, 255) and colour_at(edges, 3, 6) == (0, 0, 0, 0)          # not beside, the PSR itself
+    assert colour_at(edges, 11, 0) == (0, 0, 0, 0) and colour_at(edges, 11, 29) == (0, 0, 0, 0)             # transparent background
+    allowed = {violet, lime, (0, 255, 255, 255), (255, 255, 255, 255), (0, 0, 0, 0)}
+    assert {colour_at(edges, r, c) for r in range(HEIGHT) for c in range(WIDTH)} <= allowed
+    assert ((edges[3] == 0) == (edges[:3].sum(axis=0) == 0)).all()       # transparent exactly where nothing is painted
+    longest, _ = read_image(out / "safe_haven_stage_4_longest_chain_per_root.tif")
+    assert colour_at(longest, 7, 21) == (255, 255, 255, 255)              # the isolated haven is drawn here as well
+    assert (edges[3] > 0).sum() > (longest[3] > 0).sum()                  # the branch 2 > 5 is not part of a longest chain
+    assert colour_at(longest, 2, 5) == (0, 255, 255, 255)                 # the aqua is on this image too
+    shown = int((edges[:3] == [[[0]], [[255]], [[255]]]).all(axis=0).sum())
+    assert shown == 2 and report.psr_marked_pixels["predecessor_edges"] == 3      # (2, 6) is marked but a haven shows over it
+
+
+def test_the_dilated_images_are_wider_and_their_havens_one_pixel_larger(tables) -> None:
+    write_psr(tables / "psr.tif", [(3, 6)])
+    run(tables, psr_ids_path=tables / "psr.tif", dilate_pixels=2)
+    out = tables / "out"
+    for name in maps.CHAIN_SETS:
+        thin, _ = read_image(out / f"safe_haven_stage_4_{name}.tif")
+        wide, info = read_image(out / f"safe_haven_stage_4_{name}_dilated.tif")
+        assert info.tags["DILATE_PIXELS"] == "2" and wide.shape == thin.shape
+        assert (wide[3] > 0).sum() > 3 * (thin[3] > 0).sum() and ((thin[3] > 0) <= (wide[3] > 0)).all()
+        assert (wide[0] == 0).sum() > 0 and not ((wide[3] == 0) & (thin[3] > 0)).any()
+    wide, _ = read_image(out / "safe_haven_stage_4_longest_chain_per_root_dilated.tif")
+    assert (wide[:, 4:11, 18:25] == 255).all()                           # the haven at (7, 21): 7 x 7, white, over the routes
+    assert colour_at(wide, 11, 25) == (0, 0, 0, 0) and colour_at(wide, 3, 24) == (0, 0, 0, 0)
+    # (the havens' larger stamps cover the aqua in a raster this small; the stamps of marked pixels are tested above)
 
 
 def test_refusals_and_a_failure_leaves_earlier_files_alone(tables) -> None:
@@ -386,8 +512,8 @@ def test_refusals_and_a_failure_leaves_earlier_files_alone(tables) -> None:
 def test_overwrite_replaces_the_products(tables) -> None:
     run(tables)
     run(tables, overwrite=True, dilate_pixels=3)
-    _, dataset = read_raster(tables / "out" / "safe_haven_stage_4_predecessor_edges_dilated.tif")
-    assert dataset.tags["DILATE_PIXELS"] == "3"
+    _, info = read_image(tables / "out" / "safe_haven_stage_4_predecessor_edges_dilated.tif")
+    assert info.tags["DILATE_PIXELS"] == "3"
 
 
 # --- the script ----------------------------------------------------------------------------------------------
@@ -410,6 +536,7 @@ def test_the_script_defaults_follow_stage_4_and_importing_it_starts_nothing() ->
     four.loader.exec_module(stage4)
     assert module.CHAINS_PATH == stage4.OUTPUT_PATH and module.DEM_PATH == stage4.DEM_PATH
     assert module.DILATE_PIXELS == 2 and module.OVERWRITE is False and module.RASTER_ROUTES is True
+    assert module.PSR_IDS_PATH == stage4.PSR_IDS_PATH
     three = importlib.util.spec_from_file_location("run_safe_haven_stage3", SCRIPT.parent / "run_safe_haven_stage3.py")
     stage3 = importlib.util.module_from_spec(three)
     three.loader.exec_module(stage3)
@@ -420,13 +547,23 @@ def test_the_script_defaults_follow_stage_4_and_importing_it_starts_nothing() ->
 
 def test_the_script_writes_the_six_files_and_prints_the_report(tables, monkeypatch, capsys) -> None:
     module = load_script()
-    for name, value in dict(DEM_PATH=tables / "dem.tif", CHAINS_PATH=tables / "chains.csv",
+    write_psr(tables / "psr.tif", [(3, 6)])
+    for name, value in dict(DEM_PATH=tables / "dem.tif", CHAINS_PATH=tables / "chains.csv", PSR_IDS_PATH=tables / "psr.tif",
                             OUTPUT_DIRECTORY=tables / "out", RASTER_ROUTES=False).items():
         monkeypatch.setattr(module, name, value)
     assert module.main() == 0
     printed = capsys.readouterr().out
     assert '"predecessor_edges": 5' in printed and '"isolated_seeds": 1' in printed
     assert len(list((tables / "out").glob("*.tif"))) == 4 and len(list((tables / "out").glob("*.gpkg"))) == 2
+    assert not list((tables / "out").glob("*.qml"))
     assert "six files written" in (tables / "out" / "safe_haven_stage_4_chain_maps.log").read_text()
     with pytest.raises(InputError, match="exists"):
         module.main()
+
+
+
+def test_a_psr_raster_of_another_size_is_refused_and_nothing_is_written(tables) -> None:
+    write_psr(tables / "small.tif", [(1, 1)], height=5, width=5)
+    with pytest.raises(InputError) as caught:
+        run(tables, psr_ids_path=tables / "small.tif")
+    assert caught.value.code == "chain_maps_psr_mismatch" and not (tables / "out").exists()

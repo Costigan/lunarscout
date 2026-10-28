@@ -6,18 +6,23 @@ Lunarscout uses Semantic Versioning. Before 1.0, public APIs are provisional and
 
 ## Unreleased
 
-- **Rover chain maps.** New `scripts/run_safe_haven_chain_maps.py` (private module `safe_haven_chain_maps.py`)
-  draws the stage-4 chains for two sets, the predecessor edges (colour: the longest chain through each edge) and the
-  longest chain of each root (isolated seeds as dots): a three-band uint16 raster on the DEM's grid (chain length,
-  root start month, mission hours), a copy with dilated lines and a GeoPackage of line segments (or one line per
-  chain, with points for the isolated seeds), six files `safe_haven_stage_4_<set>*`. The GeoPackages are written
-  without GDAL or shapely. In the rasters each segment is the rover's route: the predecessor's flood is run again
-  with its frontiers kept (new private module `safe_haven_paths.py`) and traced back from the seed's pixel at its
-  before boundary, giving one feasible, time-respecting route (at most 4 one-pixel moves per step through passable,
-  lit pixels); `RASTER_ROUTES = False` draws straight lines instead. The GeoPackages carry QGIS default styles
-  (colour and width by chain length from dark purple to pale yellow, longest on top; small grey dots for the isolated
-  seeds, listed first so QGIS draws them under the lines). The GeoPackage segments stay straight lines
-  between seed pixel centres.
+- **Rover chain maps: colour images and GeoPackages.** New `scripts/run_safe_haven_chain_maps.py` (private modules
+  `safe_haven_chain_maps.py`, `chain_map_styles.py`, `safe_haven_paths.py`) draws the stage-4 chains for two sets, the
+  predecessor edges (coloured by the longest chain through each edge) and the longest chain of each root, as RGBA
+  GeoTIFF images with a transparent background (thin and dilated) and a GeoPackage each, six files
+  `safe_haven_stage_4_<set>*`. Chain lengths fall in intervals (2 seeds, then the quartiles of the longer chains), each
+  a distinct bright hue that gets brighter with length; every haven is white and route pixels next to a PSR are aqua.
+  In the images each segment is the rover's route: the predecessor's flood is run again with its frontiers kept and
+  traced back from the seed's pixel at its before boundary, giving one feasible, time-respecting route (at most 4
+  one-pixel moves per step through passable, lit pixels); `RASTER_ROUTES = False` draws straight lines instead. The
+  GeoPackages (written without GDAL or shapely) hold straight segments and carry QGIS default styles in the same
+  colours, the isolated seeds listed first so QGIS draws them under the lines.
+
+- **PSR counts per chain and a 400 m2 small class.** The stage-4 table gains `chain_psr_small`, `chain_psr_medium` and
+  `chain_psr_large`, the number of distinct PSRs of each size class that the routes from a chain's root to a seed pass
+  next to (stage 4 now reconstructs the routes, needing the light store, the passable mask and the PSR products).
+  The PSR small class is now up to and including 400 m2 (one pixel at 20 m; it was under 40 m2, which no region
+  reached), so one-pixel regions are small; stage 3's `touch_small_*` columns need a stage-3 rerun to follow it.
 
 - **Pixel-centre coordinates in the seed tables.** The stage-2 seed table and the stage-4 final table gain `x_m` and
   `y_m`, the seed pixel's centre in the DEM's CRS (after `column`). Stage 2 writes them from the DEM it plans on;

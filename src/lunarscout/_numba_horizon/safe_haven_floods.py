@@ -70,8 +70,9 @@ class FloodSettings:
     moves_per_step: int = 4
     connectivity: int = 8
     max_slope_deg: float = 20.0
-    #: PSR classes by area in square metres: small is [0, small_max), medium [small_max, medium_max], large above.
-    psr_small_max_m2: float = 40.0
+    #: PSR classes by area in square metres: small is up to and including small_max (400 m2 is one pixel at 20 m),
+    #: medium up to and including medium_max, large above.
+    psr_small_max_m2: float = 400.0
     psr_medium_max_m2: float = 1_000_000.0
     reach_hours: float = 48.0
     #: Which seeds a flood may arrive at: ``"next_cycle"`` (the seeds whose Earth cycle follows the seed's) or
@@ -128,19 +129,28 @@ def passable_mask(dem, georef, directory: LightStoreDirectory, max_slope_deg: fl
     return out
 
 
+def psr_categories(table_path: str | Path, settings: FloodSettings) -> npt.NDArray[np.int8]:
+    """The size class of every PSR id: ``category[id]`` is 1 (small), 2 (medium) or 3 (large); ``category[0]`` is 0
+    (no PSR). Small is an area up to and including ``psr_small_max_m2``, medium up to and including
+    ``psr_medium_max_m2``."""
+    from .safe_haven_psr import read_region_table
+
+    regions = read_region_table(table_path)
+    category = np.zeros(len(regions) + 1, dtype=np.int8)
+    category[1:] = np.where(regions.area_m2 <= settings.psr_small_max_m2, 1,
+                            np.where(regions.area_m2 <= settings.psr_medium_max_m2, 2, 3))
+    return category
+
+
 def psr_class_masks(ids_path: str | Path, table_path: str | Path, settings: FloodSettings):
     """``(ids, (small, medium, large))``: the PSR id raster (int32) and the packed mask of each class."""
     from ..geotiff import read_geotiff
-    from .safe_haven_psr import read_region_table
 
     ids, _georef = read_geotiff(ids_path)
     ids = np.ascontiguousarray(ids, dtype=np.int32)
-    regions = read_region_table(table_path)
-    if int(ids.max(initial=0)) > len(regions):
+    category = psr_categories(table_path, settings)
+    if int(ids.max(initial=0)) >= len(category):
         raise InputError("the PSR id raster holds ids the region table does not", code="floods_psr_mismatch")
-    category = np.zeros(len(regions) + 1, dtype=np.int8)
-    category[1:] = np.where(regions.area_m2 < settings.psr_small_max_m2, 1,
-                            np.where(regions.area_m2 <= settings.psr_medium_max_m2, 2, 3))
     words = -(-ids.shape[1] // WORD_BITS)
     masks = [np.zeros((ids.shape[0], words), dtype=np.uint64) for _ in PSR_CLASSES]
     for row0 in range(0, ids.shape[0], _STRIP_ROWS):

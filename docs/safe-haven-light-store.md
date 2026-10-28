@@ -180,7 +180,7 @@ forward in time from every seed of stage 2 and reads lit bits from the store as 
   28 days = 672 h; a value at the cap is a lower bound. **`reach48_pixels`**: the frontier's size after 24 steps.
 * **PSR first touch.** Per size class, the hours after the boundary at which a passable PSR pixel of that class is
   next to the frontier (a PSR pixel is never lit, so it is never in the frontier), and that region's id. Small is
-  under 40 m2, medium 40 to 1,000,000 m2, large above (parameters). At 20 m a pixel is 400 m2, so no region is small.
+  up to 400 m2 (one pixel at 20 m, so a one-pixel region is small), medium up to 1,000,000 m2, large above (parameters).
 * **Edges.** A seed A has an edge to a seed B of the next Earth cycle when B has a before boundary within the
   flood's 28 days and B's pixel is in A's frontier at that step (a rover that is on a lit pixel until then can wait
   there). `edge_rule="any_later"` links to every seed that is due later instead (see the caveat on cycle labels in
@@ -223,6 +223,14 @@ tables, CPU only.
   (edge counts). A report beside the table gives the chain-length counts, the mission percentiles and the longest
   chains as lists of seed ids.
 
+* **PSR counts.** `chain_psr_small`, `chain_psr_medium` and `chain_psr_large`: the number of distinct permanently
+  shadowed regions (PSRs) of each size class that the chain's routes (root to this seed) pass next to, a PSR pixel being
+  among the eight neighbours of a route pixel (`safe_haven_route_psr.py`). A root has no route and counts 0. The routes
+  are the ones of section 11 (the predecessor floods run again from the light store, traced back), so stage 4 now
+  needs the light store, stage 3's passable mask, the PSR ids and the region table and takes about 45 s instead of
+  10 s. Size classes are stage 3's: small up to 400 m2 (one pixel at 20 m), medium up to 1,000,000 m2, large above.
+  On the real run the chains of 7,334 seeds pass a small PSR, 6,246 a medium one and 11 a large one.
+
 First real run (`next_cycle` edges): 485,776 seeds are roots (a one-seed chain, mission = its endurance, median
 126 h) and 38,447 have a predecessor. Chain lengths are 2 (35,311 seeds), 3 (1,005), 4 (774), 5 (589), 6 (440),
 7 (255), 8 (50), 9 (19) and 10 (4). The longest mission is 6,008 h (250 days), a chain of 10 seeds in 10
@@ -231,52 +239,56 @@ consecutive Earth cycles. The mission percentiles are 24 h (p10), 136 h (median)
 ## 11. Rover chain maps
 
 `scripts/run_safe_haven_chain_maps.py` (module `safe_haven_chain_maps.py`) draws the stage-4 chains: two chain sets,
-each as a raster on the DEM's grid, a raster copy with dilated lines and a GeoPackage, six files named
+each as a colour image on the DEM's grid, a copy with dilated lines and a GeoPackage, six files named
 `safe_haven_stage_4_<set>{,_dilated}.tif` and `safe_haven_stage_4_<set>.gpkg`. It reads the stage-4 table (with its
-`x_m`/`y_m` columns), the light store with stage 3's cached passable mask (for the routes) and the DEM's header. On
-the real table it takes about 70 s (about 35 s of it the routes).
+`x_m`/`y_m` columns), the light store with stage 3's cached passable mask (for the routes), the PSR id raster and the
+DEM's header. On the real table it takes about 90 s (about 35 s of it the routes).
 
-* **`predecessor_edges`:** one straight segment from each seed that has a predecessor to the seed (38,447 on the
-  real table); every edge of the label forest once, branches included. An edge has the length of the longest chain
-  that passes through it (the deepest seed at or below its target), so a chain does not change colour along its
-  length.
+* **`predecessor_edges`:** one segment from each seed that has a predecessor to the seed (38,447 on the real table);
+  every edge of the label forest once, branches included. An edge takes the colour of the longest chain that passes
+  through it (the deepest seed at or below its target), so a chain does not change colour along its length.
 * **`longest_chain_per_root`:** each root's longest chain (most seeds, then the longer mission, then the lowest seed
-  id), drawn root to end at the chain's length (11,884 chains), and the roots with no descendants as dots of value 1
-  (473,892), also a point layer.
-* **Rasters.** Three uint16 bands: chain length in seeds (0 is background), the month the chain's root starts
-  (1 is the table's first month) and the mission hours (the longest mission at or below the edge for predecessor
-  edges). Segments are drawn shortest chain first, then by mission, so where lines cross all three bands come from the
-  longer chain. The dilated copy stamps a square of `2 * DILATE_PIXELS + 1` pixels (default 5) along each segment,
-  dots one pixel larger. Full-resolution files are about 12 MB each (deflate; the product is sparse).
-* **GeoPackages.** Hand-written GeoPackage 1.3 (no GDAL or shapely dependency), not dilated: layer
-  `predecessor_edges` (a line per edge with seed, predecessor, root, chain length through the edge, the seed's own
+  id), drawn root to end in the colour of its length (11,884 chains).
+* **Images, not data.** The table is the data; the rasters are pictures for people: 4-band 8-bit RGBA GeoTIFFs with a
+  transparent background (no data bands, no style files). Chain lengths fall in intervals: 2 seeds, then four
+  intervals cut at the quartiles of the lengths of the chains of 3 or more (the same cut points for both sets, from
+  the longest chains; repeated cut points merge). The real run gives 2 seeds (11,754 chains), 3 (39), 4-5 (45), 6 (22)
+  and 7-10 (24). Each interval is a distinct, saturated, bright hue and brighter than the one before: violet `#6a5cff`,
+  rose `#ff4f6e`, orange `#ff7a1a`, yellow `#ffcc00`, green `#7dff3a` (a test checks rising luminance, distinct hues
+  and distance from aqua and white). **Every haven is a white pixel** (every seed, isolated ones too) and **route
+  pixels that pass next to a PSR** (a PSR pixel among the eight neighbours) are **aqua** `#00ffff`. Paint order, bottom
+  to top: routes (longer chains over shorter), aqua, havens. The dilated copy stamps a square of `2 * DILATE_PIXELS + 1`
+  pixels (default 5) along each segment, havens one pixel larger (the havens' larger stamps cover much of the aqua in
+  it; we may drop the dilated copy). Full-resolution files are about 8 to 10 MB each (deflate; sparse).
+* **GeoPackages.** Hand-written GeoPackage 1.3 (no GDAL or shapely dependency), not dilated and always straight:
+  layer `predecessor_edges` (a line per edge with seed, predecessor, root, chain length through the edge, the seed's own
   chain length, mission hours and root start), or `chains` (one line through the seed centres of each chain with root,
-  end seed, length, mission, start and the seed ids) plus `isolated_seeds` points. The CRS is the DEM's, stored as
-  WKT; `ogrinfo` reads both files.
+  end seed, length, mission, start, the seed ids and the numbers of small, medium and large PSRs it passes) plus
+  `isolated_seeds` points. The CRS is the DEM's, stored as WKT; `ogrinfo` reads both files.
 * **QGIS styles.** Each GeoPackage layer carries a default style in QGIS's `layer_styles` table (`chain_map_styles.py`),
-  applied when QGIS adds the layer. The line layers are categorized by `chain_length`: one colour and one width for
-  each of 2 to 10 seeds (and "more"), from a dark purple through red and orange to pale yellow (brighter and wider is
-  longer; 0.26 mm at 2 seeds to 1.4 mm at 10), drawn shortest first so the long chains are on top. The isolated seeds
-  are 0.9 mm translucent grey dots. The file lists `isolated_seeds` before `chains`, so QGIS, which stacks each layer it
-  adds above the previous one, draws the dots under the lines. The styles were checked by loading both files in
-  QGIS 3.34 (default style applied, 10 categories, feature ordering on) and rendering them.
-* **Rover routes in the rasters.** Stage 3 keeps frontiers, not paths, so the raster segment of an edge is found by
-  flooding the predecessor again exactly as stage 3 did, keeping the frontier and the lit-and-passable mask after
-  every step (boxes of `4 * step` pixels around the seed, about 100 MB for a 28-day flood), and tracing back from the
-  successor's pixel at its before boundary (`safe_haven_paths.py`). One step of the trace recomputes the four
-  sub-move frontiers in a 9 x 9 window around the current pixel from the stored frontier of the step before, and
-  walks back preferring to stay, then the first neighbour in the frontier. The route is one feasible,
-  time-respecting walk (at most 4 one-pixel moves per step, every pixel entered passable and lit in its step,
-  staying only on lit pixels), not a shortest one; it has at least as many pixels as the straight line. Real table:
-  12,432 predecessor floods and 38,447 routes (5.2 million pixels) in 33 s with 16 workers; a spot check replayed 13
-  random routes against the real store and all were feasible. `RASTER_ROUTES = False` draws straight lines instead
-  (no light store needed). The flood settings and the passable mask must be stage 3's.
+  applied when QGIS adds the layer: rule-based on `chain_length` with the same intervals and colours as the images and
+  a line width that grows with the interval (0.3 to 1.2 mm), drawn shortest first so the long chains are on top; the
+  isolated seeds are small white dots. The file lists `isolated_seeds` before `chains`, so QGIS, which stacks each layer
+  it adds above the previous one, draws the dots under the lines. The earlier styles were checked by loading the files
+  in QGIS 3.34 headless (default style applied, feature ordering) and rendering them.
+* **Rover routes in the images.** Stage 3 keeps frontiers, not paths, so the segment of an edge is found by flooding
+  the predecessor again exactly as stage 3 did, keeping the frontier and the lit-and-passable mask after every step
+  (boxes of `4 * step` pixels around the seed, about 100 MB for a 28-day flood), and tracing back from the successor's
+  pixel at its before boundary (`safe_haven_paths.py`). One step of the trace recomputes the four sub-move frontiers in
+  a 9 x 9 window around the current pixel from the stored frontier of the step before, and walks back preferring to
+  stay, then the first neighbour in the frontier. The route is one feasible, time-respecting walk (at most 4 one-pixel
+  moves per step, every pixel entered passable and lit in its step, staying only on lit pixels), not a shortest one; it
+  has at least as many pixels as the straight line. Real table: 12,432 predecessor floods and 38,447 routes (5.2 million
+  pixels) in about 35 s with 16 workers; a spot check replayed 13 random routes against the real store and all were
+  feasible. `RASTER_ROUTES = False` draws straight lines instead (no light store needed). The flood settings and the
+  passable mask must be stage 3's.
 * **Straight lines in the GeoPackages.** Their segments join seed pixel centres: a route would be thousands of short
   segments, so the vectors stay straight (a schematic that may cross terrain the rover cannot).
 
-Tests check the sets against an exhaustive search over random forests, the Bresenham lines, the draw order (the
-longer chain on top in every input order), the stamps and clipping, the band values of every pixel on a hand-built
-graph, the GeoPackage tables and WKB, and `ogrinfo` on both files. The routes are tested by replaying every route of
-the scene against the light store (a schedule of at most 4 moves per step into lit, passable pixels exists), by
-running the trace kernel on random lit worlds with walls (4 and 8 neighbours, 2 to 4 moves, compiled and plain
-Python) and by comparing the rasters with a plain painter over the routes.
+Tests check the sets against an exhaustive search over random forests, the intervals (the real run's distribution, the
+degenerate cases), the palette, the Bresenham lines, the draw order (the longer chain on top in every input order), the
+stamps and clipping, the PSR mark (kept under a longer chain; whole stamp), the paint order of the colours, the pixel
+colours of a hand-built graph, the GeoPackage tables, WKB and styles, and `ogrinfo` on both files. The routes are tested
+by replaying every route of the scene against the light store (a schedule of at most 4 moves per step into lit,
+passable pixels exists), by running the trace kernel on random lit worlds with walls (4 and 8 neighbours, 2 to 4 moves,
+compiled and plain Python) and by comparing the images with a plain painter over the routes, with and without PSRs.
