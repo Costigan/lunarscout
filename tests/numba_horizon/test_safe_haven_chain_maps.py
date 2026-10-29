@@ -686,15 +686,17 @@ def run_monthly(tables, **options):
                                        **options)
 
 
-def month_image(path, month):
-    """The month's pixels of the monthly file as an RGBA image ``(4, HEIGHT, WIDTH)``, and the codes in file order."""
+def month_image(path, month, markers=False):
+    """The month's pixels of the monthly file as an RGBA image ``(4, HEIGHT, WIDTH)``, and the codes in file order; the
+    chain-start markers (which lie over a haven) are left out unless ``markers``."""
     with np.load(path) as data:
         index = [str(m) for m in data["months"]].index(month)
         lo, hi = int(data["offsets"][index]), int(data["offsets"][index + 1])
         image = np.zeros((4, HEIGHT, WIDTH), dtype=np.uint8)
         rows, columns, codes = data["row"][lo:hi], data["column"][lo:hi], data["code"][lo:hi]
-        image[:, rows, columns] = data["table"][codes].T
-        return image, codes
+        keep = np.ones(len(codes), dtype=bool) if markers else codes != len(data["table"]) - 1
+        image[:, rows[keep], columns[keep]] = data["table"][codes[keep]].T
+        return image, codes[keep]
 
 
 def test_each_month_has_the_chains_that_start_in_it_and_the_months_make_up_the_yearly_image(tables) -> None:
@@ -724,17 +726,20 @@ def test_each_month_has_the_chains_that_start_in_it_and_the_months_make_up_the_y
     aqua = styles.lookup_table(maps.build_intervals(np.array([2, 2]))).shape[0] - 2
     with np.load(path) as data:
         assert (data["code"] == aqua).any()                                        # a route passed next to a PSR
-        assert data["table"].shape[1] == 4 and list(data["labels"])[-2:] == ["next to a PSR", "haven"]
+        assert data["table"].shape[1] == 4 and list(data["labels"])[-3:] == ["next to a PSR", "haven", "start of a chain"]
         assert data["chains"].tolist() == [report.months[str(m)]["chains"] for m in data["months"]]
 
 
-def test_a_months_pixels_are_ordered_by_class_so_the_havens_are_drawn_last(tables) -> None:
+def test_a_months_pixels_are_ordered_by_class_so_the_havens_then_the_starts_are_drawn_last(tables) -> None:
     start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
     run_monthly(tables, overwrite=True)
-    _image, codes = month_image(maps.monthly_path(tables / "out"), "2024-03")
-    assert (np.diff(codes.astype(int)) >= 0).all() and codes[-1] == codes.max() and codes[0] >= 1
+    _image, codes = month_image(maps.monthly_path(tables / "out"), "2024-03", markers=True)
+    assert (np.diff(codes.astype(int)) >= 0).all() and codes[0] >= 1
     with np.load(maps.monthly_path(tables / "out")) as data:
-        assert int(codes.max()) == data["table"].shape[0] - 1                       # the white haven class is the last
+        marker = data["table"].shape[0] - 1
+        assert data["table"][marker].tolist() == [255, 0, 255, 255]                 # the start colour: magenta
+        assert int(codes[-1]) == marker and int(marker - 1) in codes                 # the white haven class comes before it
+    assert int((codes == marker).sum()) == 2                                        # roots 1 and 6; root 8 is alone
 
 
 def test_monthly_pixels_equal_the_yearly_image_when_every_chain_starts_in_one_month(tables) -> None:
@@ -804,3 +809,28 @@ def test_a_chain_with_one_seed_left_is_a_lone_haven_and_the_months_run_to_the_la
     assert [report.months[m]["started"] for m in report.months] == [1, 0, 0, 1, 0, 0, 0]
     assert [report.months[m]["havens"] for m in report.months] == [6, 2, 1, 3, 1, 1, 1]   # seed 4 stays to 2024-09
     assert [report.months[m]["pixels"] > 0 for m in report.months] == [True] * 7
+
+
+def test_the_start_of_each_chain_is_marked_in_the_month_it_starts_in_only(tables) -> None:
+    start_in_months(tables, {1: "2024-03", 6: "2024-04", 8: "2024-03"}, seed_months={4: "2024-05", 7: "2024-05"})
+    run_monthly(tables, overwrite=True)
+    path = maps.monthly_path(tables / "out")
+    with np.load(path) as data:
+        marker = data["table"].shape[0] - 1
+        names = [str(m) for m in data["months"]]
+        starts = {}
+        for k, name in enumerate(names):
+            lo, hi = int(data["offsets"][k]), int(data["offsets"][k + 1])
+            hit = data["code"][lo:hi] == marker
+            starts[name] = sorted(zip(data["row"][lo:hi][hit].tolist(), data["column"][lo:hi][hit].tolist()))
+    assert starts["2024-03"] == [(0, 0)]                                            # root 1 at pixel (0, 0); root 8 is alone
+    assert starts["2024-04"] == [(5, 15)]                                           # root 6 at (5, 15), a month later
+    assert all(not v for k, v in starts.items() if k not in ("2024-03", "2024-04"))  # not again while the chains go on
+
+
+def test_seed_month_spans_run_from_the_chain_start_to_the_seeds_own_month_and_never_start_early() -> None:
+    rows = [{"root_start_utc": "2024-03-05T00:00:00Z", "month": "2024-02"}, {"root_start_utc": "2024-03-05T00:00:00Z", "month": "2024-05"},
+            {"root_start_utc": "2024-04-01T00:00:00Z", "month": "2024-04"}]
+    start, last, months = maps.seed_month_spans(rows)
+    assert months == ["2024-03", "2024-04", "2024-05"]
+    assert start.tolist() == [0, 0, 1] and last.tolist() == [0, 2, 1]               # a seed of the month before is shown from the start

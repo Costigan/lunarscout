@@ -47,7 +47,7 @@ def window(app, prepared):
         sys.path.pop(0)
     tmp_path, _dem, _chains = prepared
     data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
-    win = viewer.Window(data, "boxes", None)
+    win = viewer.Window(data, "boxes_havens", None)
     win.resize(900, 700)
     win.show()
     app.processEvents()
@@ -76,7 +76,7 @@ def test_the_monthly_chain_layer_is_offered_only_with_its_file(app, prepared, tm
     window.show()
     app.processEvents()
     assert [window.layers.itemText(i) for i in range(4)] == [
-        "Cluster boxes (monthly)", "Havens (monthly)", "Chains (monthly)", "Chains (yearly)"]
+        "Havens and cluster boxes (monthly)", "Havens (monthly)", "Chains (monthly)", "Chains (yearly)"]
     assert window.view.layer == "chains_month" and window.caption.text() == "2026-03    2 chains (1 starting)"
     window.slider.setValue(1)
     assert window.caption.text() == "2026-04    0 chains"
@@ -154,14 +154,14 @@ def test_the_level_is_the_one_drawn_at_between_half_and_one_screen_pixel(window)
 
 def test_the_slider_runs_over_the_months_and_the_caption_follows_the_layer(window) -> None:
     assert window.slider.minimum() == 0 and window.slider.maximum() == 2
-    assert window.caption.text() == "2026-03    1 clusters"
+    assert window.caption.text() == "2026-03    1 clusters, 3 havens"
     window.slider.setValue(1)
-    assert window.caption.text() == "2026-04    0 clusters"
+    assert window.caption.text() == "2026-04    0 clusters, 3 havens"
     window.layers.setCurrentIndex(1)
     assert window.view.layer == "havens" and window.caption.text() == "2026-04    3 havens"
     window.layers.setCurrentIndex(2)
     assert window.view.layer == "chains" and window.caption.text() == "2026-04    no chain image for 2026"
-    assert [window.layers.itemText(i) for i in range(3)] == ["Cluster boxes (monthly)", "Havens (monthly)", "Chains (yearly)"]
+    assert [window.layers.itemText(i) for i in range(3)] == ["Havens and cluster boxes (monthly)", "Havens (monthly)", "Chains (yearly)"]
 
 
 def test_every_layer_paints_at_every_level_without_error(window, app) -> None:
@@ -199,7 +199,7 @@ def test_a_whole_launch_prepares_shows_and_saves_a_picture_of_each_layer(tmp_pat
     common = ["--dem-path", str(dem), "--chains-path", str(chains), "--viewer-directory", str(tmp_path / "viewer"),
               "--cache-directory", str(tmp_path / "cache")]
     sizes = {}
-    for layer in ("boxes", "havens", "chains"):
+    for layer in ("boxes_havens", "havens", "chains"):
         picture = tmp_path / f"{layer}.png"
         done = run([*common, "--layer", layer, "--month", "2026-05", "--screenshot", str(picture)], tmp_path)
         assert done.returncode == 0, done.stderr

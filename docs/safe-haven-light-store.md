@@ -526,14 +526,20 @@ the slider along the bottom picks the month, from the first to the last month of
 
 | Drop-down | What is drawn | Changes |
 |---|---|---|
-| Cluster boxes (monthly) | the bounding box of each group of connected havens whose chain starts in the month, in the aqua classes of section 14 (the box is drawn one pixel outside the group; a box smaller than a few screen pixels is drawn solid so that it can be seen) | every month |
-| Havens (monthly) | one pixel for each haven (seed) of the month, in orange | every month |
-| Chains (monthly) | the longest chain of each root from the month it starts in until its last seed, each month as the part still ahead: a chain that goes on into later months is shorter in each, in the colour of its remaining length (the yearly image's routes, length colours, aqua PSR passes and white havens; the entry is in the drop-down only when the monthly pixel file exists) | every month |
+| Havens and cluster boxes (monthly) | the bounding box of each group of connected havens whose chain starts in the month, in the aqua classes of section 14 (the box is drawn one pixel outside the group; a box smaller than a few screen pixels is drawn solid so that it can be seen), with one orange pixel for each haven shown in the month drawn over them | every month |
+| Havens (monthly) | the same orange havens without the boxes | every month |
+| Chains (monthly) | the longest chain of each root from the month it starts in until its last seed, each month as the part still ahead: a chain that goes on into later months is shorter in each, in the colour of its remaining length (the yearly image's routes, length colours, aqua PSR passes and white havens, and the start of each chain that starts in the month as a 3 x 3 square of bright magenta, `#ff00ff`, a colour no length class uses; the entry is in the drop-down only when the monthly pixel file exists) | every month |
 | Chains (yearly) | the yearly chain image `safe_haven_stage_4_longest_chain_per_root_<year>.tif` of the slider's year | when the slider crosses into another year |
 
-A cluster belongs to the month its chain starts in (the `root_start_utc` of its lowest seed; the yearly maps use the
-year of the same time); a haven belongs to its own `month`. The numbers of clusters per month swing with the lighting cycle (in the 15-degree run, 211 in 2026-03,
-2 in 2027-03 and 260 in 2027-12), so a month with few boxes is a result, not a fault.
+*One month rule.* A cluster belongs to the month its chain starts in (the `root_start_utc` of its lowest seed; the yearly maps
+use the year of the same time). A haven is shown from the month its chain starts in to its own `month` (never before the
+chain's start), and every layer that draws havens uses that rule, so the layers agree: the havens of the havens layer are
+the white dots of the monthly chains and the dots inside the boxes. (An earlier version put a haven in its own month in
+the havens layer and from its chain's start in the chains layer, so about 10 % of the seed-months differed: in 2024-09,
+56 seeds only in the chains layer, of chains that had started and whose own month was later, and 22 only in the havens
+layer, whose outage ends in the following month, which is when the chain starts.) The numbers of clusters per month swing
+with the lighting cycle (in the 15-degree run, 211 in 2026-03, 2 in 2027-03 and 260 in 2027-12), so a month with few
+boxes is a result, not a fault.
 
 *Pregenerated data.* The picture is a bitmap: tiles of 512 pixels from image pyramids, drawn at the level whose pixels
 are between half and one screen pixel (full resolution, 20 m, when zoomed in). Nothing is computed while panning.
@@ -541,10 +547,11 @@ are between half and one screen pixel (full resolution, 20 m, when zoomed in). N
 * `viewer/viewer.json` (beside the products): the months, the DEM grid, and per month the boxes as `[row_min, row_max,
   column_min, column_max, havens]` in DEM pixels, the yearly chain images and how the boxes were clustered
   (`CONNECT`, as in section 14);
-* `viewer/havens.npz`: the DEM row and column of every seed, ordered by month, with each month's start offset;
+* `viewer/havens.npz`: the DEM row and column of every seed in each month it is shown in (the rule above), ordered by
+  month, with each month's start offset;
 * `safe_haven_stage_4_monthly_chain_pixels.npz` (beside the chain table; made by `scripts/run_safe_haven_monthly_chain_maps.py`,
   driver step `monthly-chain-maps`): for each month the pixels the yearly image would draw for the chains that are
-  under way (row, column and colour class: 1.23 million pixels and 3.1 MB for the 96 months), found by drawing the same
+  under way (row, column and colour class, with one extra pixel in the start colour on the root of each chain that starts in the month), found by drawing the same
   routes month by month (225 s on the 15-degree run, the routes included). A chain is drawn from the month its root
   starts in until the month of its last seed, each month as the part still ahead (its seeds from that month on), in the
   colour of that remaining length; a seed's month is its own `month` in the chain table, never before the chain's

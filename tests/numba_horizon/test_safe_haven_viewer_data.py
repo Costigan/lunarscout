@@ -27,7 +27,8 @@ def seed(number, month, row, column, root, predecessor, root_start):
 
 
 # Seeds 1-3 are one tree whose chain starts in 2026-03 (seeds 2 and 3 are of 2026-04); seed 4 is alone; seeds 5-6 are a tree
-# that starts in 2026-05. The months run 2026-03 to 2026-05.
+# that starts in 2026-05. The months run 2026-03 to 2026-05. A seed is shown from its chain's start to its own month: seed 1
+# in 2026-03, seeds 2 and 3 in 2026-03 and 2026-04, seed 4 in 2026-04, seeds 5 and 6 in 2026-05.
 SEEDS = [
     seed(1, "2026-03", 10, 10, 1, 0, "2026-03-05T00:00:00.000000Z"), seed(2, "2026-04", 20, 12, 1, 1, "2026-03-05T00:00:00.000000Z"),
     seed(3, "2026-04", 14, 600, 1, 2, "2026-03-05T00:00:00.000000Z"), seed(4, "2026-04", 900, 900, 4, 0, "2026-04-02T00:00:00.000000Z"),
@@ -78,11 +79,6 @@ def test_a_reduction_keeps_thin_lines_with_max_and_averages_with_mean_and_pads_a
     assert vd.reduce2(rgba, "max")[1, 1].tolist() == [1, 2, 3, 255]
 
 
-def test_months_run_from_the_first_to_the_last_inclusive() -> None:
-    assert vd.month_range("2026-11", "2027-02") == ["2026-11", "2026-12", "2027-01", "2027-02"]
-    assert vd.month_range("2026-03", "2026-03") == ["2026-03"]
-
-
 def test_the_lists_hold_the_boxes_of_each_month_and_every_havens_pixel(products) -> None:
     tmp_path, dem, chains = products
     write_rgba(tmp_path / "safe_haven_stage_4_longest_chain_per_root_2026.tif", [])
@@ -94,9 +90,11 @@ def test_the_lists_hold_the_boxes_of_each_month_and_every_havens_pixel(products)
     assert meta["boxes"] == {"2026-03": [[10, 20, 10, 600, 3]], "2026-04": [], "2026-05": [[700, 702, 700, 703, 2]]}
     assert meta["chain_images"] == {"2026": "safe_haven_stage_4_longest_chain_per_root_2026.tif"}
     with np.load(tmp_path / "viewer" / "havens.npz") as arrays:
-        assert arrays["offsets"].tolist() == [0, 1, 4, 6]
-        assert list(zip(arrays["row"].tolist(), arrays["column"].tolist()))[:1] == [(10, 10)]       # seeds of 2026-03 first
-        assert sorted(zip(arrays["row"][1:4].tolist(), arrays["column"][1:4].tolist())) == [(14, 600), (20, 12), (900, 900)]
+        assert arrays["offsets"].tolist() == [0, 3, 6, 8]
+        pixels = list(zip(arrays["row"].tolist(), arrays["column"].tolist()))
+        assert pixels[0:3] == [(10, 10), (20, 12), (14, 600)]                                       # 2026-03: seeds 1, 2, 3
+        assert pixels[3:6] == [(20, 12), (14, 600), (900, 900)]                                     # 2026-04: seeds 2, 3, 4
+        assert pixels[6:8] == [(700, 700), (702, 703)]
     assert not list((tmp_path / "viewer").glob("*.partial"))
 
 
@@ -175,13 +173,14 @@ def test_a_havens_tile_has_a_pixel_for_each_haven_of_the_month_and_coarser_level
     tmp_path, dem, chains = products
     vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem)
     data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
-    assert [data.havens_count(m) for m in range(3)] == [1, 3, 2] and [data.boxes_count(m) for m in range(3)] == [1, 0, 1]
+    assert [data.havens_count(m) for m in range(3)] == [3, 3, 2] and [data.boxes_count(m) for m in range(3)] == [1, 0, 1]
     tile = data.havens_tile(1, 0, 0, 0)                                   # 2026-04: seeds (20, 12), (14, 600), (900, 900)
     assert np.argwhere(tile[..., 3] > 0).tolist() == [[20, 12]] and tile[20, 12].tolist() == list(vd.HAVEN_COLOUR)
     assert np.argwhere(data.havens_tile(1, 0, 1, 0)[..., 3] > 0).tolist() == [[14, 600 - 512]]
     coarse = data.havens_tile(1, 1, 0, 0)                                 # level 1: (10, 6) and (7, 300) are dots of 2 x 2
     assert (coarse[..., 3] > 0).sum() == 4 + 4 + 4 and (coarse[10:12, 6:8, 3] == 255).all()
     assert not data.havens_tile(0, 0, 2, 2)[..., 3].any()                 # nothing of 2026-03 down there
+    assert np.argwhere(data.havens_tile(0, 0, 0, 0)[..., 3] > 0).tolist() == [[10, 10], [20, 12]]    # seed 2 is shown from its chain's start
 
 
 def test_a_boxes_tile_outlines_each_box_just_outside_it_in_its_class_colour(products) -> None:
@@ -260,6 +259,22 @@ def test_the_monthly_chain_layer_appears_when_its_file_is_beside_the_chain_table
     assert vd.ViewerData(tmp_path / "viewer", tmp_path / "cache").monthly_chains is not None
 
 
+def test_a_chains_start_is_a_3_by_3_marker_over_the_chain_and_the_haven(products) -> None:
+    tmp_path, dem, chains = products
+    path = write_monthly_chains(tmp_path, {"2026-03": (1, [(5, 6, 1), (5, 6, 3), (5, 6, 4), (5, 9, 3)])})
+    with np.load(path) as data:                                            # a file whose last class is the start marker
+        arrays = {k: data[k] for k in data.files}
+    arrays["table"] = np.concatenate([arrays["table"], [[255, 0, 255, 255]]]).astype(np.uint8)
+    arrays["labels"] = np.array(["a", "b", "haven", "start of a chain"])
+    np.savez_compressed(path, **arrays)
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem)
+    data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
+    tile = data.monthly_chain_tile(0, 0, 0, 0)
+    assert (tile[4:7, 5:8] == [255, 0, 255, 255]).all()                    # the start, 3 x 3 around (5, 6)
+    assert tile[5, 9].tolist() == [255, 255, 255, 255] and (tile[..., 3] > 0).sum() == 9 + 1   # a haven stays one pixel
+    assert (data.monthly_chain_tile(0, 2, 0, 0)[0:3, 0:3, 3] > 0).all()   # and is 3 level pixels wide at every level
+
+
 def test_a_monthly_chain_tile_draws_the_months_pixels_in_their_colours_with_the_last_class_on_top(products) -> None:
     tmp_path, dem, chains = products
     write_monthly_chains(tmp_path, {"2026-03": (2, [(5, 6, 1), (5, 7, 2), (20, 600, 3), (20, 600, 1)]),
@@ -277,3 +292,16 @@ def test_a_monthly_chain_tile_draws_the_months_pixels_in_their_colours_with_the_
     coarse = data.monthly_chain_tile(0, 2, 0, 0)                                            # level 2: dots of 2 x 2
     assert (coarse[..., 3] > 0).sum() == 8 and coarse[1, 1].tolist() == [0, 255, 0, 255]    # (5, 6) and (5, 7) share a pixel: the higher class wins
     assert (data.monthly_chain_tile(0, 1, 0, 0)[..., 3] > 0).sum() == 2                     # level 1, single pixels: (2, 3) shared, and (10, 300)
+
+
+def test_the_combined_tile_is_the_boxes_with_the_havens_over_them(products) -> None:
+    tmp_path, dem, chains = products
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem)
+    data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
+    both = data.boxes_havens_tile(0, 0, 0, 0)                             # 2026-03: the box rows 10-20, columns 10-600
+    boxes, dots = data.boxes_tile(0, 0, 0, 0), data.havens_tile(0, 0, 0, 0)
+    assert (both[dots[..., 3] > 0] == dots[dots[..., 3] > 0]).all()       # a haven is drawn over the box line
+    assert both[10, 10].tolist() == list(vd.HAVEN_COLOUR) and boxes[10, 10].tolist() != list(vd.HAVEN_COLOUR)
+    rest = (dots[..., 3] == 0)
+    assert (both[rest] == boxes[rest]).all()                              # elsewhere the box is unchanged
+    assert (data.boxes_havens_tile(1, 0, 0, 0) == data.havens_tile(1, 0, 0, 0)).all()      # 2026-04 has no box: only the dots

@@ -13,12 +13,15 @@ whole pole.
 
 The drop-down chooses the layer:
 
-* Cluster boxes (monthly): the bounding box of each group of connected havens whose chain starts in the month, coloured
-  by the havens in the group (the aqua ramp of safe_haven_stage_4_cluster_boxes_<year>.png);
-* Havens (monthly): one pixel for each haven (seed) of the month;
+* Havens and cluster boxes (monthly): the bounding box of each group of connected havens whose chain starts in the
+  month, coloured by the havens in the group (the aqua ramp of safe_haven_stage_4_cluster_boxes_<year>.png), with one
+  orange pixel for each haven shown in the month drawn over them;
+* Havens (monthly): the same havens without the boxes. A haven is shown from the month its chain starts in to its own
+  month, in every layer that draws havens, so the layers agree;
 * Chains (monthly): the longest chain of each root from the month it starts in until its last seed, each month as the
   part still ahead (a chain that goes on into later months is shorter in each, in the colour of its remaining length),
-  as the yearly image draws it (the same routes and colours; the havens white), from safe_haven_stage_4_monthly_chain_pixels.npz
+  as the yearly image draws it (the same routes and colours; the havens white; the start of each chain that starts in the
+  month a 3 x 3 square of magenta), from safe_haven_stage_4_monthly_chain_pixels.npz
   (scripts/run_safe_haven_monthly_chain_maps.py). The entry is in the drop-down only when that file is beside the
   chain table;
 * Chains (yearly): the yearly chain image (safe_haven_stage_4_longest_chain_per_root_<year>.tif) of the slider's year,
@@ -62,8 +65,8 @@ VIEWER_DIRECTORY = STAGE_DIRECTORY / "viewer"
 CACHE_DIRECTORY = Path("/tmp/lunarscout_viewer")
 CONNECT = "chains"            # what joins two havens in a cluster: "chains" (stage 4's chains) or "edges" (stage-3 edges)
 
-LAYERS = (("Cluster boxes (monthly)", "boxes"), ("Havens (monthly)", "havens"), ("Chains (monthly)", "chains_month"),
-          ("Chains (yearly)", "chains"))
+LAYERS = (("Havens and cluster boxes (monthly)", "boxes_havens"), ("Havens (monthly)", "havens"),
+          ("Chains (monthly)", "chains_month"), ("Chains (yearly)", "chains"))
 BACKGROUND = "#0d0d0d"
 TILE_BUDGET_BYTES = 512 * 2 ** 20
 MAX_SCALE = 24.0                # screen pixels per DEM pixel when fully zoomed in
@@ -75,7 +78,7 @@ class MapView(QWidget):
     def __init__(self, data: ViewerData):
         super().__init__()
         self.data = data
-        self.layer = "boxes"
+        self.layer = "boxes_havens"
         self.month = 0
         self.centre = QPointF(data.size / 2, data.size / 2)       # in DEM pixels
         self.scale = 0.05                                          # screen pixels per DEM pixel
@@ -187,12 +190,14 @@ class MapView(QWidget):
         elif self.layer == "chains_month":
             source = ("chains_month", self.month)
             tile = lambda: self.data.monthly_chain_tile(self.month, level, tx, ty)  # noqa: E731
+        elif self.layer == "boxes_havens":
+            source = ("boxes_havens", self.month)
+            tile = lambda: self.data.boxes_havens_tile(self.month, level, tx, ty)   # noqa: E731
         elif self.layer == "havens":
             source = ("havens", self.month)
             tile = lambda: self.data.havens_tile(self.month, level, tx, ty)      # noqa: E731
         else:
-            source = ("boxes", self.month)
-            tile = lambda: self.data.boxes_tile(self.month, level, tx, ty)       # noqa: E731
+            raise ValueError(f"unknown layer {self.layer!r}")
 
         def make():
             array = tile()
@@ -288,8 +293,8 @@ class Window(QMainWindow):
         month = self.slider.value()
         name = self.data.months[month]
         layer = self.view.layer
-        if layer == "boxes":
-            detail = f"{self.data.boxes_count(month):,} clusters"
+        if layer == "boxes_havens":
+            detail = f"{self.data.boxes_count(month):,} clusters, {self.data.havens_count(month):,} havens"
         elif layer == "havens":
             detail = f"{self.data.havens_count(month):,} havens"
         elif layer == "chains_month":
@@ -331,7 +336,7 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         parser.add_argument(flag, type=lambda value: Path(value).expanduser(), default=default, help=f"{text} (default: {default})")
     parser.add_argument("--connect", choices=("chains", "edges"), default=CONNECT, help="what joins two havens in a cluster")
-    parser.add_argument("--layer", choices=[key for _title, key in LAYERS], default="boxes", help="the layer shown first")
+    parser.add_argument("--layer", choices=[key for _title, key in LAYERS], default="boxes_havens", help="the layer shown first")
     parser.add_argument("--month", default=None, help="the month shown first, YYYY-MM (default: the first)")
     parser.add_argument("--rebuild", action="store_true", help="make viewer.json and havens.npz again")
     parser.add_argument("--screenshot", type=Path, default=None, help="save a picture of the window to this PNG and quit")

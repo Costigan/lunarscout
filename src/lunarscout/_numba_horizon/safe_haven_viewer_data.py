@@ -6,8 +6,9 @@ everything it draws, with no user interface in it:
 * ``viewer.json`` in the viewer directory: the months of the dataset, the DEM grid, and for every month the bounding
   box of each cluster of connected havens whose chain starts in the month (``[row_min, row_max, column_min, column_max,
   havens]`` in DEM pixels, as in ``safe_haven_stage_4_cluster_boxes.csv``), plus the yearly chain images;
-* ``havens.npz`` in the same directory: the DEM pixel of every seed, ordered by month with the start of each month's
-  slice in ``offsets``;
+* ``havens.npz`` in the same directory: the DEM pixel of every seed in each month it is shown in (from the month its
+  chain starts to its own month, as in the monthly chain pixels), ordered by month with the start of each month's slice
+  in ``offsets``;
 * a cache directory (by default under ``/tmp``) with image pyramids: the dark hillshade at every zoom level and, for
   each year, the chain image at every zoom level but the first (the first is read from the GeoTIFF itself). A pyramid
   is built once; the next run finds it and starts at once. A pyramid is a set of raw files read through ``numpy.memmap``,
@@ -37,7 +38,7 @@ import numpy.typing as npt
 
 from ..errors import InputError, ProductStorageError
 from .pixel_coordinates import dem_header
-from .safe_haven_chain_maps import month_range, monthly_path
+from .safe_haven_chain_maps import monthly_path, seed_month_spans
 from .safe_haven_chains import read_chain_table
 from .safe_haven_cluster_maps import COUNT_LABELS, cluster_classes, cluster_colours, find_clusters
 from .safe_haven_floods import read_edge_table
@@ -45,7 +46,7 @@ from .safe_haven_overview import SURFACE, _rgb, raw_shade
 
 TILE = 512
 STRIP = 1024                                  # DEM rows per strip while building; a multiple of 2 ** the top level
-PRODUCT = "safe-haven-viewer-v1"
+PRODUCT = "safe-haven-viewer-v2"
 CHAIN_IMAGE = re.compile(r"^safe_haven_stage_4_longest_chain_per_root_(\d{4})\.tif$")
 HAVEN_COLOUR = (238, 143, 102, 255)           # one orange for the havens, bright against the dark terrain
 _LOW, _HIGH = 0.07, 0.24                      # the hillshade's grey range, as in the overview maps
@@ -112,7 +113,8 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
                        connect: str = "chains", edges_path: str | Path | None = None,
                        progress: Progress = _quiet) -> ViewerReport:
     """Write ``viewer.json`` and ``havens.npz`` into ``viewer_directory`` (through staging files). A cluster belongs to the
-    month its chain starts in (its lowest seed's ``root_start_utc``), a seed to its own month."""
+    month its chain starts in (its lowest seed's ``root_start_utc``); a seed is shown from the month its chain starts in
+    to its own month (``seed_month_spans``), as in the monthly chain pixels."""
     started = clock.monotonic()
     chains_path = Path(chains_path)
     progress("Reading the chain table")
@@ -123,20 +125,22 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
         raise InputError("a seed lies outside the DEM", code="viewer_table_invalid")
     progress("Clustering the connected havens")
     clusters = find_clusters(rows, connect=connect, edges=edges)
-    seed_month = [str(r["month"]) for r in rows]
+    start_index, last_index, months = seed_month_spans(rows)
     cluster_month = [rows[int(first) - 1]["root_start_utc"][:7] for first in clusters.first_seed]
-    months = month_range(min(seed_month + cluster_month), max(seed_month + cluster_month))
-    index = {name: k for k, name in enumerate(months)}
     boxes = {name: [] for name in months}
     order = np.argsort(clusters.havens, kind="stable")                # more havens last: drawn on top
     for k in order:
         boxes[cluster_month[k]].append([int(clusters.row_min[k]), int(clusters.row_max[k]), int(clusters.column_min[k]),
                                         int(clusters.column_max[k]), int(clusters.havens[k])])
-    month_of_seed = np.array([index[m] for m in seed_month], dtype=np.int32)
-    sort = np.argsort(month_of_seed, kind="stable")
-    seed_rows = np.array([r["row"] for r in rows], dtype=np.int32)[sort]
-    seed_columns = np.array([r["column"] for r in rows], dtype=np.int32)[sort]
-    offsets = np.searchsorted(month_of_seed[sort], np.arange(len(months) + 1)).astype(np.int64)
+    pixel_rows = np.array([r["row"] for r in rows], dtype=np.int32)
+    pixel_columns = np.array([r["column"] for r in rows], dtype=np.int32)
+    seed_rows, seed_columns, offsets = [], [], [0]
+    for index in range(len(months)):                                   # a seed is shown from its chain's start to its own month
+        shown = np.flatnonzero((start_index <= index) & (last_index >= index))
+        seed_rows.append(pixel_rows[shown])
+        seed_columns.append(pixel_columns[shown])
+        offsets.append(offsets[-1] + len(shown))
+    seed_rows, seed_columns, offsets = np.concatenate(seed_rows), np.concatenate(seed_columns), np.array(offsets, dtype=np.int64)
     directory = Path(viewer_directory)
     directory.mkdir(parents=True, exist_ok=True)
     chain_images = {}
@@ -391,6 +395,7 @@ class ViewerData:
         self.cache = Path(cache_directory)
         dem = Path(meta["dem"]["path"])
         self._hillshade = [np.load(p, mmap_mode="r") for p in self._sorted_levels(hillshade_directory(self.cache, dem))]
+        self._root_code = -1                        # the colour class of a chain's start in the monthly file, if it has one
         self.monthly_chains = None                  # (rows, columns, codes, table, per-month slices, chains, started) or None
         name = meta.get("monthly_chains")
         if name and (Path(meta["chain_directory"]) / name).is_file():
@@ -412,6 +417,8 @@ class ViewerData:
                     slices[index] = (offsets[k], offsets[k + 1])
                     counts[index] = chains[k]
                     started[index] = data["started"][k] if "started" in data else 0
+            labels = [str(x) for x in data["labels"]] if "labels" in data else []
+            self._root_code = len(data["table"]) - 1 if labels and labels[-1] == "start of a chain" else -1
             self.monthly_chains = (data["row"], data["column"], data["code"], data["table"], slices, counts, started)
 
     @staticmethod
@@ -481,23 +488,38 @@ class ViewerData:
         return int(self.monthly_chains[6][month]) if self.monthly_chains is not None else 0
 
     def monthly_chain_tile(self, month: int, level: int, tx: int, ty: int):
-        """``(512, 512, 4)`` RGBA of the chains of the month, each as the part still ahead (the pixels of the monthly chain file, in their
-        colour classes; 1 pixel at the two finest levels, 2 at the coarser ones), or None without the file."""
+        """``(512, 512, 4)`` RGBA of the chains of the month, each as the part still ahead (the pixels of the monthly chain
+        file, in their colour classes; 1 pixel at the two finest levels, 2 at the coarser ones) with the start of each
+        chain that starts in the month marked by a 3 x 3 square of the start colour, or None without the file."""
         if self.monthly_chains is None:
             return None
         rows, columns, codes, table, slices = self.monthly_chains[:5]
         low, high = int(slices[month][0]), int(slices[month][1])
         image = np.zeros((TILE, TILE, 4), dtype=np.uint8)
         rows, columns, codes = rows[low:high], columns[low:high], codes[low:high]
-        mask = self._in_tile(rows, columns, level, tx, ty, 1)
+        mask = self._in_tile(rows, columns, level, tx, ty, 2)
         x = (columns[mask] >> level) - tx * TILE
         y = (rows[mask] >> level) - ty * TILE
-        colours = table[codes[mask]]                               # in class order: the last write is the one on top
+        codes = codes[mask]
+        colours = table[codes]                                     # in class order: the last write is the one on top
+        marker = codes == self._root_code
         dot = 1 if level < 2 else 2
         for dy in range(dot):
             for dx in range(dot):
-                inside = (x + dx >= 0) & (x + dx < TILE) & (y + dy >= 0) & (y + dy < TILE)
+                inside = ~marker & (x + dx >= 0) & (x + dx < TILE) & (y + dy >= 0) & (y + dy < TILE)
                 image[(y + dy)[inside], (x + dx)[inside]] = colours[inside]
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                inside = marker & (x + dx >= 0) & (x + dx < TILE) & (y + dy >= 0) & (y + dy < TILE)
+                image[(y + dy)[inside], (x + dx)[inside]] = colours[inside]
+        return image
+
+    def boxes_havens_tile(self, month: int, level: int, tx: int, ty: int) -> npt.NDArray[np.uint8]:
+        """``(512, 512, 4)`` RGBA: the cluster boxes of the month with the havens of the month drawn over them."""
+        image = self.boxes_tile(month, level, tx, ty)
+        dots = self.havens_tile(month, level, tx, ty)
+        drawn = dots[..., 3] > 0
+        image[drawn] = dots[drawn]
         return image
 
     def boxes_count(self, month: int) -> int:

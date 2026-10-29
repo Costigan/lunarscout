@@ -23,6 +23,8 @@ PALETTE = ("#6a5cff", "#ff4f6e", "#ff7a1a", "#ffcc00", "#7dff3a")
 LINE_WIDTHS_MM = (0.3, 0.45, 0.65, 0.9, 1.2)
 HAVEN_COLOUR = "#ffffff"
 PSR_COLOUR = "#00ffff"
+#: The start of a chain in the monthly pixel file: bright magenta, in the widest gap of the hues above (violet to rose).
+ROOT_COLOUR = "#ff00ff"
 
 
 @dataclass(frozen=True)

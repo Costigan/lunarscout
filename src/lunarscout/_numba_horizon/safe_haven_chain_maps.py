@@ -41,7 +41,7 @@ import numpy.typing as npt
 
 from ..errors import InputError
 from .chain_map_styles import (
-    HAVEN_COLOUR, PSR_COLOUR, build_intervals, class_of, line_style_qml, lookup_table, point_style_qml,
+    HAVEN_COLOUR, PSR_COLOUR, ROOT_COLOUR, build_intervals, class_of, line_style_qml, lookup_table, point_style_qml,
 )
 from .pixel_coordinates import dem_header, pixel_centres
 from .safe_haven_chains import read_chain_table
@@ -653,6 +653,10 @@ def run_yearly_chain_maps(
     return report
 
 
+def _rgb_of(colour: str) -> tuple[int, int, int]:
+    return tuple(int(colour[i:i + 2], 16) for i in (1, 3, 5))
+
+
 def month_range(first: str, last: str) -> list[str]:
     """``["YYYY-MM", ...]`` from ``first`` to ``last`` inclusive."""
     year, month = int(first[:4]), int(first[5:7])
@@ -662,6 +666,22 @@ def month_range(first: str, last: str) -> list[str]:
         names.append(f"{year:04d}-{month:02d}")
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
     return names
+
+
+def seed_month_spans(rows: list[dict]):
+    """``(start_index, last_index, months)`` for the seeds of the stage-4 table: the month names from the first in which a
+    chain starts to the last month of any seed, and for each seed the index of the month its chain starts in
+    (``root_start_utc``) and of the last month it is shown in: its own ``month``, never before the chain's start. A seed
+    is shown from the start month to the last month; the table's months never go back along a chain."""
+    def number(name: str) -> int:
+        return int(name[:4]) * 12 + int(name[5:7]) - 1
+
+    start = np.array([number(str(r["root_start_utc"])[:7]) for r in rows], dtype=np.int64)
+    last = np.maximum(np.array([number(str(r["month"])) for r in rows], dtype=np.int64), start)
+    first = int(start.min())
+    final = int(last.max())
+    names = month_range(f"{first // 12:04d}-{first % 12 + 1:02d}", f"{final // 12:04d}-{final % 12 + 1:02d}")
+    return start - first, last - first, names
 
 
 @dataclass
@@ -699,8 +719,10 @@ def run_monthly_chain_maps(
     ones, and the branches off the longest chain, too). The routes, PSR marks and colours are those of the yearly images,
     and the chains and pixels of the month a chain starts in are what the yearly image shows when every chain starts in
     one month. A month is stored as only the pixels drawn: ``row``, ``column`` and the colour class ``code`` (a row of
-    ``table``, RGBA: 0 is transparent, then the length intervals, aqua for a PSR pass and white for a haven), ordered by
-    code so that drawing them in order puts the longer chains, then aqua, then the havens on top; ``offsets`` holds the
+    ``table``, RGBA: 0 is transparent, then the length intervals, aqua for a PSR pass, white for a haven and magenta for
+    the start of a chain, one pixel on the root of each chain that starts in the month, in addition to the haven there),
+    ordered by code so that drawing them in order puts the longer chains, then aqua, then the havens, then the starts on
+    top; ``offsets`` holds the
     start of each month's slice (``months`` are the names, ``chains`` the chains of 2 or more seeds drawn in each, and
     ``started`` those that start in it)."""
     started = clock.monotonic()
@@ -717,19 +739,9 @@ def run_monthly_chain_maps(
         if path.exists() and not overwrite:
             raise InputError(f"{path} exists; pass overwrite=True to replace it", code="chain_maps_output_exists",
                              details={"path": str(path)})
-    def month_number(name: str) -> int:
-        return int(name[:4]) * 12 + int(name[5:7]) - 1
-
-    start_number = np.array([month_number(str(r["root_start_utc"])[:7]) for r in rows], dtype=np.int64)
-    own_number = np.array([month_number(str(r["month"])) for r in rows], dtype=np.int64)
-    last_number = np.maximum(own_number, start_number)              # a seed is shown until its own month, not before the start
-    first_month = int(start_number.min())
-    count_months = int(last_number.max()) - first_month + 1
-    months = month_range(f"{first_month // 12:04d}-{first_month % 12 + 1:02d}",
-                         f"{(first_month + count_months - 1) // 12:04d}-{(first_month + count_months - 1) % 12 + 1:02d}")
-    start_index, last_index = start_number - first_month, last_number - first_month
+    start_index, last_index, months = seed_month_spans(rows)
     intervals = build_intervals(chain_set.line_attributes["chain_length"])
-    table = lookup_table(intervals)
+    table = np.concatenate([lookup_table(intervals), [(*_rgb_of(ROOT_COLOUR), 255)]]).astype(np.uint8)
     route_set = _reconstruct_routes(rows, light_store_path, passable_path, (height, width), flood_settings, workers,
                                     compiled, progress)
     psr_mask = _read_psr_mask(psr_ids_path, height, width)
@@ -745,7 +757,8 @@ def run_monthly_chain_maps(
         is_tail[np.cumsum([len(line) for line in lines]) - 1] = False
     segment_last = entry_last[is_tail]
     planes = np.zeros((_PLANES, height, width), dtype=np.uint8)
-    haven_code, aqua_code = len(intervals) + 2, len(intervals) + 1
+    haven_code, aqua_code, root_code = len(intervals) + 2, len(intervals) + 1, len(intervals) + 3
+    root_seed = np.array([line[0] - 1 for line in lines], dtype=np.int64)
     found_rows, found_columns, found_codes, offsets, result = [], [], [], [0], {}
     for index, month in enumerate(months):
         active = (line_start[segment_line] <= index) & (segment_last >= index)
@@ -769,6 +782,10 @@ def run_monthly_chain_maps(
                 month_rows.append((found_r + first).astype(np.int32))
                 month_columns.append(found_c.astype(np.int32))
                 month_codes.append(code[found_r, found_c])
+            starting = np.flatnonzero(line_start == index)              # the start of each chain that starts in the month
+            month_rows.append(arrays["row"][root_seed[starting]].astype(np.int32))
+            month_columns.append(arrays["column"][root_seed[starting]].astype(np.int32))
+            month_codes.append(np.full(len(starting), root_code, dtype=np.uint8))
         month_r = np.concatenate(month_rows) if month_rows else np.zeros(0, dtype=np.int32)
         month_c = np.concatenate(month_columns) if month_columns else np.zeros(0, dtype=np.int32)
         month_k = np.concatenate(month_codes) if month_codes else np.zeros(0, dtype=np.uint8)
@@ -788,7 +805,7 @@ def run_monthly_chain_maps(
                 row=np.concatenate(found_rows), column=np.concatenate(found_columns), code=np.concatenate(found_codes),
                 table=table, chains=np.array([result[m]["chains"] for m in months], dtype=np.int64),
                 started=np.array([result[m]["started"] for m in months], dtype=np.int64),
-                labels=np.array([i.label for i in intervals] + ["next to a PSR", "haven"]))
+                labels=np.array([i.label for i in intervals] + ["next to a PSR", "haven", "start of a chain"]))
         os.replace(staging, target)
     finally:
         staging.unlink(missing_ok=True)
