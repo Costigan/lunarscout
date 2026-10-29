@@ -227,20 +227,22 @@ def test_chain_tiles_come_from_the_tif_at_full_size_and_from_the_pyramid_above(p
 def write_monthly_chains(directory: Path, entries) -> Path:
     """A monthly chain pixel file with ``entries``: ``month -> (chains, [(row, column, code), ...])``; the table has 3 classes."""
     months = sorted(entries)
-    rows, columns, codes, offsets, chains = [], [], [], [0], []
+    rows, columns, codes, offsets, chains, started = [], [], [], [0], [], []
     for month in months:
-        count, pixels = entries[month]
+        count, pixels, *rest = entries[month]
         pixels = sorted(pixels, key=lambda p: p[2])
         rows += [p[0] for p in pixels]
         columns += [p[1] for p in pixels]
         codes += [p[2] for p in pixels]
         offsets.append(len(rows))
         chains.append(count)
+        started.append(rest[0] if rest else 0)
     table = np.array([[0, 0, 0, 0], [255, 0, 0, 255], [0, 255, 0, 255], [255, 255, 255, 255]], dtype=np.uint8)
     path = directory / "safe_haven_stage_4_monthly_chain_pixels.npz"
     np.savez_compressed(path, months=np.array(months), offsets=np.array(offsets, dtype=np.int64),
                         row=np.array(rows, dtype=np.int32), column=np.array(columns, dtype=np.int32),
                         code=np.array(codes, dtype=np.uint8), table=table, chains=np.array(chains, dtype=np.int64),
+                        started=np.array(started, dtype=np.int64),
                         labels=np.array(["a", "b", "haven"]))
     return path
 
@@ -265,6 +267,7 @@ def test_a_monthly_chain_tile_draws_the_months_pixels_in_their_colours_with_the_
     vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem)
     data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
     assert [data.monthly_chain_count(m) for m in range(3)] == [2, 0, 1]
+    assert [data.monthly_chain_started(m) for m in range(3)] == [0, 0, 0]       # this file has no "started" counts of its own
     tile = data.monthly_chain_tile(0, 0, 0, 0)
     assert tile.shape == (512, 512, 4) and (tile[..., 3] > 0).sum() == 2                    # (5, 6) and (5, 7); (20, 600) is next door
     assert tile[5, 6].tolist() == [255, 0, 0, 255] and tile[5, 7].tolist() == [0, 255, 0, 255]

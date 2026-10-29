@@ -10,13 +10,17 @@ safe-haven sequence that way).
 
 The pixels of the longest-chain image of each month, for the pole viewer (scripts/view_safe_haven.py):
 safe_haven_stage_4_monthly_chain_pixels.npz in OUTPUT_DIRECTORY. It is the yearly image
-(scripts/run_safe_haven_yearly_chain_maps.py) by month: a chain belongs to the UTC month in which its root starts
-(`root_start_utc` in the stage-4 table) and stays whole in it, the havens drawn (white) are the seeds of that month's
-chains, isolated ones too, and the routes, aqua PSR passes and length colours are the same, so the pixels of the months
-of a year are the pixels of that year's image. A month is stored as only the pixels drawn (a few thousand to some tens of
-thousands): their row, column and colour class, ordered by class so that drawing them in order puts the longer chains,
-then aqua, then the havens on top, and the colour table and the number of chains of each month. Every month from the
-first to the last in which a chain starts is in the file; a month without chains has no pixels.
+(scripts/run_safe_haven_yearly_chain_maps.py) by month. A chain is drawn from the month its root starts in
+(`root_start_utc` in the stage-4 table) to the month of its last seed, each month as the part still ahead: its seeds from
+that month on, so a chain that goes on into later months is shorter in each of them and in the colour of its remaining
+length (the length intervals of the whole chains, as in the yearly images). A seed's month is its own `month` in the
+table, never before its chain's start. The havens drawn (white) are the seeds of the chains that have started, from the
+start month to the seed's own month, isolated ones and the branches off the longest chain too; the routes and aqua PSR
+passes are as in the yearly images. In the month a chain starts the picture is what the yearly image shows when every
+chain starts in that month. A month is stored as only the pixels drawn (a few thousand to some tens of thousands): their
+row, column and colour class, ordered by class so that drawing them in order puts the longer chains, then aqua, then the
+havens on top, with the colour table and, for each month, the chains drawn and the ones that start in it. The months run
+from the first in which a chain starts to the last month of any seed; a month without chains has no pixels.
 
 The lines are the rover's routes (RASTER_ROUTES), found by flooding every predecessor seed again from the light store
 (the flood settings must be those stage 3 ran with). With RASTER_ROUTES False the lines are straight and no light store is

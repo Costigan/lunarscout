@@ -662,8 +662,9 @@ def test_a_psr_raster_of_another_size_is_refused_and_nothing_is_written(tables) 
 
 
 # --- the monthly chain pixels ---------------------------------------------------------------------------------
-def start_in_months(tables, months_of_roots) -> Path:
-    """Rewrite ``root_start_utc`` so that each root's chain starts in the given month (``"2024-03"``)."""
+def start_in_months(tables, months_of_roots, seed_months=None) -> Path:
+    """Rewrite ``root_start_utc`` so that each root's chain starts in the given month (``"2024-03"``), and every seed's
+    ``month`` to its chain's start month unless ``seed_months`` (seed id -> month) says otherwise."""
     import csv
 
     path = tables / "chains.csv"
@@ -672,6 +673,7 @@ def start_in_months(tables, months_of_roots) -> Path:
         names, rows = reader.fieldnames, list(reader)
     for row in rows:
         row["root_start_utc"] = f"{months_of_roots[int(row['root_id'])]}-04T00:00:00.000000Z"
+        row["month"] = (seed_months or {}).get(int(row["seed_id"]), months_of_roots[int(row["root_id"])])
     with open(path, "w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=names)
         writer.writeheader()
@@ -757,3 +759,48 @@ def test_monthly_pixels_refuse_to_replace_a_file_and_leave_no_staging_file(table
 def test_month_range_runs_from_the_first_to_the_last_month() -> None:
     assert maps.month_range("2026-11", "2027-02") == ["2026-11", "2026-12", "2027-01", "2027-02"]
     assert maps.month_range("2026-03", "2026-03") == ["2026-03"]
+
+
+def test_a_chain_that_goes_on_into_later_months_is_drawn_shorter_in_each_with_its_remaining_colour(tables) -> None:
+    # root 1's chain 1-2-3-4 (branch seed 5) starts in 2024-03; seeds 3 and 5 are of 2024-04 and seed 4 of 2024-05; seed 1 is
+    # of the month before the start, which does not make it earlier. Root 6's chain 6-7 and seed 8 are all of 2024-03.
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"},
+                    seed_months={1: "2024-02", 3: "2024-04", 4: "2024-05", 5: "2024-04"})
+    report = run_monthly(tables, overwrite=True)
+    assert list(report.months) == ["2024-03", "2024-04", "2024-05"]
+    assert [report.months[m]["chains"] for m in report.months] == [2, 1, 0]               # drawn: 1-2-3-4 and 6-7; 3-4; none
+    assert [report.months[m]["started"] for m in report.months] == [2, 0, 0]
+    assert [report.months[m]["havens"] for m in report.months] == [8, 3, 1]                # seeds 3, 4, 5 and then seed 4
+    path = maps.monthly_path(tables / "out")
+    run_yearly(tables, years=[2024], overwrite=True)
+    yearly, _ = read_image(maps.yearly_path(tables / "out", 2024))
+    first, first_codes = month_image(path, "2024-03")
+    assert (first == yearly).all()                                                        # the start month is the whole image
+    intervals = maps.build_intervals(np.array([4, 2]))
+    long_class, short_class = (int(c) for c in styles.class_of(np.array([4, 2]), intervals))
+    haven = len(intervals) + 2
+    assert long_class != short_class and long_class in first_codes and short_class in first_codes
+    second, second_codes = month_image(path, "2024-04")
+    seeds = {(2, 6), (3, 9), (4, 12)}                                                      # seeds 3, 4 and 5 at (k - 1, 3 (k - 1))
+    with np.load(path) as data:
+        lo, hi = (int(data["offsets"][1]), int(data["offsets"][2]))
+        pixels = list(zip(data["row"][lo:hi].tolist(), data["column"][lo:hi].tolist(), data["code"][lo:hi].tolist()))
+    assert {(r, c) for r, c, k in pixels if k == haven} == seeds
+    segment = [(r, c, k) for r, c, k in pixels if k != haven]
+    assert segment and {k for _r, _c, k in segment} == {short_class}                      # 3 -> 4 is 2 seeds long now
+    assert all(2 <= r <= 3 and 6 <= c <= 9 for r, c, _k in segment)
+    third, third_codes = month_image(path, "2024-05")
+    assert (third[3] > 0).sum() == 1 and third_codes.tolist() == [haven] and third[3, 3, 9] == 255   # seed 4 alone
+    with np.load(path) as data:
+        assert data["started"].tolist() == [2, 0, 0] and data["chains"].tolist() == [2, 1, 0]
+
+
+def test_a_chain_with_one_seed_left_is_a_lone_haven_and_the_months_run_to_the_last_seed(tables) -> None:
+    # seed 4 alone reaches 2024-09, seed 5 is of 2024-04, and root 6's chain 6-7 starts only in 2024-06
+    start_in_months(tables, {1: "2024-03", 6: "2024-06", 8: "2024-03"}, seed_months={4: "2024-09", 5: "2024-04"})
+    report = run_monthly(tables, overwrite=True)
+    assert list(report.months) == [f"2024-{m:02d}" for m in range(3, 10)]                 # to seed 4's month
+    assert [report.months[m]["chains"] for m in report.months] == [1, 0, 0, 1, 0, 0, 0]   # only 6-7 in 2024-06 has 2 seeds left
+    assert [report.months[m]["started"] for m in report.months] == [1, 0, 0, 1, 0, 0, 0]
+    assert [report.months[m]["havens"] for m in report.months] == [6, 2, 1, 3, 1, 1, 1]   # seed 4 stays to 2024-09
+    assert [report.months[m]["pixels"] > 0 for m in report.months] == [True] * 7

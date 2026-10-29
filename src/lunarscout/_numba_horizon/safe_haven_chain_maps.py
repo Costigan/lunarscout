@@ -667,7 +667,7 @@ def month_range(first: str, last: str) -> list[str]:
 @dataclass
 class MonthlyChainMapsReport:
     file: str
-    months: dict                     # per month: the chains that start in it, the pixels drawn and the havens
+    months: dict                     # per month: the chains drawn and the ones that start in it, the pixels and the havens
     intervals: list
     raster_lines: str
     route_pixels: int
@@ -691,14 +691,18 @@ def run_monthly_chain_maps(
     """Write ``<prefix>_monthly_chain_pixels.npz`` and ``<prefix>_monthly_chain_maps.report.json``: the pixels of the
     longest-chain image of each month, for the viewer (``scripts/view_safe_haven.py``).
 
-    It is :func:`run_yearly_chain_maps` by month: a chain belongs to the UTC month in which its root starts
-    (``root_start_utc``) and stays whole in it, the havens drawn are the seeds of that month's chains, and the routes,
-    PSR marks and colour classes are the same, so the pixels of the months of a year are the pixels of that year's
-    image. A month is stored as only the pixels drawn: ``row``, ``column`` and the colour class ``code`` (a row of
+    A chain is drawn from the month its root starts in (``root_start_utc``) to the month of its last seed, each month as
+    the part still ahead: its seeds from that month on, so a chain that carries on into later months is shorter in each
+    of them and takes the colour of its remaining length (the intervals of the whole chains, as in the yearly images).
+    A seed's month is its own ``month`` in the stage-4 table, but never before the month its chain starts. The havens
+    drawn in a month are the seeds of the chains that have started, from the start month to the seed's own month (isolated
+    ones, and the branches off the longest chain, too). The routes, PSR marks and colours are those of the yearly images,
+    and the chains and pixels of the month a chain starts in are what the yearly image shows when every chain starts in
+    one month. A month is stored as only the pixels drawn: ``row``, ``column`` and the colour class ``code`` (a row of
     ``table``, RGBA: 0 is transparent, then the length intervals, aqua for a PSR pass and white for a haven), ordered by
     code so that drawing them in order puts the longer chains, then aqua, then the havens on top; ``offsets`` holds the
-    start of each month's slice (``months`` are the names, ``chains`` the number of chains of 2 or more seeds that start
-    in each)."""
+    start of each month's slice (``months`` are the names, ``chains`` the chains of 2 or more seeds drawn in each, and
+    ``started`` those that start in it)."""
     started = clock.monotonic()
     directory = Path(output_directory)
     rows = read_chain_table(chains_path)
@@ -713,29 +717,48 @@ def run_monthly_chain_maps(
         if path.exists() and not overwrite:
             raise InputError(f"{path} exists; pass overwrite=True to replace it", code="chain_maps_output_exists",
                              details={"path": str(path)})
-    seed_month = np.array([str(r["root_start_utc"])[:7] for r in rows])
-    line_month = np.array([str(t)[:7] for t in chain_set.line_attributes["root_start_utc"]])
-    months = month_range(min(seed_month.tolist()), max(seed_month.tolist()))
+    def month_number(name: str) -> int:
+        return int(name[:4]) * 12 + int(name[5:7]) - 1
+
+    start_number = np.array([month_number(str(r["root_start_utc"])[:7]) for r in rows], dtype=np.int64)
+    own_number = np.array([month_number(str(r["month"])) for r in rows], dtype=np.int64)
+    last_number = np.maximum(own_number, start_number)              # a seed is shown until its own month, not before the start
+    first_month = int(start_number.min())
+    count_months = int(last_number.max()) - first_month + 1
+    months = month_range(f"{first_month // 12:04d}-{first_month % 12 + 1:02d}",
+                         f"{(first_month + count_months - 1) // 12:04d}-{(first_month + count_months - 1) % 12 + 1:02d}")
+    start_index, last_index = start_number - first_month, last_number - first_month
     intervals = build_intervals(chain_set.line_attributes["chain_length"])
     table = lookup_table(intervals)
     route_set = _reconstruct_routes(rows, light_store_path, passable_path, (height, width), flood_settings, workers,
                                     compiled, progress)
     psr_mask = _read_psr_mask(psr_ids_path, height, width)
-    segment_month = np.repeat(line_month, [len(line) - 1 for line in chain_set.lines])
+    # The longest chain of each root: its seeds (root first) with their last months, and its segments with the line they
+    # belong to and the last month of their tail seed.
+    lines = chain_set.lines
+    line_start = np.array([start_index[line[0] - 1] for line in lines], dtype=np.int64)
+    entry_line = np.repeat(np.arange(len(lines)), [len(line) for line in lines])
+    entry_last = np.concatenate([last_index[line - 1] for line in lines]) if lines else np.zeros(0, dtype=np.int64)
+    segment_line = np.repeat(np.arange(len(lines)), [len(line) - 1 for line in lines])
+    is_tail = np.ones(len(entry_line), dtype=bool)
+    if lines:
+        is_tail[np.cumsum([len(line) for line in lines]) - 1] = False
+    segment_last = entry_last[is_tail]
     planes = np.zeros((_PLANES, height, width), dtype=np.uint8)
     haven_code, aqua_code = len(intervals) + 2, len(intervals) + 1
     found_rows, found_columns, found_codes, offsets, result = [], [], [], [0], {}
-    for month in months:
-        keep = segment_month == month
-        in_month = seed_month == month
+    for index, month in enumerate(months):
+        active = (line_start[segment_line] <= index) & (segment_last >= index)
+        remaining = np.bincount(entry_line, weights=(entry_last >= index), minlength=len(lines)).astype(np.int64)
         segments = chain_set.segments
         subset = replace(
-            chain_set, segments=Segments(segments.row0[keep], segments.column0[keep], segments.row1[keep],
-                                         segments.column1[keep], segments.length[keep]),
-            segment_seeds=chain_set.segment_seeds[keep])
+            chain_set, segments=Segments(segments.row0[active], segments.column0[active], segments.row1[active],
+                                         segments.column1[active], remaining[segment_line[active]]),
+            segment_seeds=chain_set.segment_seeds[active])
+        shown = (start_index <= index) & (last_index >= index)
         month_rows, month_columns, month_codes = [], [], []
-        if in_month.any():
-            render(subset, (arrays["row"][in_month], arrays["column"][in_month]), intervals, height, width, 0,
+        if shown.any():
+            render(subset, (arrays["row"][shown], arrays["column"][shown]), intervals, height, width, 0,
                    paths=route_set, psr=psr_mask, compiled=compiled, out=planes)
             for first in range(0, height, _STRIP_ROWS):
                 strip = planes[:, first:first + _STRIP_ROWS]
@@ -754,8 +777,8 @@ def run_monthly_chain_maps(
         found_columns.append(month_c[order])
         found_codes.append(month_k[order])
         offsets.append(offsets[-1] + len(order))
-        result[month] = {"chains": int((line_month == month).sum()), "pixels": len(order),
-                         "havens": int(in_month.sum())}
+        result[month] = {"chains": int(np.unique(segment_line[active]).size), "started": int((line_start == index).sum()),
+                         "pixels": len(order), "havens": int(shown.sum())}
     directory.mkdir(parents=True, exist_ok=True)
     staging = target.with_name(target.name + ".partial")
     try:
@@ -764,6 +787,7 @@ def run_monthly_chain_maps(
                 handle, months=np.array(months), offsets=np.array(offsets, dtype=np.int64),
                 row=np.concatenate(found_rows), column=np.concatenate(found_columns), code=np.concatenate(found_codes),
                 table=table, chains=np.array([result[m]["chains"] for m in months], dtype=np.int64),
+                started=np.array([result[m]["started"] for m in months], dtype=np.int64),
                 labels=np.array([i.label for i in intervals] + ["next to a PSR", "haven"]))
         os.replace(staging, target)
     finally:

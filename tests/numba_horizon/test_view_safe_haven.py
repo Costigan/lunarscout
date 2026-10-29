@@ -69,7 +69,7 @@ def test_the_monthly_chain_layer_is_offered_only_with_its_file(app, prepared, tm
     data = vd.ViewerData(folder / "viewer", folder / "cache")
     with pytest.raises(ValueError, match="run_safe_haven_monthly_chain_maps"):
         viewer.Window(data, "chains_month", None)
-    write_monthly_chains(folder, {"2026-03": (2, [(5, 6, 1), (5, 7, 2)]), "2026-05": (1, [(700, 701, 3)])})
+    write_monthly_chains(folder, {"2026-03": (2, [(5, 6, 1), (5, 7, 2)], 1), "2026-05": (1, [(700, 701, 3)])})
     vd.prepare_viewer(folder / "viewer", folder / "cache", chains_path=chains, dem_path=dem)
     window = viewer.Window(vd.ViewerData(folder / "viewer", folder / "cache"), "chains_month", None)
     window.resize(900, 700)
@@ -77,7 +77,7 @@ def test_the_monthly_chain_layer_is_offered_only_with_its_file(app, prepared, tm
     app.processEvents()
     assert [window.layers.itemText(i) for i in range(4)] == [
         "Cluster boxes (monthly)", "Havens (monthly)", "Chains (monthly)", "Chains (yearly)"]
-    assert window.view.layer == "chains_month" and window.caption.text() == "2026-03    2 chains"
+    assert window.view.layer == "chains_month" and window.caption.text() == "2026-03    2 chains (1 starting)"
     window.slider.setValue(1)
     assert window.caption.text() == "2026-04    0 chains"
     window.slider.setValue(2)

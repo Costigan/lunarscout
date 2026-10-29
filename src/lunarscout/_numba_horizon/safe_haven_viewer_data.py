@@ -391,7 +391,7 @@ class ViewerData:
         self.cache = Path(cache_directory)
         dem = Path(meta["dem"]["path"])
         self._hillshade = [np.load(p, mmap_mode="r") for p in self._sorted_levels(hillshade_directory(self.cache, dem))]
-        self.monthly_chains = None                  # (rows, columns, codes, table, per-month slices, chains) or None
+        self.monthly_chains = None                  # (rows, columns, codes, table, per-month slices, chains, started) or None
         name = meta.get("monthly_chains")
         if name and (Path(meta["chain_directory"]) / name).is_file():
             self._load_monthly_chains(Path(meta["chain_directory"]) / name)
@@ -405,12 +405,14 @@ class ViewerData:
             offsets, chains = data["offsets"], data["chains"]
             slices = np.zeros((len(self.months), 2), dtype=np.int64)
             counts = np.zeros(len(self.months), dtype=np.int64)
+            started = np.zeros(len(self.months), dtype=np.int64)
             for k, name in enumerate(names):
                 if name in self.months:
                     index = self.months.index(name)
                     slices[index] = (offsets[k], offsets[k + 1])
                     counts[index] = chains[k]
-            self.monthly_chains = (data["row"], data["column"], data["code"], data["table"], slices, counts)
+                    started[index] = data["started"][k] if "started" in data else 0
+            self.monthly_chains = (data["row"], data["column"], data["code"], data["table"], slices, counts, started)
 
     @staticmethod
     def _sorted_levels(directory: Path) -> list[Path]:
@@ -471,15 +473,19 @@ class ViewerData:
         return int(self._offsets[month + 1] - self._offsets[month])
 
     def monthly_chain_count(self, month: int) -> int:
-        """The chains of 2 or more seeds that start in the month."""
+        """The chains of 2 or more seeds drawn in the month (the part of each that is still ahead)."""
         return int(self.monthly_chains[5][month]) if self.monthly_chains is not None else 0
 
+    def monthly_chain_started(self, month: int) -> int:
+        """How many of those start in the month."""
+        return int(self.monthly_chains[6][month]) if self.monthly_chains is not None else 0
+
     def monthly_chain_tile(self, month: int, level: int, tx: int, ty: int):
-        """``(512, 512, 4)`` RGBA of the chains that start in the month (the pixels of the monthly chain file, in their
+        """``(512, 512, 4)`` RGBA of the chains of the month, each as the part still ahead (the pixels of the monthly chain file, in their
         colour classes; 1 pixel at the two finest levels, 2 at the coarser ones), or None without the file."""
         if self.monthly_chains is None:
             return None
-        rows, columns, codes, table, slices, _counts = self.monthly_chains
+        rows, columns, codes, table, slices = self.monthly_chains[:5]
         low, high = int(slices[month][0]), int(slices[month][1])
         image = np.zeros((TILE, TILE, 4), dtype=np.uint8)
         rows, columns, codes = rows[low:high], columns[low:high], codes[low:high]

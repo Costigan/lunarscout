@@ -16,8 +16,9 @@ The drop-down chooses the layer:
 * Cluster boxes (monthly): the bounding box of each group of connected havens whose chain starts in the month, coloured
   by the havens in the group (the aqua ramp of safe_haven_stage_4_cluster_boxes_<year>.png);
 * Havens (monthly): one pixel for each haven (seed) of the month;
-* Chains (monthly): the longest chain of each root that starts in the month, as the yearly image draws it (the same
-  routes and colours; the havens white), from safe_haven_stage_4_monthly_chain_pixels.npz
+* Chains (monthly): the longest chain of each root from the month it starts in until its last seed, each month as the
+  part still ahead (a chain that goes on into later months is shorter in each, in the colour of its remaining length),
+  as the yearly image draws it (the same routes and colours; the havens white), from safe_haven_stage_4_monthly_chain_pixels.npz
   (scripts/run_safe_haven_monthly_chain_maps.py). The entry is in the drop-down only when that file is beside the
   chain table;
 * Chains (yearly): the yearly chain image (safe_haven_stage_4_longest_chain_per_root_<year>.tif) of the slider's year,
@@ -292,7 +293,8 @@ class Window(QMainWindow):
         elif layer == "havens":
             detail = f"{self.data.havens_count(month):,} havens"
         elif layer == "chains_month":
-            detail = f"{self.data.monthly_chain_count(month):,} chains"
+            started = self.data.monthly_chain_started(month)
+            detail = f"{self.data.monthly_chain_count(month):,} chains" + (f" ({started:,} starting)" if started else "")
         else:
             year = int(name[:4])
             detail = f"chains of {year}" if year in self.data.chain_years else f"no chain image for {year}"

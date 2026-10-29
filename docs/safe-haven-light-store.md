@@ -528,7 +528,7 @@ the slider along the bottom picks the month, from the first to the last month of
 |---|---|---|
 | Cluster boxes (monthly) | the bounding box of each group of connected havens whose chain starts in the month, in the aqua classes of section 14 (the box is drawn one pixel outside the group; a box smaller than a few screen pixels is drawn solid so that it can be seen) | every month |
 | Havens (monthly) | one pixel for each haven (seed) of the month, in orange | every month |
-| Chains (monthly) | the longest chain of each root that starts in the month: the yearly image by month, with the same routes, length colours, aqua PSR passes and white havens (the entry is in the drop-down only when the monthly pixel file exists) | every month |
+| Chains (monthly) | the longest chain of each root from the month it starts in until its last seed, each month as the part still ahead: a chain that goes on into later months is shorter in each, in the colour of its remaining length (the yearly image's routes, length colours, aqua PSR passes and white havens; the entry is in the drop-down only when the monthly pixel file exists) | every month |
 | Chains (yearly) | the yearly chain image `safe_haven_stage_4_longest_chain_per_root_<year>.tif` of the slider's year | when the slider crosses into another year |
 
 A cluster belongs to the month its chain starts in (the `root_start_utc` of its lowest seed; the yearly maps use the
@@ -543,12 +543,18 @@ are between half and one screen pixel (full resolution, 20 m, when zoomed in). N
   (`CONNECT`, as in section 14);
 * `viewer/havens.npz`: the DEM row and column of every seed, ordered by month, with each month's start offset;
 * `safe_haven_stage_4_monthly_chain_pixels.npz` (beside the chain table; made by `scripts/run_safe_haven_monthly_chain_maps.py`,
-  driver step `monthly-chain-maps`): for each month the pixels the yearly image would draw for the chains that start
-  in it (row, column and colour class, about 1.1 million pixels and 2.9 MB for the 96 months), found by drawing the
-  same routes month by month. The viewer reads it as it is. In the 15-degree run the routes take 35 s and the 96
-  months 3.5 min; the months of a year have exactly that year's chains, havens and distinct pixels (checked for 2027
-  and 2028: 587 chains and 152,407 pixels; 1,936 and 206,319). A pixel that two chains of different months share is
-  drawn in each month's own colour, where the yearly image shows the longer chain (about 0.3 % of the pixels);
+  driver step `monthly-chain-maps`): for each month the pixels the yearly image would draw for the chains that are
+  under way (row, column and colour class: 1.23 million pixels and 3.1 MB for the 96 months), found by drawing the same
+  routes month by month (225 s on the 15-degree run, the routes included). A chain is drawn from the month its root
+  starts in until the month of its last seed, each month as the part still ahead (its seeds from that month on), in the
+  colour of that remaining length; a seed's month is its own `month` in the chain table, never before the chain's
+  start (the table's months never go back along a chain). The havens drawn are the seeds of chains that have started,
+  from the start month to the seed's own month. In the month a chain starts the picture is the yearly image's (the
+  months of one year are not the yearly image, because chains go on). Of the 10,503 chains, 9,221 are shown for
+  one month, 1,183 for two and 99 for three to eight; as most of those have one seed left in the later months, which
+  is a lone haven, only 265 chain-months are drawn as chains after the start month (10,768 chain-months in all). The
+  caption gives the chains drawn and how many of them start in the month. A pixel that two chains share is drawn in
+  the colour of the longer;
 * the cache (default `/tmp/lunarscout_viewer`, about 11 GB for 8 years): the hillshade pyramid (the overview maps'
   hillshade and grey range at 20 m) and the pyramid of each yearly chain image from half size down (the full size is read
   from the GeoTIFF; reduced by the largest value of each 2 x 2 block, so thin lines survive). A pyramid is built once and
@@ -563,8 +569,7 @@ pyramids 65 s; the window then opens in under a second, and a tile takes about 3
 full-size chain tile is read).
 
 Limits: the colour key is not drawn in the window (see section 14 for the colours); at full zoom a box outline is one DEM
-pixel (20 m) wide, drawn as thick as a pixel; a month is drawn only for the chains of that month, so the chains still going on from earlier months are not
-shown (a chain stays whole in the month its root starts).
+pixel (20 m) wide, drawn as thick as a pixel; the monthly chains are the longest chain of each root only, as in the yearly image.
 
 ## 16. Running the sequence: options and the driver
 
