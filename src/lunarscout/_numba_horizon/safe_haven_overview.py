@@ -237,9 +237,9 @@ def read_backdrop(dem_path, psr_ids_path, *, cell_pixels: int, scale: int, cell_
     return elevation, psr
 
 
-def hillshade_gray(elevation, pixel_metres: float, *, azimuth: float = 315.0, altitude: float = 35.0,
-                   z_factor: float = 2.0, low: float = 0.07, high: float = 0.24) -> npt.NDArray[np.float32]:
-    """A dark grey hillshade in ``[low, high]`` (the surface grey where ``elevation`` is nan is applied by the caller)."""
+def raw_shade(elevation, pixel_metres: float, *, azimuth: float = 315.0, altitude: float = 35.0,
+              z_factor: float = 2.0) -> npt.NDArray[np.float32]:
+    """The sun's illumination of the terrain in ``[0, 1]`` (nan elevations are filled with the mean for the slopes)."""
     valid = np.isfinite(elevation)
     z = np.where(valid, elevation, np.nanmean(elevation) if valid.any() else 0.0) * z_factor
     d_row, d_col = np.gradient(z, pixel_metres)                   # rows run south, columns east
@@ -247,7 +247,14 @@ def hillshade_gray(elevation, pixel_metres: float, *, azimuth: float = 315.0, al
     norm = np.sqrt(d_east ** 2 + d_north ** 2 + 1.0)
     az, alt = math.radians(azimuth), math.radians(altitude)
     shade = (-d_east * math.sin(az) * math.cos(alt) - d_north * math.cos(az) * math.cos(alt) + math.sin(alt)) / norm
-    shade = np.clip(shade, 0.0, 1.0)
+    return np.clip(shade, 0.0, 1.0)
+
+
+def hillshade_gray(elevation, pixel_metres: float, *, azimuth: float = 315.0, altitude: float = 35.0,
+                   z_factor: float = 2.0, low: float = 0.07, high: float = 0.24) -> npt.NDArray[np.float32]:
+    """A dark grey hillshade in ``[low, high]`` (the surface grey where ``elevation`` is nan is applied by the caller)."""
+    valid = np.isfinite(elevation)
+    shade = raw_shade(elevation, pixel_metres, azimuth=azimuth, altitude=altitude, z_factor=z_factor)
     if valid.any():
         lo, hi = np.percentile(shade[valid], (2, 98))
         shade = np.clip((shade - lo) / (hi - lo), 0.0, 1.0) if hi > lo else np.full_like(shade, 0.5)

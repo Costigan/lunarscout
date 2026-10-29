@@ -512,7 +512,53 @@ about 100 s.
   later boxes on top), and a run on a small scene (GeoTIFF colours, transparency inside a box, PNG, the table with its
   CRS bounds, years, refused settings).
 
-## 15. Running the sequence: options and the driver
+## 15. The pole viewer
+
+`scripts/view_safe_haven.py` opens a window on the pole: the dark hillshade with the products of one month on it, to pan
+and zoom instead of reading the contact sheets. It needs PySide6 (`pip install "lunarscout[viewer]"`) and is not a step
+of the driver.
+
+*Controls.* Drag with the left mouse button to pan; turn the wheel to zoom about the pointer (there are no scroll bars);
+the slider along the bottom picks the month, from the first to the last month of the dataset (96 months, 2024-01 to
+2031-12 in the 15-degree run); the drop-down picks the layer; **Reset view** fits the whole pole.
+
+*Layers.*
+
+| Drop-down | What is drawn | Changes |
+|---|---|---|
+| Cluster boxes (monthly) | the bounding box of each group of connected havens whose chain starts in the month, in the aqua classes of section 14 (the box is drawn one pixel outside the group; a box smaller than a few screen pixels is drawn solid so that it can be seen) | every month |
+| Havens (monthly) | one pixel for each haven (seed) of the month, in orange | every month |
+| Chains (yearly) | the yearly chain image `safe_haven_stage_4_longest_chain_per_root_<year>.tif` of the slider's year | when the slider crosses into another year |
+
+A cluster belongs to the month its chain starts in (the `root_start_utc` of its lowest seed; the yearly maps use the
+year of the same time); a haven belongs to its own `month`. The numbers of clusters per month swing with the lighting cycle (in the 15-degree run, 211 in 2026-03,
+2 in 2027-03 and 260 in 2027-12), so a month with few boxes is a result, not a fault.
+
+*Pregenerated data.* The picture is a bitmap: tiles of 512 pixels from image pyramids, drawn at the level whose pixels
+are between half and one screen pixel (full resolution, 20 m, when zoomed in). Nothing is computed while panning.
+
+* `viewer/viewer.json` (beside the products): the months, the DEM grid, and per month the boxes as `[row_min, row_max,
+  column_min, column_max, havens]` in DEM pixels, the yearly chain images and how the boxes were clustered
+  (`CONNECT`, as in section 14);
+* `viewer/havens.npz`: the DEM row and column of every seed, ordered by month, with each month's start offset;
+* the cache (default `/tmp/lunarscout_viewer`, about 11 GB for 8 years): the hillshade pyramid (the overview maps'
+  hillshade and grey range at 20 m) and the pyramid of each yearly chain image from half size down (the full size is read
+  from the GeoTIFF; reduced by the largest value of each 2 x 2 block, so thin lines survive). A pyramid is built once and
+  found by the next run; it is rebuilt only when its source file changes, and it is visible only when complete.
+
+The boxes and dots are not stored as bitmaps: a month has a few thousand of them, so the tiles in view are drawn from
+the lists in milliseconds, and 96 months of full-size bitmaps would be hundreds of gigabytes.
+
+`scripts/prepare_safe_haven_viewer.py` makes all of this ahead of time without a display; the viewer does the same, with
+a progress window, when it finds something missing. On the 15-degree run: the lists 3 s, the hillshade 30 s, the eight chain
+pyramids 65 s; the window then opens in under a second, and a tile takes about 3 ms to draw (34 ms the first time a
+full-size chain tile is read).
+
+Limits: the colour key is not drawn in the window (see section 14 for the colours); at full zoom a box outline is one DEM
+pixel (20 m) wide, drawn as thick as a pixel; the chains are yearly because only yearly images exist (monthly chain images
+would be another layer of the same kind).
+
+## 16. Running the sequence: options and the driver
 
 **Options.** Every constant at the top of a stage script that can vary is also a command-line option,
 `--constant-name value` (lower case, hyphens), with the constant as its default; `--help` lists them. The rover's flood

@@ -73,6 +73,10 @@ plot = [
 console = [
     "rich>=13",
 ]
+# scripts/view_safe_haven.py, the pole viewer window
+viewer = [
+    "PySide6>=6.6",
+]
 # the stage-0 thresholded-lighting store for the safe-haven analysis (zstd-compressed chunks)
 lightstore = [
     "zstandard>=0.22",

@@ -29,6 +29,7 @@ SCRIPT_PROCEDURES = {
     "run_safe_haven_overview_maps": ("make_overview_maps", set()),
     "run_safe_haven_quality_maps": ("make_quality_maps", set()),
     "run_safe_haven_cluster_maps": ("make_cluster_maps", set()),
+    "prepare_safe_haven_viewer": ("prepare_safe_haven_viewer", set()),
 }
 
 
