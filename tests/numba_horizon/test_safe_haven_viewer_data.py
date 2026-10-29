@@ -222,3 +222,55 @@ def test_chain_tiles_come_from_the_tif_at_full_size_and_from_the_pyramid_above(p
     assert level_one[300, 350].tolist() == [255, 122, 26, 255] and level_one[1, 2].tolist() == [1, 2, 3, 255]
     assert data.chain_tile(2026, 2, 0, 0)[150, 175].tolist() == [255, 122, 26, 255]             # the line survives 4 : 1
     assert data.chain_tile(2031, 0, 0, 0) is None and data.chain_tile(2031, 2, 0, 0) is None    # no image for that year
+
+
+def write_monthly_chains(directory: Path, entries) -> Path:
+    """A monthly chain pixel file with ``entries``: ``month -> (chains, [(row, column, code), ...])``; the table has 3 classes."""
+    months = sorted(entries)
+    rows, columns, codes, offsets, chains = [], [], [], [0], []
+    for month in months:
+        count, pixels = entries[month]
+        pixels = sorted(pixels, key=lambda p: p[2])
+        rows += [p[0] for p in pixels]
+        columns += [p[1] for p in pixels]
+        codes += [p[2] for p in pixels]
+        offsets.append(len(rows))
+        chains.append(count)
+    table = np.array([[0, 0, 0, 0], [255, 0, 0, 255], [0, 255, 0, 255], [255, 255, 255, 255]], dtype=np.uint8)
+    path = directory / "safe_haven_stage_4_monthly_chain_pixels.npz"
+    np.savez_compressed(path, months=np.array(months), offsets=np.array(offsets, dtype=np.int64),
+                        row=np.array(rows, dtype=np.int32), column=np.array(columns, dtype=np.int32),
+                        code=np.array(codes, dtype=np.uint8), table=table, chains=np.array(chains, dtype=np.int64),
+                        labels=np.array(["a", "b", "haven"]))
+    return path
+
+
+def test_the_monthly_chain_layer_appears_when_its_file_is_beside_the_chain_table(products) -> None:
+    tmp_path, dem, chains = products
+    options = dict(chains_path=chains, dem_path=dem)
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", **options)
+    assert vd.ViewerData(tmp_path / "viewer", tmp_path / "cache").monthly_chains is None
+    assert vd.ViewerData(tmp_path / "viewer", tmp_path / "cache").monthly_chain_tile(0, 0, 0, 0) is None
+    write_monthly_chains(tmp_path, {"2026-03": (1, [(5, 6, 1)])})
+    assert not vd.lists_current(tmp_path / "viewer", connect="chains", **options)           # the file is new: lists are made again
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", **options)
+    assert vd.lists_current(tmp_path / "viewer", connect="chains", **options)
+    assert vd.ViewerData(tmp_path / "viewer", tmp_path / "cache").monthly_chains is not None
+
+
+def test_a_monthly_chain_tile_draws_the_months_pixels_in_their_colours_with_the_last_class_on_top(products) -> None:
+    tmp_path, dem, chains = products
+    write_monthly_chains(tmp_path, {"2026-03": (2, [(5, 6, 1), (5, 7, 2), (20, 600, 3), (20, 600, 1)]),
+                                    "2026-05": (1, [(700, 701, 2)]), "2020-01": (9, [(1, 1, 1)])})   # 2020-01 is not a viewer month
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem)
+    data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
+    assert [data.monthly_chain_count(m) for m in range(3)] == [2, 0, 1]
+    tile = data.monthly_chain_tile(0, 0, 0, 0)
+    assert tile.shape == (512, 512, 4) and (tile[..., 3] > 0).sum() == 2                    # (5, 6) and (5, 7); (20, 600) is next door
+    assert tile[5, 6].tolist() == [255, 0, 0, 255] and tile[5, 7].tolist() == [0, 255, 0, 255]
+    assert data.monthly_chain_tile(0, 0, 1, 0)[20, 600 - 512].tolist() == [255, 255, 255, 255]   # white over red at one pixel
+    assert not data.monthly_chain_tile(1, 0, 0, 0)[..., 3].any()                            # 2026-04 has none
+    assert data.monthly_chain_tile(2, 0, 1, 1)[700 - 512, 701 - 512].tolist() == [0, 255, 0, 255]
+    coarse = data.monthly_chain_tile(0, 2, 0, 0)                                            # level 2: dots of 2 x 2
+    assert (coarse[..., 3] > 0).sum() == 8 and coarse[1, 1].tolist() == [0, 255, 0, 255]    # (5, 6) and (5, 7) share a pixel: the higher class wins
+    assert (data.monthly_chain_tile(0, 1, 0, 0)[..., 3] > 0).sum() == 2                     # level 1, single pixels: (2, 3) shared, and (10, 300)

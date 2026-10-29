@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from lunarscout._numba_horizon import safe_haven_viewer_data as vd  # noqa: E402
 
 from test_safe_haven_overview import write_dem  # noqa: E402
-from test_safe_haven_viewer_data import SEEDS, SIZE, write_chains  # noqa: E402
+from test_safe_haven_viewer_data import SEEDS, SIZE, write_chains, write_monthly_chains  # noqa: E402
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "view_safe_haven.py"
 
@@ -52,6 +52,41 @@ def window(app, prepared):
     win.show()
     app.processEvents()
     return win
+
+
+def viewer_module():
+    sys.path.insert(0, str(SCRIPT.parent))
+    try:
+        import view_safe_haven as viewer
+    finally:
+        sys.path.pop(0)
+    return viewer
+
+
+def test_the_monthly_chain_layer_is_offered_only_with_its_file(app, prepared, tmp_path_factory) -> None:
+    viewer = viewer_module()
+    folder, dem, chains = prepared
+    data = vd.ViewerData(folder / "viewer", folder / "cache")
+    with pytest.raises(ValueError, match="run_safe_haven_monthly_chain_maps"):
+        viewer.Window(data, "chains_month", None)
+    write_monthly_chains(folder, {"2026-03": (2, [(5, 6, 1), (5, 7, 2)]), "2026-05": (1, [(700, 701, 3)])})
+    vd.prepare_viewer(folder / "viewer", folder / "cache", chains_path=chains, dem_path=dem)
+    window = viewer.Window(vd.ViewerData(folder / "viewer", folder / "cache"), "chains_month", None)
+    window.resize(900, 700)
+    window.show()
+    app.processEvents()
+    assert [window.layers.itemText(i) for i in range(4)] == [
+        "Cluster boxes (monthly)", "Havens (monthly)", "Chains (monthly)", "Chains (yearly)"]
+    assert window.view.layer == "chains_month" and window.caption.text() == "2026-03    2 chains"
+    window.slider.setValue(1)
+    assert window.caption.text() == "2026-04    0 chains"
+    window.slider.setValue(2)
+    window.view.centre = QPointF(701, 700)
+    window.view.scale = 12.0
+    window.view.repaint()
+    assert window.view.grab().toImage().pixelColor(window.view.width() // 2 + 6, window.view.height() // 2 + 6).green() > 200
+    window.layers.setCurrentIndex(3)
+    assert window.view.layer == "chains" and window.caption.text() == "2026-05    no chain image for 2026"
 
 
 def wheel(view, x, y, delta):

@@ -16,6 +16,10 @@ The drop-down chooses the layer:
 * Cluster boxes (monthly): the bounding box of each group of connected havens whose chain starts in the month, coloured
   by the havens in the group (the aqua ramp of safe_haven_stage_4_cluster_boxes_<year>.png);
 * Havens (monthly): one pixel for each haven (seed) of the month;
+* Chains (monthly): the longest chain of each root that starts in the month, as the yearly image draws it (the same
+  routes and colours; the havens white), from safe_haven_stage_4_monthly_chain_pixels.npz
+  (scripts/run_safe_haven_monthly_chain_maps.py). The entry is in the drop-down only when that file is beside the
+  chain table;
 * Chains (yearly): the yearly chain image (safe_haven_stage_4_longest_chain_per_root_<year>.tif) of the slider's year,
   so the picture changes only when the slider crosses into another year.
 
@@ -57,7 +61,8 @@ VIEWER_DIRECTORY = STAGE_DIRECTORY / "viewer"
 CACHE_DIRECTORY = Path("/tmp/lunarscout_viewer")
 CONNECT = "chains"            # what joins two havens in a cluster: "chains" (stage 4's chains) or "edges" (stage-3 edges)
 
-LAYERS = (("Cluster boxes (monthly)", "boxes"), ("Havens (monthly)", "havens"), ("Chains (yearly)", "chains"))
+LAYERS = (("Cluster boxes (monthly)", "boxes"), ("Havens (monthly)", "havens"), ("Chains (monthly)", "chains_month"),
+          ("Chains (yearly)", "chains"))
 BACKGROUND = "#0d0d0d"
 TILE_BUDGET_BYTES = 512 * 2 ** 20
 MAX_SCALE = 24.0                # screen pixels per DEM pixel when fully zoomed in
@@ -178,6 +183,9 @@ class MapView(QWidget):
             year = int(self.data.months[self.month][:4])
             source = ("chains", year)
             tile = lambda: self.data.chain_tile(year, level, tx, ty)             # noqa: E731
+        elif self.layer == "chains_month":
+            source = ("chains_month", self.month)
+            tile = lambda: self.data.monthly_chain_tile(self.month, level, tx, ty)  # noqa: E731
         elif self.layer == "havens":
             source = ("havens", self.month)
             tile = lambda: self.data.havens_tile(self.month, level, tx, ty)      # noqa: E731
@@ -229,9 +237,14 @@ class Window(QMainWindow):
         self.data = data
         self.setWindowTitle("Safe havens: the pole")
         self.view = MapView(data)
+        self.layer_keys = [key for _title, key in LAYERS if key != "chains_month" or data.monthly_chains is not None]
+        if layer not in self.layer_keys:
+            raise ValueError(f"the layer {layer!r} is not available: no monthly chain pixel file beside the chain table "
+                             "(run scripts/run_safe_haven_monthly_chain_maps.py)")
         self.layers = QComboBox()
-        for title, _key in LAYERS:
-            self.layers.addItem(title)
+        for title, key in LAYERS:
+            if key in self.layer_keys:
+                self.layers.addItem(title)
         reset = QPushButton("Reset view")
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, len(data.months) - 1)
@@ -256,14 +269,14 @@ class Window(QMainWindow):
         self.layers.currentIndexChanged.connect(self._layer_changed)
         self.slider.valueChanged.connect(self._month_changed)
         reset.clicked.connect(self.view.reset_view)
-        self.layers.setCurrentIndex([key for _title, key in LAYERS].index(layer))
+        self.layers.setCurrentIndex(self.layer_keys.index(layer))
         if month is not None:
             self.slider.setValue(data.months.index(month))
         self._layer_changed()
         self._month_changed()
 
     def _layer_changed(self) -> None:
-        self.view.set_layer(LAYERS[self.layers.currentIndex()][1])
+        self.view.set_layer(self.layer_keys[self.layers.currentIndex()])
         self._caption()
 
     def _month_changed(self) -> None:
@@ -278,6 +291,8 @@ class Window(QMainWindow):
             detail = f"{self.data.boxes_count(month):,} clusters"
         elif layer == "havens":
             detail = f"{self.data.havens_count(month):,} havens"
+        elif layer == "chains_month":
+            detail = f"{self.data.monthly_chain_count(month):,} chains"
         else:
             year = int(name[:4])
             detail = f"chains of {year}" if year in self.data.chain_years else f"no chain image for {year}"

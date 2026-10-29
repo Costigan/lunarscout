@@ -301,11 +301,16 @@ def draw_polylines(planes, segments: Segments, intervals, paths, heads, radius: 
 
 
 def render(chain_set: ChainSet, havens, intervals, height: int, width: int, radius: int, *, paths=None, psr=None,
-           compiled: bool = True):
+           compiled: bool = True, out=None):
     """The three planes of a set's image: its segments (routes when ``paths`` is given, straight lines otherwise),
     the route pixels next to ``psr`` and every haven (``havens`` is a ``(rows, columns)`` pair), the havens one pixel
-    larger than the stamp when there is one."""
-    planes = np.zeros((_PLANES, height, width), dtype=np.uint8)
+    larger than the stamp when there is one. ``out`` is a ``(3, height, width)`` uint8 array to clear and draw into
+    instead of a new one."""
+    if out is None:
+        planes = np.zeros((_PLANES, height, width), dtype=np.uint8)
+    else:
+        planes = out
+        planes[:] = 0
     if paths is None:
         draw_segments(planes, chain_set.segments, intervals, radius, psr=psr, compiled=compiled)
     else:
@@ -645,6 +650,131 @@ def run_yearly_chain_maps(
         route_pixels=int(len(route_set.rows)) if route_set is not None else 0, seconds=clock.monotonic() - started)
     (directory / f"{prefix}_yearly_chain_maps.report.json").write_text(
         json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8")
+    return report
+
+
+def month_range(first: str, last: str) -> list[str]:
+    """``["YYYY-MM", ...]`` from ``first`` to ``last`` inclusive."""
+    year, month = int(first[:4]), int(first[5:7])
+    stop = int(last[:4]) * 12 + int(last[5:7])
+    names = []
+    while year * 12 + month <= stop:
+        names.append(f"{year:04d}-{month:02d}")
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return names
+
+
+@dataclass
+class MonthlyChainMapsReport:
+    file: str
+    months: dict                     # per month: the chains that start in it, the pixels drawn and the havens
+    intervals: list
+    raster_lines: str
+    route_pixels: int
+    pixels: int
+    seconds: float = 0.0
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+def monthly_path(directory: str | Path, prefix: str = "safe_haven_stage_4") -> Path:
+    return Path(directory) / f"{prefix}_monthly_chain_pixels.npz"
+
+
+def run_monthly_chain_maps(
+    output_directory: str | Path, *, chains_path: str | Path, dem_path: str | Path, prefix: str = "safe_haven_stage_4",
+    overwrite: bool = False, compiled: bool = True, light_store_path: str | Path | None = None,
+    passable_path: str | Path | None = None, flood_settings=None, workers: int = 1, progress=None,
+    psr_ids_path: str | Path | None = None,
+) -> MonthlyChainMapsReport:
+    """Write ``<prefix>_monthly_chain_pixels.npz`` and ``<prefix>_monthly_chain_maps.report.json``: the pixels of the
+    longest-chain image of each month, for the viewer (``scripts/view_safe_haven.py``).
+
+    It is :func:`run_yearly_chain_maps` by month: a chain belongs to the UTC month in which its root starts
+    (``root_start_utc``) and stays whole in it, the havens drawn are the seeds of that month's chains, and the routes,
+    PSR marks and colour classes are the same, so the pixels of the months of a year are the pixels of that year's
+    image. A month is stored as only the pixels drawn: ``row``, ``column`` and the colour class ``code`` (a row of
+    ``table``, RGBA: 0 is transparent, then the length intervals, aqua for a PSR pass and white for a haven), ordered by
+    code so that drawing them in order puts the longer chains, then aqua, then the havens on top; ``offsets`` holds the
+    start of each month's slice (``months`` are the names, ``chains`` the number of chains of 2 or more seeds that start
+    in each)."""
+    started = clock.monotonic()
+    directory = Path(output_directory)
+    rows = read_chain_table(chains_path)
+    transform, width, height, _crs_wkt = dem_header(dem_path)
+    arrays, _edge_set, chain_set = build_chain_sets(rows)
+    if arrays["row"].min() < 0 or arrays["row"].max() >= height or arrays["column"].min() < 0 \
+            or arrays["column"].max() >= width:
+        raise InputError("a seed lies outside the DEM's grid", code="chain_maps_grid_mismatch",
+                         details={"height": height, "width": width})
+    target, report_path = monthly_path(directory, prefix), directory / f"{prefix}_monthly_chain_maps.report.json"
+    for path in (target, report_path):
+        if path.exists() and not overwrite:
+            raise InputError(f"{path} exists; pass overwrite=True to replace it", code="chain_maps_output_exists",
+                             details={"path": str(path)})
+    seed_month = np.array([str(r["root_start_utc"])[:7] for r in rows])
+    line_month = np.array([str(t)[:7] for t in chain_set.line_attributes["root_start_utc"]])
+    months = month_range(min(seed_month.tolist()), max(seed_month.tolist()))
+    intervals = build_intervals(chain_set.line_attributes["chain_length"])
+    table = lookup_table(intervals)
+    route_set = _reconstruct_routes(rows, light_store_path, passable_path, (height, width), flood_settings, workers,
+                                    compiled, progress)
+    psr_mask = _read_psr_mask(psr_ids_path, height, width)
+    segment_month = np.repeat(line_month, [len(line) - 1 for line in chain_set.lines])
+    planes = np.zeros((_PLANES, height, width), dtype=np.uint8)
+    haven_code, aqua_code = len(intervals) + 2, len(intervals) + 1
+    found_rows, found_columns, found_codes, offsets, result = [], [], [], [0], {}
+    for month in months:
+        keep = segment_month == month
+        in_month = seed_month == month
+        segments = chain_set.segments
+        subset = replace(
+            chain_set, segments=Segments(segments.row0[keep], segments.column0[keep], segments.row1[keep],
+                                         segments.column1[keep], segments.length[keep]),
+            segment_seeds=chain_set.segment_seeds[keep])
+        month_rows, month_columns, month_codes = [], [], []
+        if in_month.any():
+            render(subset, (arrays["row"][in_month], arrays["column"][in_month]), intervals, height, width, 0,
+                   paths=route_set, psr=psr_mask, compiled=compiled, out=planes)
+            for first in range(0, height, _STRIP_ROWS):
+                strip = planes[:, first:first + _STRIP_ROWS]
+                code = strip[0].copy()
+                code[strip[1] > 0] = aqua_code
+                code[strip[2] > 0] = haven_code
+                found_r, found_c = np.nonzero(code)
+                month_rows.append((found_r + first).astype(np.int32))
+                month_columns.append(found_c.astype(np.int32))
+                month_codes.append(code[found_r, found_c])
+        month_r = np.concatenate(month_rows) if month_rows else np.zeros(0, dtype=np.int32)
+        month_c = np.concatenate(month_columns) if month_columns else np.zeros(0, dtype=np.int32)
+        month_k = np.concatenate(month_codes) if month_codes else np.zeros(0, dtype=np.uint8)
+        order = np.argsort(month_k, kind="stable")
+        found_rows.append(month_r[order])
+        found_columns.append(month_c[order])
+        found_codes.append(month_k[order])
+        offsets.append(offsets[-1] + len(order))
+        result[month] = {"chains": int((line_month == month).sum()), "pixels": len(order),
+                         "havens": int(in_month.sum())}
+    directory.mkdir(parents=True, exist_ok=True)
+    staging = target.with_name(target.name + ".partial")
+    try:
+        with staging.open("wb") as handle:
+            np.savez_compressed(
+                handle, months=np.array(months), offsets=np.array(offsets, dtype=np.int64),
+                row=np.concatenate(found_rows), column=np.concatenate(found_columns), code=np.concatenate(found_codes),
+                table=table, chains=np.array([result[m]["chains"] for m in months], dtype=np.int64),
+                labels=np.array([i.label for i in intervals] + ["next to a PSR", "haven"]))
+        os.replace(staging, target)
+    finally:
+        staging.unlink(missing_ok=True)
+    report = MonthlyChainMapsReport(
+        file=str(target), months=result,
+        intervals=[{"label": i.label, "first": i.first, "last": i.last, "colour": i.colour} for i in intervals],
+        raster_lines="routes" if route_set is not None else "straight",
+        route_pixels=int(len(route_set.rows)) if route_set is not None else 0, pixels=int(offsets[-1]),
+        seconds=clock.monotonic() - started)
+    report_path.write_text(json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8")
     return report
 
 

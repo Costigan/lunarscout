@@ -37,6 +37,7 @@ import numpy.typing as npt
 
 from ..errors import InputError, ProductStorageError
 from .pixel_coordinates import dem_header
+from .safe_haven_chain_maps import month_range, monthly_path
 from .safe_haven_chains import read_chain_table
 from .safe_haven_cluster_maps import COUNT_LABELS, cluster_classes, cluster_colours, find_clusters
 from .safe_haven_floods import read_edge_table
@@ -82,17 +83,6 @@ def reduce2(block: npt.NDArray, how: str) -> npt.NDArray:
 # ---------------------------------------------------------------------------
 
 
-def month_range(first: str, last: str) -> list[str]:
-    """``["YYYY-MM", ...]`` from ``first`` to ``last`` inclusive."""
-    year, month = int(first[:4]), int(first[5:7])
-    stop = int(last[:4]) * 12 + int(last[5:7])
-    names = []
-    while year * 12 + month <= stop:
-        names.append(f"{year:04d}-{month:02d}")
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    return names
-
-
 @dataclass
 class ViewerReport:
     months: int
@@ -104,6 +94,13 @@ class ViewerReport:
 
     def as_dict(self) -> dict:
         return asdict(self)
+
+
+def _monthly_chain_name(chains_path: str | Path) -> str | None:
+    """The name of the monthly chain pixel file beside the chain table (scripts/run_safe_haven_monthly_chain_maps.py),
+    or None when there is none."""
+    path = monthly_path(Path(chains_path).parent)
+    return path.name if path.is_file() else None
 
 
 def viewer_paths(viewer_directory: str | Path) -> dict:
@@ -151,6 +148,7 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
         "product": PRODUCT, "connect": connect, "months": months, "tile": TILE,
         "dem": {"path": str(dem_path), "width": width, "height": height, "transform": list(transform)},
         "chain_directory": str(chains_path.parent), "chain_images": chain_images,
+        "monthly_chains": _monthly_chain_name(chains_path),
         "source": {"chains": chains_path.name, "size": chains_path.stat().st_size,
                    "mtime_ns": chains_path.stat().st_mtime_ns},
         "box_columns": ["row_min", "row_max", "column_min", "column_max", "havens"],
@@ -183,7 +181,7 @@ def lists_current(viewer_directory: str | Path, *, chains_path: str | Path, dem_
         stat = Path(chains_path).stat()
         return (meta.get("product") == PRODUCT and meta["connect"] == connect
                 and meta["source"] == {"chains": Path(chains_path).name, "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
-                and meta["dem"]["path"] == str(dem_path))
+                and meta["dem"]["path"] == str(dem_path) and meta.get("monthly_chains") == _monthly_chain_name(chains_path))
     except (OSError, ValueError, KeyError):
         return False
 
@@ -393,9 +391,26 @@ class ViewerData:
         self.cache = Path(cache_directory)
         dem = Path(meta["dem"]["path"])
         self._hillshade = [np.load(p, mmap_mode="r") for p in self._sorted_levels(hillshade_directory(self.cache, dem))]
+        self.monthly_chains = None                  # (rows, columns, codes, table, per-month slices, chains) or None
+        name = meta.get("monthly_chains")
+        if name and (Path(meta["chain_directory"]) / name).is_file():
+            self._load_monthly_chains(Path(meta["chain_directory"]) / name)
         self.chain_years = {int(y): Path(meta["chain_directory"]) / name for y, name in meta["chain_images"].items()}
         self._chain_levels: dict[int, list] = {}
         self._chain_datasets: dict[int, object] = {}
+
+    def _load_monthly_chains(self, path: Path) -> None:
+        with np.load(path) as data:
+            names = [str(m) for m in data["months"]]
+            offsets, chains = data["offsets"], data["chains"]
+            slices = np.zeros((len(self.months), 2), dtype=np.int64)
+            counts = np.zeros(len(self.months), dtype=np.int64)
+            for k, name in enumerate(names):
+                if name in self.months:
+                    index = self.months.index(name)
+                    slices[index] = (offsets[k], offsets[k + 1])
+                    counts[index] = chains[k]
+            self.monthly_chains = (data["row"], data["column"], data["code"], data["table"], slices, counts)
 
     @staticmethod
     def _sorted_levels(directory: Path) -> list[Path]:
@@ -454,6 +469,30 @@ class ViewerData:
 
     def havens_count(self, month: int) -> int:
         return int(self._offsets[month + 1] - self._offsets[month])
+
+    def monthly_chain_count(self, month: int) -> int:
+        """The chains of 2 or more seeds that start in the month."""
+        return int(self.monthly_chains[5][month]) if self.monthly_chains is not None else 0
+
+    def monthly_chain_tile(self, month: int, level: int, tx: int, ty: int):
+        """``(512, 512, 4)`` RGBA of the chains that start in the month (the pixels of the monthly chain file, in their
+        colour classes; 1 pixel at the two finest levels, 2 at the coarser ones), or None without the file."""
+        if self.monthly_chains is None:
+            return None
+        rows, columns, codes, table, slices, _counts = self.monthly_chains
+        low, high = int(slices[month][0]), int(slices[month][1])
+        image = np.zeros((TILE, TILE, 4), dtype=np.uint8)
+        rows, columns, codes = rows[low:high], columns[low:high], codes[low:high]
+        mask = self._in_tile(rows, columns, level, tx, ty, 1)
+        x = (columns[mask] >> level) - tx * TILE
+        y = (rows[mask] >> level) - ty * TILE
+        colours = table[codes[mask]]                               # in class order: the last write is the one on top
+        dot = 1 if level < 2 else 2
+        for dy in range(dot):
+            for dx in range(dot):
+                inside = (x + dx >= 0) & (x + dx < TILE) & (y + dy >= 0) & (y + dy < TILE)
+                image[(y + dy)[inside], (x + dx)[inside]] = colours[inside]
+        return image
 
     def boxes_count(self, month: int) -> int:
         return len(self.boxes[month])

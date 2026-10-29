@@ -659,3 +659,101 @@ def test_a_psr_raster_of_another_size_is_refused_and_nothing_is_written(tables) 
     with pytest.raises(InputError) as caught:
         run(tables, psr_ids_path=tables / "small.tif")
     assert caught.value.code == "chain_maps_psr_mismatch" and not (tables / "out").exists()
+
+
+# --- the monthly chain pixels ---------------------------------------------------------------------------------
+def start_in_months(tables, months_of_roots) -> Path:
+    """Rewrite ``root_start_utc`` so that each root's chain starts in the given month (``"2024-03"``)."""
+    import csv
+
+    path = tables / "chains.csv"
+    with open(path, newline="") as handle:
+        reader = csv.DictReader(handle)
+        names, rows = reader.fieldnames, list(reader)
+    for row in rows:
+        row["root_start_utc"] = f"{months_of_roots[int(row['root_id'])]}-04T00:00:00.000000Z"
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=names)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+def run_monthly(tables, **options):
+    return maps.run_monthly_chain_maps(tables / "out", chains_path=tables / "chains.csv", dem_path=tables / "dem.tif",
+                                       **options)
+
+
+def month_image(path, month):
+    """The month's pixels of the monthly file as an RGBA image ``(4, HEIGHT, WIDTH)``, and the codes in file order."""
+    with np.load(path) as data:
+        index = [str(m) for m in data["months"]].index(month)
+        lo, hi = int(data["offsets"][index]), int(data["offsets"][index + 1])
+        image = np.zeros((4, HEIGHT, WIDTH), dtype=np.uint8)
+        rows, columns, codes = data["row"][lo:hi], data["column"][lo:hi], data["code"][lo:hi]
+        image[:, rows, columns] = data["table"][codes].T
+        return image, codes
+
+
+def test_each_month_has_the_chains_that_start_in_it_and_the_months_make_up_the_yearly_image(tables) -> None:
+    start_in_months(tables, {1: "2024-03", 6: "2024-05", 8: "2025-01"})
+    write_psr(tables / "psr.tif", [(2, 7), (6, 20)])
+    options = dict(overwrite=True, psr_ids_path=tables / "psr.tif")
+    report = run_monthly(tables, **options)
+    assert list(report.months) == [f"2024-{m:02d}" for m in range(3, 13)] + ["2025-01"]
+    assert report.months["2024-03"]["chains"] == 1 and report.months["2024-05"]["chains"] == 1
+    assert sum(v["chains"] for v in report.months.values()) == 2                       # root 8 is alone
+    assert [report.months[m]["havens"] for m in ("2024-03", "2024-04", "2024-05", "2025-01")] == [5, 0, 2, 1]
+    assert report.months["2024-04"]["pixels"] == 0 and report.pixels == sum(v["pixels"] for v in report.months.values())
+    assert (tables / "out" / "safe_haven_stage_4_monthly_chain_maps.report.json").exists()
+    path = maps.monthly_path(tables / "out")
+    assert path == tables / "out" / "safe_haven_stage_4_monthly_chain_pixels.npz"
+    run_yearly(tables, years=[2024, 2025], psr_ids_path=tables / "psr.tif", overwrite=True)
+    for year, year_months in ((2024, [f"2024-{m:02d}" for m in range(3, 13)]), (2025, ["2025-01"])):
+        yearly, _ = read_image(maps.yearly_path(tables / "out", year))
+        opaque = np.zeros((HEIGHT, WIDTH), dtype=bool)
+        for month in year_months:
+            image, _codes = month_image(path, month)
+            mask = image[3] > 0
+            assert not (mask & opaque).any()                                       # no pixel in two months here
+            opaque |= mask
+            assert (image[:, mask] == yearly[:, mask]).all()                       # the same colour
+        assert (opaque == (yearly[3] > 0)).all()                                   # the same pixels
+    aqua = styles.lookup_table(maps.build_intervals(np.array([2, 2]))).shape[0] - 2
+    with np.load(path) as data:
+        assert (data["code"] == aqua).any()                                        # a route passed next to a PSR
+        assert data["table"].shape[1] == 4 and list(data["labels"])[-2:] == ["next to a PSR", "haven"]
+        assert data["chains"].tolist() == [report.months[str(m)]["chains"] for m in data["months"]]
+
+
+def test_a_months_pixels_are_ordered_by_class_so_the_havens_are_drawn_last(tables) -> None:
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
+    run_monthly(tables, overwrite=True)
+    _image, codes = month_image(maps.monthly_path(tables / "out"), "2024-03")
+    assert (np.diff(codes.astype(int)) >= 0).all() and codes[-1] == codes.max() and codes[0] >= 1
+    with np.load(maps.monthly_path(tables / "out")) as data:
+        assert int(codes.max()) == data["table"].shape[0] - 1                       # the white haven class is the last
+
+
+def test_monthly_pixels_equal_the_yearly_image_when_every_chain_starts_in_one_month(tables) -> None:
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
+    run_monthly(tables, overwrite=True)
+    run_yearly(tables, years=[2024], overwrite=True)
+    yearly, _ = read_image(maps.yearly_path(tables / "out", 2024))
+    image, _codes = month_image(maps.monthly_path(tables / "out"), "2024-03")
+    assert (image == yearly).all()
+
+
+def test_monthly_pixels_refuse_to_replace_a_file_and_leave_no_staging_file(tables) -> None:
+    start_in_months(tables, {1: "2024-03", 6: "2024-05", 8: "2025-01"})
+    run_monthly(tables, overwrite=True)
+    with pytest.raises(InputError) as error:
+        run_monthly(tables)
+    assert error.value.code == "chain_maps_output_exists"
+    run_monthly(tables, overwrite=True)
+    assert not list((tables / "out").glob("*.partial"))
+
+
+def test_month_range_runs_from_the_first_to_the_last_month() -> None:
+    assert maps.month_range("2026-11", "2027-02") == ["2026-11", "2026-12", "2027-01", "2027-02"]
+    assert maps.month_range("2026-03", "2026-03") == ["2026-03"]

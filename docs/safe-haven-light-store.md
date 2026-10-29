@@ -528,6 +528,7 @@ the slider along the bottom picks the month, from the first to the last month of
 |---|---|---|
 | Cluster boxes (monthly) | the bounding box of each group of connected havens whose chain starts in the month, in the aqua classes of section 14 (the box is drawn one pixel outside the group; a box smaller than a few screen pixels is drawn solid so that it can be seen) | every month |
 | Havens (monthly) | one pixel for each haven (seed) of the month, in orange | every month |
+| Chains (monthly) | the longest chain of each root that starts in the month: the yearly image by month, with the same routes, length colours, aqua PSR passes and white havens (the entry is in the drop-down only when the monthly pixel file exists) | every month |
 | Chains (yearly) | the yearly chain image `safe_haven_stage_4_longest_chain_per_root_<year>.tif` of the slider's year | when the slider crosses into another year |
 
 A cluster belongs to the month its chain starts in (the `root_start_utc` of its lowest seed; the yearly maps use the
@@ -541,6 +542,13 @@ are between half and one screen pixel (full resolution, 20 m, when zoomed in). N
   column_min, column_max, havens]` in DEM pixels, the yearly chain images and how the boxes were clustered
   (`CONNECT`, as in section 14);
 * `viewer/havens.npz`: the DEM row and column of every seed, ordered by month, with each month's start offset;
+* `safe_haven_stage_4_monthly_chain_pixels.npz` (beside the chain table; made by `scripts/run_safe_haven_monthly_chain_maps.py`,
+  driver step `monthly-chain-maps`): for each month the pixels the yearly image would draw for the chains that start
+  in it (row, column and colour class, about 1.1 million pixels and 2.9 MB for the 96 months), found by drawing the
+  same routes month by month. The viewer reads it as it is. In the 15-degree run the routes take 35 s and the 96
+  months 3.5 min; the months of a year have exactly that year's chains, havens and distinct pixels (checked for 2027
+  and 2028: 587 chains and 152,407 pixels; 1,936 and 206,319). A pixel that two chains of different months share is
+  drawn in each month's own colour, where the yearly image shows the longer chain (about 0.3 % of the pixels);
 * the cache (default `/tmp/lunarscout_viewer`, about 11 GB for 8 years): the hillshade pyramid (the overview maps'
   hillshade and grey range at 20 m) and the pyramid of each yearly chain image from half size down (the full size is read
   from the GeoTIFF; reduced by the largest value of each 2 x 2 block, so thin lines survive). A pyramid is built once and
@@ -555,8 +563,8 @@ pyramids 65 s; the window then opens in under a second, and a tile takes about 3
 full-size chain tile is read).
 
 Limits: the colour key is not drawn in the window (see section 14 for the colours); at full zoom a box outline is one DEM
-pixel (20 m) wide, drawn as thick as a pixel; the chains are yearly because only yearly images exist (monthly chain images
-would be another layer of the same kind).
+pixel (20 m) wide, drawn as thick as a pixel; a month is drawn only for the chains of that month, so the chains still going on from earlier months are not
+shown (a chain stays whole in the month its root starts).
 
 ## 16. Running the sequence: options and the driver
 
@@ -570,7 +578,7 @@ called, so another program can load the script and call the procedure; `main(arg
 logging and calls it. The helpers are in `lunarscout._script_cli`.
 
 **The driver, `scripts/run_safe_haven.py`.** It runs `psr-regions`, `light-store`, `stage1`, `stage2`, `stage3`,
-`stage4`, `chain-maps`, `yearly-chain-maps`, `overview-maps`, `quality-maps` and `cluster-maps` in that order by loading the scripts and calling their procedures with one set of shared
+`stage4`, `chain-maps`, `yearly-chain-maps`, `monthly-chain-maps`, `overview-maps`, `quality-maps` and `cluster-maps` in that order by loading the scripts and calling their procedures with one set of shared
 parameters, so a threshold is the same everywhere it is used. The values it captures: the paths (inside
 `SCENARIO_DIRECTORY` unless given), the time grid, the lighting thresholds, the rover (`MAX_SLOPE_DEG = 15`, moves per
 step, connectivity, flood days, PSR size classes, edge rule), the seed rules and the worker counts. The slope limit is
