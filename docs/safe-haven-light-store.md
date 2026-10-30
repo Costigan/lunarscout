@@ -578,7 +578,53 @@ full-size chain tile is read).
 Limits: the colour key is not drawn in the window (see section 14 for the colours); at full zoom a box outline is one DEM
 pixel (20 m) wide, drawn as thick as a pixel; the monthly chains are the longest chain of each root only, as in the yearly image.
 
-## 16. Running the sequence: options and the driver
+## 16. Checking the havens against a ray-cast horizon
+
+`scripts/check_safe_haven_lighting.py` (module `safe_haven_check.py`) re-derives, for a sample of pixels, what stage 0
+and stage 2 took from the horizon tiles. It uses no CUDA.
+
+**The reference horizon.** For a pixel it traces all 1,440 azimuths with exact spherical rays (the geometry of
+`direct_reference_trace`, vectorised and tested against it sample for sample): the largest slope along the ray, in
+degrees, clamped to the tiles' plus and minus 50. The rays run as the horizon generator's do: through the primary DEM from
+1 m to where the ray leaves it, through each later DEM from where the ray left the one before (a later DEM adds only the
+terrain beyond), each DEM to 1.2 times its smaller side, 1,000 km at most. Samples are a quarter pixel apart out to 2 km and
+half a pixel beyond.
+
+**What is compared**, for a sample of seeds of the final chain table (spread over outage kind, score, year and chain length
+by a least-represented-first rule, repeatable by `RANDOM_SEED`) and of non-havens found beside them, in the window of
+`WINDOW_DAYS` either side of the seed's outage: the lighting from the reference horizon, from the production tile and as
+stored, all with the patch kernel's own arithmetic. Stored against the tile tests stage 0 alone; tile against reference tests
+the horizon as the lighting sees it. A stored bit the reference does not give is *explained* when it lies between the
+reference bits for a horizon lowered and raised by `HORIZON_TOLERANCE_DEG` (default 0.3, the worst ray on real terrain in
+`docs/numba-horizon-terrain-interpolation.md`); for a pixel that fails, the report gives the smallest of 0.1, 0.25, 0.5, 1 and
+2 degrees that explains every bit. Then the stage-2 evaluator runs on the reference lighting (also with the horizon shifted
+each way) and on the stored lighting, and the score, outage start and end and kind are compared with the seed's row:
+`match`, `within_tolerance` (inside what the shifted horizons give, give or take one step) or `differs`. A non-haven must
+not become a haven.
+
+**Result on the real run** (40 seeds and 8 non-havens, 6 minutes, `safe_havens/lighting_check/`; the sample is 22,377
+steps of three planes):
+
+* Stage 0 is exact: the stored bits equal the lighting recomputed from the production tile in every step of every plane
+  (0 differences).
+* The production tile and the reference differ near the Sun and Earth by a median of 0.17 degrees per pixel (largest per
+  pixel), at most 2.1 degrees, with no bias (mean -0.02 degrees). The lighting of 41 of 48 pixels is reproduced within 0.3
+  degrees; the others need up to 2 degrees.
+* Scores: 18 of 40 seeds match exactly, 17 more are within tolerance, 5 differ, and all 8 non-havens stay non-havens. Two of
+  the five (outage a few hours long with no shadow in the table, 432 and 530 hours of shadow in the reference) are havens
+  made by Earth's margin grazing the 2 degree threshold: the margin wiggles by 0.05 to 0.1 degrees as Earth sets behind a
+  bumpy horizon, which makes a four-hour outage in sunlight (score 0) that the reference does not have; the real outage that
+  follows is in shadow. The definition takes the lowest score of the month's hibernations, so such a blip makes the pixel a
+  haven.
+* In the whole chain table 95.7 % of the seeds have score 0 (81.3 % sun-lit outages, 14.4 % one-sample outages where Earth
+  never sets) and 33 % have an outage of at most 6 hours, so a sizeable part of the havens rests on short outages whose
+  existence depends on the horizon to a tenth of a degree.
+
+It is a sample of 48: it supports these rates only roughly, and says nothing about the 2 degree and 0.2 fraction thresholds
+themselves. A larger `--seeds` is the way to tighten them (about 8 seconds per pixel). `ls.generate_horizons` is not
+involved, so the check also stands if the horizon generator is changed and the tiles made again.
+
+## 17. Running the sequence: options and the driver
 
 **Options.** Every constant at the top of a stage script that can vary is also a command-line option,
 `--constant-name value` (lower case, hyphens), with the constant as its default; `--help` lists them. The rover's flood
