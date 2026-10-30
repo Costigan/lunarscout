@@ -8,7 +8,7 @@ constant is its default; the seed rules of PARAMETERS are one flag per field; `-
 check_safe_haven_lighting(...) takes the same values as keyword arguments.
 
 Checks the safe havens against a horizon traced by ray casting. It takes SEEDS seeds from the final chain table,
-spread over their outage kinds, scores, years and chain lengths, and up to NON_HAVENS pixels beside them that are not
+spread over their outage kinds, scores, years and chain lengths (REGION limits them to part of the DEM), and up to NON_HAVENS pixels beside them that are not
 havens. For each pixel it
 
 * traces the horizon of all 1,440 azimuths with exact spherical rays (the geometry of direct_reference_trace, over the
@@ -44,7 +44,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 import lunarscout as ls  # noqa: E402
 from lunarscout._numba_horizon.file_format import HorizonTileStore  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_check import (  # noqa: E402
-    FLAT_BASES, CheckSettings, read_chain_table, run_check,
+    FLAT_BASES, REGIONS, CheckSettings, read_chain_table, run_check,
 )
 from lunarscout._numba_horizon.safe_haven_stage0 import LightStoreDirectory  # noqa: E402
 from lunarscout._numba_horizon.safe_haven_windows import WindowParameters, spice_vector_source  # noqa: E402
@@ -69,6 +69,8 @@ OVERWRITE = False                       # replace the report files of an earlier
 SEEDS = 40                              # seeds of the chain table, spread over its strata
 NON_HAVENS = 8                          # pixels beside seeds that are not havens in the seed's month
 RANDOM_SEED = 0                         # the same value gives the same sample
+REGION = "all"                          # all, or upper_right_edges: the upper-right quadrant within EDGE_BAND_PIXELS of the top or right edge
+EDGE_BAND_PIXELS = 256                  # the width of the strip along the edges for REGION = upper_right_edges
 WINDOW_DAYS = 15.0                      # the lighting is compared this long either side of the seed's outage
 HORIZON_TOLERANCE_DEG = 0.3             # a stored bit is explained by a horizon shifted by this much (worst ray on real terrain: 0.29)
 ARITHMETIC_TOLERANCE = 1e-3             # stored against the same horizon: a value this near a threshold is a tie
@@ -113,6 +115,8 @@ OPTIONS = (
     Option("SEEDS", "int", "seeds to check, spread over outage kind, score, year and chain length"),
     Option("NON_HAVENS", "int", "non-haven pixels beside seeds to check as well"),
     Option("RANDOM_SEED", "int", "the sample is the same for the same value"),
+    Option("REGION", "str", "where on the DEM the seeds and non-havens are taken: all or upper_right_edges", choices=REGIONS),
+    Option("EDGE_BAND_PIXELS", "int", "for upper_right_edges: pixels from the top or right edge"),
     Option("WINDOW_DAYS", "float", "days of lighting compared either side of a seed's outage"),
     Option("HORIZON_TOLERANCE_DEG", "float", "a stored bit is explained by a reference horizon shifted this much"),
     Option("ARITHMETIC_TOLERANCE", "float", "stored against the same horizon: a value this near a threshold is a tie"),
@@ -134,7 +138,7 @@ def default_options() -> dict:
 
 
 def check_safe_haven_lighting(*, dem_path, outer_dem_paths, horizons_path, light_store_path, chains_path,
-                              output_directory, overwrite, seeds, non_havens, random_seed, window_days,
+                              output_directory, overwrite, seeds, non_havens, random_seed, region, edge_band_pixels, window_days,
                               horizon_tolerance_deg, arithmetic_tolerance, flat_basis, start_utc, stop_utc,
                               step_hours, earth_elevation_threshold_deg, sunlight_fraction_threshold,
                               merge_gap_hours, observer_height_m, parameters) -> int:
@@ -153,7 +157,7 @@ def check_safe_haven_lighting(*, dem_path, outer_dem_paths, horizons_path, light
         output_directory, dems=dems, light_store=light_store, horizon_store=HorizonTileStore(horizons_path),
         chain_rows=rows, times=times.values, sun_vectors_at=spice_vector_source("sun"),
         earth_vectors_at=spice_vector_source("earth"), parameters=parameters, seeds=seeds, non_havens=non_havens,
-        random_seed=random_seed,
+        random_seed=random_seed, region=region, edge_band_pixels=edge_band_pixels,
         settings=CheckSettings(window_days=window_days, horizon_tolerance_deg=horizon_tolerance_deg,
                                arithmetic_tolerance=arithmetic_tolerance, flat_basis=flat_basis),
         earth_elevation_threshold_deg=earth_elevation_threshold_deg,

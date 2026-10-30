@@ -587,8 +587,8 @@ and stage 2 took from the horizon tiles. It uses no CUDA.
 `direct_reference_trace`, vectorised and tested against it sample for sample): the largest slope along the ray, in
 degrees, clamped to the tiles' plus and minus 50. The rays run as the horizon generator's do: through the primary DEM from
 1 m to where the ray leaves it, through each later DEM from where the ray left the one before (a later DEM adds only the
-terrain beyond), each DEM to 1.2 times its smaller side, 1,000 km at most. Samples are a quarter pixel apart out to 2 km and
-half a pixel beyond.
+terrain beyond), each DEM to 1.2 times its smaller side, 1,000 km at most. Samples are a twentieth of a pixel apart out to 5 km and
+a quarter pixel beyond (a coarser step missed crests: on rugged terrain a quarter pixel put the horizon 0.5 degrees low).
 
 **What is compared**, for a sample of seeds of the final chain table (spread over outage kind, score, year and chain length
 by a least-represented-first rule, repeatable by `RANDOM_SEED`) and of non-havens found beside them, in the window of
@@ -607,11 +607,11 @@ steps of three planes):
 
 * Stage 0 is exact: the stored bits equal the lighting recomputed from the production tile in every step of every plane
   (0 differences).
-* The production tile and the reference differ near the Sun and Earth by a median of 0.17 degrees per pixel (largest per
-  pixel), at most 2.1 degrees, with no bias (mean -0.02 degrees). The lighting of 41 of 48 pixels is reproduced within 0.3
+* The production tile and the reference differ near the Sun and Earth by a median of 0.21 degrees per pixel (largest per
+  pixel), at most 2.3 degrees, with no bias (mean -0.03 degrees). The lighting of 41 of 48 pixels is reproduced within 0.3
   degrees; the others need up to 2 degrees.
-* Scores: 18 of 40 seeds match exactly, 17 more are within tolerance, 5 differ, and all 8 non-havens stay non-havens. Two of
-  the five (outage a few hours long with no shadow in the table, 432 and 530 hours of shadow in the reference) are havens
+* Scores: 15 of 40 seeds match exactly, 19 more are within tolerance, 6 differ, and all 8 non-havens stay non-havens. Two of
+  the six (outage a few hours long with no shadow in the table, 432 and 530 hours of shadow in the reference) are havens
   made by Earth's margin grazing the 2 degree threshold: the margin wiggles by 0.05 to 0.1 degrees as Earth sets behind a
   bumpy horizon, which makes a four-hour outage in sunlight (score 0) that the reference does not have; the real outage that
   follows is in shadow. The definition takes the lowest score of the month's hibernations, so such a blip makes the pixel a
@@ -619,6 +619,16 @@ steps of three planes):
 * In the whole chain table 95.7 % of the seeds have score 0 (81.3 % sun-lit outages, 14.4 % one-sample outages where Earth
   never sets) and 33 % have an outage of at most 6 hours, so a sizeable part of the havens rests on short outages whose
   existence depends on the horizon to a tenth of a degree.
+
+**The upper-right edge strips** (`--region upper_right_edges`, 16,585 seeds in the region) do worse: 31 of 48 pixels
+reproduced, 25 of 40 seeds keep their score, median horizon difference 0.41 degrees, at most 8.6. Most of it is steep rims
+150 to 250 m from the pixel, where the converged reference is 1 to 2 degrees (at single bins up to 4) above the tile.
+Running the production CPU oracles on the worst rays settles the cause: `traverse_hierarchy` on the subpatch-interpolated
+ray reproduces the tile (14.18 against 14.19 degrees at (125, 20429) bin 1363), and `traverse_level0_fixed_step` on the same
+ray gives 15.1, 17.3, 17.3, 18.4, 18.4 and 18.7 degrees at 16, 10, 5, 2, 1 and 0.5 m steps. So the ray fit and the interpolation
+are not at fault; the traversal's steps (10 m within 100 m, 16 m beyond, on a 20 m DEM) step over crests. The last column
+(observer at the DEM edge) has a few differences this does not explain, and (8174, 30309) matches the oracle at one bin and
+not at the next three, probably because the oracle was run on an 8-pixel tile and not the production patch.
 
 It is a sample of 48: it supports these rates only roughly, and says nothing about the 2 degree and 0.2 fraction thresholds
 themselves. A larger `--seeds` is the way to tighten them (about 8 seconds per pixel). `ls.generate_horizons` is not

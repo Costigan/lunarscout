@@ -56,6 +56,9 @@ def test_the_vectorised_trace_equals_the_direct_reference_sample_by_sample() -> 
             direction = np.array((np.sin(azimuth), np.cos(azimuth), 0.0)) @ rotation
             distances = np.arange(1.0, 9000.0, 5.0)                   # runs past the DEM edge
             expected = direct_reference_trace(dem, observer, direction, distances)
+            last_node = (expected[:, 1] >= dem.width - 1) | (expected[:, 2] >= dem.height - 1)
+            if last_node.any():                                       # the trace stops at the last node, the direct one does not
+                expected = expected[:int(np.argmax(last_node))]
             actual = check.trace_ray(dem, observer, direction, distances)
             assert actual.shape == expected.shape and expected.shape[0] > 0
             np.testing.assert_allclose(actual, expected, rtol=1e-9, atol=1e-9)
@@ -73,6 +76,22 @@ def test_a_trace_ends_at_the_dem_edge_and_an_invalid_node_has_no_slope() -> None
     assert 0 < samples.shape[0] < 398                                  # left the DEM
     assert np.isnan(samples[:, 4]).any() and np.isfinite(samples[:, 4]).any()
     assert np.isnan(samples[:, 4][samples[:, 3] < -1000.0]).all()
+
+
+def test_the_last_row_and_column_strip_is_not_sampled_as_zero_elevation() -> None:
+    """DemGrid.elevation is 0 between the last node and the edge; a trace must stop at the last node instead of reading
+    a wall there. On a floor 400 m below the sphere no ray to the edge has a positive slope."""
+    dem = make_dem(np.full((60, 60), -400.0), (1000.0, 1.0, 0.0, -1000.0, 0.0, -1.0))
+    assert dem.elevation(59.5, 30.0) == 0.0                           # the strip the scalar function gets wrong
+    horizon = check.reference_horizon([dem], 58, 58, settings=FAST_TRACE)       # one pixel from the corner
+    assert horizon.max() < 0.0
+    observer = check.observer_vector(dem, 30, 30)
+    rotation = enu_to_moon_matrix(*vector_to_lat_lon(observer))
+    for azimuth_index in (0, 360, 720, 1080):
+        azimuth = np.deg2rad(azimuth_index * 0.25)
+        direction = np.array((np.sin(azimuth), np.cos(azimuth), 0.0)) @ rotation
+        samples = check.trace_ray(dem, observer, direction, np.arange(1.0, 200.0, 0.5), rotation)
+        assert (samples[:, 1] < 59).all() and (samples[:, 2] < 59).all()
 
 
 def test_the_distance_schedule_is_dense_near_coarse_far_in_bounded_chunks() -> None:
@@ -255,6 +274,19 @@ def test_the_sample_is_spread_over_every_stratum_and_repeatable() -> None:
     assert len(check.stratified_sample(rows[:5], 40)) == 5 and check.stratified_sample([], 3) == []
 
 
+def test_the_region_is_the_upper_right_quadrant_near_the_top_or_right_edge() -> None:
+    inside = check.region_filter("upper_right_edges", 1000, 800, 100)
+    assert inside(0, 799) and inside(99, 400) and inside(499, 700) and inside(300, 799) and inside(0, 400)
+    assert not inside(100, 400)                    # the top band is 100 rows (0 to 99)
+    assert not inside(300, 699)                    # the right band is 100 columns (700 to 799)
+    assert not inside(500, 799)                    # the lower half of the rows is out
+    assert not inside(50, 399)                     # the left half of the columns is out
+    assert all(check.region_filter("all", 10, 10)(r, c) for r in (0, 9) for c in (0, 9))
+    for bad in (lambda: check.region_filter("middle", 10, 10), lambda: check.region_filter("all", 10, 10, 0)):
+        with pytest.raises(InputError, match="region|band"):
+            bad()
+
+
 def test_the_chain_table_is_read_with_the_columns_the_check_needs(tmp_path) -> None:
     path = tmp_path / "chains.csv"
     header = list(check.CHAIN_COLUMNS) + ["extra"]
@@ -386,6 +418,24 @@ def test_a_sample_smaller_than_the_table_is_spread_not_taken_in_order(good_world
     assert report.seeds_checked == 4 and report.non_havens_checked == 0 and len(report.pixels) == 4
     with pytest.raises(InputError, match="positive"):
         run(good_world, tmp_path / "bad", seeds=0)
+
+
+def test_a_region_limits_the_seeds_and_the_non_havens(good_world, tmp_path) -> None:
+    """On the 128 x 128 scene the upper-right quadrant is rows 0-63, columns 64-127; with a 40 pixel band it holds
+    the pillars (20, 100) and (50, 105) but not (40, 70), whose row and column are both outside the strips."""
+    report = run(good_world, tmp_path / "out", region="upper_right_edges", edge_band_pixels=40, non_havens=2,
+                 seeds=100)
+    wanted = {r["seed_id"] for r in good_world.rows if (r["row"], r["column"]) in {(20, 100), (50, 105)}}
+    assert wanted and report.seeds_checked == len(wanted)
+    haven_pixels = {(p["row"], p["column"]) for p in report.pixels if p["kind"] == "haven"}
+    assert haven_pixels == {(20, 100), (50, 105)}
+    inside = check.region_filter("upper_right_edges", 128, 128, 40)
+    assert all(inside(p["row"], p["column"]) for p in report.pixels)               # the non-havens too
+    assert report.non_havens_checked == 2
+    document = json.loads((tmp_path / "out" / "lighting_check.json").read_text())
+    assert document["settings"]["region"] == "upper_right_edges" and document["settings"]["seeds_in_region"] == len(wanted)
+    with pytest.raises(InputError, match="no seed"):
+        run(good_world, tmp_path / "none", region="upper_right_edges", edge_band_pixels=5)
 
 
 def test_a_horizon_tile_that_is_wrong_is_reported_as_a_failure(good_world, tmp_path_factory) -> None:

@@ -52,6 +52,7 @@ AZIMUTH_STEP_DEG = 360.0 / AZIMUTH_COUNT
 HORIZON_LIMIT_DEG = 50.0                         # stored horizons are clamped to this
 PLANES = ("lit_partial", "lit_full", "earth_visible")
 FLAT_BASES = ("patch_centre", "pixel")
+REGIONS = ("all", "upper_right_edges")
 CHAIN_COLUMNS = ("seed_id", "month", "row", "column", "hibernation_hours", "outage_kind", "outage_start_utc",
                  "outage_end_utc", "chain_length")
 
@@ -64,12 +65,13 @@ CHAIN_COLUMNS = ("seed_id", "month", "row", "column", "hibernation_hours", "outa
 @dataclass(frozen=True)
 class TraceSettings:
     """How densely a ray is sampled: ``near_step_fraction`` of a pixel out to ``near_range_m``, then
-    ``far_step_fraction`` of a pixel. A ray ends where it leaves the DEM, at the DEM's ray limit (1.2 times its
+    ``far_step_fraction`` of a pixel (the defaults are converged: on rugged terrain a quarter-pixel step near the
+    observer put the horizon 0.5 degrees below a 0.5 m step, a 0.05 pixel step is within 0.1 of it). A ray ends where it leaves the DEM, at the DEM's ray limit (1.2 times its
     smaller side) or at ``max_range_m``, the horizon generator's maximum distance."""
 
-    near_range_m: float = 2000.0
-    near_step_fraction: float = 0.25
-    far_step_fraction: float = 0.5
+    near_range_m: float = 5000.0
+    near_step_fraction: float = 0.05
+    far_step_fraction: float = 0.25
     chunk_samples: int = 16384
     max_range_m: float = 1_000_000.0
 
@@ -119,7 +121,9 @@ def _bilinear(dem: DemGrid, column: npt.NDArray, row: npt.NDArray) -> tuple[npt.
 def trace_ray(dem: DemGrid, observer_vector_m: npt.ArrayLike, direction_moon_centered: npt.ArrayLike,
               distances_m: npt.ArrayLike, rotation: npt.NDArray | None = None) -> npt.NDArray[np.float64]:
     """``direct_reference_trace`` for all the distances at once: rows ``(distance, column, row, elevation, slope)``
-    up to the first sample outside the DEM. A sample with an invalid node among the four that surround it has a NaN
+    up to the first sample outside the DEM, which is the first with a column or row at or past the last node: the
+    horizon tracer stops there too, and ``DemGrid.elevation`` is 0 in that last strip (both bilinear weights vanish
+    when the second node is clamped to the first), which would read as a wall at the edge. A sample with an invalid node among the four that surround it has a NaN
     slope. ``rotation`` is the observer's ``enu_to_moon_matrix`` when the caller has it."""
     observer = np.asarray(observer_vector_m, dtype=np.float64)
     direction = np.asarray(direction_moon_centered, dtype=np.float64)
@@ -132,7 +136,7 @@ def trace_ray(dem: DemGrid, observer_vector_m: npt.ArrayLike, direction_moon_cen
     latitude = np.arctan2(walker[:, 2], np.hypot(walker[:, 0], walker[:, 1]))
     x, y = _project(latitude, longitude, dem.projection)
     column, row = _crs_to_pixel(dem, x, y)
-    inside = (column >= 0.0) & (column < dem.width) & (row >= 0.0) & (row < dem.height)
+    inside = (column >= 0.0) & (column < dem.width - 1) & (row >= 0.0) & (row < dem.height - 1)
     if not inside.all():
         count = int(np.argmin(inside))
         distances, latitude, longitude, column, row = (a[:count] for a in (distances, latitude, longitude, column, row))
@@ -483,6 +487,21 @@ def read_chain_table(path: str | Path) -> list[dict]:
     return rows
 
 
+def region_filter(region: str, height: int, width: int, band_pixels: int = 256):
+    """A function ``(row, column) -> bool`` for the pixels of a region of a DEM ``height`` by ``width``.
+
+    ``"all"``: every pixel. ``"upper_right_edges"``: the upper-right quadrant (the top half of the rows, the right
+    half of the columns) within ``band_pixels`` of the top edge or of the right edge, an L-shaped strip."""
+    if region not in REGIONS:
+        raise InputError(f"region must be one of {REGIONS}", code="check_region_invalid", details={"region": region})
+    if band_pixels < 1:
+        raise InputError("band_pixels must be positive", code="check_region_invalid", details={"band_pixels": band_pixels})
+    if region == "all":
+        return lambda row, column: True
+    return lambda row, column: (row < height // 2 and column >= width // 2
+                                and (row < band_pixels or column >= width - band_pixels))
+
+
 def _score_class(hours: float) -> str:
     return "0" if hours <= 0 else ("1-24" if hours <= 24 else ">24")
 
@@ -528,15 +547,16 @@ def stratified_sample(rows: Sequence[dict], count: int, *, random_seed: int = 0,
 
 
 def find_negative(evaluator: CandidateEvaluator, seed: dict, month: int, survival_limit_hours: float, *,
-                  max_radius: int = 40, height: int, width: int) -> tuple[int, int, Outcome] | None:
+                  max_radius: int = 40, height: int, width: int, allowed=None) -> tuple[int, int, Outcome] | None:
     """The nearest pixel to the seed that has a hibernation in the month and is not a haven (its score is above the
-    survival limit), searched in rings out to ``max_radius`` pixels; ``None`` when there is none."""
+    survival limit), searched in rings out to ``max_radius`` pixels among the pixels ``allowed(row, column)``
+    accepts (default: all); ``None`` when there is none."""
     row0, column0 = seed["row"], seed["column"]
     for radius in range(2, max_radius + 1):
         ring = [(row0 + dr, column0 + dc) for dr in range(-radius, radius + 1) for dc in range(-radius, radius + 1)
                 if max(abs(dr), abs(dc)) == radius]
         for row, column in sorted(ring, key=lambda p: (p[0] - row0) ** 2 + (p[1] - column0) ** 2):
-            if not (0 <= row < height and 0 <= column < width):
+            if not (0 <= row < height and 0 <= column < width) or (allowed is not None and not allowed(row, column)):
                 continue
             try:
                 outcome = evaluate_outcome(evaluator, row, column, month)
@@ -890,11 +910,14 @@ def run_check(
     sunlight_fraction_threshold: float = 0.2,
     merge_gap_hours: float = 24.0,
     observer_height_m: float = 0.0,
+    region: str = "all",
+    edge_band_pixels: int = 256,
     overwrite: bool = False,
     progress=None,
 ) -> CheckReport:
     """Check a stratified sample of seeds and some nearby non-havens; write ``lighting_check.json``, ``.csv`` and
-    ``.md`` in ``output_directory``. Nothing is written when one exists and ``overwrite`` is false."""
+    ``.md`` in ``output_directory``. Nothing is written when one exists and ``overwrite`` is false. ``region`` (see
+    :func:`region_filter`) limits the seeds and the non-havens to part of the DEM."""
     output_directory = Path(output_directory)
     paths = {suffix: output_directory / f"lighting_check.{suffix}" for suffix in ("json", "csv", "md")}
     for path in paths.values():
@@ -910,9 +933,18 @@ def run_check(
     context = CheckContext(list(dems), time, parameters, light_store, horizon_store, settings, months,
                            earth_elevation_threshold_deg, sunlight_fraction_threshold, merge_gap_hours,
                            observer_height_m)
-    picked = stratified_sample(chain_rows, seeds, random_seed=random_seed)
+    allowed = region_filter(region, context.dems[0].height, context.dems[0].width, edge_band_pixels)
+    in_region = [r for r in chain_rows if allowed(r["row"], r["column"])]
+    if not in_region:
+        raise InputError("no seed of the chain table lies in the region", code="check_region_empty",
+                         details={"region": region, "edge_band_pixels": edge_band_pixels})
+    if progress:
+        progress(f"{len(in_region)} of {len(chain_rows)} seeds lie in the region {region!r}")
+    picked = stratified_sample(in_region, seeds, random_seed=random_seed)
     report = CheckReport(settings={**asdict(settings), "seeds": seeds, "non_havens": non_havens,
-                                   "random_seed": random_seed, "survival_limit_hours": parameters.survival_limit_hours})
+                                   "random_seed": random_seed, "survival_limit_hours": parameters.survival_limit_hours,
+                                   "region": region, "edge_band_pixels": edge_band_pixels,
+                                   "seeds_in_region": len(in_region)})
     results: list[PixelCheck] = []
     try:
         for number, seed in enumerate(picked, start=1):
@@ -930,7 +962,7 @@ def run_check(
                 break
             month = months.index(seed["month"])
             found = find_negative(context.evaluator("stored"), seed, month, parameters.survival_limit_hours,
-                                  height=context.dems[0].height, width=context.dems[0].width)
+                                  height=context.dems[0].height, width=context.dems[0].width, allowed=allowed)
             if found is None:
                 report.non_havens_not_found += 1
                 continue
@@ -955,6 +987,6 @@ def run_check(
 __all__ = [
     "CheckContext", "CheckReport", "CheckSettings", "Outcome", "PixelCheck", "PlaneComparison", "ReferenceSignals",
     "TraceSettings", "check_pixel", "compare_lighting", "evaluate_outcome", "find_negative", "judge_outcome",
-    "observer_vector", "plane_bits", "read_chain_table", "reference_horizon", "run_check", "stored_bits",
+    "observer_vector", "plane_bits", "read_chain_table", "reference_horizon", "region_filter", "run_check", "stored_bits",
     "stratified_sample", "table_outcome", "trace_ray",
 ]
