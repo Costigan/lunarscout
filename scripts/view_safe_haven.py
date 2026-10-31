@@ -36,6 +36,10 @@ The drop-down chooses the layer:
   magenta), with the same havens as Seed haven areas (monthly), from safe_haven_stage_4_monthly_chain_pixels.npz
   (scripts/run_safe_haven_monthly_chain_maps.py). The entry is in the drop-down only when that file is beside the
   chain table;
+* Chains (monthly, touch PSR): Chains (monthly) with only the chains whose routes pass next to a permanent shadow of at least
+  the size chosen in a second drop-down, shown only for this layer (any PSR, a medium or large one, or a large one; medium to start with), from
+  safe_haven_stage_4_monthly_chain_pixels_psr_<size>.npz (scripts/run_safe_haven_monthly_chain_maps.py with PSR_SIZES). A size
+  without its file is not offered; the layer is offered only when one exists;
 * Chains (yearly): the yearly chain image (safe_haven_stage_4_longest_chain_per_root_<year>.tif) of the slider's year,
   so the picture changes only when the slider crosses into another year.
 
@@ -44,8 +48,13 @@ keeps its own colour: white for none, yellow up to 12 hours, cyan 12 to 24 hours
 survival limit; a legend in the lower left names the classes (and the chain start in the monthly chain layer). The seed
 layers colour the seeds by their hibernation in the stage-4 table; the all-havens layer colours every pixel.
 
+Every layer is drawn over the permanent shadow: the pixels of PSR_PATH (psr.tif: 255 is PSR, on the DEM's grid) are composited onto
+the hillshade at full resolution in light blue (#8ecbff) at 30% opacity, and the background pyramid is the means of that
+picture, so a coarser pixel shows the fraction of its block that is shadow. The legend names it; without the file nothing is
+drawn and a note is printed.
+
 The first run prepares what the window draws: viewer.json and havens.npz in VIEWER_DIRECTORY (the boxes of every month,
-as pregenerated lists) and image pyramids of the hillshade and of each yearly chain image in CACHE_DIRECTORY (about
+as pregenerated lists) and image pyramids of the hillshade, of the hillshade with the permanent shadow on it (about 3.7 GB, when there is a PSR file) and of each yearly chain image in CACHE_DIRECTORY (about
 10 GB, a few minutes; later runs find them and start at once). A pyramid is rebuilt only when its source file changes;
 --rebuild makes the lists again. Boxes and haven dots are drawn from the lists when a month is shown.
 """
@@ -77,13 +86,16 @@ from lunarscout._numba_horizon.safe_haven_viewer_data import TILE, ViewerData, p
 DEM_PATH = Path("/d/viper/maps/lola/ldem_80s_20m.clipped.tif")
 STAGE_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south/safe_havens")
 CHAINS_PATH = STAGE_DIRECTORY / "safe_haven_stage_4_chains.csv"
+PSR_PATH = Path("/e/lunar_analyst_scenarios/70south/psr.tif")        # permanent shadow, drawn light blue behind every layer
 EDGES_PATH = STAGE_DIRECTORY / "safe_haven_stage_3_edges.csv"       # needed only for CONNECT = "edges"
 VIEWER_DIRECTORY = STAGE_DIRECTORY / "viewer"
 CACHE_DIRECTORY = Path("/tmp/lunarscout_viewer")
 CONNECT = "chains"            # what joins two havens in a cluster: "chains" (stage 4's chains) or "edges" (stage-3 edges)
 
 LAYERS = (("Havens and cluster boxes (monthly)", "boxes_havens"), ("Seed haven areas (monthly)", "havens"),
-          ("All havens (monthly)", "haven_months"), ("Chains (monthly)", "chains_month"), ("Chains (yearly)", "chains"))
+          ("All havens (monthly)", "haven_months"), ("Chains (monthly)", "chains_month"),
+          ("Chains (monthly, touch PSR)", "chains_psr"), ("Chains (yearly)", "chains"))
+PSR_CHOICES = (("small", "Any PSR"), ("medium", "Medium or large PSR"), ("large", "Large PSR"))     # the size threshold
 BACKGROUND = "#0d0d0d"
 LEGEND_MARGIN, LEGEND_PAD, LEGEND_SWATCH = 12, 8, 14       # screen pixels: from the window's corner, inside the panel, a swatch
 TILE_BUDGET_BYTES = 512 * 2 ** 20
@@ -97,6 +109,7 @@ class MapView(QWidget):
         super().__init__()
         self.data = data
         self.layer = "boxes_havens"
+        self.psr_size = "medium"                                   # the threshold of the layer of the chains that touch a PSR
         self.month = 0
         self.centre = QPointF(data.size / 2, data.size / 2)       # in DEM pixels
         self.scale = 0.05                                          # screen pixels per DEM pixel
@@ -165,6 +178,10 @@ class MapView(QWidget):
         self.layer = layer
         self.update()
 
+    def set_psr_size(self, size: str) -> None:
+        self.psr_size = size
+        self.update()
+
     def set_month(self, month: int) -> None:
         self.month = month
         self.update()
@@ -193,6 +210,17 @@ class MapView(QWidget):
         self._tiles.move_to_end(key)
         return image
 
+    def _background(self, level: int, tx: int, ty: int):
+        """The QImage of the ground of a tile: the hillshade with the permanent shadow composited on it when there is a PSR
+        file, the hillshade alone otherwise."""
+        if not self.data.has_background():
+            return self._hillshade(level, tx, ty)
+
+        def make():
+            array = self.data.background_tile(level, tx, ty)
+            return QImage(array.data, TILE, TILE, TILE * 3, QImage.Format_RGB888).copy()
+        return self._cached(("background", level, tx, ty), make)
+
     def _hillshade(self, level: int, tx: int, ty: int):
         def make():
             array = self.data.hillshade_tile(level, tx, ty)
@@ -208,6 +236,9 @@ class MapView(QWidget):
         elif self.layer == "chains_month":
             source = ("chains_month", self.month)
             tile = lambda: self.data.monthly_chain_tile(self.month, level, tx, ty)  # noqa: E731
+        elif self.layer == "chains_psr":
+            source = ("chains_psr", self.psr_size, self.month)
+            tile = lambda: self.data.monthly_chain_tile(self.month, level, tx, ty, psr_size=self.psr_size)  # noqa: E731
         elif self.layer == "boxes_havens":
             source = ("boxes_havens", self.month)
             tile = lambda: self.data.boxes_havens_tile(self.month, level, tx, ty)   # noqa: E731
@@ -234,13 +265,17 @@ class MapView(QWidget):
         period (every layer that draws havens), and in the monthly chain layer the mark of a chain's start."""
         if self.layer == "haven_months":
             items = list(self.data.haven_month_legend(self.month))
-        elif self.layer in ("havens", "boxes_havens", "chains_month", "chains"):
+        elif self.layer in ("havens", "boxes_havens", "chains_month", "chains_psr", "chains"):
             items = list(self.data.shadow_legend())
         else:
-            return None
-        if self.layer == "chains_month" and self.data.chain_start_colour() is not None:
+            items = []
+        if self.layer in ("chains_month", "chains_psr") and self.data.chain_start_colour() is not None:
             items.append((self.data.chain_start_colour(), "start of a chain"))
-        return ("Havens: shadow period", items) if items else None
+        title = "Havens: shadow period"
+        if self.data.psr_colour() is not None:
+            items.append((self.data.psr_colour(), "permanent shadow"))
+            title = "Legend"
+        return (title, items) if items else None
 
     def legend_layout(self):
         """``(panel, title_rect, [(swatch_rect, label_rect), ...])`` in screen pixels, in the lower left, or None."""
@@ -304,7 +339,7 @@ class MapView(QWidget):
                 left, right = screen(tx * TILE, self.centre.x(), self.width() / 2), screen(tx * TILE + width, self.centre.x(), self.width() / 2)
                 top, bottom = screen(ty * TILE, self.centre.y(), self.height() / 2), screen(ty * TILE + height, self.centre.y(), self.height() / 2)
                 target, source = QRectF(left, top, right - left, bottom - top), QRectF(0, 0, width, height)
-                painter.drawImage(target, self._hillshade(level, tx, ty), source)
+                painter.drawImage(target, self._background(level, tx, ty), source)
                 overlay = self._overlay(level, tx, ty)
                 if overlay is not False:
                     painter.drawImage(target, overlay, source)
@@ -318,18 +353,29 @@ class Window(QMainWindow):
         self.data = data
         self.setWindowTitle("Safe havens: the pole")
         self.view = MapView(data)
-        available = {"chains_month": data.monthly_chains is not None, "haven_months": bool(data.haven_months)}
+        available = {"chains_month": data.monthly_chains is not None, "haven_months": bool(data.haven_months),
+                     "chains_psr": bool(data.monthly_chains_psr)}
         self.layer_keys = [key for _title, key in LAYERS if available.get(key, True)]
         if layer not in self.layer_keys:
             raise ValueError(
                 f"the layer {layer!r} is not available: "
                 + ("no monthly haven images beside the chain table (run scripts/threshold_safe_havens.py)"
                    if layer == "haven_months" else
+                   "no monthly chain pixel file for the chains that touch a PSR beside the chain table "
+                   "(run scripts/run_safe_haven_monthly_chain_maps.py with PSR_SIZES)" if layer == "chains_psr" else
                    "no monthly chain pixel file beside the chain table (run scripts/run_safe_haven_monthly_chain_maps.py)"))
         self.layers = QComboBox()
         for title, key in LAYERS:
             if key in self.layer_keys:
                 self.layers.addItem(title)
+        self.psr_choice = QComboBox()                              # the size threshold of the layer that filters by PSR
+        self.psr_keys = [key for key, _title in PSR_CHOICES if key in data.monthly_chains_psr]
+        for key, title in PSR_CHOICES:
+            if key in self.psr_keys:
+                self.psr_choice.addItem(title)
+        if self.psr_keys:
+            self.psr_choice.setCurrentIndex(self.psr_keys.index("medium" if "medium" in self.psr_keys else self.psr_keys[0]))
+            self.view.psr_size = self.psr_keys[self.psr_choice.currentIndex()]
         reset = QPushButton("Reset view")
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, len(data.months) - 1)
@@ -339,6 +385,7 @@ class Window(QMainWindow):
         top = QHBoxLayout()
         top.addWidget(QLabel("Show"))
         top.addWidget(self.layers)
+        top.addWidget(self.psr_choice)
         top.addStretch(1)
         top.addWidget(reset)
         bottom = QHBoxLayout()
@@ -352,6 +399,7 @@ class Window(QMainWindow):
         central.setLayout(layout)
         self.setCentralWidget(central)
         self.layers.currentIndexChanged.connect(self._layer_changed)
+        self.psr_choice.currentIndexChanged.connect(self._psr_changed)
         self.slider.valueChanged.connect(self._month_changed)
         reset.clicked.connect(self.view.reset_view)
         self.layers.setCurrentIndex(self.layer_keys.index(layer))
@@ -362,6 +410,12 @@ class Window(QMainWindow):
 
     def _layer_changed(self) -> None:
         self.view.set_layer(self.layer_keys[self.layers.currentIndex()])
+        self.psr_choice.setVisible(self.view.layer == "chains_psr")       # the threshold applies to that layer only
+        self._caption()
+
+    def _psr_changed(self) -> None:
+        if self.psr_keys:
+            self.view.set_psr_size(self.psr_keys[self.psr_choice.currentIndex()])
         self._caption()
 
     def _month_changed(self) -> None:
@@ -387,6 +441,11 @@ class Window(QMainWindow):
         elif layer == "chains_month":
             started = self.data.monthly_chain_started(month)
             detail = f"{self.data.monthly_chain_count(month):,} chains" + (f" ({started:,} starting)" if started else "")
+        elif layer == "chains_psr":
+            size = self.view.psr_size
+            started = self.data.monthly_chain_started(month, size)
+            detail = (f"{self.data.monthly_chain_count(month, size):,} chains touching a PSR ({dict(PSR_CHOICES)[size].lower()})"
+                      + (f", {started:,} starting" if started else ""))
         else:
             year = int(name[:4])
             detail = f"chains of {year}" if year in self.data.chain_years else f"no chain image for {year}"
@@ -408,7 +467,7 @@ class Preparer(QThread):
             prepare_viewer(self.options["viewer_directory"], self.options["cache_directory"],
                            chains_path=self.options["chains_path"], dem_path=self.options["dem_path"],
                            connect=self.options["connect"], edges_path=self.options["edges_path"],
-                           rebuild=self.options["rebuild"], progress=self.message.emit)
+                           psr_path=self.options["psr_path"], rebuild=self.options["rebuild"], progress=self.message.emit)
         except Exception as error:                                           # shown in the window, then the program ends
             self.failed.emit(f"{type(error).__name__}: {error}")
 
@@ -417,6 +476,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="View the safe-haven products of each month on the dark hillshade of the pole.")
     for flag, default, text in (
         ("--dem-path", DEM_PATH, "the DEM GeoTIFF"), ("--chains-path", CHAINS_PATH, "the final stage-4 table"),
+        ("--psr-path", PSR_PATH, "the permanent shadow raster drawn light blue behind every layer (none is drawn when it is missing)"),
         ("--edges-path", EDGES_PATH, "the stage-3 edge table (used when --connect is edges)"),
         ("--viewer-directory", VIEWER_DIRECTORY, "where viewer.json and havens.npz are kept"),
         ("--cache-directory", CACHE_DIRECTORY, "where the image pyramids are cached"),
@@ -445,12 +505,14 @@ def main(argv=()) -> int:
     status.setMinimumWidth(480)
     status.show()
     options = vars(args)
+    if not args.psr_path.is_file():
+        print(f"note: {args.psr_path} not found, so no permanent shadow is drawn behind the layers", file=sys.stderr)
     preparer = Preparer(options)
     outcome = {"code": 0, "window": None}
 
     def open_window() -> None:
         try:
-            data = ViewerData(args.viewer_directory, args.cache_directory)
+            data = ViewerData(args.viewer_directory, args.cache_directory, args.psr_path)
             outcome["window"] = Window(data, args.layer, args.month)
         except Exception as error:
             fail(f"{type(error).__name__}: {error}")

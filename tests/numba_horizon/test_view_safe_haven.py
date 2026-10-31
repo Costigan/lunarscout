@@ -20,7 +20,7 @@ from lunarscout._numba_horizon import safe_haven_viewer_data as vd  # noqa: E402
 
 from test_safe_haven_overview import write_dem  # noqa: E402
 from test_safe_haven_viewer_data import (  # noqa: E402
-    SEEDS, SIZE, write_chains, write_haven_months, write_monthly_chains)
+    SEEDS, SIZE, write_chains, write_haven_months, write_monthly_chains, write_psr)
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "view_safe_haven.py"
 
@@ -266,7 +266,7 @@ def test_a_whole_launch_prepares_shows_and_saves_a_picture_of_each_layer(tmp_pat
     write_dem(dem, SIZE, SIZE)
     chains = write_chains(tmp_path / "safe_haven_stage_4_chains.csv", SEEDS)
     common = ["--dem-path", str(dem), "--chains-path", str(chains), "--viewer-directory", str(tmp_path / "viewer"),
-              "--cache-directory", str(tmp_path / "cache")]
+              "--cache-directory", str(tmp_path / "cache"), "--psr-path", str(tmp_path / "no_psr.tif")]    # no background
     sizes = {}
     for layer in ("boxes_havens", "havens", "chains"):
         picture = tmp_path / f"{layer}.png"
@@ -282,3 +282,80 @@ def test_a_launch_that_cannot_prepare_says_why_and_exits_with_an_error(tmp_path)
                 "--viewer-directory", str(tmp_path / "viewer"), "--cache-directory", str(tmp_path / "cache"),
                 "--screenshot", str(tmp_path / "x.png")], tmp_path)
     assert done.returncode == 1 and "missing.csv" in done.stderr and not (tmp_path / "x.png").exists()
+
+
+def test_the_psr_layer_has_a_threshold_drop_down_that_defaults_to_medium_and_applies_to_that_layer_only(app, prepared) -> None:
+    viewer = viewer_module()
+    folder, dem, chains = prepared
+    data = vd.ViewerData(folder / "viewer", folder / "cache")
+    with pytest.raises(ValueError, match="PSR_SIZES"):
+        viewer.Window(data, "chains_psr", None)
+    write_monthly_chains(folder, {"2026-03": (2, [(5, 6, 1), (5, 7, 2)], 2)})
+    for size, pixels in (("small", [(5, 6, 1), (5, 7, 2)]), ("medium", [(5, 6, 1)])):
+        write_monthly_chains(folder, {"2026-03": (len(pixels), pixels, 1)}, psr_size=size)
+    vd.prepare_viewer(folder / "viewer", folder / "cache", chains_path=chains, dem_path=dem)
+    window = viewer.Window(vd.ViewerData(folder / "viewer", folder / "cache"), "chains_psr", None)
+    window.resize(900, 700)
+    window.show()
+    app.processEvents()
+    assert [window.layers.itemText(i) for i in range(5)] == [
+        "Havens and cluster boxes (monthly)", "Seed haven areas (monthly)", "Chains (monthly)",
+        "Chains (monthly, touch PSR)", "Chains (yearly)"]
+    assert [window.psr_choice.itemText(i) for i in range(window.psr_choice.count())] == ["Any PSR", "Medium or large PSR"]
+    assert window.view.layer == "chains_psr" and window.view.psr_size == "medium" and window.psr_choice.isVisible()
+    assert window.caption.text() == "2026-03    1 chains touching a PSR (medium or large psr), 1 starting"
+    window.psr_choice.setCurrentIndex(0)
+    assert window.view.psr_size == "small" and window.caption.text().startswith("2026-03    2 chains touching a PSR (any psr)")
+    window.layers.setCurrentIndex(0)
+    assert not window.psr_choice.isVisible()                                     # the threshold is for the one layer
+    window.layers.setCurrentIndex(2)
+    assert not window.psr_choice.isVisible()                                     # not on Chains (monthly) either
+    window.layers.setCurrentIndex(3)
+    assert window.psr_choice.isVisible()
+    assert window.view.legend()[0] == "Havens: shadow period"                      # the layer names the havens' colours; no background here
+    assert [label for _c, label in window.view.legend()[1]] == ["0 h", "up to 12 h", "12 to 24 h", "24 to 48 h"]
+
+
+def test_the_permanent_shadow_is_drawn_light_blue_behind_every_layer_and_named_in_the_legend(app, tmp_path) -> None:
+    viewer = viewer_module()
+    dem = tmp_path / "dem.tif"
+    write_dem(dem, SIZE, SIZE)
+    chains = write_chains(tmp_path / "safe_haven_stage_4_chains.csv", SEEDS)
+    psr = write_psr(tmp_path / "psr.tif", [(600, 700), (601, 700), (600, 701), (601, 701)])
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem, psr_path=psr)
+    data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache", psr)
+    window = viewer.Window(data, "havens", "2026-03")
+    window.resize(900, 700)
+    window.show()
+    app.processEvents()
+    window.view.centre = QPointF(700.5, 600.5)
+    window.view.scale = 12.0
+    window.view.repaint()
+    centre = (window.view.width() // 2, window.view.height() // 2)
+    for index, key in enumerate(window.layer_keys):
+        window.layers.setCurrentIndex(index)
+        window.view.repaint()
+        image = window.view.grab().toImage()
+        colour = image.pixelColor(*centre)
+        assert colour.blue() > colour.red() + 20, key                              # light blue (30 %) in the dark hillshade
+    items = window.view.legend()[1]
+    assert items[-1] == ((142, 203, 255), "permanent shadow")
+    far = QPointF(300.0, 300.0)
+    window.view.centre = far
+    window.view.repaint()
+    away = window.view.grab().toImage().pixelColor(*centre)
+    assert away.blue() <= away.red() + 5                                            # elsewhere only the grey hillshade
+
+
+def test_a_launch_with_a_permanent_shadow_file_builds_its_pyramid_and_a_missing_file_only_warns(tmp_path) -> None:
+    dem = tmp_path / "dem.tif"
+    write_dem(dem, SIZE, SIZE)
+    chains = write_chains(tmp_path / "safe_haven_stage_4_chains.csv", SEEDS)
+    psr = write_psr(tmp_path / "psr.tif", [(600, 700), (601, 701)])
+    common = ["--dem-path", str(dem), "--chains-path", str(chains), "--viewer-directory", str(tmp_path / "viewer"),
+              "--cache-directory", str(tmp_path / "cache"), "--layer", "chains", "--month", "2026-05"]
+    done = run([*common, "--psr-path", str(psr), "--screenshot", str(tmp_path / "with.png")], tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert list((tmp_path / "cache").glob("background_*/done.json")) and (tmp_path / "with.png").stat().st_size > 5000
+    done = run([*common, "--psr-path", str(tmp_path / "gone.tif"), "--screenshot", str(tmp_path / "without.png")], tmp_path)
+    assert done.returncode == 0 and "no permanent shadow is drawn" in done.stderr

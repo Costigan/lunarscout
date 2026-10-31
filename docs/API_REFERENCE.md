@@ -1717,7 +1717,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L198).
 lunarscout.SeedHavenAreasReport(directory: 'str', file: 'str', months: 'int', chain_starts: 'int', pixels: 'int', months_with_images: 'int', radius_meters: 'float', seconds: 'float' = 0.0, lone_seeds: 'int' = 0) -> None
 ```
 
-Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L63).
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L65).
 
 ```text
 What :func:`generate_seed_haven_areas` wrote: the directory of the monthly GeoTIFFs, the pixel file, the number of
@@ -1745,7 +1745,7 @@ Dataclass fields (types and constructor defaults appear above):
 lunarscout.SeedHavenAreasReport.as_dict(self) -> 'dict'
 ```
 
-Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L79).
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L81).
 
 **Documentation gap:** no source docstring.
 
@@ -3308,7 +3308,7 @@ the stored bits are reduced (the device, or all CPU cores).  See ``docs/safe-hav
 lunarscout.generate_seed_haven_areas(chains_path: 'str | Path', dem_path: 'str | Path', output_directory: 'str | Path', *, haven_months_directory: 'str | Path | None' = None, radius_meters: 'float' = 200.0, hours_per_count: 'float' = 2.0, overwrite: 'bool' = False, progress: 'Progress | None' = None) -> 'SeedHavenAreasReport'
 ```
 
-Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L214).
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L231).
 
 ```text
 Write the seed haven areas of every month.
@@ -3697,11 +3697,12 @@ above the lunar reference sphere.
 lunarscout.read_seed_areas(path: 'str | Path') -> 'dict'
 ```
 
-Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L340).
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L360).
 
 ```text
 The pixel file of the seed haven areas: ``months`` (names), ``offsets``, ``row``, ``column``, ``hours``, ``starts``,
-``alone`` (the lone seeds per month), ``with_image`` and ``radius_meters`` (a float).
+``alone`` (the lone seeds per month), ``psr_level`` (per pixel: the largest PSR size class, 0 none to 3 large, of the
+chains whose area holds it; zeros in a file made before it existed), ``with_image`` and ``radius_meters`` (a float).
 ```
 
 **Parameters without explicit entries in this docstring:** `path`.

@@ -275,8 +275,9 @@ def test_chain_tiles_come_from_the_tif_at_full_size_and_from_the_pyramid_above(p
     assert data.chain_tile(2031, 0, 0, 0) is None and data.chain_tile(2031, 2, 0, 0) is None    # no image for that year
 
 
-def write_monthly_chains(directory: Path, entries) -> Path:
-    """A monthly chain pixel file with ``entries``: ``month -> (chains, [(row, column, code), ...])``; the table has 3 classes."""
+def write_monthly_chains(directory: Path, entries, psr_size=None) -> Path:
+    """A monthly chain pixel file with ``entries``: ``month -> (chains, [(row, column, code), ...])``; the table has 3 classes.
+    ``psr_size`` writes the file of the chains that touch a PSR of at least that size."""
     months = sorted(entries)
     rows, columns, codes, offsets, chains, started = [], [], [], [0], [], []
     for month in months:
@@ -289,7 +290,8 @@ def write_monthly_chains(directory: Path, entries) -> Path:
         chains.append(count)
         started.append(rest[0] if rest else 0)
     table = np.array([[0, 0, 0, 0], [255, 0, 0, 255], [0, 255, 0, 255], [255, 255, 255, 255]], dtype=np.uint8)
-    path = directory / "safe_haven_stage_4_monthly_chain_pixels.npz"
+    path = directory / ("safe_haven_stage_4_monthly_chain_pixels.npz" if psr_size is None
+                        else f"safe_haven_stage_4_monthly_chain_pixels_psr_{psr_size}.npz")
     np.savez_compressed(path, months=np.array(months), offsets=np.array(offsets, dtype=np.int64),
                         row=np.array(rows, dtype=np.int32), column=np.array(columns, dtype=np.int32),
                         code=np.array(codes, dtype=np.uint8), table=table, chains=np.array(chains, dtype=np.int64),
@@ -545,3 +547,88 @@ def test_the_chain_start_colour_is_the_monthly_files_start_class(products) -> No
     np.savez_compressed(path, **arrays)
     vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem)
     assert vd.ViewerData(tmp_path / "viewer", tmp_path / "cache").chain_start_colour() == (255, 0, 255)
+
+
+def write_psr(path: Path, pixels, size: int = SIZE) -> Path:
+    """A permanent-shadow raster (255 PSR, 0 not) on the grid of the viewer tests' DEM."""
+    image = np.zeros((size, size), dtype=np.uint8)
+    for row, column in pixels:
+        image[row, column] = 255
+    with rasterio.open(path, "w", driver="GTiff", height=size, width=size, count=1, dtype="uint8", crs=CRS,
+                       transform=Affine.from_gdal(*GT), tiled=True, blockxsize=128, blockysize=128) as dataset:
+        dataset.write(image, 1)
+    return path
+
+
+def test_the_chain_pixel_files_of_each_psr_size_are_listed_loaded_and_drawn_by_size(products) -> None:
+    tmp_path, dem, chains = products
+    options = dict(chains_path=chains, dem_path=dem)
+    write_monthly_chains(tmp_path, {"2026-03": (2, [(5, 6, 1), (5, 7, 2)], 1)})
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", **options)
+    assert vd.ViewerData(tmp_path / "viewer", tmp_path / "cache").psr_sizes() == []
+    assert vd.ViewerData(tmp_path / "viewer", tmp_path / "cache").monthly_chain_tile(0, 0, 0, 0, psr_size="medium") is None
+    write_monthly_chains(tmp_path, {"2026-03": (1, [(5, 6, 1), (9, 9, 3)], 1)}, psr_size="medium")
+    assert not vd.lists_current(tmp_path / "viewer", connect="chains", **options)            # a new file: the lists are made again
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", **options)
+    assert vd.lists_current(tmp_path / "viewer", connect="chains", **options)
+    data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
+    assert data.psr_sizes() == ["medium"] and json.loads((tmp_path / "viewer" / "viewer.json").read_text())["monthly_chains_psr"] == {
+        "medium": "safe_haven_stage_4_monthly_chain_pixels_psr_medium.npz"}
+    assert (data.monthly_chain_count(0), data.monthly_chain_started(0)) == (2, 1)
+    assert (data.monthly_chain_count(0, "medium"), data.monthly_chain_started(0, "medium")) == (1, 1)
+    assert data.monthly_chain_count(0, "large") == 0
+    every, filtered = data.monthly_chain_tile(0, 0, 0, 0), data.monthly_chain_tile(0, 0, 0, 0, psr_size="medium")
+    assert (every[..., 3] > 0).sum() == 2 and (filtered[..., 3] > 0).sum() == 2
+    assert every[5, 7].tolist() == [0, 255, 0, 255] and filtered[5, 7].tolist() == [0, 0, 0, 0]      # not in the filtered picture
+    assert filtered[9, 9].tolist() == [255, 255, 255, 255] and every[9, 9].tolist() == [0, 0, 0, 0]
+    assert data.monthly_chain_tile(0, 0, 0, 0, psr_size="small") is None                    # no file for that size
+    write_monthly_chains(tmp_path, {"2026-03": (1, [(5, 6, 1)], 1)}, psr_size="large")
+    assert not vd.lists_current(tmp_path / "viewer", connect="chains", **options)
+
+
+def test_the_background_is_the_hillshade_with_the_permanent_shadow_composited_on_it_then_averaged(products) -> None:
+    tmp_path, dem, chains = products
+    psr = write_psr(tmp_path / "psr.tif", [(5, 6), (5, 7), (600, 700)])
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem, psr_path=psr)
+    assert (vd.background_directory(tmp_path / "cache", dem, psr) / "done.json").is_file()
+    data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache", psr)
+    assert data.has_background() and data.psr_colour() == vd.PSR_RGB == (142, 203, 255) and vd.PSR_ALPHA == 0.30
+    grey = data.hillshade_tile(0, 0, 0).astype(float)
+    tile = data.background_tile(0, 0, 0)
+    assert tile.shape == (512, 512, 3) and tile.dtype == np.uint8
+    expected = np.rint(grey[5, 6] * 0.7 + np.array(vd.PSR_RGB) * 0.3)                    # a PSR pixel: 30 % of the way to light blue
+    assert tile[5, 6].tolist() == expected.tolist() and tile[5, 7].tolist() == expected.tolist()
+    assert tile[5, 8].tolist() == [int(grey[5, 8])] * 3 and (tile[0, 0] == int(grey[0, 0])).all()     # elsewhere the hillshade
+    assert data.background_tile(0, 1, 1)[600 - 512, 700 - 512].tolist() == np.rint(
+        data.hillshade_tile(0, 1, 1)[600 - 512, 700 - 512] * 0.7 + np.array(vd.PSR_RGB) * 0.3).tolist()
+    # level 1 averages 2 x 2 blocks of the composite: (2, 3) holds two PSR pixels of four, so half of the 30 % blend
+    shade1 = data.hillshade_tile(1, 0, 0).astype(float)[2, 3]
+    half = np.rint(shade1 * 0.85 + np.array(vd.PSR_RGB) * 0.15)
+    assert np.abs(data.background_tile(1, 0, 0)[2, 3].astype(float) - half).max() <= 1.0
+    quarter = data.background_tile(2, 0, 0)[1, 1].astype(float)                           # level 2: 2 of 16 pixels
+    assert np.abs(quarter - np.rint(data.hillshade_tile(2, 0, 0).astype(float)[1, 1] * (1 - 0.3 * 2 / 16)
+                                    + np.array(vd.PSR_RGB) * 0.3 * 2 / 16)).max() <= 1.0
+    far = data.background_tile(2, 0, 0)[100, 100]                                          # no PSR near: the hillshade itself
+    assert far.tolist() == [int(data.hillshade_tile(2, 0, 0)[100, 100])] * 3
+    nothing = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
+    assert not nothing.has_background() and nothing.background_tile(0, 0, 0) is None and nothing.psr_colour() is None
+    assert not vd.ViewerData(tmp_path / "viewer", tmp_path / "cache", tmp_path / "missing.tif").has_background()
+
+
+def test_the_background_is_made_again_when_the_psr_raster_changes_and_kept_otherwise(products) -> None:
+    tmp_path, dem, chains = products
+    psr = write_psr(tmp_path / "psr.tif", [(5, 6)])
+    first = vd.build_background(tmp_path / "cache", dem, psr)
+    stamp = (first / "done.json").stat().st_mtime_ns
+    assert vd.build_background(tmp_path / "cache", dem, psr) == first and (first / "done.json").stat().st_mtime_ns == stamp
+    write_psr(psr, [(5, 6), (9, 9)])
+    second = vd.build_background(tmp_path / "cache", dem, psr)
+    assert second != first and (second / "done.json").is_file()
+
+
+def test_a_permanent_shadow_raster_off_the_dem_grid_is_refused(products) -> None:
+    tmp_path, dem, chains = products
+    psr = write_psr(tmp_path / "psr.tif", [(5, 6)], size=600)
+    with pytest.raises(InputError) as error:
+        vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem, psr_path=psr)
+    assert error.value.code == "viewer_psr_invalid" and not list((tmp_path / "cache").glob("background_*"))

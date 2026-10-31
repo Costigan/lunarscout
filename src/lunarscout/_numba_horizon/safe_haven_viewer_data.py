@@ -8,10 +8,12 @@ everything it draws, with no user interface in it:
   havens]`` in DEM pixels, as in ``safe_haven_stage_4_cluster_boxes.csv``), plus the yearly chain images;
 * ``havens.npz`` in the same directory: the DEM pixels of the seed haven areas, month by month, copied from
   ``safe_haven_stage_4_seed_haven_areas.npz`` beside the chain table (driver step ``seed-haven-areas``; see
-  ``safe_haven_seed_areas.py``: the first seed of each chain of 2 or more seeds that starts in the month and the havens of
-  the month within the step's radius of one), or the chain starts alone when that file is missing; ordered by month with
-  the start of each month's slice in ``offsets``;
-* a cache directory (by default under ``/tmp``) with image pyramids: the dark hillshade at every zoom level and, for
+  ``safe_haven_areas.py``: the current start of each chain drawn in the month, the havens of the month within the step's
+  radius of one and the lone last seeds), or the chain starts and lone seeds alone when that file is missing; ordered by
+  month with the start of each month's slice in ``offsets``;
+* a cache directory (by default under ``/tmp``) with image pyramids: the dark hillshade at every zoom level, the same with
+  the permanent shadow (``psr.tif``) composited onto it in light blue at 30 % at full resolution and then reduced by means
+  (the ground of every layer when there is a PSR file; RGB, about 3.7 GB) and, for
   each year, the chain image at every zoom level but the first (the first is read from the GeoTIFF itself). A pyramid
   is built once; the next run finds it and starts at once. A pyramid is a set of raw files read through ``numpy.memmap``,
   so a tile of the picture is a slice;
@@ -45,7 +47,7 @@ import numpy.typing as npt
 from ..errors import InputError, ProductStorageError
 from ..safe_haven_areas import areas_path, chain_starts, read_seed_areas
 from .pixel_coordinates import dem_header
-from .safe_haven_chain_maps import monthly_path, seed_month_spans
+from .safe_haven_chain_maps import PSR_SIZES, monthly_path, seed_month_spans
 from .safe_haven_chains import read_chain_table
 from .safe_haven_cluster_maps import COUNT_LABELS, cluster_classes, cluster_colours, find_clusters
 from .safe_haven_floods import read_edge_table
@@ -55,7 +57,7 @@ from .safe_haven_overview import SURFACE, _rgb, raw_shade
 
 TILE = 512
 STRIP = 1024                                  # DEM rows per strip while building; a multiple of 2 ** the top level
-PRODUCT = "safe-haven-viewer-v6"
+PRODUCT = "safe-haven-viewer-v7"
 CHAIN_IMAGE = re.compile(r"^safe_haven_stage_4_longest_chain_per_root_(\d{4})\.tif$")
 HAVEN_MONTHS_DIRECTORY = "safe_haven_stage_1_haven_months"      # beside the chain table: scripts/threshold_safe_havens.py
 HAVEN_MONTH_IMAGE = re.compile(r"^safe_haven_stage_1_haven_months_(\d{4}-\d{2})\.tif$")
@@ -64,6 +66,7 @@ HAVEN_MONTH_IMAGE = re.compile(r"^safe_haven_stage_1_haven_months_(\d{4}-\d{2})\
 # layers and the all-havens layer draw them here.
 HAVEN_SHADOW_CLASSES = tuple((bound, _rgb(colour)) for bound, colour in _SHADOW_CLASSES)
 SHADOW_RGBA = np.array([(*colour, 255) for _bound, colour in HAVEN_SHADOW_CLASSES], dtype=np.uint8)
+PSR_RGB, PSR_ALPHA = (142, 203, 255), 0.30    # the permanent shadow, composited onto the hillshade: light blue at 30 % opacity
 _LOW, _HIGH = 0.07, 0.24                      # the hillshade's grey range, as in the overview maps
 
 Progress = Callable[[str], None]
@@ -129,6 +132,17 @@ def _monthly_chain_name(chains_path: str | Path) -> str | None:
     or None when there is none."""
     path = monthly_path(Path(chains_path).parent)
     return path.name if path.is_file() else None
+
+
+def _monthly_psr_names(chains_path: str | Path) -> dict[str, str]:
+    """The monthly chain pixel files of the chains that touch a PSR, beside the chain table, as ``{size: name}`` (sizes in
+    the order small, medium, large); empty when there are none."""
+    found = {}
+    for size in PSR_SIZES:
+        path = monthly_path(Path(chains_path).parent, psr_size=size)
+        if path.is_file():
+            found[size] = path.name
+    return found
 
 
 def _haven_month_images(chains_path: str | Path) -> dict[str, str]:
@@ -201,7 +215,7 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
         radius = areas["radius_meters"]
     else:
         hours = np.array([r["hibernation_hours"] or 0.0 for r in rows], dtype=np.float32)
-        start_seed, start_month, lone_seed, lone_month, table_months = chain_starts(rows)
+        start_seed, start_month, lone_seed, lone_month, table_months, _seed_level = chain_starts(rows)
         pixel_rows = np.array([r["row"] for r in rows], dtype=np.int32)
         pixel_columns = np.array([r["column"] for r in rows], dtype=np.int32)
         for index, name in enumerate(months):
@@ -228,7 +242,8 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
         "chain_directory": str(chains_path.parent), "chain_images": chain_images,
         "hours_max": float(seed_hours.max()) if len(seed_hours) else 0.0,
         "seed_areas": signature, "area_radius_meters": radius, "chain_starts": chain_starts_by_month,
-        "monthly_chains": _monthly_chain_name(chains_path), "haven_months": _haven_month_images(chains_path),
+        "monthly_chains": _monthly_chain_name(chains_path), "monthly_chains_psr": _monthly_psr_names(chains_path),
+        "haven_months": _haven_month_images(chains_path),
         "source": {"chains": chains_path.name, "size": chains_path.stat().st_size,
                    "mtime_ns": chains_path.stat().st_mtime_ns},
         "box_columns": ["row_min", "row_max", "column_min", "column_max", "havens"],
@@ -264,6 +279,7 @@ def lists_current(viewer_directory: str | Path, *, chains_path: str | Path, dem_
                 and meta.get("seed_areas") == _seed_areas_signature(Path(chains_path))
                 and meta["source"] == {"chains": Path(chains_path).name, "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
                 and meta["dem"]["path"] == str(dem_path) and meta.get("monthly_chains") == _monthly_chain_name(chains_path)
+                and meta.get("monthly_chains_psr", {}) == _monthly_psr_names(chains_path)
                 and meta.get("haven_months", {}) == _haven_month_images(chains_path))
     except (OSError, ValueError, KeyError):
         return False
@@ -363,6 +379,58 @@ def build_hillshade(cache_directory: str | Path, dem_path: str | Path, progress:
     return final
 
 
+def background_directory(cache_directory: Path, dem_path: Path, psr_path: Path) -> Path:
+    return Path(cache_directory) / ("background_" + _signature(
+        _file_signature(Path(dem_path)), _file_signature(Path(psr_path)), PSR_RGB, PSR_ALPHA))
+
+
+def build_background(cache_directory: str | Path, dem_path: str | Path, psr_path: str | Path,
+                     progress: Progress = _quiet) -> Path:
+    """The background of every layer as an 8-bit RGB pyramid in the cache: the hillshade with the permanent shadow
+    (``psr_path``, nonzero is a PSR, on the DEM's grid) composited onto it at full resolution, a PSR pixel blended
+    ``PSR_ALPHA`` of the way from the hillshade's grey to ``PSR_RGB``; the coarser levels are the means of 2 x 2 blocks, so a
+    coarser pixel shows the fraction of its block that is shadow (nothing is done when it is there already; the hillshade
+    pyramid is built first when it is not)."""
+    import rasterio
+
+    shade_directory = build_hillshade(cache_directory, dem_path, progress)
+    final = background_directory(Path(cache_directory), Path(dem_path), Path(psr_path))
+    if (final / "done.json").is_file():
+        return final
+    _transform, width, height, _crs = dem_header(dem_path)
+    staging = final.with_name(final.name + ".partial")
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    try:
+        with rasterio.open(psr_path) as image:
+            if image.count != 1 or (image.width, image.height) != (width, height):
+                raise InputError(f"{Path(psr_path).name} is not one band on the DEM's grid", code="viewer_psr_invalid",
+                                 details={"psr": [image.width, image.height], "dem": [width, height]})
+            sizes = level_sizes(width)
+            shade = np.load(shade_directory / "level0.npy", mmap_mode="r")
+            levels = _level_files(staging, sizes, 3, 0, "w+")
+            colour = np.array(PSR_RGB, dtype=np.float32)
+            for first in range(0, height, STRIP):
+                progress(f"Background with the permanent shadow: rows {first:,} of {height:,}")
+                rows = min(STRIP, height - first)
+                grey = np.asarray(shade[first:first + rows]).astype(np.float32)[..., None]
+                psr = (image.read(1, window=rasterio.windows.Window(0, first, width, rows)) > 0)[..., None]
+                block = np.rint(np.where(psr, grey * (1.0 - PSR_ALPHA) + colour * PSR_ALPHA, grey)).astype(np.uint8)
+                levels[0][first:first + rows] = block
+                for k in range(1, len(sizes)):
+                    block = reduce2(block, "mean")
+                    target = first // 2 ** k
+                    levels[k][target:target + block.shape[0]] = block
+        for level in levels:
+            level.flush()
+        del levels
+        (staging / "done.json").write_text(json.dumps({"sizes": sizes}), encoding="utf-8")
+        _publish(staging, final)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return final
+
+
 def chain_directory(cache_directory: Path, tif_path: Path) -> Path:
     return Path(cache_directory) / f"chains_{tif_path.stem[-4:]}_{_file_signature(tif_path)}"
 
@@ -417,9 +485,10 @@ def build_chain_pyramids(cache_directory: str | Path, tif_paths: dict, progress:
 
 def prepare_viewer(viewer_directory: str | Path, cache_directory: str | Path, *, chains_path: str | Path,
                    dem_path: str | Path, connect: str = "chains", edges_path: str | Path | None = None,
-                   rebuild: bool = False, progress: Progress = _quiet) -> None:
-    """Make whatever the viewer needs and does not have yet: the lists, the hillshade pyramid and the chain pyramids.
-    ``rebuild`` makes the lists again (the pyramids are rebuilt only when their source file changed)."""
+                   psr_path: str | Path | None = None, rebuild: bool = False, progress: Progress = _quiet) -> None:
+    """Make whatever the viewer needs and does not have yet: the lists, the hillshade pyramid, the background pyramid of the
+    hillshade with the permanent shadow on it (when ``psr_path`` is a file) and the chain pyramids. ``rebuild`` makes the lists again (the pyramids are rebuilt only
+    when their source file changed)."""
     if rebuild or not lists_current(viewer_directory, chains_path=chains_path, dem_path=dem_path, connect=connect):
         build_viewer_lists(viewer_directory, chains_path=chains_path, dem_path=dem_path, connect=connect,
                            edges_path=edges_path, progress=progress)
@@ -427,6 +496,8 @@ def prepare_viewer(viewer_directory: str | Path, cache_directory: str | Path, *,
     cache = Path(cache_directory)
     cache.mkdir(parents=True, exist_ok=True)
     build_hillshade(cache, dem_path, progress)
+    if psr_path is not None and Path(psr_path).is_file():
+        build_background(cache, dem_path, psr_path, progress)
     tifs = {y: Path(meta["chain_directory"]) / name for y, name in meta["chain_images"].items()}
     build_chain_pyramids(cache, tifs, progress)
     progress("Ready")
@@ -458,7 +529,7 @@ def _outline(image, x0: int, y0: int, x1: int, y1: int, colour) -> None:
 class ViewerData:
     """Opens a prepared viewer directory and its cache and gives the 512-pixel tiles of every layer."""
 
-    def __init__(self, viewer_directory: str | Path, cache_directory: str | Path):
+    def __init__(self, viewer_directory: str | Path, cache_directory: str | Path, psr_path: str | Path | None = None):
         paths = viewer_paths(viewer_directory)
         meta = json.loads(paths["json"].read_text(encoding="utf-8"))
         if meta.get("product") != PRODUCT:
@@ -476,11 +547,19 @@ class ViewerData:
         self.cache = Path(cache_directory)
         dem = Path(meta["dem"]["path"])
         self._hillshade = [np.load(p, mmap_mode="r") for p in self._sorted_levels(hillshade_directory(self.cache, dem))]
+        self._background = None                     # the hillshade with the permanent shadow on it (RGB), when there is a file
+        if psr_path is not None and Path(psr_path).is_file():
+            self._background = [np.load(p, mmap_mode="r")
+                                for p in self._sorted_levels(background_directory(self.cache, dem, Path(psr_path)))]
         self._root_code = -1                        # the colour class of a chain's start in the monthly file, if it has one
         self.monthly_chains = None                  # (rows, columns, codes, table, per-month slices, chains, started) or None
+        self.monthly_chains_psr: dict[str, tuple] = {}      # the same for the chains that touch a PSR of at least each size
         name = meta.get("monthly_chains")
         if name and (Path(meta["chain_directory"]) / name).is_file():
-            self._load_monthly_chains(Path(meta["chain_directory"]) / name)
+            self.monthly_chains = self._load_monthly_chains(Path(meta["chain_directory"]) / name)
+        for size, name in meta.get("monthly_chains_psr", {}).items():
+            if (Path(meta["chain_directory"]) / name).is_file():
+                self.monthly_chains_psr[size] = self._load_monthly_chains(Path(meta["chain_directory"]) / name)
         self.chain_years = {int(y): Path(meta["chain_directory"]) / name for y, name in meta["chain_images"].items()}
         self.haven_months = {self.months.index(m): Path(meta["chain_directory"]) / name
                              for m, name in meta.get("haven_months", {}).items()
@@ -490,7 +569,7 @@ class ViewerData:
         self._chain_levels: dict[int, list] = {}
         self._chain_datasets: dict[int, object] = {}
 
-    def _load_monthly_chains(self, path: Path) -> None:
+    def _load_monthly_chains(self, path: Path) -> tuple:
         with np.load(path) as data:
             names = [str(m) for m in data["months"]]
             offsets, chains = data["offsets"], data["chains"]
@@ -505,7 +584,7 @@ class ViewerData:
                     started[index] = data["started"][k] if "started" in data else 0
             labels = [str(x) for x in data["labels"]] if "labels" in data else []
             self._root_code = len(data["table"]) - 1 if labels and labels[-1] == "start of a chain" else -1
-            self.monthly_chains = (data["row"], data["column"], data["code"], data["table"], slices, counts, started)
+            return (data["row"], data["column"], data["code"], data["table"], slices, counts, started)
 
     @staticmethod
     def _sorted_levels(directory: Path) -> list[Path]:
@@ -638,21 +717,49 @@ class ViewerData:
         """The chains of 2 or more seeds that start in the month: the centres of its seed haven areas."""
         return int(self.meta.get("chain_starts", {}).get(self.months[month], 0))
 
-    def monthly_chain_count(self, month: int) -> int:
+    def _monthly(self, psr_size: str | None):
+        """The loaded monthly chain pixel file of every chain, or with ``psr_size`` of the chains that touch a PSR of at least
+        that size; None when there is no such file."""
+        return self.monthly_chains if psr_size is None else self.monthly_chains_psr.get(psr_size)
+
+    def psr_sizes(self) -> list[str]:
+        """The PSR sizes that have a monthly chain pixel file, in the order small, medium, large."""
+        return [size for size in PSR_SIZES if size in self.monthly_chains_psr]
+
+    def monthly_chain_count(self, month: int, psr_size: str | None = None) -> int:
         """The chains of 2 or more seeds drawn in the month (the part of each that is still ahead)."""
-        return int(self.monthly_chains[5][month]) if self.monthly_chains is not None else 0
+        loaded = self._monthly(psr_size)
+        return int(loaded[5][month]) if loaded is not None else 0
 
-    def monthly_chain_started(self, month: int) -> int:
+    def monthly_chain_started(self, month: int, psr_size: str | None = None) -> int:
         """How many of those start in the month."""
-        return int(self.monthly_chains[6][month]) if self.monthly_chains is not None else 0
+        loaded = self._monthly(psr_size)
+        return int(loaded[6][month]) if loaded is not None else 0
 
-    def monthly_chain_tile(self, month: int, level: int, tx: int, ty: int):
+    def has_background(self) -> bool:
+        """Whether the ground of every layer is the hillshade with the permanent shadow composited on it."""
+        return self._background is not None
+
+    def background_tile(self, level: int, tx: int, ty: int):
+        """``(512, 512, 3)`` RGB of the hillshade with the permanent shadow on it (light blue at 30 %, the mean of its block at
+        the coarser levels), or None without the permanent shadow."""
+        if self._background is None:
+            return None
+        return self._crop(self._background[level], level, tx, ty, 3)
+
+    def psr_colour(self):
+        """The colour of the permanent shadow, or None without it."""
+        return PSR_RGB if self._background is not None else None
+
+    def monthly_chain_tile(self, month: int, level: int, tx: int, ty: int, psr_size: str | None = None):
         """``(512, 512, 4)`` RGBA of the chains of the month, each as the part still ahead (the pixels of the monthly chain
         file, in their colour classes; 1 pixel at the two finest levels, 2 at the coarser ones) with the start of each
-        chain that starts in the month marked by a 3 x 3 square of the start colour, or None without the file."""
-        if self.monthly_chains is None:
+        chain that starts in the month marked by a 3 x 3 square of the start colour, or None without the file. ``psr_size``
+        draws the file of the chains that touch a PSR of at least that size."""
+        loaded = self._monthly(psr_size)
+        if loaded is None:
             return None
-        rows, columns, codes, table, slices = self.monthly_chains[:5]
+        rows, columns, codes, table, slices = loaded[:5]
         low, high = int(slices[month][0]), int(slices[month][1])
         image = np.zeros((TILE, TILE, 4), dtype=np.uint8)
         rows, columns, codes = rows[low:high], columns[low:high], codes[low:high]

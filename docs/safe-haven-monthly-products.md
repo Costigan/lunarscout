@@ -41,6 +41,9 @@ Example. A chain of three seeds A (month 1), B (month 2) and C (month 3):
 | Havens and cluster boxes (monthly) | the cluster boxes, with the same havens as Seed haven areas drawn over them |
 | All havens (monthly) | every haven of the month |
 | Chains (yearly) | the longest chain of each root in the year it starts, all seeds of the year |
+| Chains (monthly, touch PSR) | Chains (monthly), only the chains that touch a PSR of at least the chosen size |
+
+Every layer is drawn over the permanent-shadow background (below).
 
 ### Seed haven areas (monthly)
 
@@ -75,6 +78,30 @@ The radius is a setting (`radius_meters` of `ls.generate_seed_haven_areas`; `ARE
 The step reads the seed haven areas file, so it runs after `seed-haven-areas` and refuses to run (error code
 `chain_maps_seed_areas_missing`) when that file does not exist. It does not fall back to another set of havens.
 
+### Chains (monthly, touch PSR)
+
+The same picture as Chains (monthly), keeping only the chains that touch a PSR of at least a chosen size.
+
+* **Touching.** A chain touches a PSR when the chain table says its routes pass next to one (a PSR pixel among the eight
+  neighbours of a route pixel): `chain_psr_small`, `chain_psr_medium` and `chain_psr_large` count the distinct PSRs of each
+  size class that the chain's routes, from the root to its last seed, pass. The counts cover the **whole chain**. A chain
+  that qualifies qualifies in every month it is drawn, even when its remaining part no longer passes the PSR.
+* **Size threshold.** One of three, the size classes used when the chains were made (`psr_small_max_m2` 400 m2,
+  `psr_medium_max_m2` 1,000,000 m2): *small* is any PSR (`small + medium + large >= 1`), *medium* is a medium or large PSR
+  (`medium + large >= 1`), *large* is a large PSR (`large >= 1`).
+* **What is drawn** for a qualifying chain is what Chains (monthly) draws for it: its route, the PSR marks, the magenta mark
+  on its current start, its current start, the havens within the radius of its current start, and its lone last seed. A
+  haven that is within the radius of the current starts of several chains is drawn when at least one of them qualifies.
+  Nothing is drawn for a chain that does not qualify.
+* **Products.** Three pixel files, one per threshold, `safe_haven_stage_4_monthly_chain_pixels_psr_small.npz`, `..._medium.npz`
+  and `..._large.npz`, made by the same step as the Chains (monthly) file. The viewer has one layer, "Chains (monthly, touch
+  PSR)", and a second drop-down chooses the threshold (default medium). A threshold whose file is absent is not offered.
+* **Inputs.** The chain table must hold the PSR counts (stage 4 run with the routes); the step refuses to write these files
+  (error code `chain_maps_psr_counts_missing`) when the counts are blank. The seed haven areas file records, for each pixel,
+  the largest PSR size class of the chains whose area contains it, so the same file filters the havens (`psr_level` in the
+  areas file: 0 none, 1 small, 2 medium, 3 large; the level of a pixel is the largest of the chains whose current start or lone
+  seed it is, or is within the radius of).
+
 ### Havens and cluster boxes (monthly)
 
 * **Boxes.** One box per **cluster**: with `--connect chains` (the default), one root's whole tree, the root and every
@@ -93,6 +120,18 @@ Every pixel that is a haven in the month, from the month's haven image, with no 
 Unchanged by the rules above: the longest chain of each root, drawn whole in the year its root starts in, with all the
 seeds of the year, isolated ones included.
 
+## Permanent shadow background
+
+The ground of every layer is the hillshade with the permanent shadow on it. The pixels of `psr.tif` (255 is PSR, 0 is not; the
+DEM's grid, 30,336 by 30,336 pixels of 20 m) are composited onto the hillshade **at full resolution**: a PSR pixel takes the
+hillshade's grey 70% and light blue `#8ecbff` 30% (30% opacity). The background pyramid is then made from that picture, each
+coarser level the **mean** of 2 x 2 blocks of the level below, so a coarser pixel shows the fraction of its block that is
+shadow: a block of a few PSR pixels stays nearly the hillshade, a block that is mostly PSR is clearly blue, and a small PSR
+fades at low zoom and shows at full strength when you zoom in. The pyramid is RGB (about 3.7 GB for the full pole) and is
+made once; it is made again when `psr.tif`, the DEM, the colour or the opacity change. The viewer reads `PSR_PATH` (default
+the scenario's `psr.tif`). A legend entry names the colour ("permanent shadow"). Without the file the viewer draws the
+hillshade alone and prints a note. Every layer is drawn over this ground.
+
 ## Regeneration
 
 * `seed-haven-areas` depends on the chain table, the DEM and the haven-months images. A new radius rebuilds it.
@@ -100,6 +139,7 @@ seeds of the year, isolated ones included.
   haven areas. Changing the radius rebuilds both.
 * The viewer rebuilds its lists when the areas file changes.
 * The driver (`scripts/run_safe_haven.py`) runs `haven-months`, then `seed-haven-areas`, then `monthly-chain-maps`.
+* The three touch-PSR files are made by `monthly-chain-maps` in the same run, from the areas file's `psr_level`; each adds about the time of the main picture (the routes are reconstructed once). The areas file must be made again once for `psr_level` (a file made before it reads as level 0).
 
 ## Open
 

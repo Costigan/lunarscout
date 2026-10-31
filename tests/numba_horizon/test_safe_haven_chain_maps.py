@@ -1078,3 +1078,114 @@ def test_the_isolated_seeds_layer_has_the_shadow_period_and_the_images_say_what_
     assert connection.execute('SELECT seed_id, hibernation_hours FROM "isolated_seeds"').fetchall() == [(8, 60.0)]
     _image, info = read_image(maps.output_paths(tables / "out")["longest_chain_per_root"]["raster"])
     assert "havens by shadow period: 0 h #ffffff; up to 12 h #f2c94c; 12 to 24 h #38b6c8; 24 to 48 h #7a5cd6" in info.tags["COLOURS"]
+
+
+# --- the chains that touch a PSR ---------------------------------------------------------------------------------------
+
+def set_psr_counts(tables, counts) -> Path:
+    """Write ``chain_psr_small``, ``chain_psr_medium`` and ``chain_psr_large`` of the end seeds of the fixture's chains:
+    seed id -> ``(small, medium, large)``. The longest chains end at seeds 4 and 7."""
+    import csv
+
+    path = tables / "chains.csv"
+    with open(path, newline="") as handle:
+        reader = csv.DictReader(handle)
+        names, rows = reader.fieldnames, list(reader)
+    for row in rows:
+        if int(row["seed_id"]) in counts:
+            row["chain_psr_small"], row["chain_psr_medium"], row["chain_psr_large"] = counts[int(row["seed_id"])]
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=names)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+def write_haven_image(tables, month, pixels) -> None:
+    directory = tables / "safe_haven_stage_1_haven_months"
+    directory.mkdir(exist_ok=True)
+    image = np.full((HEIGHT, WIDTH), 255, dtype=np.uint8)
+    for (row, column), count in pixels.items():
+        image[row, column] = count
+    with rasterio.open(directory / f"safe_haven_stage_1_haven_months_{month}.tif", "w", driver="GTiff", height=HEIGHT, width=WIDTH,
+                       count=1, dtype="uint8", nodata=255, crs=CRS, transform=Affine.from_gdal(*GT)) as dataset:
+        dataset.write(image, 1)
+        dataset.update_tags(SAFE_HAVEN_BYTE_THRESHOLD="24", SAFE_HAVEN_HOURS_PER_COUNT="2", SAFE_HAVEN_SURVIVAL_LIMIT_HOURS="48")
+
+
+def test_a_chain_touches_a_psr_of_at_least_a_size_by_the_classes_of_its_psr_counts(tables) -> None:
+    # chain A (1-2-3-4) passes one medium PSR; chain B (6-7) passes two small ones: any PSR takes both, medium or large only A, large neither
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
+    set_psr_counts(tables, {4: ("0", "1", "0"), 7: ("2", "0", "0")})
+    write_haven_image(tables, "2024-03", {(0, 5): 0, (2, 20): 6})                           # 0 h near seed 1 (A); 12 h near seed 6 (B)
+    report = run_monthly(tables, overwrite=True, psr_sizes=("small", "medium", "large"))
+    files = {size: maps.monthly_path(tables / "out", psr_size=size) for size in ("small", "medium", "large")}
+    assert {size: Path(entry["file"]) for size, entry in report.psr_files.items()} == files
+    assert all(path.name == f"safe_haven_stage_4_monthly_chain_pixels_psr_{size}.npz" for size, path in files.items())
+    every = maps.monthly_path(tables / "out")
+    assert haven_pixels(every, "2024-03") == {(0, 0), (0, 5), (2, 20), (5, 15)}
+    assert haven_pixels(files["small"], "2024-03") == haven_pixels(every, "2024-03")          # both chains touch some PSR
+    assert haven_pixels(files["medium"], "2024-03") == {(0, 0), (0, 5)}                       # only A: its start and the haven near it
+    assert haven_pixels(files["large"], "2024-03") == set()
+    assert start_marks(files["small"])["2024-03"] == [(0, 0), (5, 15)] and start_marks(files["medium"])["2024-03"] == [(0, 0)]
+    assert start_marks(files["large"])["2024-03"] == []
+    with np.load(files["medium"]) as data:
+        assert str(data["psr_size"]) == "medium" and data["chains"][0] == 1 and data["started"][0] == 1
+        assert data["months"].tolist() == list(report.months)
+    with np.load(files["large"]) as data:
+        assert data["chains"].sum() == 0 and len(data["row"]) == 0
+    medium_image, _codes = month_image(files["medium"], "2024-03")
+    every_image, _codes = month_image(every, "2024-03")
+    assert not medium_image[3, 5:7, 15:19].any() and every_image[3, 5:7, 15:19].any()        # B's route (6 at (5, 15), 7 at (6, 18))
+    assert (medium_image[:, :4, :11] == every_image[:, :4, :11]).all()                        # A's route and its haven are the same
+    assert report.psr_files["small"]["chains"] == 2 and report.psr_files["medium"]["chains"] == 1
+    assert report.psr_files["large"] == {"file": str(files["large"]), "pixels": 0, "chains": 0}
+
+
+def test_a_chain_that_touches_a_psr_does_so_in_every_month_it_is_drawn_and_a_shared_haven_is_drawn_if_any_chain_qualifies(tables) -> None:
+    # chain A drawn from A (month 03) to B (04) to C (05): its whole-chain PSR class holds in each month; chain B is of one month
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"}, seed_months={2: "2024-04", 3: "2024-05", 4: "2024-06"})
+    set_psr_counts(tables, {4: ("0", "0", "1"), 7: ("0", "0", "0")})
+    write_haven_image(tables, "2024-03", {(2, 8): 0})                    # 8 pixels from seed 1, 10.4 from seed 6: A's alone
+    run_monthly(tables, overwrite=True, psr_sizes=("large",))
+    large = maps.monthly_path(tables / "out", psr_size="large")
+    assert start_marks(large) == {"2024-03": [(0, 0)], "2024-04": [(1, 3)], "2024-05": [(2, 6)], "2024-06": []}
+    assert [haven_pixels(large, m) for m in ("2024-03", "2024-04", "2024-05", "2024-06")] == [
+        {(0, 0), (2, 8)}, {(1, 3)}, {(2, 6)}, {(3, 9)}]                  # and the lone last seed of A in 2024-06
+    write_haven_image(tables, "2024-03", {(3, 10): 0})                  # within 10 pixels of seed 1 (A) and of seed 6 (B)
+    set_psr_counts(tables, {4: ("0", "0", "0"), 7: ("0", "0", "1")})    # now only B touches a large PSR
+    run_monthly(tables, overwrite=True, psr_sizes=("large",))
+    assert haven_pixels(large, "2024-03") == {(5, 15), (3, 10)}         # B's start and the haven it shares with A's start
+    assert haven_pixels(large, "2024-04") == set() and start_marks(large)["2024-04"] == []     # A is not drawn at all
+
+
+def test_the_psr_files_need_the_psr_counts_of_the_chain_table_and_known_sizes(tables) -> None:
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
+    with pytest.raises(InputError) as error:
+        run_monthly(tables, overwrite=True, psr_sizes=("small",))                            # stage 4 ran without the routes: blank counts
+    assert error.value.code == "chain_maps_psr_counts_missing" and not (tables / "out").exists()
+    set_psr_counts(tables, {4: ("0", "0", "0"), 7: ("0", "0", "0")})
+    with pytest.raises(InputError) as error:
+        run_monthly(tables, overwrite=True, psr_sizes=("huge",))
+    assert error.value.code == "chain_maps_setting_invalid" and not (tables / "out").exists()
+    with pytest.raises(InputError) as error:
+        maps.monthly_path(tables, psr_size="huge")
+    assert error.value.code == "chain_maps_setting_invalid"
+    report = run_monthly(tables, overwrite=True)                                             # no sizes: only the main file
+    assert report.psr_files is None and [p.name for p in (tables / "out").glob("*.npz")] == [
+        "safe_haven_stage_4_monthly_chain_pixels.npz"]
+
+
+def test_the_psr_files_are_replaced_only_with_overwrite_and_leave_no_staging_file(tables) -> None:
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
+    set_psr_counts(tables, {4: ("0", "1", "0"), 7: ("0", "0", "0")})
+    run_monthly(tables, overwrite=True, psr_sizes=("medium",))
+    with pytest.raises(InputError) as error:
+        run_monthly(tables, psr_sizes=("medium",))
+    assert error.value.code == "chain_maps_output_exists"
+    (tables / "out" / "safe_haven_stage_4_monthly_chain_pixels.npz").unlink()               # the main file is gone, the PSR one is not
+    with pytest.raises(InputError) as error:
+        run_monthly(tables, psr_sizes=("medium",))
+    assert error.value.code == "chain_maps_output_exists"
+    run_monthly(tables, overwrite=True, psr_sizes=("medium",))
+    assert not list((tables / "out").glob("*.partial"))

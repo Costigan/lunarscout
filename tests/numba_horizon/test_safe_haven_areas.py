@@ -179,3 +179,42 @@ def test_without_haven_images_the_areas_are_the_current_starts_and_lone_seeds_al
     result = ls.read_seed_areas(tmp_path / "safe_haven_stage_4_seed_haven_areas.npz")
     assert [pixels(result, m) for m in ("2026-03", "2026-04", "2026-05")] == [
         [(10, 10, 0.0)], [(20, 12, 6.0)], [(14, 600, 20.0)]] and result["with_image"].tolist() == [False] * 3
+
+
+def test_each_area_pixel_records_the_largest_psr_class_of_the_chains_whose_area_holds_it(products) -> None:
+    # tree 1-2-3 passes a large PSR (class 3), tree 5-6 two small ones (class 1); seed 4 is alone
+    tmp_path, dem, chains = products
+    from test_safe_haven_viewer_data import SEEDS
+    seeds = [dict(row, chain_psr_large=1) if row["seed_id"] == 3 else dict(row, chain_psr_small=2) if row["seed_id"] == 6 else row
+             for row in SEEDS]
+    write_chains(chains, seeds)
+    report, result = make(products)
+    for month, level in (("2026-03", 3), ("2026-05", 1)):
+        k = result["months"].index(month)
+        low, high = int(result["offsets"][k]), int(result["offsets"][k + 1])
+        assert high > low and (result["psr_level"][low:high] == level).all(), month
+    assert result["psr_level"].dtype == np.uint8 and len(result["psr_level"]) == len(result["row"])
+
+
+def test_a_haven_near_the_starts_of_two_chains_takes_the_larger_psr_class_and_a_lone_seed_its_own(products) -> None:
+    tmp_path, dem, chains = products
+    start = "2026-03-05T00:00:00.000000Z"
+    # chain A (seeds 1, 2) of a small PSR starts at (10, 10); chain B (seeds 3, 4) of a large one at (10, 22): (10, 16) is near both
+    write_chains(chains, [seed(1, "2026-03", 10, 10, 1, 0, start, 0.0), dict(seed(2, "2026-03", 40, 10, 1, 1, start, 0.0, 2), chain_psr_small=1),
+                          seed(3, "2026-03", 10, 22, 3, 0, start, 0.0), dict(seed(4, "2026-03", 40, 22, 3, 3, start, 0.0, 2), chain_psr_large=1)])
+    write_haven_months(chains, {"2026-03": {(10, 16): 2, (10, 4): 2, (10, 28): 2}})
+    _report, result = make(products, images=None)
+    pixels_ = {(r, c): lv for r, c, lv in zip(result["row"].tolist(), result["column"].tolist(), result["psr_level"].tolist())}
+    assert pixels_[(10, 16)] == 3 and pixels_[(10, 4)] == 1 and pixels_[(10, 28)] == 3 and pixels_[(10, 10)] == 1 and pixels_[(10, 22)] == 3
+
+
+def test_an_areas_file_made_before_psr_classes_reads_with_zero_levels(products, tmp_path) -> None:
+    folder, dem, chains = products
+    _report, result = make(products)
+    path = folder / "safe_haven_stage_4_seed_haven_areas.npz"
+    with np.load(path) as data:
+        kept = {name: data[name] for name in data.files if name != "psr_level"}
+    old = folder / "old.npz"
+    np.savez_compressed(old, **kept)
+    read = ls.read_seed_areas(old)
+    assert read["psr_level"].tolist() == [0] * len(read["row"]) and len(read["row"]) == len(result["row"])
