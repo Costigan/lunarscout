@@ -14,18 +14,35 @@ whole pole.
 The drop-down chooses the layer:
 
 * Havens and cluster boxes (monthly): the bounding box of each group of connected havens whose chain starts in the
-  month, coloured by the havens in the group (the aqua ramp of safe_haven_stage_4_cluster_boxes_<year>.png), with one
-  orange pixel for each haven shown in the month drawn over them;
-* Havens (monthly): the same havens without the boxes. A haven is shown from the month its chain starts in to its own
-  month, in every layer that draws havens, so the layers agree;
+  month, coloured by the havens in the group (the aqua ramp of safe_haven_stage_4_cluster_boxes_<year>.png), with the
+  seed haven areas of the month drawn over them;
+* Seed haven areas (monthly): the same havens without the boxes. A month shows the current start of each chain drawn in
+  it (its first seed not yet passed, so the continuation of a chain that began earlier), every haven of the month (a seed
+  or not) within the radius of one of them (200 m, 10 pixels on the 20 m DEM, set by the AREA_RADIUS_METERS option of the
+  driver's seed-haven-areas step) and the lone last seed of a chain as its pixel alone. The other seeds (isolated ones,
+  passed ones, later seeds of a chain) are not shown; the all-havens layer shows every haven. The layers that draw these
+  havens agree, Chains (monthly) among them. The areas are read from safe_haven_stage_4_seed_haven_areas.npz beside the
+  chain table (without it only the chain starts and lone seeds are shown), and the lists are made again when that file
+  changes. The rules of every monthly layer are in docs/safe-haven-monthly-products.md;
+* All havens (monthly): every pixel that is a haven in the month (hibernation at most the survival limit), not only
+  the seeds that stage 2 plans, from the monthly haven images (safe_haven_stage_1_haven_months/, scripts/threshold_safe_havens.py;
+  the driver's haven-months step), coloured by the pixel's shadow period (its hibernation) in four classes of decreasing
+  brightness: white for none, yellow up to 12 hours, cyan 12 to 24 hours and violet 24 hours to the survival limit
+  (48), with a legend in the lower left. The entry is in the drop-down only when those images are beside the chain
+  table;
 * Chains (monthly): the longest chain of each root from the month it starts in until its last seed, each month as the
   part still ahead (a chain that goes on into later months is shorter in each, in the colour of its remaining length),
-  as the yearly image draws it (the same routes and colours; the havens white; the start of each chain that starts in the
-  month a 3 x 3 square of magenta), from safe_haven_stage_4_monthly_chain_pixels.npz
+  as the yearly image draws it (the same routes and colours; the current start of each chain drawn in the month marked in
+  magenta), with the same havens as Seed haven areas (monthly), from safe_haven_stage_4_monthly_chain_pixels.npz
   (scripts/run_safe_haven_monthly_chain_maps.py). The entry is in the drop-down only when that file is beside the
   chain table;
 * Chains (yearly): the yearly chain image (safe_haven_stage_4_longest_chain_per_root_<year>.tif) of the slider's year,
   so the picture changes only when the slider crosses into another year.
+
+Every layer that draws havens colours each by its shadow period (its hibernation), except the start of a chain, which
+keeps its own colour: white for none, yellow up to 12 hours, cyan 12 to 24 hours and violet 24 hours up to the
+survival limit; a legend in the lower left names the classes (and the chain start in the monthly chain layer). The seed
+layers colour the seeds by their hibernation in the stage-4 table; the all-havens layer colours every pixel.
 
 The first run prepares what the window draws: viewer.json and havens.npz in VIEWER_DIRECTORY (the boxes of every month,
 as pregenerated lists) and image pyramids of the hillshade and of each yearly chain image in CACHE_DIRECTORY (about
@@ -46,7 +63,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 try:
     from PySide6.QtCore import QPointF, QRectF, Qt, QThread, Signal
-    from PySide6.QtGui import QColor, QImage, QPainter
+    from PySide6.QtGui import QColor, QFontMetrics, QImage, QPainter
     from PySide6.QtWidgets import (
         QApplication, QComboBox, QHBoxLayout, QLabel, QMainWindow, QProgressBar, QPushButton, QSlider, QVBoxLayout,
         QWidget,
@@ -65,9 +82,10 @@ VIEWER_DIRECTORY = STAGE_DIRECTORY / "viewer"
 CACHE_DIRECTORY = Path("/tmp/lunarscout_viewer")
 CONNECT = "chains"            # what joins two havens in a cluster: "chains" (stage 4's chains) or "edges" (stage-3 edges)
 
-LAYERS = (("Havens and cluster boxes (monthly)", "boxes_havens"), ("Havens (monthly)", "havens"),
-          ("Chains (monthly)", "chains_month"), ("Chains (yearly)", "chains"))
+LAYERS = (("Havens and cluster boxes (monthly)", "boxes_havens"), ("Seed haven areas (monthly)", "havens"),
+          ("All havens (monthly)", "haven_months"), ("Chains (monthly)", "chains_month"), ("Chains (yearly)", "chains"))
 BACKGROUND = "#0d0d0d"
+LEGEND_MARGIN, LEGEND_PAD, LEGEND_SWATCH = 12, 8, 14       # screen pixels: from the window's corner, inside the panel, a swatch
 TILE_BUDGET_BYTES = 512 * 2 ** 20
 MAX_SCALE = 24.0                # screen pixels per DEM pixel when fully zoomed in
 
@@ -196,6 +214,9 @@ class MapView(QWidget):
         elif self.layer == "havens":
             source = ("havens", self.month)
             tile = lambda: self.data.havens_tile(self.month, level, tx, ty)      # noqa: E731
+        elif self.layer == "haven_months":
+            source = ("haven_months", self.month)
+            tile = lambda: self.data.haven_months_tile(self.month, level, tx, ty)   # noqa: E731
         else:
             raise ValueError(f"unknown layer {self.layer!r}")
 
@@ -205,6 +226,59 @@ class MapView(QWidget):
                 return False
             return QImage(array.data, TILE, TILE, TILE * 4, QImage.Format_RGBA8888).copy()
         return self._cached((*source, level, tx, ty), make)
+
+    # -- the legend --------------------------------------------------------------------------------------------
+
+    def legend(self):
+        """``(title, [(colour, label), ...])`` of the layer, or None when it has none: the colours of the havens by shadow
+        period (every layer that draws havens), and in the monthly chain layer the mark of a chain's start."""
+        if self.layer == "haven_months":
+            items = list(self.data.haven_month_legend(self.month))
+        elif self.layer in ("havens", "boxes_havens", "chains_month", "chains"):
+            items = list(self.data.shadow_legend())
+        else:
+            return None
+        if self.layer == "chains_month" and self.data.chain_start_colour() is not None:
+            items.append((self.data.chain_start_colour(), "start of a chain"))
+        return ("Havens: shadow period", items) if items else None
+
+    def legend_layout(self):
+        """``(panel, title_rect, [(swatch_rect, label_rect), ...])`` in screen pixels, in the lower left, or None."""
+        legend = self.legend()
+        if legend is None:
+            return None
+        title, items = legend
+        metrics = QFontMetrics(self.font())
+        row = max(metrics.height(), LEGEND_SWATCH) + 4
+        text_width = max([metrics.horizontalAdvance(title)] + [metrics.horizontalAdvance(label) + LEGEND_SWATCH + 8 for _c, label in items])
+        width, height = text_width + 2 * LEGEND_PAD, LEGEND_PAD * 2 + metrics.height() + 4 + row * len(items)
+        panel = QRectF(LEGEND_MARGIN, self.height() - LEGEND_MARGIN - height, width, height)
+        title_rect = QRectF(panel.left() + LEGEND_PAD, panel.top() + LEGEND_PAD, text_width, metrics.height())
+        rows = []
+        for k in range(len(items)):
+            top = title_rect.bottom() + 4 + k * row
+            swatch = QRectF(panel.left() + LEGEND_PAD, top + (row - LEGEND_SWATCH) / 2, LEGEND_SWATCH, LEGEND_SWATCH)
+            rows.append((swatch, QRectF(swatch.right() + 8, top, text_width - LEGEND_SWATCH - 8, row)))
+        return panel, title_rect, rows
+
+    def _paint_legend(self, painter: QPainter) -> None:
+        layout = self.legend_layout()
+        if layout is None:
+            return
+        panel, title_rect, rows = layout
+        title, items = self.legend()
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.setPen(QColor("#4a4a46"))
+        painter.setBrush(QColor(26, 26, 25, 225))
+        painter.drawRect(panel)
+        painter.setPen(QColor("#c3c2b7"))
+        painter.drawText(title_rect, Qt.AlignLeft | Qt.AlignVCenter, title)
+        for (swatch, label_rect), (colour, label) in zip(rows, items):
+            painter.setPen(QColor("#0d0d0d"))
+            painter.setBrush(QColor(*colour))
+            painter.drawRect(swatch)
+            painter.setPen(QColor("#f0efec"))
+            painter.drawText(label_rect, Qt.AlignLeft | Qt.AlignVCenter, label)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -234,6 +308,7 @@ class MapView(QWidget):
                 overlay = self._overlay(level, tx, ty)
                 if overlay is not False:
                     painter.drawImage(target, overlay, source)
+        self._paint_legend(painter)
         painter.end()
 
 
@@ -243,10 +318,14 @@ class Window(QMainWindow):
         self.data = data
         self.setWindowTitle("Safe havens: the pole")
         self.view = MapView(data)
-        self.layer_keys = [key for _title, key in LAYERS if key != "chains_month" or data.monthly_chains is not None]
+        available = {"chains_month": data.monthly_chains is not None, "haven_months": bool(data.haven_months)}
+        self.layer_keys = [key for _title, key in LAYERS if available.get(key, True)]
         if layer not in self.layer_keys:
-            raise ValueError(f"the layer {layer!r} is not available: no monthly chain pixel file beside the chain table "
-                             "(run scripts/run_safe_haven_monthly_chain_maps.py)")
+            raise ValueError(
+                f"the layer {layer!r} is not available: "
+                + ("no monthly haven images beside the chain table (run scripts/threshold_safe_havens.py)"
+                   if layer == "haven_months" else
+                   "no monthly chain pixel file beside the chain table (run scripts/run_safe_haven_monthly_chain_maps.py)"))
         self.layers = QComboBox()
         for title, key in LAYERS:
             if key in self.layer_keys:
@@ -296,7 +375,15 @@ class Window(QMainWindow):
         if layer == "boxes_havens":
             detail = f"{self.data.boxes_count(month):,} clusters, {self.data.havens_count(month):,} havens"
         elif layer == "havens":
-            detail = f"{self.data.havens_count(month):,} havens"
+            detail = f"{self.data.havens_count(month):,} havens around {self.data.chain_starts_count(month):,} chain starts"
+        elif layer == "haven_months":
+            info = self.data.haven_month_info(month)
+            if not info:
+                detail = f"no haven image for {name}"
+            else:
+                pixels = f"{info['pixels']:,} haven pixels" if info["pixels"] is not None else "haven pixels"
+                limit = f" (shadow period at most {info['limit_hours']:g} h)" if info["limit_hours"] is not None else ""
+                detail = pixels + limit
         elif layer == "chains_month":
             started = self.data.monthly_chain_started(month)
             detail = f"{self.data.monthly_chain_count(month):,} chains" + (f" ({started:,} starting)" if started else "")

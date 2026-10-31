@@ -1,9 +1,12 @@
 """Chain-length intervals, their colours and the QGIS styles that use them (private).
 
 Chains of 2 seeds are one interval; chains of 3 or more are cut at the quartiles of their lengths into up to four more,
-so five intervals at most. Each gets a distinct, saturated hue and a brightness that rises with the length, so that the
-lines stand out against black or a dark hillshade and the longer chains stand out most: violet, rose, orange, yellow and
-green. Havens are white and route pixels that pass next to a permanently shadowed region (PSR) are aqua. The same
+so five intervals at most. Each gets a distinct hue and a brightness that rises with the length, so that the lines stand
+out against black or a dark hillshade and the longer chains stand out most: dark green, rose, orange, pink and lime
+green. The shortest and fourth colours were chosen to stay apart from the shadow-period classes of the havens (violet and
+yellow) and from the PSR and chain-start colours, in normal vision and under simulated colour blindness; the earlier
+violet and yellow were nearly the same as those classes. Havens are coloured by their shadow period (``HAVEN_SHADOW_CLASSES``: white for none, then yellow, cyan and violet of
+decreasing brightness) and route pixels that pass next to a permanently shadowed region (PSR) are aqua. The same
 intervals colour the images and the GeoPackage line layers (rule-based, shortest first so longer chains are on top);
 the GeoPackages carry their styles in the ``layer_styles`` table, which QGIS applies as the default when it adds a layer.
 """
@@ -17,11 +20,15 @@ from xml.sax.saxutils import quoteattr
 import numpy as np
 import numpy.typing as npt
 
-#: Distinct hues (violet, rose, orange, yellow, green) at full brightness and strong saturation, in order of rising
-#: relative luminance.
-PALETTE = ("#6a5cff", "#ff4f6e", "#ff7a1a", "#ffcc00", "#7dff3a")
+#: Distinct hues (dark green, rose, orange, pink, lime green) in order of rising relative luminance.
+PALETTE = ("#297d0f", "#ff4f6e", "#ff7a1a", "#fb9df8", "#7dff3a")
 LINE_WIDTHS_MM = (0.3, 0.45, 0.65, 0.9, 1.2)
-HAVEN_COLOUR = "#ffffff"
+#: A haven's colour by its shadow period (its hibernation): ``(upper bound in hours, colour)`` for no shadow, up to 12 h,
+#: 12 to 24 h and 24 h to the survival limit (the last class takes everything longer). White, then yellow, cyan and
+#: violet in decreasing brightness; checked with the palette validator (adjacent classes 17 or more apart under
+#: simulated colour blindness, all at least 3:1 against a dark surface).
+HAVEN_SHADOW_CLASSES = ((0.0, "#ffffff"), (12.0, "#f2c94c"), (24.0, "#38b6c8"), (48.0, "#7a5cd6"))
+HAVEN_COLOUR = HAVEN_SHADOW_CLASSES[0][1]          # a haven with no shadow period
 PSR_COLOUR = "#00ffff"
 #: The start of a chain in the monthly pixel file: bright magenta, in the widest gap of the hues above (violet to rose).
 ROOT_COLOUR = "#ff00ff"
@@ -80,10 +87,38 @@ def _rgb(colour: str) -> tuple[int, int, int]:
     return int(colour[1:3], 16), int(colour[3:5], 16), int(colour[5:7], 16)
 
 
+_SHADOW_BOUNDS = np.array([bound for bound, _colour in HAVEN_SHADOW_CLASSES[1:-1]], dtype=np.float64)
+
+
+def haven_shadow_classes(hours: npt.ArrayLike) -> npt.NDArray[np.int64]:
+    """The index in ``HAVEN_SHADOW_CLASSES`` of each shadow period in ``hours``: 0 for none, then the first class whose
+    bound it does not exceed (12 h and 24 h belong to the lower class), and the last class for anything longer."""
+    hours = np.asarray(hours, dtype=np.float64)
+    return np.where(hours <= 0.0, 0, 1 + np.searchsorted(_SHADOW_BOUNDS, hours, side="left")).astype(np.int64)
+
+
+def haven_shadow_labels(limit_hours: float | None = None) -> list[str]:
+    """The label of each class of ``HAVEN_SHADOW_CLASSES`` that can occur under ``limit_hours`` (None: the last bound);
+    the last class that can occur runs to the limit."""
+    limit = HAVEN_SHADOW_CLASSES[-1][0] if limit_hours is None else float(limit_hours)
+    labels = []
+    for index, (bound, _colour) in enumerate(HAVEN_SHADOW_CLASSES):
+        low = HAVEN_SHADOW_CLASSES[index - 1][0] if index else 0.0
+        if index and low >= limit:
+            break
+        last = index == len(HAVEN_SHADOW_CLASSES) - 1 or bound >= limit
+        high = limit if last else bound
+        labels.append("0 h" if index == 0 else f"up to {high:g} h" if index == 1 else f"{low:g} to {high:g} h")
+        if last:
+            break
+    return labels
+
+
 def lookup_table(intervals: list[Interval]) -> npt.NDArray[np.uint8]:
-    """RGBA of the image classes: 0 transparent, 1 to ``n`` the intervals, ``n + 1`` aqua (a PSR pass), ``n + 2`` white
-    (a haven)."""
-    colours = [i.colour for i in intervals] + [PSR_COLOUR, HAVEN_COLOUR]
+    """RGBA of the image classes: 0 transparent, 1 to ``n`` the intervals, ``n + 1`` aqua (a PSR pass), then the havens
+    by shadow period from the longest (``n + 2``, violet) to none (``n + 5``, white), so that a higher class is a
+    brighter haven and drawing the classes in order puts the brightest on top."""
+    colours = [i.colour for i in intervals] + [PSR_COLOUR] + [c for _b, c in reversed(HAVEN_SHADOW_CLASSES)]
     table = np.zeros((len(colours) + 1, 4), dtype=np.uint8)
     for k, colour in enumerate(colours, start=1):
         table[k] = (*_rgb(colour), 255)
@@ -126,16 +161,33 @@ def line_style_qml(intervals: list[Interval], attribute: str = "chain_length") -
             '<layerOpacity>1</layerOpacity></qgis>\n')
 
 
-def point_style_qml() -> str:
-    """Small white dots (the havens' colour): the seeds that are alone, behind everything else."""
-    options = {"angle": "0", "cap_style": "square", "color": _rgba(HAVEN_COLOUR), "horizontal_anchor_point": "1",
+def _point_symbol(name: str, colour: str) -> str:
+    options = {"angle": "0", "cap_style": "square", "color": _rgba(colour), "horizontal_anchor_point": "1",
                "joinstyle": "bevel", "name": "circle", "offset": "0,0", "outline_color": "35,35,35,255",
                "outline_style": "no", "outline_width": "0", "outline_width_unit": "MM", "scale_method": "diameter",
                "size": "0.9", "size_unit": "MM", "vertical_anchor_point": "1"}
-    symbol = ('<symbol name="0" type="marker" alpha="1" force_rhr="0" clip_to_extent="1" is_animated="0" frame_rate="10">'
-              f'{_NO_DATA_DEFINED}<layer id="{{{uuid.uuid4()}}}" enabled="1" class="SimpleMarker" locked="0" pass="0">'
-              f'{_options(options)}{_NO_DATA_DEFINED}</layer></symbol>')
+    return (f'<symbol name="{name}" type="marker" alpha="1" force_rhr="0" clip_to_extent="1" is_animated="0" frame_rate="10">'
+            f'{_NO_DATA_DEFINED}<layer id="{{{uuid.uuid4()}}}" enabled="1" class="SimpleMarker" locked="0" pass="0">'
+            f'{_options(options)}{_NO_DATA_DEFINED}</layer></symbol>')
+
+
+def point_style_qml(attribute: str = "hibernation_hours") -> str:
+    """Small dots, each in the colour of its shadow period (``HAVEN_SHADOW_CLASSES``) from ``attribute`` (hours): the
+    seeds that are alone, behind everything else. Rule-based, the longest shadow first and none last so that the
+    brightest class is on top."""
+    filters = [f'"{attribute}" <= 0']
+    previous = 0.0
+    for bound, _colour in HAVEN_SHADOW_CLASSES[1:-1]:
+        filters.append(f'"{attribute}" > {previous:g} AND "{attribute}" <= {bound:g}')
+        previous = bound
+    filters.append(f'"{attribute}" > {previous:g}')
+    labels = haven_shadow_labels()
+    order = list(range(len(HAVEN_SHADOW_CLASSES) - 1, -1, -1))
+    rules = "".join(f'<rule key="{{{uuid.uuid4()}}}" filter={quoteattr(filters[k])} label={quoteattr(labels[k])} symbol="{n}"/>'
+                    for n, k in enumerate(order))
+    symbols = "".join(_point_symbol(str(n), HAVEN_SHADOW_CLASSES[k][1]) for n, k in enumerate(order))
     return ("<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>\n"
             '<qgis version="3.34.4-Prizren" styleCategories="Symbology">'
-            '<renderer-v2 symbollevels="0" referencescale="-1" type="singleSymbol" forceraster="0" enableorderby="0">'
-            f'<symbols>{symbol}</symbols><rotation/><sizescale/></renderer-v2><layerOpacity>1</layerOpacity></qgis>\n')
+            '<renderer-v2 type="RuleRenderer" symbollevels="0" referencescale="-1" forceraster="0" enableorderby="0">'
+            f'<rules key="{{{uuid.uuid4()}}}">{rules}</rules><symbols>{symbols}</symbols></renderer-v2>'
+            '<layerOpacity>1</layerOpacity></qgis>\n')

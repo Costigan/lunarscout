@@ -41,7 +41,8 @@ import numpy.typing as npt
 
 from ..errors import InputError
 from .chain_map_styles import (
-    HAVEN_COLOUR, PSR_COLOUR, ROOT_COLOUR, build_intervals, class_of, line_style_qml, lookup_table, point_style_qml,
+    HAVEN_SHADOW_CLASSES, PSR_COLOUR, ROOT_COLOUR, build_intervals, class_of, haven_shadow_classes, haven_shadow_labels,
+    line_style_qml, lookup_table, point_style_qml,
 )
 from .pixel_coordinates import dem_header, pixel_centres
 from .safe_haven_chains import read_chain_table
@@ -176,8 +177,10 @@ def build_chain_sets(rows: list[dict]):
             "root_start_utc": [root_start[i] for i in long_ends],
             "seed_ids": [",".join(str(s) for s in line) for line in lines], **psr},
         dots=isolated + 1)
+    hours = np.array([r.get("hibernation_hours") or 0.0 for r in rows], dtype=float)       # the seed's shadow period
     arrays = dict(row=pixel_row, column=pixel_column, root=root, predecessor=predecessor, length=length,
-                  mission=mission, through_length=through_length, through_mission=through_mission, rows=rows)
+                  mission=mission, through_length=through_length, through_mission=through_mission, rows=rows,
+                  hours=hours, shadow=haven_shadow_classes(hours))
     return arrays, edge_set, chain_set
 
 
@@ -239,10 +242,10 @@ def _build_kernels(jit):
                     stamp(planes, 1, r, c, radius, height, width, 1)
 
     @jit
-    def draw_havens(planes, rows, columns, radius):
+    def draw_havens(planes, rows, columns, radius, shadow):
         height, width = planes.shape[1], planes.shape[2]
         for i in range(rows.shape[0]):
-            stamp(planes, 2, rows[i], columns[i], radius, height, width, 1)
+            stamp(planes, 2, rows[i], columns[i], radius, height, width, shadow[i] + 1)
 
     return draw, draw_polylines, draw_havens
 
@@ -304,7 +307,8 @@ def render(chain_set: ChainSet, havens, intervals, height: int, width: int, radi
            compiled: bool = True, out=None):
     """The three planes of a set's image: its segments (routes when ``paths`` is given, straight lines otherwise),
     the route pixels next to ``psr`` and every haven (``havens`` is a ``(rows, columns)`` pair), the havens one pixel
-    larger than the stamp when there is one. ``out`` is a ``(3, height, width)`` uint8 array to clear and draw into
+    larger than the stamp when there is one, each marked with its shadow-period class + 1 (``havens`` is
+    ``(rows, columns)`` or ``(rows, columns, classes)``; without classes every haven is class 0). ``out`` is a ``(3, height, width)`` uint8 array to clear and draw into
     instead of a new one."""
     if out is None:
         planes = np.zeros((_PLANES, height, width), dtype=np.uint8)
@@ -316,18 +320,28 @@ def render(chain_set: ChainSet, havens, intervals, height: int, width: int, radi
     else:
         draw_polylines(planes, chain_set.segments, intervals, paths, chain_set.segment_seeds[:, 1], radius, psr=psr,
                        compiled=compiled)
-    _kernel(2, compiled)(planes, np.ascontiguousarray(havens[0], dtype=np.int64),
-                         np.ascontiguousarray(havens[1], dtype=np.int64), radius + (1 if radius > 0 else 0))
+    shadow = np.zeros(len(havens[0]), dtype=np.uint8) if len(havens) < 3 else np.asarray(havens[2], dtype=np.uint8)
+    order = np.argsort(-shadow.astype(np.int64), kind="stable")        # the longest shadow first: no shadow (white) ends on top
+    _kernel(2, compiled)(planes, np.ascontiguousarray(np.asarray(havens[0])[order], dtype=np.int64),
+                         np.ascontiguousarray(np.asarray(havens[1])[order], dtype=np.int64),
+                         radius + (1 if radius > 0 else 0), np.ascontiguousarray(shadow[order], dtype=np.uint8))
     return planes
 
 
+def haven_code(interval_count: int, shadow):
+    """The class of ``lookup_table`` of havens of shadow-period class ``shadow`` (0 none, ... 3): the classes run from the
+    longest shadow, at ``interval_count + 2``, to none at ``interval_count + 5``."""
+    return interval_count + 2 + (len(HAVEN_SHADOW_CLASSES) - 1 - np.asarray(shadow))
+
+
 def colour_image(planes, intervals) -> npt.NDArray[np.uint8]:
-    """``(4, rows, columns)`` RGBA of planes: the route's interval colour, aqua over it where the PSR mark is set,
-    white over both where there is a haven; 0 (nothing) is transparent."""
+    """``(4, rows, columns)`` RGBA of planes: the route's interval colour, aqua over it where the PSR mark is set, the
+    haven's shadow-period colour over both where there is a haven; 0 (nothing) is transparent."""
     table = lookup_table(intervals)
     index = planes[0].astype(np.int64)
     index[planes[1] > 0] = len(intervals) + 1
-    index[planes[2] > 0] = len(intervals) + 2
+    haven = planes[2] > 0
+    index[haven] = haven_code(len(intervals), planes[2][haven].astype(np.int64) - 1)
     return np.moveaxis(table[index], -1, 0)
 
 
@@ -524,13 +538,15 @@ def run_chain_maps(
     tags = {
         "LUNARSCOUT_PRODUCT": "safe-haven-chain-image-v1",
         "COLOURS": "intervals of chain length (seeds): " + "; ".join(f"{i.label} {i.colour}" for i in intervals)
-                   + f"; havens {HAVEN_COLOUR}; route pixels next to a PSR {PSR_COLOUR}; transparent background",
+                   + "; havens by shadow period: " + "; ".join(f"{label} {colour}" for label, (_b, colour) in zip(
+                       haven_shadow_labels(), HAVEN_SHADOW_CLASSES))
+                   + f"; route pixels next to a PSR {PSR_COLOUR}; transparent background",
         "SEGMENTS": ("rover routes: one feasible time-respecting route per edge, from the predecessor's pixel to "
                      "the seed's" if route_set is not None else
                      "straight lines between seed pixel centres: a schematic, not the rover's path"),
         "SOURCE_TABLE": Path(chains_path).name,
     }
-    havens = (arrays["row"], arrays["column"])
+    havens = (arrays["row"], arrays["column"], arrays["shadow"])
     marked: dict[str, int] = {}
     for set_name, chain in zip(CHAIN_SETS, (edge_set, chain_set)):
         description = {"predecessor_edges": "every seed's edge from its predecessor, coloured by the longest chain through it",
@@ -619,7 +635,9 @@ def run_yearly_chain_maps(
     tags = {
         "LUNARSCOUT_PRODUCT": "safe-haven-chain-image-v1",
         "COLOURS": "intervals of chain length (seeds): " + "; ".join(f"{i.label} {i.colour}" for i in intervals)
-                   + f"; havens {HAVEN_COLOUR}; route pixels next to a PSR {PSR_COLOUR}; transparent background",
+                   + "; havens by shadow period: " + "; ".join(f"{label} {colour}" for label, (_b, colour) in zip(
+                       haven_shadow_labels(), HAVEN_SHADOW_CLASSES))
+                   + f"; route pixels next to a PSR {PSR_COLOUR}; transparent background",
         "SEGMENTS": ("rover routes: one feasible time-respecting route per edge, from the predecessor's pixel to "
                      "the seed's" if route_set is not None else
                      "straight lines between seed pixel centres: a schematic, not the rover's path"),
@@ -634,8 +652,8 @@ def run_yearly_chain_maps(
                                          segments.column1[keep], segments.length[keep]),
             segment_seeds=chain_set.segment_seeds[keep])
         in_year = seed_year == year
-        planes = render(subset, (arrays["row"][in_year], arrays["column"][in_year]), intervals, height, width, 0,
-                        paths=route_set, psr=psr_mask, compiled=compiled)
+        planes = render(subset, (arrays["row"][in_year], arrays["column"][in_year], arrays["shadow"][in_year]), intervals,
+                        height, width, 0, paths=route_set, psr=psr_mask, compiled=compiled)
         path = yearly_path(directory, year, prefix)
         write_image(path, planes, intervals, transform=transform, crs_wkt=crs_wkt,
                     tags={**tags, "YEAR": str(year),
@@ -684,6 +702,38 @@ def seed_month_spans(rows: list[dict]):
     return start - first, last - first, names
 
 
+def current_chain_starts(lines, start_index, last_index):
+    """``(start_seed, start_month, lone_seed, lone_month)`` for the longest chains ``lines`` (arrays of 1-based seed ids,
+    root first) and the seeds' ``start_index`` and ``last_index`` from ``seed_month_spans``: the 0-based table index of the
+    seed that is the current start of a chain in a month, and the month's index, then the same for the lone seeds.
+
+    A seed is passed once its last month is over. In month M a chain's current start is its first seed that is not passed;
+    it is a start only while the chain has 2 or more seeds left, so it is also the head of a route drawn that month. A chain
+    with only its final seed left in M has that seed as its lone seed in M. The chain's root is the current start of the
+    month it starts in. Each list is ordered by month, then by seed."""
+    empty = np.zeros(0, dtype=np.int64)
+    if not len(lines):
+        return empty, empty, empty, empty
+    lengths = np.array([len(line) for line in lines], dtype=np.int64)
+    seed = np.concatenate(lines).astype(np.int64) - 1
+    first = np.cumsum(lengths) - lengths
+    position = np.arange(len(seed)) - np.repeat(first, lengths)
+    last = last_index[seed]
+    # The months in which a seed is the first one not passed: after the seed before it is passed, from the chain's start.
+    previous = np.where(position == 0, -1, np.roll(last, 1))
+    low = np.maximum(np.repeat(start_index[seed[first]], lengths), previous + 1)
+    count = np.maximum(last - low + 1, 0)
+    pairs_seed = np.repeat(seed, count)
+    pairs_month = np.repeat(low, count) + (np.arange(count.sum()) - np.repeat(np.cumsum(count) - count, count))
+    final = position == np.repeat(lengths, lengths) - 1
+    keep = np.repeat(~final, count)
+    out = []
+    for selected in (keep, ~keep):
+        order = np.lexsort((pairs_seed[selected], pairs_month[selected]))
+        out += [pairs_seed[selected][order], pairs_month[selected][order]]
+    return tuple(out)
+
+
 @dataclass
 class MonthlyChainMapsReport:
     file: str
@@ -706,7 +756,7 @@ def run_monthly_chain_maps(
     output_directory: str | Path, *, chains_path: str | Path, dem_path: str | Path, prefix: str = "safe_haven_stage_4",
     overwrite: bool = False, compiled: bool = True, light_store_path: str | Path | None = None,
     passable_path: str | Path | None = None, flood_settings=None, workers: int = 1, progress=None,
-    psr_ids_path: str | Path | None = None,
+    psr_ids_path: str | Path | None = None, seed_areas_path: str | Path | None = None,
 ) -> MonthlyChainMapsReport:
     """Write ``<prefix>_monthly_chain_pixels.npz`` and ``<prefix>_monthly_chain_maps.report.json``: the pixels of the
     longest-chain image of each month, for the viewer (``scripts/view_safe_haven.py``).
@@ -714,17 +764,19 @@ def run_monthly_chain_maps(
     A chain is drawn from the month its root starts in (``root_start_utc``) to the month of its last seed, each month as
     the part still ahead: its seeds from that month on, so a chain that carries on into later months is shorter in each
     of them and takes the colour of its remaining length (the intervals of the whole chains, as in the yearly images).
-    A seed's month is its own ``month`` in the stage-4 table, but never before the month its chain starts. The havens
-    drawn in a month are the seeds of the chains that have started, from the start month to the seed's own month (isolated
-    ones, and the branches off the longest chain, too). The routes, PSR marks and colours are those of the yearly images,
-    and the chains and pixels of the month a chain starts in are what the yearly image shows when every chain starts in
-    one month. A month is stored as only the pixels drawn: ``row``, ``column`` and the colour class ``code`` (a row of
-    ``table``, RGBA: 0 is transparent, then the length intervals, aqua for a PSR pass, white for a haven and magenta for
-    the start of a chain, one pixel on the root of each chain that starts in the month, in addition to the haven there),
-    ordered by code so that drawing them in order puts the longer chains, then aqua, then the havens, then the starts on
-    top; ``offsets`` holds the
-    start of each month's slice (``months`` are the names, ``chains`` the chains of 2 or more seeds drawn in each, and
-    ``started`` those that start in it)."""
+    A seed's month is its own ``month`` in the stage-4 table, but never before the month its chain starts, and a seed is
+    passed once its month is over. The havens drawn in a month are those of the seed haven areas of the month
+    (``safe_haven_stage_4_seed_haven_areas.npz``, from ``seed_areas_path`` or beside the chain table): the current start
+    of each chain (its first seed not passed), the havens near it and the lone last seeds, in their shadow colours; an
+    ``InputError`` with code ``chain_maps_seed_areas_missing`` is raised when that file does not exist. The routes and
+    PSR marks are those of the yearly images, and the chains and routes of the month a chain starts in are what the
+    yearly image shows when every chain starts in one month. A month is stored as only the pixels drawn: ``row``,
+    ``column`` and the colour class ``code`` (a row of ``table``, RGBA: 0 is transparent, then the length intervals, aqua
+    for a PSR pass, white for a haven and magenta for the start of a chain, one pixel on the current start of each chain
+    drawn in the month, in addition to the haven there), ordered by code so that drawing them in order puts the longer
+    chains, then aqua, then the havens, then the starts on top; ``offsets`` holds the start of each month's slice
+    (``months`` are the names, ``chains`` the chains of 2 or more seeds drawn in each, and ``started`` those that start in
+    it)."""
     started = clock.monotonic()
     directory = Path(output_directory)
     rows = read_chain_table(chains_path)
@@ -740,6 +792,21 @@ def run_monthly_chain_maps(
             raise InputError(f"{path} exists; pass overwrite=True to replace it", code="chain_maps_output_exists",
                              details={"path": str(path)})
     start_index, last_index, months = seed_month_spans(rows)
+    from ..safe_haven_areas import areas_path, read_seed_areas
+    areas_file = Path(seed_areas_path) if seed_areas_path is not None else areas_path(Path(chains_path).parent)
+    if not areas_file.is_file():
+        raise InputError(f"{areas_file} does not exist; the monthly chain pixels draw the seed haven areas (run "
+                         "generate_seed_haven_areas first)", code="chain_maps_seed_areas_missing",
+                         details={"path": str(areas_file)})
+    areas = read_seed_areas(areas_file)
+    if areas["months"] != list(months):
+        raise InputError(f"{areas_file} is for other months than the chain table", code="chain_maps_seed_areas_mismatch",
+                         details={"path": str(areas_file), "areas": [areas["months"][0], areas["months"][-1]],
+                                  "chains": [months[0], months[-1]]})
+    if len(areas["row"]) and (areas["row"].max() >= height or areas["column"].max() >= width):
+        raise InputError("a seed haven area pixel lies outside the DEM's grid", code="chain_maps_grid_mismatch",
+                         details={"height": height, "width": width})
+    area_class = haven_shadow_classes(areas["hours"])
     intervals = build_intervals(chain_set.line_attributes["chain_length"])
     table = np.concatenate([lookup_table(intervals), [(*_rgb_of(ROOT_COLOUR), 255)]]).astype(np.uint8)
     route_set = _reconstruct_routes(rows, light_store_path, passable_path, (height, width), flood_settings, workers,
@@ -757,8 +824,8 @@ def run_monthly_chain_maps(
         is_tail[np.cumsum([len(line) for line in lines]) - 1] = False
     segment_last = entry_last[is_tail]
     planes = np.zeros((_PLANES, height, width), dtype=np.uint8)
-    haven_code, aqua_code, root_code = len(intervals) + 2, len(intervals) + 1, len(intervals) + 3
-    root_seed = np.array([line[0] - 1 for line in lines], dtype=np.int64)
+    aqua_code, root_code = len(intervals) + 1, len(intervals) + 2 + len(HAVEN_SHADOW_CLASSES)
+    start_seed, start_month, _lone_seed, _lone_month = current_chain_starts(lines, start_index, last_index)
     found_rows, found_columns, found_codes, offsets, result = [], [], [], [0], {}
     for index, month in enumerate(months):
         active = (line_start[segment_line] <= index) & (segment_last >= index)
@@ -768,23 +835,23 @@ def run_monthly_chain_maps(
             chain_set, segments=Segments(segments.row0[active], segments.column0[active], segments.row1[active],
                                          segments.column1[active], remaining[segment_line[active]]),
             segment_seeds=chain_set.segment_seeds[active])
-        shown = (start_index <= index) & (last_index >= index)
+        shown = slice(areas["offsets"][index], areas["offsets"][index + 1])            # the havens of the month
         month_rows, month_columns, month_codes = [], [], []
-        if shown.any():
-            render(subset, (arrays["row"][shown], arrays["column"][shown]), intervals, height, width, 0,
-                   paths=route_set, psr=psr_mask, compiled=compiled, out=planes)
+        if active.any() or shown.stop > shown.start:
+            render(subset, (areas["row"][shown], areas["column"][shown], area_class[shown]), intervals, height,
+                   width, 0, paths=route_set, psr=psr_mask, compiled=compiled, out=planes)
             for first in range(0, height, _STRIP_ROWS):
                 strip = planes[:, first:first + _STRIP_ROWS]
                 code = strip[0].copy()
                 code[strip[1] > 0] = aqua_code
-                code[strip[2] > 0] = haven_code
+                code[strip[2] > 0] = haven_code(len(intervals), strip[2][strip[2] > 0].astype(np.int64) - 1)
                 found_r, found_c = np.nonzero(code)
                 month_rows.append((found_r + first).astype(np.int32))
                 month_columns.append(found_c.astype(np.int32))
                 month_codes.append(code[found_r, found_c])
-            starting = np.flatnonzero(line_start == index)              # the start of each chain that starts in the month
-            month_rows.append(arrays["row"][root_seed[starting]].astype(np.int32))
-            month_columns.append(arrays["column"][root_seed[starting]].astype(np.int32))
+            starting = start_seed[start_month == index]                  # the current start of each chain drawn in the month
+            month_rows.append(arrays["row"][starting].astype(np.int32))
+            month_columns.append(arrays["column"][starting].astype(np.int32))
             month_codes.append(np.full(len(starting), root_code, dtype=np.uint8))
         month_r = np.concatenate(month_rows) if month_rows else np.zeros(0, dtype=np.int32)
         month_c = np.concatenate(month_columns) if month_columns else np.zeros(0, dtype=np.int32)
@@ -795,7 +862,7 @@ def run_monthly_chain_maps(
         found_codes.append(month_k[order])
         offsets.append(offsets[-1] + len(order))
         result[month] = {"chains": int(np.unique(segment_line[active]).size), "started": int((line_start == index).sum()),
-                         "pixels": len(order), "havens": int(shown.sum())}
+                         "pixels": len(order), "havens": int(shown.stop - shown.start)}
     directory.mkdir(parents=True, exist_ok=True)
     staging = target.with_name(target.name + ".partial")
     try:
@@ -805,7 +872,8 @@ def run_monthly_chain_maps(
                 row=np.concatenate(found_rows), column=np.concatenate(found_columns), code=np.concatenate(found_codes),
                 table=table, chains=np.array([result[m]["chains"] for m in months], dtype=np.int64),
                 started=np.array([result[m]["started"] for m in months], dtype=np.int64),
-                labels=np.array([i.label for i in intervals] + ["next to a PSR", "haven", "start of a chain"]))
+                labels=np.array([i.label for i in intervals] + ["next to a PSR"]
+                                + [f"haven, shadow {label}" for label in reversed(haven_shadow_labels())] + ["start of a chain"]))
         os.replace(staging, target)
     finally:
         staging.unlink(missing_ok=True)
@@ -848,15 +916,16 @@ def _write_vectors(paths, arrays, edge_set: ChainSet, chain_set: ChainSet, inter
          count("chain_psr_medium", k), count("chain_psr_large", k)) for k, line in enumerate(lines)]
     dots = chain_set.dots - 1
     rows = arrays["rows"]
-    dot_features = [(_blob(_wkb_point(x[i], y[i])), int(i + 1), rows[i]["root_start_utc"], float(arrays["mission"][i]))
-                    for i in dots]
+    dot_features = [(_blob(_wkb_point(x[i], y[i])), int(i + 1), rows[i]["root_start_utc"], float(arrays["mission"][i]),
+                     float(arrays["hours"][i])) for i in dots]
     every = np.concatenate([x[line - 1] for line in lines]) if lines else np.zeros(0)
     every_y = np.concatenate([y[line - 1] for line in lines]) if lines else np.zeros(0)
     write_geopackage(paths["longest_chain_per_root"]["geopackage"], crs_wkt, [
         # The dots come first: QGIS adds the layers of a file in this order, each above the one before, so the lines end
         # up above the dots.
         {"name": "isolated_seeds", "geometry": "POINT", "features": dot_features, "bounds": _bounds(x[dots], y[dots]),
-         "columns": [("seed_id", "INTEGER"), ("root_start_utc", "TEXT"), ("mission_hours", "REAL")],
+         "columns": [("seed_id", "INTEGER"), ("root_start_utc", "TEXT"), ("mission_hours", "REAL"),
+                     ("hibernation_hours", "REAL")],
          "style": point_style_qml()},
         {"name": "chains", "geometry": "LINESTRING", "features": chain_features, "bounds": _bounds(every, every_y),
          "columns": [("root_id", "INTEGER"), ("end_seed_id", "INTEGER"), ("chain_length", "INTEGER"),

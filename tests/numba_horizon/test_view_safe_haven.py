@@ -19,7 +19,8 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from lunarscout._numba_horizon import safe_haven_viewer_data as vd  # noqa: E402
 
 from test_safe_haven_overview import write_dem  # noqa: E402
-from test_safe_haven_viewer_data import SEEDS, SIZE, write_chains, write_monthly_chains  # noqa: E402
+from test_safe_haven_viewer_data import (  # noqa: E402
+    SEEDS, SIZE, write_chains, write_haven_months, write_monthly_chains)
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "view_safe_haven.py"
 
@@ -76,7 +77,7 @@ def test_the_monthly_chain_layer_is_offered_only_with_its_file(app, prepared, tm
     window.show()
     app.processEvents()
     assert [window.layers.itemText(i) for i in range(4)] == [
-        "Havens and cluster boxes (monthly)", "Havens (monthly)", "Chains (monthly)", "Chains (yearly)"]
+        "Havens and cluster boxes (monthly)", "Seed haven areas (monthly)", "Chains (monthly)", "Chains (yearly)"]
     assert window.view.layer == "chains_month" and window.caption.text() == "2026-03    2 chains (1 starting)"
     window.slider.setValue(1)
     assert window.caption.text() == "2026-04    0 chains"
@@ -87,6 +88,74 @@ def test_the_monthly_chain_layer_is_offered_only_with_its_file(app, prepared, tm
     assert window.view.grab().toImage().pixelColor(window.view.width() // 2 + 6, window.view.height() // 2 + 6).green() > 200
     window.layers.setCurrentIndex(3)
     assert window.view.layer == "chains" and window.caption.text() == "2026-05    no chain image for 2026"
+
+
+def test_the_all_havens_layer_is_offered_only_with_its_images_and_shows_every_haven_pixel(app, prepared) -> None:
+    viewer = viewer_module()
+    folder, dem, chains = prepared
+    data = vd.ViewerData(folder / "viewer", folder / "cache")
+    with pytest.raises(ValueError, match="threshold_safe_havens"):
+        viewer.Window(data, "haven_months", None)
+    write_haven_months(chains, {"2026-03": {(5, 6): 0, (5, 7): 24}, "2026-05": {(700, 701): 12}})        # 0 h, 48 h; 24 h
+    vd.prepare_viewer(folder / "viewer", folder / "cache", chains_path=chains, dem_path=dem)
+    window = viewer.Window(vd.ViewerData(folder / "viewer", folder / "cache"), "haven_months", None)
+    window.resize(900, 700)
+    window.show()
+    app.processEvents()
+    assert [window.layers.itemText(i) for i in range(3)] == [
+        "Havens and cluster boxes (monthly)", "Seed haven areas (monthly)", "All havens (monthly)"]
+    assert window.view.layer == "haven_months"
+    assert window.caption.text() == "2026-03    2 haven pixels (shadow period at most 48 h)"
+    window.slider.setValue(1)
+    assert window.caption.text() == "2026-04    no haven image for 2026-04"
+    window.slider.setValue(2)
+    assert window.caption.text().startswith("2026-05    1 haven pixels")
+    window.view.centre = QPointF(701, 700)
+    window.view.scale = 12.0
+    window.view.repaint()
+    image = window.view.grab().toImage()
+    colour = image.pixelColor(window.view.width() // 2 + 6, window.view.height() // 2 + 6)
+    assert (colour.red(), colour.green(), colour.blue()) == (56, 182, 200)        # 24 h: cyan, not the orange of a seed
+    # the legend: lower left, one swatch per class in its colour, each with its label
+    panel, _title, rows = window.view.legend_layout()
+    assert panel.left() == 12 and abs(panel.bottom() - (window.view.height() - 12)) < 1 and len(rows) == 4
+    for (swatch, _label), expected in zip(rows, [(255, 255, 255), (242, 201, 76), (56, 182, 200), (122, 92, 214)]):
+        centre = image.pixelColor(int(swatch.center().x()), int(swatch.center().y()))
+        assert (centre.red(), centre.green(), centre.blue()) == expected
+    assert window.view.legend()[0] == "Havens: shadow period" and [t for _c, t in window.view.legend()[1]] == [
+        "0 h", "up to 12 h", "12 to 24 h", "24 to 48 h"]
+    window.layers.setCurrentIndex(1)
+    assert window.view.layer == "havens" and window.caption.text() == "2026-05    1 havens around 1 chain starts"
+    assert window.view.legend()[0] == "Havens: shadow period" and window.view.legend_layout() is not None     # and so does this one
+
+
+def test_every_layer_that_draws_havens_has_the_legend_and_the_chain_layer_adds_the_start_mark(app, prepared) -> None:
+    import numpy as np
+
+    viewer = viewer_module()
+    folder, dem, chains = prepared
+    path = write_monthly_chains(folder, {"2026-03": (1, [(5, 6, 1)])})
+    with np.load(path) as data:
+        arrays = {k: data[k] for k in data.files}
+    arrays["table"] = np.concatenate([arrays["table"], [[255, 0, 255, 255]]]).astype(np.uint8)
+    arrays["labels"] = np.array(["a", "b", "haven", "start of a chain"])
+    np.savez_compressed(path, **arrays)
+    write_haven_months(chains, {"2026-03": {(5, 6): 0}})
+    vd.prepare_viewer(folder / "viewer", folder / "cache", chains_path=chains, dem_path=dem)
+    window = viewer.Window(vd.ViewerData(folder / "viewer", folder / "cache"), "boxes_havens", None)
+    window.resize(900, 700)
+    window.show()
+    app.processEvents()
+    shadow = ["0 h", "up to 12 h", "12 to 24 h", "24 to 48 h"]
+    for index, key in enumerate(window.layer_keys):
+        window.layers.setCurrentIndex(index)
+        title, items = window.view.legend()
+        assert title == "Havens: shadow period" and [label for _c, label in items][:4] == shadow, key
+        assert [label for _c, label in items][4:] == (["start of a chain"] if key == "chains_month" else []), key
+        panel, _t, rows = window.view.legend_layout()
+        assert panel.left() == 12 and len(rows) == len(items) and panel.bottom() <= window.view.height()
+    window.layers.setCurrentIndex(window.layer_keys.index("chains_month"))
+    assert window.view.legend()[1][-1] == ((255, 0, 255), "start of a chain")
 
 
 def wheel(view, x, y, delta):
@@ -154,14 +223,14 @@ def test_the_level_is_the_one_drawn_at_between_half_and_one_screen_pixel(window)
 
 def test_the_slider_runs_over_the_months_and_the_caption_follows_the_layer(window) -> None:
     assert window.slider.minimum() == 0 and window.slider.maximum() == 2
-    assert window.caption.text() == "2026-03    1 clusters, 3 havens"
+    assert window.caption.text() == "2026-03    1 clusters, 1 havens"
     window.slider.setValue(1)
-    assert window.caption.text() == "2026-04    0 clusters, 3 havens"
+    assert window.caption.text() == "2026-04    0 clusters, 0 havens"
     window.layers.setCurrentIndex(1)
-    assert window.view.layer == "havens" and window.caption.text() == "2026-04    3 havens"
+    assert window.view.layer == "havens" and window.caption.text() == "2026-04    0 havens around 0 chain starts"
     window.layers.setCurrentIndex(2)
     assert window.view.layer == "chains" and window.caption.text() == "2026-04    no chain image for 2026"
-    assert [window.layers.itemText(i) for i in range(3)] == ["Havens and cluster boxes (monthly)", "Havens (monthly)", "Chains (yearly)"]
+    assert [window.layers.itemText(i) for i in range(3)] == ["Havens and cluster boxes (monthly)", "Seed haven areas (monthly)", "Chains (yearly)"]
 
 
 def test_every_layer_paints_at_every_level_without_error(window, app) -> None:

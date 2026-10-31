@@ -21,7 +21,7 @@ from lunarscout.products import _load_dem
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_safe_haven.py"
 STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps",
-         "monthly-chain-maps", "overview-maps", "quality-maps", "cluster-maps")
+         "haven-months", "seed-haven-areas", "monthly-chain-maps", "overview-maps", "quality-maps", "cluster-maps")
 
 
 def load_driver():
@@ -187,6 +187,34 @@ def test_the_steps_share_one_set_of_parameters() -> None:
     assert set(map(str, steps["stage4"].outputs)) <= set(map(str, steps["monthly-chain-maps"].inputs))
     assert [p.name for p in steps["monthly-chain-maps"].outputs] == ["safe_haven_stage_4_monthly_chain_pixels.npz"]
     assert set(map(str, steps["stage3"].caches)) <= set(map(str, steps["stage4"].inputs))
+    # every haven pixel of every month: from the stage-1 hibernation product alone, at the survival limit of the stage-2 seeds
+    months = steps["haven-months"]
+    assert [str(p) for p in months.inputs] == [str(steps["stage1"].outputs[0])]
+    assert [p.name for p in months.outputs] == ["safe_haven_stage_1_haven_months"]
+    assert months.options["survival_limit_hours"] == steps["stage2"].options["parameters"].survival_limit_hours \
+        == driver.SURVIVAL_LIMIT_HOURS
+    assert months.options["output_filename_template"] == "safe_haven_stage_1_haven_months_{timestamp:%Y-%m}.tif"
+    assert fingerprint_differs(driver, "survival_limit_hours", 36.0, "haven-months")
+    # the seed haven areas: the chain table, the DEM and the monthly haven images, at the driver's radius
+    areas = steps["seed-haven-areas"]
+    assert [p.name for p in areas.outputs] == ["safe_haven_stage_4_seed_haven_areas", "safe_haven_stage_4_seed_haven_areas.npz"]
+    assert set(map(str, steps["stage4"].outputs)) <= set(map(str, areas.inputs)) and str(months.outputs[0]) in map(str, areas.inputs)
+    assert areas.options["area_radius_meters"] == driver.AREA_RADIUS_METERS == 200.0
+    assert areas.options["haven_months_directory"] == months.outputs[0]
+    assert fingerprint_differs(driver, "area_radius_meters", 300.0, "seed-haven-areas")
+    # the monthly chain pixels draw those areas: they run after them, read their file and are stale when it is rebuilt
+    monthly = steps["monthly-chain-maps"]
+    assert list(steps).index("seed-haven-areas") < list(steps).index("monthly-chain-maps")
+    assert monthly.options["seed_areas_path"] == areas.outputs[1] and areas.outputs[1] in monthly.inputs
+
+
+def fingerprint_differs(module, key, value, step) -> bool:
+    """Whether changing a driver option changes the recorded parameters of ``step`` (it would be run again)."""
+    base = module.default_options()
+    changed = {**base, key: value}
+    before = module.fingerprint(module.build_steps(module.resolve_paths(base))[step])
+    after = module.fingerprint(module.build_steps(module.resolve_paths(changed))[step])
+    return before != after
 
 
 def test_a_step_given_an_option_its_script_does_not_have_is_refused(monkeypatch) -> None:
@@ -274,6 +302,33 @@ def test_the_first_run_makes_every_product_in_order(world, first_run) -> None:
         assert image.count == 4 and (image.read(4) > 0).any()                      # the year's image, with its havens
     with rasterio.open(directory / "safe_havens" / "safe_haven_stage_2_persistence_2027.tif") as grid:
         assert grid.dtypes == ("uint8",) and grid.read(1).max() >= 1                 # the persistence of the seeds' cells
+    # every haven pixel of every month, from the stage-1 product, at the driver's survival limit
+    months_directory = directory / "safe_havens" / "safe_haven_stage_1_haven_months"
+    with rasterio.open(directory / "safe_havens" / "safe_haven_stage_1_hibernation_hours.tif") as stage1:
+        files = sorted(months_directory.glob("safe_haven_stage_1_haven_months_*.tif"))
+        assert len(files) == stage1.count
+        limit = int(driver.SURVIVAL_LIMIT_HOURS // 2)
+        for band, path in enumerate(files, start=1):
+            with rasterio.open(path) as month:
+                raw = stage1.read(band)
+                assert np.array_equal(month.read(1), np.where(raw <= limit, raw, 255))
+                assert int(month.tags()["SAFE_HAVEN_PIXELS"]) == int((raw <= limit).sum()) and path.name.endswith(
+                    stage1.tags(band)["TIMESTAMP_UTC"][:7] + ".tif")
+    # the seed haven areas: one image per month and the pixel file, with the chain starts of the table
+    areas = ls.read_seed_areas(directory / "safe_havens" / "safe_haven_stage_4_seed_haven_areas.npz")
+    assert areas["radius_meters"] == driver.AREA_RADIUS_METERS and areas["with_image"].all()   # every month had its haven image
+    from lunarscout._numba_horizon.safe_haven_chain_maps import build_chain_sets, seed_month_spans
+    first, last, names = seed_month_spans(rows)
+    lines = build_chain_sets(rows)[2].lines
+    starts, alone = [], []
+    for month in range(len(names)):                  # a brute-force count: the chains with 2 or more seeds not passed, and with one
+        left = [[s for s in line if last[s - 1] >= month >= first[line[0] - 1]] for line in lines]
+        starts.append(sum(len(seeds) >= 2 for seeds in left))
+        alone.append(sum(len(seeds) == 1 and seeds[0] == line[-1] for seeds, line in zip(left, lines)))
+    assert areas["months"] == names and areas["starts"].tolist() == starts and areas["alone"].tolist() == alone
+    assert sum(starts) > 0
+    image_files = sorted((directory / "safe_havens" / "safe_haven_stage_4_seed_haven_areas").glob("*.tif"))
+    assert [f.name[-11:-4] for f in image_files] == areas["months"]
     state = json.loads((directory / "safe_havens" / "safe_haven_run_state.json").read_text())
     assert set(state) == set(STEPS) and all(state[s]["fingerprint"] for s in STEPS)
     assert state["stage3"]["parameters"]["settings"]["max_slope_deg"] == 15.0
@@ -313,8 +368,8 @@ def test_a_changed_input_reruns_only_what_depends_on_it(world, first_run) -> Non
     os.utime(directory / "psr.tif", None)                                       # the PSR map changed just now
     CALLS.clear()
     assert driver.run_safe_haven(**options) == 0
-    assert CALLS == ["psr-regions", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "monthly-chain-maps",
-                     "overview-maps", "quality-maps", "cluster-maps"]   # not the store, stage 1 or stage 2
+    assert CALLS == ["psr-regions", "stage3", "stage4", "chain-maps", "yearly-chain-maps", "seed-haven-areas",
+                     "monthly-chain-maps", "overview-maps", "quality-maps", "cluster-maps"]   # not the store, stage 1, 2 or the haven months
     CALLS.clear()
     assert driver.run_safe_haven(**options) == 0 and CALLS == []
 
@@ -323,18 +378,18 @@ def test_a_changed_parameter_reruns_the_steps_that_use_it_and_what_follows(world
     _directory, options = world
     CALLS.clear()
     assert driver.run_safe_haven(**options, max_days=20.0) == 0
-    assert CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps", "monthly-chain-maps", "quality-maps", "cluster-maps"]
+    assert CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps", "seed-haven-areas", "monthly-chain-maps", "quality-maps", "cluster-maps"]
     CALLS.clear()
     assert driver.run_safe_haven(**{**options, "flood_workers": 1, "route_workers": 1, "max_days": 20.0}) == 0
     assert CALLS == []                                                          # how it runs is not what it makes
-    assert driver.run_safe_haven(**options) == 0 and CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps", "monthly-chain-maps", "quality-maps", "cluster-maps"]    # and back again
+    assert driver.run_safe_haven(**options) == 0 and CALLS == ["stage3", "stage4", "chain-maps", "yearly-chain-maps", "seed-haven-areas", "monthly-chain-maps", "quality-maps", "cluster-maps"]    # and back again
 
 
 def test_force_runs_a_step_and_what_depends_on_it(world, first_run) -> None:
     _directory, options = world
     CALLS.clear()
     assert driver.run_safe_haven(**options, force=("stage4",)) == 0
-    assert CALLS == ["stage4", "chain-maps", "yearly-chain-maps", "monthly-chain-maps", "quality-maps", "cluster-maps"]
+    assert CALLS == ["stage4", "chain-maps", "yearly-chain-maps", "seed-haven-areas", "monthly-chain-maps", "quality-maps", "cluster-maps"]
 
 
 def test_run_steps_selects_a_subset_in_the_sequences_order(world, first_run) -> None:
@@ -345,6 +400,7 @@ def test_run_steps_selects_a_subset_in_the_sequences_order(world, first_run) -> 
     assert CALLS == ["stage4", "chain-maps", "yearly-chain-maps", "monthly-chain-maps", "quality-maps", "cluster-maps"]   # the rebuilt table makes them stale
     CALLS.clear()
     assert driver.run_safe_haven(**options, run_steps=("chain-maps", "stage4")) == 0 and CALLS == []
+    assert driver.run_safe_haven(**options) == 0 and CALLS == ["seed-haven-areas", "monthly-chain-maps"]   # the areas the subset left behind the table, then the pixels that draw them
 
 
 def test_outputs_the_driver_never_ran_are_not_replaced_unless_adopted_or_forced(world, first_run, tmp_path, caplog) -> None:

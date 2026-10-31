@@ -309,13 +309,13 @@ GeoPackages. The five chain colours run from the shortest chains to the longest.
 
 | What is drawn | Colour name | Hex | RGB | Chains (15-degree run) |
 |---|---|---|---|---|
-| Chain of 2 seeds | violet (blue-violet) | `#6a5cff` | 106, 92, 255 | 10,383 |
+| Chain of 2 seeds | dark green | `#297d0f` | 41, 125, 15 | 10,383 |
 | Chain of 3 seeds | rose (pinkish red) | `#ff4f6e` | 255, 79, 110 | 30 |
 | Chain of 4 to 5 seeds | orange | `#ff7a1a` | 255, 122, 26 | 39 |
-| Chain of 6 seeds | yellow (golden) | `#ffcc00` | 255, 204, 0 | 26 |
+| Chain of 6 seeds | pink | `#fb9df8` | 251, 157, 248 | 26 |
 | Chain of 7 or more seeds (7 to 10 here) | lime green | `#7dff3a` | 125, 255, 58 | 25 |
 | Route pixel next to a permanently shadowed region (PSR) | aqua (cyan) | `#00ffff` | 0, 255, 255 | |
-| Haven: every seed, isolated ones too | white | `#ffffff` | 255, 255, 255 | |
+| Haven: every seed, isolated ones too, by shadow period | white (none), yellow (up to 12 h), cyan (12 to 24 h), violet (24 h to the limit) | `#ffffff`, `#f2c94c`, `#38b6c8`, `#7a5cd6` | | |
 | Nothing drawn | transparent (alpha 0) | | | |
 
 Tests check the sets against an exhaustive search over random forests, the intervals (the real run's distribution, the
@@ -344,13 +344,13 @@ chains and havens year by year can be compared.
 
   | What is drawn | Colour name | Hex |
   |---|---|---|
-  | Chain of 2 seeds | violet (blue-violet) | `#6a5cff` |
+  | Chain of 2 seeds | dark green | `#297d0f` |
   | Chain of 3 seeds | rose (pinkish red) | `#ff4f6e` |
   | Chain of 4 to 5 seeds | orange | `#ff7a1a` |
-  | Chain of 6 seeds | yellow (golden) | `#ffcc00` |
+  | Chain of 6 seeds | pink | `#fb9df8` |
   | Chain of 7 or more seeds | lime green | `#7dff3a` |
   | Route pixel next to a PSR | aqua (cyan) | `#00ffff` |
-  | Haven (a seed of that year's chains) | white | `#ffffff` |
+  | Haven (a seed of that year's chains), by shadow period | white, yellow, cyan, violet | `#ffffff`, `#f2c94c`, `#38b6c8`, `#7a5cd6` |
   | Nothing drawn | transparent | |
 
   The chain-length limits are the 15-degree run's; the yearly report
@@ -512,6 +512,27 @@ about 100 s.
   later boxes on top), and a run on a small scene (GeoTIFF colours, transparency inside a box, PNG, the table with its
   CRS bounds, years, refused settings).
 
+## 15a. The monthly haven images (every haven pixel)
+
+`scripts/threshold_safe_havens.py` (procedure `make_haven_month_images`; driver step `haven-months`) turns the stage-1 hibernation product into one GeoTIFF per month in `safe_havens/safe_haven_stage_1_haven_months/` (`safe_haven_stage_1_haven_months_<YYYY-MM>.tif`). A pixel is a haven in a month when its stage-1 count is at most the survival limit divided by 2 hours (24 counts at 48 h, rounded down as `Stage1Rasters.read_haven_window` does); the counts at or below the limit are kept, so the value is the hibernation in two-hour counts, and the rest is NODATA 255. Each file is a tiled, DEFLATE-compressed BigTIFF with overviews that keep the minimum of every 2 x 2 block (a haven is never lost at a coarser zoom), and carries `SAFE_HAVEN_BYTE_THRESHOLD`, `SAFE_HAVEN_SURVIVAL_LIMIT_HOURS`, `SAFE_HAVEN_HOURS_PER_COUNT` and `SAFE_HAVEN_PIXELS` tags. The step depends only on the stage-1 product and the survival limit, so a change of limit reruns it and the seed steps but not the light store or stage 1. A run of 96 months at 48 h took 10.6 minutes on the CPU and made 644 MB; the haven pixel-months sum to 1,001,373,799, the count stage 2 reports as `haven_pixels`. The threshold is derived from `SURVIVAL_LIMIT_HOURS`; the older `safe_havens_thresholded/` folder came from the same script with a raw threshold of 25 (50 h).
+
+## 15b. The seed haven areas (the havens near each chain start)
+
+The rules of every monthly layer, with a worked example, are in `docs/safe-haven-monthly-products.md`; this section describes the seed haven areas product.
+
+`lunarscout.generate_seed_haven_areas(chains_path, dem_path, output_directory, ...)` is a public function (`ls.generate_seed_haven_areas`, `ls.read_seed_areas`, `ls.SeedHavenAreasReport`; module `lunarscout.safe_haven_areas`). `scripts/make_seed_haven_areas.py` (procedure `make_seed_haven_areas`; driver step `seed-haven-areas`, which runs after `haven-months` and before `monthly-chain-maps`, option `AREA_RADIUS_METERS`) wraps it with the script conventions. A chain is drawn each month as the part still ahead: a seed is passed once its own month is over, the chain's **current start** is its first seed not yet passed, and it is drawn while 2 or more seeds are left. For each month the function selects:
+
+* the current start of each chain drawn in the month (the pixels marked as chain starts in the monthly chain pixels): the root in the month its chain starts, the continuation in each later month; isolated seeds start no chain;
+* every haven of the month, a seed or not, whose pixel centre is within the radius of one of them (`radius_meters`, default 200 m, which is 10 pixels on the 20 m DEM; the DEM's pixel size sets the pixel count; the straight-line distance is used and a pixel exactly at the limit is included). A haven is a pixel of the month's haven image (section 15a) with a count at most that image's threshold. A start keeps the hibernation of the chain table; and
+* the **lone seed** of each chain with only its final seed left in the month, as its pixel alone: no haven around it is added.
+
+Other seeds (isolated ones, passed ones, those still ahead on a chain that are not a current start) are not in an area. A month without a haven image has its chain starts and lone seeds alone. Two products are written, through staging files:
+
+* `safe_haven_stage_4_seed_haven_areas/safe_haven_stage_4_seed_haven_areas_<YYYY-MM>.tif`, one per month from the first chain start to the last seed month, on the DEM's grid for a GIS: uint8 counts of `hours_per_count` (2) hours, 255 NODATA, a palette in the shadow-period classes of section 15 (counts 0, 1-6, 7-12 and 13 or more), DEFLATE tiles and overviews in which each pixel is the minimum of its block, and tags (`SAFE_HAVEN_MONTH`, `SAFE_HAVEN_AREA_RADIUS_METERS`, `SAFE_HAVEN_AREA_STARTS`, `SAFE_HAVEN_AREA_LONE_SEEDS`, `SAFE_HAVEN_PIXELS`, `SAFE_HAVEN_HOURS_PER_COUNT`, `SAFE_HAVEN_HAVEN_IMAGE`);
+* `safe_haven_stage_4_seed_haven_areas.npz` beside the chain table: the same pixels as lists (`row`, `column`, `hours`, `offsets` by month), `starts`, `alone` and `with_image` per month and `radius_meters`, which the viewer reads (`ls.read_seed_areas`).
+
+Timing on the 15-degree run: about 4 minutes (most of it writing the 96 full-size images, 150 MB in all); the viewer's lists then build in about 10 s. (The counts of starts and pixels measured for the earlier rule, which counted a chain's root only, 10,461 starts and 163,830 pixels, do not apply to this rule and have not been measured again.)
+
 ## 15. The pole viewer
 
 `scripts/view_safe_haven.py` opens a window on the pole: the dark hillshade with the products of one month on it, to pan
@@ -526,18 +547,25 @@ the slider along the bottom picks the month, from the first to the last month of
 
 | Drop-down | What is drawn | Changes |
 |---|---|---|
-| Havens and cluster boxes (monthly) | the bounding box of each group of connected havens whose chain starts in the month, in the aqua classes of section 14 (the box is drawn one pixel outside the group; a box smaller than a few screen pixels is drawn solid so that it can be seen), with one orange pixel for each haven shown in the month drawn over them | every month |
-| Havens (monthly) | the same orange havens without the boxes | every month |
-| Chains (monthly) | the longest chain of each root from the month it starts in until its last seed, each month as the part still ahead: a chain that goes on into later months is shorter in each, in the colour of its remaining length (the yearly image's routes, length colours, aqua PSR passes and white havens, and the start of each chain that starts in the month as a 3 x 3 square of bright magenta, `#ff00ff`, a colour no length class uses; the entry is in the drop-down only when the monthly pixel file exists) | every month |
+| Havens and cluster boxes (monthly) | the bounding box of each group of connected havens whose chain starts in the month, in the aqua classes of section 14 (the box is drawn one pixel outside the group; a box smaller than a few screen pixels is drawn solid so that it can be seen), with the month's seed haven areas drawn over them, in the colour of each pixel's shadow period (below) | every month |
+| Seed haven areas (monthly) | the same havens without the boxes: the current start of each chain drawn in the month (its first seed not yet passed: the root in the month the chain starts, the continuation in each later month), every haven of the month, a seed or not, within 200 m (10 pixels on the 20 m DEM) of one of them, and the lone last seed of a chain as its pixel alone, as made by the `seed-haven-areas` step (section 15b; without its pixel file the layer shows the chain starts and lone seeds alone). Other seeds (isolated ones, passed ones, later seeds of a chain) are not drawn. The radius is the step's `AREA_RADIUS_METERS` (driver option, `--area-radius-meters` of `scripts/make_seed_haven_areas.py`); the viewer's lists are made again when the step's file changes | every month |
+| All havens (monthly) | every pixel that is a haven in the month, not only the seeds: hibernation at most the survival limit, from the monthly haven images of section 15a. Coloured by the pixel's shadow period (its stage-1 hibernation) in four classes of decreasing brightness and different hues: white for none (0 h), yellow `#f2c94c` up to 12 h, cyan `#38b6c8` for 12 to 24 h and violet `#7a5cd6` for 24 h up to the survival limit (48 h). A legend in the lower left names the classes (the last one reads "24 to N h" for a limit of N); the caption gives the pixel count and the limit. The colours were checked with the palette validator: adjacent classes stay at least 17 apart (OKLab x 100) under simulated colour blindness, 20 or more under normal vision, and all are at least 3:1 against the dark surface (white fails the validator's chroma and lightness bands by design). At the coarser zooms a screen pixel shows the best class of its block, so white dominates there. Offered only when the images are beside the chain table | every month |
+| Chains (monthly) | the longest chain of each root from the month it starts in until its last seed, each month as the part still ahead: a chain that goes on into later months is shorter in each, in the colour of its remaining length (the yearly image's routes, length colours and aqua PSR passes; the havens of the seed haven areas of the month, the same set as the Seed haven areas layer, in the colours of their shadow periods; and the current start of each chain drawn in the month marked in bright magenta, `#ff00ff`, a colour no length class uses; the entry is in the drop-down only when the monthly pixel file exists) | every month |
 | Chains (yearly) | the yearly chain image `safe_haven_stage_4_longest_chain_per_root_<year>.tif` of the slider's year | when the slider crosses into another year |
 
+*Haven colours, in every layer.* Every layer that draws havens colours each by its shadow period (its hibernation), except the start of a chain, which keeps its magenta mark in the monthly chain layer: white for none, yellow `#f2c94c` up to 12 h, cyan `#38b6c8` for 12 to 24 h and violet `#7a5cd6` for 24 h up to the survival limit (48 h; longer if a seed's shadow period is longer, and the legend then reads "24 to N h"). The classes are defined once, in `chain_map_styles.HAVEN_SHADOW_CLASSES`. The colours are baked into the products: the chain images (`..._predecessor_edges*.tif`, `..._longest_chain_per_root*.tif` and the yearly images) mark each haven with its class (the image's `COLOURS` tag lists them), the monthly chain pixel file has one table class per shadow period (labels "haven, shadow 0 h" and so on, ordered so that the brightest is drawn last), and the `isolated_seeds` layer of the GeoPackage has a `hibernation_hours` column and a rule-based style by it. Where havens overlap, the brightest class is on top. The seed layers of the viewer use each seed's `hibernation_hours` from the stage-4 table (kept in `havens.npz`), and the all-havens layer uses the monthly haven images; a legend in the lower left names the classes on every layer that draws havens (and the chain start on the monthly chain layer). Chain images made before this change have white havens: run the `chain-maps`, `yearly-chain-maps` and `monthly-chain-maps` steps again (`--force`; the seeds, floods and chains are not recomputed). At the coarser zoom levels the viewer's pyramid takes the largest value of each channel over a block, so a block holding havens of two classes shows a blend of their colours.
+
+*Seeds are not all havens.* Stage 2 keeps at most five seeds per 5.12 km cell and month, so a cell with thousands of haven pixels holds five. Most seeds (459,349 of 480,592 in the 15-degree run) are isolated: they start no chain, so the layers that draw the seed haven areas (the first two, and Chains (monthly)) do not draw them. The "All havens (monthly)" layer draws every pixel and is the one to use for the extent of the havens.
+
 *One month rule.* A cluster belongs to the month its chain starts in (the `root_start_utc` of its lowest seed; the yearly maps
-use the year of the same time). A haven is shown from the month its chain starts in to its own `month` (never before the
-chain's start), and every layer that draws havens uses that rule, so the layers agree: the havens of the havens layer are
-the white dots of the monthly chains and the dots inside the boxes. (An earlier version put a haven in its own month in
-the havens layer and from its chain's start in the chains layer, so about 10 % of the seed-months differed: in 2024-09,
-56 seeds only in the chains layer, of chains that had started and whose own month was later, and 22 only in the havens
-layer, whose outage ends in the following month, which is when the chain starts.) The numbers of clusters per month swing
+use the year of the same time), so its box appears in that month only. The chains are drawn each month as the part still ahead
+(a seed is passed once its own `month` in the chain table is over, never before the chain's start), and the havens of the
+box layer, of the "Seed haven areas" layer and of the monthly chain layer are one set: the current start of each chain drawn
+in the month, the havens near it and the lone last seeds (section 15b), so the three layers agree and the magenta marks of the
+chain layer are on havens of the other two. (An earlier version put a haven in its own month in the havens layer and from
+its chain's start in the chains layer, so about 10 % of the seed-months differed: in 2024-09, 56 seeds only in the chains
+layer, of chains that had started and whose own month was later, and 22 only in the havens layer, whose outage ends in the
+following month, which is when the chain starts.) The numbers of clusters per month swing
 with the lighting cycle (in the 15-degree run, 211 in 2026-03, 2 in 2027-03 and 260 in 2027-12), so a month with few
 boxes is a result, not a fault.
 
@@ -547,17 +575,19 @@ are between half and one screen pixel (full resolution, 20 m, when zoomed in). N
 * `viewer/viewer.json` (beside the products): the months, the DEM grid, and per month the boxes as `[row_min, row_max,
   column_min, column_max, havens]` in DEM pixels, the yearly chain images and how the boxes were clustered
   (`CONNECT`, as in section 14);
-* `viewer/havens.npz`: the DEM row and column of every seed in each month it is shown in (the rule above), ordered by
-  month, with each month's start offset;
+* `viewer/havens.npz`: the DEM row and column (and shadow period) of every pixel of the seed haven areas of each month,
+  copied from `safe_haven_stage_4_seed_haven_areas.npz` (section 15b), ordered by month, with each month's start
+  offset; `viewer.json` also records that file's name, size and time, the radius and the chain starts per month;
 * `safe_haven_stage_4_monthly_chain_pixels.npz` (beside the chain table; made by `scripts/run_safe_haven_monthly_chain_maps.py`,
   driver step `monthly-chain-maps`): for each month the pixels the yearly image would draw for the chains that are
-  under way (row, column and colour class, with one extra pixel in the start colour on the root of each chain that starts in the month), found by drawing the same
+  under way (row, column and colour class, with one extra pixel in the start colour on the current start of each chain drawn in the month), found by drawing the same
   routes month by month (225 s on the 15-degree run, the routes included). A chain is drawn from the month its root
   starts in until the month of its last seed, each month as the part still ahead (its seeds from that month on), in the
   colour of that remaining length; a seed's month is its own `month` in the chain table, never before the chain's
-  start (the table's months never go back along a chain). The havens drawn are the seeds of chains that have started,
-  from the start month to the seed's own month. In the month a chain starts the picture is the yearly image's (the
-  months of one year are not the yearly image, because chains go on). Of the 10,503 chains, 9,221 are shown for
+  start (the table's months never go back along a chain). The havens drawn are those of the seed haven areas of the
+  month, read from `safe_haven_stage_4_seed_haven_areas.npz` (section 15b; the step runs after `seed-haven-areas` and
+  refuses to run without that file). In the month a chain starts the routes are the yearly image's (the months of one
+  year are not the yearly image, because chains go on and the havens are the areas'). Of the 10,503 chains, 9,221 are shown for
   one month, 1,183 for two and 99 for three to eight; as most of those have one seed left in the later months, which
   is a lone haven, only 265 chain-months are drawn as chains after the start month (10,768 chain-months in all). The
   caption gives the chains drawn and how many of them start in the month. A pixel that two chains share is drawn in
@@ -641,12 +671,12 @@ involved, so the check also stands if the horizon generator is changed and the t
 settings (`FloodSettings`) and stage 2's seed rules (`WindowParameters`) are one flag per field. Booleans are
 `--flag/--no-flag`; a list such as `--cells 0,1 2,3` takes values; `none` gives a missing value. Each script defines a
 procedure with exactly those options as keyword arguments (`run_light_store`, `run_stage1`, `run_stage2`, `run_stage3`,
-`run_stage4`, `make_chain_maps`, `make_overview_maps`, `make_quality_maps`, `make_cluster_maps`, `run_psr_regions`) and a `default_options()` that reads the constants when it is
+`run_stage4`, `make_chain_maps`, `make_overview_maps`, `make_quality_maps`, `make_cluster_maps`, `make_haven_month_images`, `run_psr_regions`) and a `default_options()` that reads the constants when it is
 called, so another program can load the script and call the procedure; `main(argv=())` reads the command line, sets up
 logging and calls it. The helpers are in `lunarscout._script_cli`.
 
 **The driver, `scripts/run_safe_haven.py`.** It runs `psr-regions`, `light-store`, `stage1`, `stage2`, `stage3`,
-`stage4`, `chain-maps`, `yearly-chain-maps`, `monthly-chain-maps`, `overview-maps`, `quality-maps` and `cluster-maps` in that order by loading the scripts and calling their procedures with one set of shared
+`stage4`, `chain-maps`, `yearly-chain-maps`, `haven-months`, `seed-haven-areas`, `monthly-chain-maps`, `overview-maps`, `quality-maps` and `cluster-maps` in that order by loading the scripts and calling their procedures with one set of shared
 parameters, so a threshold is the same everywhere it is used. The values it captures: the paths (inside
 `SCENARIO_DIRECTORY` unless given), the time grid, the lighting thresholds, the rover (`MAX_SLOPE_DEG = 15`, moves per
 step, connectivity, flood days, PSR size classes, edge rule), the seed rules and the worker counts. The slope limit is

@@ -61,8 +61,8 @@ def test_multiband_threshold_and_every_minimum_overview(tmp_path, monkeypatch):
     monkeypatch.setattr(script, "MIN_OVERVIEW_SIZE", 4)
     outputs = script.convert(source, output_directory, workers=3)
     assert [path.name for path in outputs] == [
-        "safe_havens_2024-01-01T00-00-00.tif",
-        "safe_havens_2024-02-01T00-00-00.tif",
+        "safe_haven_stage_1_haven_months_2024-01.tif",
+        "safe_haven_stage_1_haven_months_2024-02.tif",
     ]
     assert sorted(output_directory.iterdir()) == list(outputs)
     expected = np.where(values <= script.THRESHOLD, values, 255).astype(np.uint8)
@@ -157,10 +157,11 @@ def test_cli_fresh_process(tmp_path):
     values[0, 0, 0] = 24
     values[0, -1, -1] = 0  # Leave the second month entirely NODATA.
     _write_input(source, values)
-    subprocess.run([sys.executable, str(SCRIPT), str(source), str(output_directory), "--workers", "2"],
+    subprocess.run([sys.executable, str(SCRIPT), "--input-path", str(source), "--output-directory", str(output_directory),
+                    "--workers", "2", "--color", "never"],
                    check=True, capture_output=True, text=True)
-    for band, stamp in enumerate(("2024-01-01T00-00-00", "2024-02-01T00-00-00")):
-        output = output_directory / f"safe_havens_{stamp}.tif"
+    for band, stamp in enumerate(("2024-01", "2024-02")):
+        output = output_directory / f"safe_haven_stage_1_haven_months_{stamp}.tif"
         with rasterio.open(output, overview_level=1) as actual:
             expected = _minimum_reference(_minimum_reference(values[band:band + 1]))
             np.testing.assert_array_equal(actual.read(), expected)
@@ -232,7 +233,7 @@ def test_later_destination_conflict_is_preflighted(tmp_path, suffix):
     source, output_directory = tmp_path / "source.tif", tmp_path / "months"
     _write_input(source, np.zeros((2, 2, 2), dtype=np.uint8))
     output_directory.mkdir()
-    conflict = output_directory / f"safe_havens_2024-02-01T00-00-00.tif{suffix}"
+    conflict = output_directory / f"safe_haven_stage_1_haven_months_2024-02.tif{suffix}"
     conflict.write_bytes(b"existing product or sidecar")
     with pytest.raises(FileExistsError):
         script.convert(source, output_directory)
@@ -255,7 +256,7 @@ def test_later_month_failure_preserves_earlier_completed_month(tmp_path, monkeyp
         script.convert(source, output_directory)
     outputs = list(output_directory.iterdir())
     assert len(outputs) == 1
-    assert outputs[0].name == "safe_havens_2024-01-01T00-00-00.tif"
+    assert outputs[0].name == "safe_haven_stage_1_haven_months_2024-01.tif"
     with rasterio.open(outputs[0], overview_level=0) as month:
         assert month.count == 1
         assert np.all(month.read(1) == 0)
@@ -294,3 +295,51 @@ def test_template_with_insufficient_timestamp_precision_rejects_collisions(tmp_p
     with pytest.raises(ValueError, match="duplicate output filenames"):
         script.convert(source, output_directory)
     assert not output_directory.exists()
+
+
+@pytest.mark.parametrize("limit,step,count", [(48.0, 2.0, 24), (72.0, 2.0, 36), (50.0, 2.0, 25), (49.9, 2.0, 24), (0.0, 2.0, 0),
+                                              (1.9, 2.0, 0), (48.0, 1.0, 48), (3.0, 1.5, 2)])
+def test_the_threshold_is_the_largest_count_within_the_limit(limit, step, count):
+    assert script.threshold_count(limit, step) == count
+    assert script.THRESHOLD == script.threshold_count(script.SURVIVAL_LIMIT_HOURS, script.HOURS_PER_COUNT) == 24
+
+
+@pytest.mark.parametrize("limit,step", [(-1.0, 2.0), (48.0, 0.0), (48.0, -2.0), (float("nan"), 2.0), (float("inf"), 2.0)])
+def test_a_limit_or_step_that_has_no_count_is_refused(limit, step):
+    with pytest.raises(ValueError):
+        script.threshold_count(limit, step)
+
+
+def test_the_procedure_keeps_every_haven_pixel_and_records_the_limit_and_the_count(tmp_path):
+    values = np.full((2, 40, 36), 255, dtype=np.uint8)
+    values[0, 3, 4], values[0, 10, 11], values[0, 12, 12] = 0, 24, 25         # 25 counts (50 h) is not a haven at 48 h
+    values[1, 20, 20] = 7
+    source, output_directory = tmp_path / "stage1.tif", tmp_path / "months"
+    _write_input(source, values)
+    assert script.make_haven_month_images(
+        input_path=source, output_directory=output_directory, output_filename_template="m_{timestamp:%Y-%m}.tif",
+        survival_limit_hours=48.0, hours_per_count=2.0, workers=2, overwrite=True) == 0
+    assert sorted(p.name for p in output_directory.iterdir()) == ["m_2024-01.tif", "m_2024-02.tif"]
+    expected_pixels = (2, 1)
+    for band, name in enumerate(("m_2024-01.tif", "m_2024-02.tif")):
+        with rasterio.open(output_directory / name) as month:
+            data = month.read(1)
+            np.testing.assert_array_equal(data, np.where(values[band] <= 24, values[band], 255))
+            tags = month.tags()
+            assert tags["SAFE_HAVEN_BYTE_THRESHOLD"] == "24" and tags["SAFE_HAVEN_SURVIVAL_LIMIT_HOURS"] == "48"
+            assert tags["SAFE_HAVEN_HOURS_PER_COUNT"] == "2" and int(tags["SAFE_HAVEN_PIXELS"]) == expected_pixels[band]
+            assert int(tags["SAFE_HAVEN_PIXELS"]) == int((data != 255).sum())
+
+
+def test_the_procedure_replaces_old_files_with_overwrite_and_refuses_without(tmp_path):
+    values = np.full((1, 30, 30), 5, dtype=np.uint8)
+    source, output_directory = tmp_path / "stage1.tif", tmp_path / "months"
+    _write_input(source, values)
+    common = dict(input_path=source, output_directory=output_directory, output_filename_template="m_{timestamp:%Y-%m}.tif",
+                  survival_limit_hours=48.0, hours_per_count=2.0, workers=2)
+    script.make_haven_month_images(**common, overwrite=True)
+    with pytest.raises(FileExistsError):
+        script.make_haven_month_images(**common, overwrite=False)
+    script.make_haven_month_images(**{**common, "survival_limit_hours": 8.0}, overwrite=True)          # 4 counts: 5 is no haven
+    with rasterio.open(output_directory / "m_2024-01.tif") as month:
+        assert (month.read(1) == 255).all() and month.tags()["SAFE_HAVEN_PIXELS"] == "0"

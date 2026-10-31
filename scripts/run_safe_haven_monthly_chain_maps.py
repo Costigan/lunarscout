@@ -11,16 +11,20 @@ safe-haven sequence that way).
 The pixels of the longest-chain image of each month, for the pole viewer (scripts/view_safe_haven.py):
 safe_haven_stage_4_monthly_chain_pixels.npz in OUTPUT_DIRECTORY. It is the yearly image
 (scripts/run_safe_haven_yearly_chain_maps.py) by month. A chain is drawn from the month its root starts in
-(`root_start_utc` in the stage-4 table) to the month of its last seed, each month as the part still ahead: its seeds from
-that month on, so a chain that goes on into later months is shorter in each of them and in the colour of its remaining
-length (the length intervals of the whole chains, as in the yearly images). A seed's month is its own `month` in the
-table, never before its chain's start. The havens drawn (white) are the seeds of the chains that have started, from the
-start month to the seed's own month, isolated ones and the branches off the longest chain too; the routes and aqua PSR
-passes are as in the yearly images. In the month a chain starts the picture is what the yearly image shows when every
-chain starts in that month. A month is stored as only the pixels drawn (a few thousand to some tens of thousands): their
-row, column and colour class, ordered by class so that drawing them in order puts the longer chains, then aqua, then the
-havens on top, with the colour table and, for each month, the chains drawn and the ones that start in it. The months run
-from the first in which a chain starts to the last month of any seed; a month without chains has no pixels.
+(`root_start_utc` in the stage-4 table) to the month of its last seed, each month as the part still ahead: its seeds that
+are not yet passed (a seed is passed once its own `month` in the table is over, never before its chain's start), so a chain
+that goes on into later months is shorter in each of them, loses its first segments and has the colour of its remaining
+length (the length intervals of the whole chains, as in the yearly images). A magenta mark sits on the current start of
+each chain drawn in the month: its first seed not yet passed, the root in the month the chain starts and the continuation
+in the months after it. The havens drawn are those of the seed haven areas of the month, read from SEED_AREAS_PATH
+(safe_haven_stage_4_seed_haven_areas.npz beside the chain table, made by scripts/make_seed_haven_areas.py; the step
+refuses to run without it): the current starts, the havens within the area radius of them and the lone last seeds, in
+their shadow colours, the same set as the viewer's "Seed haven areas (monthly)". The routes and aqua PSR passes are as in
+the yearly images. The rules of every monthly layer are in docs/safe-haven-monthly-products.md. A month is stored as only
+the pixels drawn (a few thousand to some tens of thousands): their row, column and colour class, ordered by class so that
+drawing them in order puts the longer chains, then aqua, then the havens on top, with the colour table and, for each month,
+the chains drawn and the ones that start in it. The months run from the first in which a chain starts to the last month of
+any seed; a month without chains or havens has no pixels.
 
 The lines are the rover's routes (RASTER_ROUTES), found by flooding every predecessor seed again from the light store
 (the flood settings must be those stage 3 ran with). With RASTER_ROUTES False the lines are straight and no light store is
@@ -61,6 +65,7 @@ CHAINS_PATH = STAGE_DIRECTORY / "safe_haven_stage_4_chains.csv"
 LIGHT_STORE_PATH = Path("/e/lunar_analyst_scenarios/70south/light_store")
 PSR_IDS_PATH = Path("/e/lunar_analyst_scenarios/70south/psr_ids.tif")        # None marks no PSR (scripts/generate_psr_regions.py)
 PASSABLE_PATH = STAGE_DIRECTORY / "safe_haven_stage_3_passable_mask.npy"      # cached by stage 3
+SEED_AREAS_PATH = None  # safe_haven_stage_4_seed_haven_areas.npz (scripts/make_seed_haven_areas.py); None: beside CHAINS_PATH
 # Must be the settings stage 3 ran with (run_safe_haven_stage3.py).
 FLOOD_SETTINGS = FloodSettings(max_days=28.0, moves_per_step=4, connectivity=8, max_slope_deg=15.0)
 RASTER_ROUTES = True    # False: straight lines (quick, no light store needed)
@@ -86,6 +91,7 @@ OPTIONS = (
     Option("LIGHT_STORE_PATH", "path", "the stage-0 light store (for the routes)"),
     Option("PSR_IDS_PATH", "optional_path", "the PSR id raster; none marks no PSR"),
     Option("PASSABLE_PATH", "path", "the passable mask stage 3 cached"),
+    Option("SEED_AREAS_PATH", "optional_path", "the seed haven areas file; none: beside the chain table"),
     Option("RASTER_ROUTES", "bool", "the images follow the rover's routes; false draws straight lines"),
     Option("ROUTE_WORKERS", "int", "processes reconstructing routes in parallel"),
     Option("PROGRESS_EVERY_SEEDS", "int", "log progress every this many predecessor seeds"),
@@ -98,8 +104,8 @@ def default_options() -> dict:
 
 
 def make_monthly_chain_maps(*, dem_path, chains_path, output_directory, overwrite, light_store_path,
-                           psr_ids_path, passable_path, raster_routes, route_workers, progress_every_seeds,
-                           flood_settings) -> int:
+                           psr_ids_path, passable_path, seed_areas_path, raster_routes, route_workers,
+                           progress_every_seeds, flood_settings) -> int:
     """Write the monthly chain pixel file; returns 0. ``flood_settings`` must be stage 3's."""
     started = clock.monotonic()
 
@@ -113,7 +119,8 @@ def make_monthly_chain_maps(*, dem_path, chains_path, output_directory, overwrit
     report = run_monthly_chain_maps(
         output_directory, chains_path=chains_path, dem_path=dem_path, overwrite=overwrite,
         light_store_path=light_store_path if raster_routes else None, passable_path=passable_path,
-        flood_settings=flood_settings, workers=route_workers, progress=progress, psr_ids_path=psr_ids_path)
+        flood_settings=flood_settings, workers=route_workers, progress=progress, psr_ids_path=psr_ids_path,
+        seed_areas_path=seed_areas_path)
     print(json.dumps(report.as_dict(), indent=2), flush=True)
     LOG.info("%d months, %s pixels written to: %s (%d chains in all; raster lines: %s)", len(report.months),
              f"{report.pixels:,}", report.file, sum(m["chains"] for m in report.months.values()), report.raster_lines)

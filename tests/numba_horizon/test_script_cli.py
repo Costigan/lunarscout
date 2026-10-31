@@ -30,6 +30,8 @@ SCRIPT_PROCEDURES = {
     "run_safe_haven_overview_maps": ("make_overview_maps", set()),
     "run_safe_haven_quality_maps": ("make_quality_maps", set()),
     "run_safe_haven_cluster_maps": ("make_cluster_maps", set()),
+    "threshold_safe_havens": ("make_haven_month_images", set()),
+    "make_seed_haven_areas": ("make_seed_haven_areas", set()),
     "prepare_safe_haven_viewer": ("prepare_safe_haven_viewer", set()),
     "check_safe_haven_lighting": ("check_safe_haven_lighting", {"parameters"}),
 }
@@ -87,6 +89,12 @@ def test_the_help_shows_each_default() -> None:
     cli.add_options(parser, OPTIONS, DEFAULTS)
     text = parser.format_help()
     assert "(default: /x)" in text and "(default: 20.0)" in text and "(default: a b)" in text and "(default: none)" in text
+
+
+def test_a_percent_sign_in_an_option_or_its_default_does_not_break_the_help() -> None:
+    parser = argparse.ArgumentParser()
+    cli.add_options(parser, (cli.Option("TEMPLATE", "str", "a name like 100% of it"),), {"template": "m_{t:%Y-%m}.tif"})
+    assert "m_{t:%Y-%m}.tif" in parser.format_help() and "100% of it" in parser.format_help()
 
 
 def test_the_flood_settings_flags_are_one_per_field_and_round_trip() -> None:

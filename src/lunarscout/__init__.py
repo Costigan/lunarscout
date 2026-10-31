@@ -80,6 +80,7 @@ from .map_products import (
     map_product_scenario_name,
     search_map_products,
 )
+from .safe_haven_areas import SeedHavenAreasReport, generate_seed_haven_areas, read_seed_areas
 from .products import (
     generate_earth_elevation,
     generate_lightmap,
@@ -227,6 +228,9 @@ __all__ = [
     "generate_psr",
     "generate_safe_haven_products",
     "SafeHavenProducts",
+    "generate_seed_haven_areas",
+    "read_seed_areas",
+    "SeedHavenAreasReport",
     "generate_earth_elevation",
     "generate_sun_elevation",
     "mission_duration_from_sun_and_earth_elevation",

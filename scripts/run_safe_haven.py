@@ -13,6 +13,8 @@ The safe-haven sequence, one step after another, with the parameters that the st
     stage4        scripts/run_safe_haven_stage4.py     the chains and the final table
     chain-maps    scripts/run_safe_haven_chain_maps.py the colour images and GeoPackages
     yearly-chain-maps  scripts/run_safe_haven_yearly_chain_maps.py  the longest-chain image of each year
+    haven-months  scripts/threshold_safe_havens.py         every pixel that is a haven, one GeoTIFF per month (for the viewer)
+    seed-haven-areas scripts/make_seed_haven_areas.py      the chain starts and the havens near them, one GeoTIFF per month (for the viewer)
     monthly-chain-maps scripts/run_safe_haven_monthly_chain_maps.py the pixels of the longest-chain image of each month (for the viewer)
     overview-maps scripts/run_safe_haven_overview_maps.py  the persistence map of the havens around the pole, per year
     quality-maps  scripts/run_safe_haven_quality_maps.py   the longest mission per 5.12 km cell, per year
@@ -66,7 +68,7 @@ from lunarscout._script_cli import Option, add_logging_options, add_options, def
 
 SCRIPTS = Path(__file__).resolve().parent
 STEPS = ("psr-regions", "light-store", "stage1", "stage2", "stage3", "stage4", "chain-maps", "yearly-chain-maps",
-         "monthly-chain-maps", "overview-maps", "quality-maps", "cluster-maps")
+         "haven-months", "seed-haven-areas", "monthly-chain-maps", "overview-maps", "quality-maps", "cluster-maps")
 
 # ---- where things are. Edit these before running; every other path is made from them.
 SCENARIO_DIRECTORY = Path("/e/lunar_analyst_scenarios/70south")
@@ -106,6 +108,7 @@ EDGE_RULE = "next_cycle"                # which seeds a flood may arrive at: nex
 
 # ---- the seed rules (stage 2)
 SURVIVAL_LIMIT_HOURS = 72.0
+AREA_RADIUS_METERS = 200.0              # seed-haven-areas: a haven is in an area within this distance (m) of a chain start
 OPERATIONAL_HOURS = 48.0
 MAX_SEEDS_PER_CELL_MONTH = 5
 SEED_SEPARATION_M = 250.0
@@ -130,6 +133,7 @@ LIGHT_WORKERS = 8
 PLAN_WORKERS = 16
 FLOOD_WORKERS = 16
 ROUTE_WORKERS = 16
+HAVEN_MONTH_WORKERS = 8                 # haven-months: threads reading and thresholding chunks
 
 # ---- what to do
 RUN_STEPS = STEPS                       # a subset, in order
@@ -188,6 +192,8 @@ OPTIONS = (
     Option("PLAN_WORKERS", "int", "stage 2: processes"),
     Option("FLOOD_WORKERS", "int", "stage 3: processes"),
     Option("ROUTE_WORKERS", "int", "stage 4 and the chain maps: processes"),
+    Option("HAVEN_MONTH_WORKERS", "int", "haven-months: threads"),
+    Option("AREA_RADIUS_METERS", "float", "seed-haven-areas: a haven is in an area within this distance (m) of a chain start"),
     Option("RUN_STEPS", "strs", "the steps to run, in order", choices=STEPS),
     Option("FORCE", "strs", "steps to run whatever their state", choices=STEPS),
     Option("ADOPT_EXISTING", "strs", "steps whose existing outputs are recorded as made with these parameters", choices=STEPS),
@@ -353,11 +359,22 @@ def build_steps(p: dict) -> dict[str, Step]:
              raster_routes=p["raster_routes"], route_workers=p["route_workers"], flood_settings=settings),
         [p["dem_path"], chains, store, passable, p["psr_ids_path"]],
         [out / f"safe_haven_stage_4_longest_chain_per_root_{year}.tif" for year in years])
+    months = out / "safe_haven_stage_1_haven_months"
+    areas = out / "safe_haven_stage_4_seed_haven_areas.npz"
+    add("haven-months", "threshold_safe_havens", "make_haven_month_images",
+        dict(input_path=stage1["hibernation"], output_directory=months, survival_limit_hours=p["survival_limit_hours"],
+             workers=p["haven_month_workers"], overwrite=True),
+        [stage1["hibernation"]], [months])
+    add("seed-haven-areas", "make_seed_haven_areas", "make_seed_haven_areas",
+        dict(dem_path=p["dem_path"], chains_path=chains, haven_months_directory=months, output_directory=out,
+             area_radius_meters=p["area_radius_meters"], overwrite=True),
+        [p["dem_path"], chains, months], [out / "safe_haven_stage_4_seed_haven_areas", areas])
     add("monthly-chain-maps", "run_safe_haven_monthly_chain_maps", "make_monthly_chain_maps",
         dict(dem_path=p["dem_path"], chains_path=chains, output_directory=out, overwrite=True,
-             light_store_path=store, psr_ids_path=p["psr_ids_path"], passable_path=passable,
+             light_store_path=store, psr_ids_path=p["psr_ids_path"], passable_path=passable, seed_areas_path=areas,
              raster_routes=p["raster_routes"], route_workers=p["route_workers"], flood_settings=settings),
-        [p["dem_path"], chains, store, passable, p["psr_ids_path"]], [out / "safe_haven_stage_4_monthly_chain_pixels.npz"])
+        [p["dem_path"], chains, store, passable, p["psr_ids_path"], areas],
+        [out / "safe_haven_stage_4_monthly_chain_pixels.npz"])
     overview = [out / f"safe_haven_stage_2_persistence_{year}{suffix}" for year in years for suffix in (".tif", ".png")]
     add("overview-maps", "run_safe_haven_overview_maps", "make_overview_maps",
         dict(dem_path=p["dem_path"], seeds_path=seeds, psr_ids_path=p["psr_ids_path"], output_directory=out, years=years,

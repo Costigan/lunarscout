@@ -1105,7 +1105,7 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L178).
 lunarscout.SafeHavenProducts(hibernation: 'Path', joint_total: 'Path', joint_longest: 'Path') -> None
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1118).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1176).
 
 ```text
 Paths of the three safe-haven GeoTIFFs written by one run.
@@ -1710,6 +1710,44 @@ Source: [src/lunarscout/errors.py](../src/lunarscout/errors.py#L198).
 **Documentation gap:** no source docstring.
 
 **Parameters without explicit entries in this docstring:** `message`, `code`, `details`.
+
+### `lunarscout.SeedHavenAreasReport`
+
+```python
+lunarscout.SeedHavenAreasReport(directory: 'str', file: 'str', months: 'int', chain_starts: 'int', pixels: 'int', months_with_images: 'int', radius_meters: 'float', seconds: 'float' = 0.0, lone_seeds: 'int' = 0) -> None
+```
+
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L63).
+
+```text
+What :func:`generate_seed_haven_areas` wrote: the directory of the monthly GeoTIFFs, the pixel file, the number of
+months, the chain starts (current starts, counted in each month they are one), haven pixels and lone seeds in all
+months, how many months had a haven image, the radius used (m) and the seconds taken.
+```
+
+**Parameters without explicit entries in this docstring:** `directory`, `file`, `months`, `chain_starts`, `pixels`, `months_with_images`, `radius_meters`, `seconds`, `lone_seeds`.
+
+Dataclass fields (types and constructor defaults appear above):
+
+- `directory`
+- `file`
+- `months`
+- `chain_starts`
+- `pixels`
+- `months_with_images`
+- `radius_meters`
+- `seconds`
+- `lone_seeds`
+
+#### `lunarscout.SeedHavenAreasReport.as_dict`
+
+```python
+lunarscout.SeedHavenAreasReport.as_dict(self) -> 'dict'
+```
+
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L79).
+
+**Documentation gap:** no source docstring.
 
 ### `lunarscout.SpiceError`
 
@@ -2781,7 +2819,7 @@ Return the connectivity-defined internal border of true mask regions.
 lunarscout.generate_earth_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, times: 'TimeRange', earth_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1030).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1088).
 
 ```text
 Generate Earth-center elevation relative to the terrain horizon.
@@ -2921,7 +2959,7 @@ run; nothing is written beside the DEMs.
 lunarscout.generate_lightmap(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, invalid_value: 'int' = 0, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L381).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L439).
 
 ```text
 Generate a timestamped, tiled uint8 visible-solar-fraction BigTIFF.
@@ -3010,7 +3048,7 @@ are converted to elevation-from-sphere automatically.
 lunarscout.generate_psr(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, invalid_value: 'int' = 0, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L600).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L658).
 
 ```text
 Generate a single-band tiled permanent-shadow classification GeoTIFF.
@@ -3074,10 +3112,10 @@ elevation-from-sphere automatically.
 ### `lunarscout.generate_safe_haven_products`
 
 ```python
-lunarscout.generate_safe_haven_products(dem_path: 'str | Path', horizons_path: 'str | Path', output_directory: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, earth_elevation_threshold_deg: 'float' = 2.0, sunlight_fraction_threshold: 'float' = 0.2, operating_sunlight_fraction: 'float' = 1.0, merge_gap_hours: 'float' = 24.0, degenerate_outage_window_hours: 'float | None' = None, max_slope_deg: 'float | None' = 20.0, name_prefix: 'str' = 'safe_haven', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'SafeHavenProducts'
+lunarscout.generate_safe_haven_products(dem_path: 'str | Path', horizons_path: 'str | Path | None', output_directory: 'str | Path', *, times: 'TimeRange', light_store_path: 'str | Path | None' = None, sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, earth_elevation_threshold_deg: 'float' = 2.0, sunlight_fraction_threshold: 'float' = 0.2, operating_sunlight_fraction: 'float' = 1.0, merge_gap_hours: 'float' = 24.0, degenerate_outage_window_hours: 'float | None' = None, max_slope_deg: 'float | None' = 20.0, name_prefix: 'str' = 'safe_haven', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'SafeHavenProducts'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1130).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1188).
 
 ```text
 Generate monthly safe-haven screening maps for solar-powered rovers.
@@ -3251,9 +3289,71 @@ on both CPU and CUDA, is specified in ``docs/safe-haven-state-machine.md``.
 ``backend="cuda"`` keeps all lighting batches and run state on the device;
 memory is bounded by the patch, time-batch and month counts, not by the
 number of samples.
+
+``light_store_path`` replaces ``horizons_path`` (pass ``None`` for it) with a
+stage-0 light store: a directory of per-patch thresholded lighting made by
+``scripts/run_light_store.py``.  The patches are then reduced from the
+stored Sun and Earth bits, with no horizon read and no Sun vectors
+(``sun_vectors_m`` is ignored); Earth vectors are still used for the
+degenerate-outage rule.  ``times`` must lie on the store's step grid and the
+thresholds must be the ones the store was made with.  ``backend`` chooses where
+the stored bits are reduced (the device, or all CPU cores).  See ``docs/safe-haven-light-store.md``.
 ```
 
-**Parameters without explicit entries in this docstring:** `output_transform`, `output_dtype`, `output_transform_id`, `progress_callback`, `progress_event_callback`, `cancellation_requested`.
+**Parameters without explicit entries in this docstring:** `light_store_path`, `output_transform`, `output_dtype`, `output_transform_id`, `progress_callback`, `progress_event_callback`, `cancellation_requested`.
+
+### `lunarscout.generate_seed_haven_areas`
+
+```python
+lunarscout.generate_seed_haven_areas(chains_path: 'str | Path', dem_path: 'str | Path', output_directory: 'str | Path', *, haven_months_directory: 'str | Path | None' = None, radius_meters: 'float' = 200.0, hours_per_count: 'float' = 2.0, overwrite: 'bool' = False, progress: 'Progress | None' = None) -> 'SeedHavenAreasReport'
+```
+
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L214).
+
+```text
+Write the seed haven areas of every month.
+
+The area of a month is the current start of each chain drawn in the month (its first seed that is not passed, while 2
+or more seeds are left), every haven of the month, a seed or not, whose centre is within ``radius_meters`` of one of
+them, and each lone last seed as its pixel alone (see ``docs/safe-haven-monthly-products.md``). Two products are written into
+``output_directory``: ``safe_haven_stage_4_seed_haven_areas/`` (one GeoTIFF per month on the DEM's grid, uint8
+hibernation counts, 255 NODATA, a palette in the shadow-period classes, minimum overviews) and
+``safe_haven_stage_4_seed_haven_areas.npz`` (the same pixels as lists, for the viewer; read it with
+:func:`read_seed_areas`). Both are written through staging; a failure leaves earlier products untouched.
+
+Parameters
+----------
+chains_path : str or Path
+    The final stage-4 chain table (CSV).
+dem_path : str or Path
+    The DEM GeoTIFF the table's rows and columns refer to; its pixel size turns the radius into pixels.
+output_directory : str or Path
+    Where the two products are written.
+haven_months_directory : str or Path, optional
+    The monthly haven images (``safe_haven_stage_1_haven_months_<YYYY-MM>.tif``); by default
+    ``safe_haven_stage_1_haven_months`` beside the chain table. A month without an image has its chain starts alone.
+radius_meters : float
+    How far from a chain start a haven belongs to its area, in metres (the default is 10 pixels on a 20 m DEM).
+hours_per_count : float
+    Hours per stored hibernation count; it must be the images' (2 for the stage-1 product).
+overwrite : bool
+    Replace existing products; when false an existing product raises ``InputError``.
+progress : callable, optional
+    Called with a message for each month.
+
+Returns
+-------
+SeedHavenAreasReport
+    The paths, months, chain starts, lone seeds, pixels and the radius used.
+
+Raises
+------
+InputError
+    For a negative or non-finite radius, a seed outside the DEM, a haven image that is not one of the monthly
+    images or counts other hours, or an existing product without ``overwrite``.
+ProductStorageError
+    When the products cannot be written.
+```
 
 ### `lunarscout.generate_sun_elevation`
 
@@ -3261,7 +3361,7 @@ number of samples.
 lunarscout.generate_sun_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, times: 'TimeRange', sun_vectors_m: 'npt.ArrayLike | None' = None, backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L939).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L997).
 
 ```text
 Generate Sun-center elevation relative to the terrain horizon.
@@ -3393,7 +3493,7 @@ Source: [src/lunarscout/map_products.py](../src/lunarscout/map_products.py#L148)
 lunarscout.mission_duration_from_sun_and_earth_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1985).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L2080).
 
 ```text
 Longest duration meeting inclusive Sun and Earth elevation thresholds.
@@ -3415,7 +3515,7 @@ output lifecycle contract.
 lunarscout.mission_duration_from_sun_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sun_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1861).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1956).
 
 ```text
 Longest inclusive Sun terrain-relative elevation duration.
@@ -3437,7 +3537,7 @@ output lifecycle contract.
 lunarscout.mission_duration_from_sunlight(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1758).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1853).
 
 ```text
 Longest inclusive sunlight-fraction duration for each start interval.
@@ -3503,7 +3603,7 @@ are converted to elevation-from-sphere automatically.
 lunarscout.mission_duration_from_sunlight_and_earth_elevation(dem_path: 'str | Path', horizons_path: 'str | Path', output_path: 'str | Path', *, evaluation_start: 'TimeInput', evaluation_stop: 'TimeInput', step: 'timedelta', candidate_start_intervals: 'Iterable[tuple[TimeInput, TimeInput]]', sunlight_fraction_threshold: 'float', earth_elevation_threshold_deg: 'float', sun_vectors_m: 'npt.ArrayLike | None' = None, earth_vectors_m: 'npt.ArrayLike | None' = None, output_unit: "Literal['hours', 'days']" = 'hours', backend: 'Backend' = 'auto', observer_height_m: 'float' = 0.0, nodata: 'float' = nan, output_transform: 'Callable[[np.ndarray], np.ndarray] | None' = None, output_dtype: 'npt.DTypeLike | None' = None, output_transform_id: 'str | None' = None, compress: 'bool' = True, overwrite: 'bool' = False, start_fresh: 'bool' = False, skip_dem_nodata_check: 'bool' = False, verbose: 'bool' = False, progress_callback: 'ProgressCallback | None' = None, progress_event_callback: 'ProgressEventCallback | None' = None, cancellation_requested: 'CancellationCheck | None' = None) -> 'Path'
 ```
 
-Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L1922).
+Source: [src/lunarscout/products.py](../src/lunarscout/products.py#L2017).
 
 ```text
 Longest duration meeting inclusive sunlight and Earth thresholds.
@@ -3590,6 +3690,21 @@ above the lunar reference sphere.
 ```
 
 **Parameters without explicit entries in this docstring:** `filename`, `band`.
+
+### `lunarscout.read_seed_areas`
+
+```python
+lunarscout.read_seed_areas(path: 'str | Path') -> 'dict'
+```
+
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L340).
+
+```text
+The pixel file of the seed haven areas: ``months`` (names), ``offsets``, ``row``, ``column``, ``hours``, ``starts``,
+``alone`` (the lone seeds per month), ``with_image`` and ``radius_meters`` (a float).
+```
+
+**Parameters without explicit entries in this docstring:** `path`.
 
 ### `lunarscout.region_sizes`
 

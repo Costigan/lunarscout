@@ -114,6 +114,8 @@ import lunarscout as ls
 | `ls.generate_sun_elevation(dem, horizons, output, ...)`                    | Generate Sun-center terrain-relative elevation bands.                               |
 | `ls.generate_earth_elevation(dem, horizons, output, ...)`                  | Generate Earth-center terrain-relative elevation bands.                             |
 | `ls.generate_safe_haven_products(dem, horizons, output_dir, ...)`          | Generate monthly hibernation and joint-operating screening maps (three GeoTIFFs).  |
+| `ls.generate_seed_haven_areas(chains, dem, output_dir, ...)`               | Write, per month, the havens near each chain's current start (GeoTIFFs and a pixel list).     |
+| `ls.read_seed_areas(path)`                                                 | Read the seed haven areas' pixel list.                                              |
 | `ls.mission_duration_from_sunlight(...)`                                   | Generate landed-duration bands from a sunlight-fraction threshold.                  |
 | `ls.mission_duration_from_sun_elevation(...)`                              | Generate landed-duration bands from a Sun-elevation threshold.                      |
 | `ls.mission_duration_from_sunlight_and_earth_elevation(...)`               | Generate durations satisfying sunlight and Earth-elevation thresholds.              |

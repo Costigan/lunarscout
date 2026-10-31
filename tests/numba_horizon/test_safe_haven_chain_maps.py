@@ -19,6 +19,7 @@ import rasterio
 from rasterio.enums import ColorInterp
 from rasterio.transform import Affine
 
+import lunarscout as ls
 from lunarscout._numba_horizon import chain_map_styles as styles
 from lunarscout._numba_horizon import safe_haven_chain_maps as maps
 from lunarscout._numba_horizon import safe_haven_chains as chains
@@ -205,26 +206,65 @@ def relative_luminance(colour):
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
 
-def test_the_colours_are_distinct_saturated_not_dark_and_brighter_for_longer_chains() -> None:
-    hsv = [colorsys.rgb_to_hsv(*(c / 255 for c in RGB(h))) for h in styles.PALETTE]
+def oklab(colour):
+    r, g, b = [((c / 255) / 12.92 if c / 255 <= 0.04045 else ((c / 255 + 0.055) / 1.055) ** 2.4) for c in RGB(colour)]
+    lms = np.cbrt([0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b, 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b,
+                   0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b])
+    return 100 * np.array([0.2104542553 * lms[0] + 0.7936177850 * lms[1] - 0.0040720468 * lms[2],
+                           1.9779984951 * lms[0] - 2.4285922050 * lms[1] + 0.4505937099 * lms[2],
+                           0.0259040371 * lms[0] + 0.7827717662 * lms[1] - 0.8086757660 * lms[2]])
+
+
+def test_the_colours_are_distinct_visible_and_brighter_for_longer_chains() -> None:
     luminance = [relative_luminance(h) for h in styles.PALETTE]
     assert luminance == sorted(luminance) and all(b - a > 0.05 for a, b in zip(luminance, luminance[1:]))
-    assert luminance[0] > 0.15                                         # nothing is dark on a black or dark-grey basemap
-    assert all(s >= 0.6 and v == 1.0 for _h, s, v in hsv)              # strongly saturated, full brightness
-    hues = sorted(h * 360 for h, _s, _v in hsv)
-    assert min(b - a for a, b in zip(hues, hues[1:])) >= 15            # distinct hues
-    everything = [np.array(RGB(c)) for c in (*styles.PALETTE, styles.PSR_COLOUR, styles.HAVEN_COLOUR)]
+    assert luminance[0] > 0.15 and (luminance[0] + 0.05) / (relative_luminance("#1a1a19") + 0.05) >= 3     # 3:1 on a dark surface
+    everything = [*styles.PALETTE, styles.PSR_COLOUR, styles.ROOT_COLOUR, *(c for _b, c in styles.HAVEN_SHADOW_CLASSES)]
+    names = [f"route{i}" for i in range(5)] + ["PSR", "start"] + [f"haven{i}" for i in range(4)]
     for i in range(len(everything)):
         for j in range(i + 1, len(everything)):
-            assert np.linalg.norm(everything[i] - everything[j]) > 80, (i, j)       # also from aqua and white
+            assert np.linalg.norm(oklab(everything[i]) - oklab(everything[j])) > 12, (names[i], names[j])
+    # the routes stay apart from the haven classes they are drawn next to, which the earlier violet and yellow did not
+    for route in styles.PALETTE:
+        for _bound, haven in styles.HAVEN_SHADOW_CLASSES:
+            assert np.linalg.norm(oklab(route) - oklab(haven)) > 15, (route, haven)
     assert styles.PSR_COLOUR == "#00ffff" and styles.HAVEN_COLOUR == "#ffffff"
 
 
-def test_the_lookup_table_has_transparent_nothing_then_the_intervals_aqua_and_white() -> None:
+def test_the_lookup_table_has_transparent_nothing_then_the_intervals_aqua_and_the_havens_by_shadow_period() -> None:
     table = styles.lookup_table(REAL)
-    assert table.shape == (8, 4) and table[0].tolist() == [0, 0, 0, 0] and (table[1:, 3] == 255).all()
+    assert table.shape == (11, 4) and table[0].tolist() == [0, 0, 0, 0] and (table[1:, 3] == 255).all()
     assert [tuple(table[k, :3]) for k in range(1, 6)] == [RGB(c) for c in styles.PALETTE]
-    assert tuple(table[6, :3]) == (0, 255, 255) and tuple(table[7, :3]) == (255, 255, 255)
+    assert tuple(table[6, :3]) == (0, 255, 255)
+    # the havens run from the longest shadow (violet) to none (white), so the brightest class is the highest and is drawn last
+    assert [tuple(table[k, :3]) for k in range(7, 11)] == [RGB(c) for _b, c in reversed(styles.HAVEN_SHADOW_CLASSES)]
+    assert [int(maps.haven_code(5, shadow)) for shadow in range(4)] == [10, 9, 8, 7]
+
+
+def test_a_shadow_period_falls_in_the_class_whose_bound_it_does_not_exceed() -> None:
+    hours = [0, -1, 0.5, 12, 12.01, 24, 24.01, 48, 500]
+    assert styles.haven_shadow_classes(hours).tolist() == [0, 0, 1, 1, 2, 2, 3, 3, 3]
+    assert styles.haven_shadow_labels() == ["0 h", "up to 12 h", "12 to 24 h", "24 to 48 h"]
+    assert styles.haven_shadow_labels(72) == ["0 h", "up to 12 h", "12 to 24 h", "24 to 72 h"]
+    assert styles.haven_shadow_labels(20) == ["0 h", "up to 12 h", "12 to 20 h"]
+    colours = [RGB(c) for _b, c in styles.HAVEN_SHADOW_CLASSES]
+    assert colours[0] == (255, 255, 255) and len(set(colours)) == 4
+    brightness = [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in colours]
+    assert brightness == sorted(brightness, reverse=True)                       # decreasing brightness
+
+
+def test_the_point_style_has_one_rule_per_class_with_the_brightest_last() -> None:
+    from xml.etree import ElementTree
+
+    renderer = ElementTree.fromstring(styles.point_style_qml().split("\n", 1)[1]).find("renderer-v2")
+    assert renderer.get("type") == "RuleRenderer"
+    symbols = {s.get("name"): s for s in renderer.findall("symbols/symbol")}
+    rules = [(r.get("filter"), r.get("label"), {o.get("name"): o.get("value") for o in symbols[r.get("symbol")].find("layer/Option")}["color"])
+             for r in renderer.findall("rules/rule")]
+    assert [label for _f, label, _c in rules] == ["24 to 48 h", "12 to 24 h", "up to 12 h", "0 h"]          # white last: on top
+    assert [c for _f, _l, c in rules] == ["122,92,214,255", "56,182,200,255", "242,201,76,255", "255,255,255,255"]
+    assert [f for f, _l, _c in rules] == ['"hibernation_hours" > 24', '"hibernation_hours" > 12 AND "hibernation_hours" <= 24',
+                                          '"hibernation_hours" > 0 AND "hibernation_hours" <= 12', '"hibernation_hours" <= 0']
 
 
 # --- drawing ---------------------------------------------------------------------------------------------
@@ -507,14 +547,14 @@ def test_the_line_style_has_a_rule_per_interval_shortest_first() -> None:
     renderer = ElementTree.fromstring(styles.line_style_qml(REAL).split("\n", 1)[1]).find("renderer-v2")
     assert renderer.get("type") == "RuleRenderer"
     assert rules_of(renderer) == [
-        ("2 seeds", '"chain_length" = 2', "#6a5cff", 0.3), ("3 seeds", '"chain_length" = 3', "#ff4f6e", 0.45),
+        ("2 seeds", '"chain_length" = 2', "#297d0f", 0.3), ("3 seeds", '"chain_length" = 3', "#ff4f6e", 0.45),
         ("4-5 seeds", '"chain_length" >= 4 AND "chain_length" <= 5', "#ff7a1a", 0.65),
-        ("6 seeds", '"chain_length" = 6', "#ffcc00", 0.9), ("7-10 seeds", '"chain_length" >= 7', "#7dff3a", 1.2)]
+        ("6 seeds", '"chain_length" = 6', "#fb9df8", 0.9), ("7-10 seeds", '"chain_length" >= 7', "#7dff3a", 1.2)]
 
 
 def test_the_geopackage_layers_carry_the_styles_of_the_runs_own_intervals(tables) -> None:
     run(tables)                                         # chains of 2 and 4 seeds: two intervals, "2 seeds" and "3-4 seeds"
-    expected = [("2 seeds", '"chain_length" = 2', "#6a5cff", 0.3), ("3-4 seeds", '"chain_length" >= 3', "#7dff3a", 1.2)]
+    expected = [("2 seeds", '"chain_length" = 2', "#297d0f", 0.3), ("3-4 seeds", '"chain_length" >= 3', "#7dff3a", 1.2)]
     for name, table in (("predecessor_edges", "predecessor_edges"), ("longest_chain_per_root", "chains")):
         connection = sqlite3.connect(tables / "out" / f"safe_haven_stage_4_{name}.gpkg")
         assert rules_of(qml_of(connection, table).find("renderer-v2")) == expected
@@ -522,8 +562,9 @@ def test_the_geopackage_layers_carry_the_styles_of_the_runs_own_intervals(tables
     assert [r[0] for r in connection.execute("SELECT table_name FROM gpkg_contents ORDER BY rowid")] == ["isolated_seeds", "chains"]
     renderer = qml_of(connection, "isolated_seeds").find("renderer-v2")
     options = {o.get("name"): o.get("value") for o in renderer.find("symbols/symbol/layer/Option")}
-    assert renderer.get("type") == "singleSymbol" and options["color"] == "255,255,255,255"        # havens are white
+    assert renderer.get("type") == "RuleRenderer" and len(renderer.findall("rules/rule")) == 4     # havens by shadow period
     assert float(options["size"]) < 1.5 and options["outline_style"] == "no" and options["name"] == "circle"
+    assert "hibernation_hours" in [r[1] for r in connection.execute('PRAGMA table_info("isolated_seeds")')]
     assert connection.execute("SELECT count(*) FROM layer_styles").fetchone()[0] == 2
 
 
@@ -542,7 +583,7 @@ def test_the_images_are_transparent_rgba_geotiffs_with_routes_aqua_and_white_hav
     assert edges.shape == (4, HEIGHT, WIDTH) and edges.dtype == np.uint8 and info.nodata is None
     assert info.colorinterp == (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha)
     assert info.transform.to_gdal() == GT and info.crs is not None and info.profile["tiled"]
-    assert info.tags["SEGMENTS"].startswith("straight lines") and "2 seeds #6a5cff" in info.tags["COLOURS"]
+    assert info.tags["SEGMENTS"].startswith("straight lines") and "2 seeds #297d0f" in info.tags["COLOURS"]
     for i in range(8):                                                    # every haven is white, isolated ones too
         assert colour_at(edges, i, 3 * i) == (255, 255, 255, 255)
     assert colour_at(edges, 0, 1) == lime and colour_at(edges, 1, 2) == lime        # the chain of 4 seeds: edge 1 > 2
@@ -682,8 +723,22 @@ def start_in_months(tables, months_of_roots, seed_months=None) -> Path:
 
 
 def run_monthly(tables, **options):
+    """Make the seed haven areas the monthly pixels draw (there are no haven images: the current starts and lone seeds alone,
+    beside the chain table), then the monthly pixels."""
+    ls.generate_seed_haven_areas(tables / "chains.csv", tables / "dem.tif", tables, overwrite=True)
     return maps.run_monthly_chain_maps(tables / "out", chains_path=tables / "chains.csv", dem_path=tables / "dem.tif",
                                        **options)
+
+
+SEED_PIXELS = [(k, 3 * k) for k in range(8)]                    # seed k + 1 is at pixel (k, 3k)
+
+
+def without_havens(image):
+    """A copy of an RGBA image with the seeds' pixels cleared: the routes and PSR marks that the yearly and monthly images share."""
+    image = image.copy()
+    for row, column in SEED_PIXELS:
+        image[:, row, column] = 0
+    return image
 
 
 def month_image(path, month, markers=False):
@@ -699,7 +754,7 @@ def month_image(path, month, markers=False):
         return image, codes[keep]
 
 
-def test_each_month_has_the_chains_that_start_in_it_and_the_months_make_up_the_yearly_image(tables) -> None:
+def test_each_month_has_the_chains_that_start_in_it_and_the_months_make_up_the_yearly_routes(tables) -> None:
     start_in_months(tables, {1: "2024-03", 6: "2024-05", 8: "2025-01"})
     write_psr(tables / "psr.tif", [(2, 7), (6, 20)])
     options = dict(overwrite=True, psr_ids_path=tables / "psr.tif")
@@ -707,7 +762,7 @@ def test_each_month_has_the_chains_that_start_in_it_and_the_months_make_up_the_y
     assert list(report.months) == [f"2024-{m:02d}" for m in range(3, 13)] + ["2025-01"]
     assert report.months["2024-03"]["chains"] == 1 and report.months["2024-05"]["chains"] == 1
     assert sum(v["chains"] for v in report.months.values()) == 2                       # root 8 is alone
-    assert [report.months[m]["havens"] for m in ("2024-03", "2024-04", "2024-05", "2025-01")] == [5, 0, 2, 1]
+    assert [report.months[m]["havens"] for m in ("2024-03", "2024-04", "2024-05", "2025-01")] == [1, 0, 1, 0]   # the starts: 1, 6
     assert report.months["2024-04"]["pixels"] == 0 and report.pixels == sum(v["pixels"] for v in report.months.values())
     assert (tables / "out" / "safe_haven_stage_4_monthly_chain_maps.report.json").exists()
     path = maps.monthly_path(tables / "out")
@@ -715,18 +770,22 @@ def test_each_month_has_the_chains_that_start_in_it_and_the_months_make_up_the_y
     run_yearly(tables, years=[2024, 2025], psr_ids_path=tables / "psr.tif", overwrite=True)
     for year, year_months in ((2024, [f"2024-{m:02d}" for m in range(3, 13)]), (2025, ["2025-01"])):
         yearly, _ = read_image(maps.yearly_path(tables / "out", year))
+        yearly = without_havens(yearly)                                            # the yearly image draws every seed
         opaque = np.zeros((HEIGHT, WIDTH), dtype=bool)
         for month in year_months:
             image, _codes = month_image(path, month)
+            image = without_havens(image)
             mask = image[3] > 0
             assert not (mask & opaque).any()                                       # no pixel in two months here
             opaque |= mask
             assert (image[:, mask] == yearly[:, mask]).all()                       # the same colour
         assert (opaque == (yearly[3] > 0)).all()                                   # the same pixels
-    aqua = styles.lookup_table(maps.build_intervals(np.array([2, 2]))).shape[0] - 2
+    aqua = len(maps.build_intervals(np.array([2, 2]))) + 1
     with np.load(path) as data:
         assert (data["code"] == aqua).any()                                        # a route passed next to a PSR
-        assert data["table"].shape[1] == 4 and list(data["labels"])[-3:] == ["next to a PSR", "haven", "start of a chain"]
+        assert data["table"].shape[1] == 4 and list(data["labels"])[-6:] == [
+            "next to a PSR", "haven, shadow 24 to 48 h", "haven, shadow 12 to 24 h", "haven, shadow up to 12 h", "haven, shadow 0 h",
+            "start of a chain"]
         assert data["chains"].tolist() == [report.months[str(m)]["chains"] for m in data["months"]]
 
 
@@ -742,13 +801,13 @@ def test_a_months_pixels_are_ordered_by_class_so_the_havens_then_the_starts_are_
     assert int((codes == marker).sum()) == 2                                        # roots 1 and 6; root 8 is alone
 
 
-def test_monthly_pixels_equal_the_yearly_image_when_every_chain_starts_in_one_month(tables) -> None:
+def test_monthly_routes_equal_the_yearly_routes_when_every_chain_starts_in_one_month(tables) -> None:
     start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
     run_monthly(tables, overwrite=True)
     run_yearly(tables, years=[2024], overwrite=True)
     yearly, _ = read_image(maps.yearly_path(tables / "out", 2024))
     image, _codes = month_image(maps.monthly_path(tables / "out"), "2024-03")
-    assert (image == yearly).all()
+    assert (without_havens(image) == without_havens(yearly)).all()                 # the havens differ: the yearly image has every seed
 
 
 def test_monthly_pixels_refuse_to_replace_a_file_and_leave_no_staging_file(tables) -> None:
@@ -766,6 +825,28 @@ def test_month_range_runs_from_the_first_to_the_last_month() -> None:
     assert maps.month_range("2026-03", "2026-03") == ["2026-03"]
 
 
+def start_marks(path) -> dict:
+    """``{month: sorted [(row, column), ...]}`` of the chain-start marks of the monthly file."""
+    found = {}
+    with np.load(path) as data:
+        marker = data["table"].shape[0] - 1
+        for k, name in enumerate(str(m) for m in data["months"]):
+            lo, hi = int(data["offsets"][k]), int(data["offsets"][k + 1])
+            hit = data["code"][lo:hi] == marker
+            found[name] = sorted(zip(data["row"][lo:hi][hit].tolist(), data["column"][lo:hi][hit].tolist()))
+    return found
+
+
+def haven_pixels(path, month) -> set:
+    """The ``(row, column)`` of the haven-coloured pixels of the month in the monthly file."""
+    with np.load(path) as data:
+        k = [str(m) for m in data["months"]].index(month)
+        lo, hi = int(data["offsets"][k]), int(data["offsets"][k + 1])
+        classes = set(range(data["table"].shape[0] - 1 - len(styles.HAVEN_SHADOW_CLASSES), data["table"].shape[0] - 1))
+        return {(r, c) for r, c, code in zip(data["row"][lo:hi].tolist(), data["column"][lo:hi].tolist(), data["code"][lo:hi].tolist())
+                if code in classes}
+
+
 def test_a_chain_that_goes_on_into_later_months_is_drawn_shorter_in_each_with_its_remaining_colour(tables) -> None:
     # root 1's chain 1-2-3-4 (branch seed 5) starts in 2024-03; seeds 3 and 5 are of 2024-04 and seed 4 of 2024-05; seed 1 is
     # of the month before the start, which does not make it earlier. Root 6's chain 6-7 and seed 8 are all of 2024-03.
@@ -775,25 +856,21 @@ def test_a_chain_that_goes_on_into_later_months_is_drawn_shorter_in_each_with_it
     assert list(report.months) == ["2024-03", "2024-04", "2024-05"]
     assert [report.months[m]["chains"] for m in report.months] == [2, 1, 0]               # drawn: 1-2-3-4 and 6-7; 3-4; none
     assert [report.months[m]["started"] for m in report.months] == [2, 0, 0]
-    assert [report.months[m]["havens"] for m in report.months] == [8, 3, 1]                # seeds 3, 4, 5 and then seed 4
+    assert [report.months[m]["havens"] for m in report.months] == [2, 1, 1]                # seeds 1 and 6; 3, the start of 3-4; 4 alone
     path = maps.monthly_path(tables / "out")
     run_yearly(tables, years=[2024], overwrite=True)
     yearly, _ = read_image(maps.yearly_path(tables / "out", 2024))
     first, first_codes = month_image(path, "2024-03")
-    assert (first == yearly).all()                                                        # the start month is the whole image
+    assert (without_havens(first) == without_havens(yearly)).all()                        # the start month's routes are the whole image
     intervals = maps.build_intervals(np.array([4, 2]))
     long_class, short_class = (int(c) for c in styles.class_of(np.array([4, 2]), intervals))
-    haven = len(intervals) + 2
+    haven = int(maps.haven_code(len(intervals), 0))                                       # no shadow: white
     assert long_class != short_class and long_class in first_codes and short_class in first_codes
     second, second_codes = month_image(path, "2024-04")
-    seeds = {(2, 6), (3, 9), (4, 12)}                                                      # seeds 3, 4 and 5 at (k - 1, 3 (k - 1))
-    with np.load(path) as data:
-        lo, hi = (int(data["offsets"][1]), int(data["offsets"][2]))
-        pixels = list(zip(data["row"][lo:hi].tolist(), data["column"][lo:hi].tolist(), data["code"][lo:hi].tolist()))
-    assert {(r, c) for r, c, k in pixels if k == haven} == seeds
-    segment = [(r, c, k) for r, c, k in pixels if k != haven]
-    assert segment and {k for _r, _c, k in segment} == {short_class}                      # 3 -> 4 is 2 seeds long now
-    assert all(2 <= r <= 3 and 6 <= c <= 9 for r, c, _k in segment)
+    assert haven_pixels(path, "2024-04") == {(2, 6)}                                      # seed 3 at (k - 1, 3 (k - 1)), not 4 or 5
+    assert set(second_codes.tolist()) == {short_class, haven}                             # 3 -> 4 is 2 seeds long now
+    segment = np.argwhere((second[3] > 0))
+    assert all(2 <= r <= 3 and 6 <= c <= 9 for r, c in segment.tolist())
     third, third_codes = month_image(path, "2024-05")
     assert (third[3] > 0).sum() == 1 and third_codes.tolist() == [haven] and third[3, 3, 9] == 255   # seed 4 alone
     with np.load(path) as data:
@@ -807,25 +884,91 @@ def test_a_chain_with_one_seed_left_is_a_lone_haven_and_the_months_run_to_the_la
     assert list(report.months) == [f"2024-{m:02d}" for m in range(3, 10)]                 # to seed 4's month
     assert [report.months[m]["chains"] for m in report.months] == [1, 0, 0, 1, 0, 0, 0]   # only 6-7 in 2024-06 has 2 seeds left
     assert [report.months[m]["started"] for m in report.months] == [1, 0, 0, 1, 0, 0, 0]
-    assert [report.months[m]["havens"] for m in report.months] == [6, 2, 1, 3, 1, 1, 1]   # seed 4 stays to 2024-09
+    assert [report.months[m]["havens"] for m in report.months] == [1, 1, 1, 2, 1, 1, 1]   # seed 1 or 6; seed 4, alone, to 2024-09
     assert [report.months[m]["pixels"] > 0 for m in report.months] == [True] * 7
+    path = maps.monthly_path(tables / "out")
+    assert haven_pixels(path, "2024-07") == {(3, 9)} and haven_pixels(path, "2024-06") == {(3, 9), (5, 15)}
+    assert start_marks(path)["2024-07"] == []                                             # a lone seed is not the start of a route
 
 
-def test_the_start_of_each_chain_is_marked_in_the_month_it_starts_in_only(tables) -> None:
+def test_the_current_start_of_each_chain_drawn_is_marked_in_every_month_it_is_drawn(tables) -> None:
     start_in_months(tables, {1: "2024-03", 6: "2024-04", 8: "2024-03"}, seed_months={4: "2024-05", 7: "2024-05"})
     run_monthly(tables, overwrite=True)
-    path = maps.monthly_path(tables / "out")
-    with np.load(path) as data:
-        marker = data["table"].shape[0] - 1
-        names = [str(m) for m in data["months"]]
-        starts = {}
-        for k, name in enumerate(names):
-            lo, hi = int(data["offsets"][k]), int(data["offsets"][k + 1])
-            hit = data["code"][lo:hi] == marker
-            starts[name] = sorted(zip(data["row"][lo:hi][hit].tolist(), data["column"][lo:hi][hit].tolist()))
+    starts = start_marks(maps.monthly_path(tables / "out"))
     assert starts["2024-03"] == [(0, 0)]                                            # root 1 at pixel (0, 0); root 8 is alone
     assert starts["2024-04"] == [(5, 15)]                                           # root 6 at (5, 15), a month later
-    assert all(not v for k, v in starts.items() if k not in ("2024-03", "2024-04"))  # not again while the chains go on
+    assert starts["2024-05"] == []                                                  # seeds 4 and 7 are each alone: no route, no start
+
+
+def test_a_continuation_is_the_start_of_the_chain_in_each_later_month_and_the_route_shortens(tables) -> None:
+    # chain 1-2-3-4 with seeds of 2024-03, 04, 05 and 06 (A, B, C, D): it is drawn from A, then from B, then from C, and D is alone
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"}, seed_months={2: "2024-04", 3: "2024-05", 4: "2024-06"})
+    report = run_monthly(tables, overwrite=True)
+    path = maps.monthly_path(tables / "out")
+    assert list(report.months) == [f"2024-{m:02d}" for m in range(3, 7)]
+    assert [report.months[m]["chains"] for m in report.months] == [2, 1, 1, 0]
+    assert start_marks(path) == {"2024-03": [(0, 0), (5, 15)], "2024-04": [(1, 3)], "2024-05": [(2, 6)], "2024-06": []}
+    assert [haven_pixels(path, m) for m in report.months] == [{(0, 0), (5, 15)}, {(1, 3)}, {(2, 6)}, {(3, 9)}]
+    intervals = maps.build_intervals(np.array([4, 2]))
+    haven = int(maps.haven_code(len(intervals), 0))
+    for month, length in (("2024-04", 3), ("2024-05", 2)):                          # the colour of the seeds that remain
+        image, codes = month_image(path, month)
+        assert set(codes.tolist()) == {int(styles.class_of(np.array([length]), intervals)[0]), haven}, month
+    image, codes = month_image(path, "2024-05")
+    rows, columns = np.nonzero(image[3])
+    assert rows.min() == 2 and rows.max() == 3 and columns.min() == 6 and columns.max() == 9      # C to D: B is behind
+
+
+def test_current_chain_starts_follow_the_first_seed_not_passed_and_the_lone_last_seed() -> None:
+    # A, B, C = seeds 1-3 of months 0, 1, 2; D, E = seeds 4 and 5, a chain that starts in month 1; F, G, H = seeds 6-8 of months 0, 3, 3
+    lines = [np.array([1, 2, 3]), np.array([4, 5]), np.array([6, 7, 8])]
+    start = np.array([0, 0, 0, 1, 1, 0, 0, 0])
+    last = np.array([0, 1, 2, 1, 1, 0, 3, 3])
+    starts, months, lone, lone_months = maps.current_chain_starts(lines, start, last)
+    assert months.tolist() == [0, 0, 1, 1, 1, 2, 3] and starts.tolist() == [0, 5, 1, 3, 6, 6, 6]
+    assert lone_months.tolist() == [2] and lone.tolist() == [2]                      # C alone in month 2; G and H end together: none
+    empty = maps.current_chain_starts([], start, last)
+    assert all(len(v) == 0 for v in empty)
+
+
+def test_the_monthly_pixels_draw_the_havens_of_the_seed_haven_areas_in_their_colours(tables) -> None:
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
+    directory = tables / "safe_haven_stage_1_haven_months"
+    directory.mkdir()
+    image = np.full((HEIGHT, WIDTH), 255, dtype=np.uint8)
+    image[0, 5], image[2, 20], image[11, 29], image[0, 0] = 0, 6, 0, 12                # 0 h near 1; 12 h near 6; too far; seed 1
+    with rasterio.open(directory / "safe_haven_stage_1_haven_months_2024-03.tif", "w", driver="GTiff", height=HEIGHT, width=WIDTH,
+                       count=1, dtype="uint8", nodata=255, crs=CRS, transform=Affine.from_gdal(*GT)) as dataset:
+        dataset.write(image, 1)
+        dataset.update_tags(SAFE_HAVEN_BYTE_THRESHOLD="24", SAFE_HAVEN_HOURS_PER_COUNT="2", SAFE_HAVEN_SURVIVAL_LIMIT_HOURS="48")
+    run_monthly(tables, overwrite=True)
+    path = maps.monthly_path(tables / "out")
+    areas = ls.read_seed_areas(tables / "safe_haven_stage_4_seed_haven_areas.npz")
+    lo, hi = int(areas["offsets"][0]), int(areas["offsets"][1])
+    assert {(r, c) for r, c in zip(areas["row"][lo:hi].tolist(), areas["column"][lo:hi].tolist())} == haven_pixels(path, "2024-03")
+    assert haven_pixels(path, "2024-03") == {(0, 0), (0, 5), (2, 20), (5, 15)}          # (11, 29) is more than 10 pixels from any start
+    picture, _codes = month_image(path, "2024-03")
+    assert tuple(picture[:, 0, 5]) == WHITE and tuple(picture[:, 2, 20]) == YELLOW
+
+
+def test_the_monthly_pixels_need_the_seed_haven_areas_for_the_same_months(tables) -> None:
+    options = dict(chains_path=tables / "chains.csv", dem_path=tables / "dem.tif")
+    with pytest.raises(InputError) as error:
+        maps.run_monthly_chain_maps(tables / "out", **options)
+    assert error.value.code == "chain_maps_seed_areas_missing" and not (tables / "out").exists()
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
+    ls.generate_seed_haven_areas(tables / "chains.csv", tables / "dem.tif", tables)
+    start_in_months(tables, {1: "2024-06", 6: "2024-06", 8: "2024-06"})                  # the areas are of other months now
+    with pytest.raises(InputError) as error:
+        maps.run_monthly_chain_maps(tables / "out", **options)
+    assert error.value.code == "chain_maps_seed_areas_mismatch" and not (tables / "out").exists()
+    elsewhere = tables / "elsewhere.npz"
+    (tables / "safe_haven_stage_4_seed_haven_areas.npz").rename(elsewhere)
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"})
+    ls.generate_seed_haven_areas(tables / "chains.csv", tables / "dem.tif", tables, overwrite=True)
+    (tables / "safe_haven_stage_4_seed_haven_areas.npz").rename(elsewhere)
+    maps.run_monthly_chain_maps(tables / "out", seed_areas_path=elsewhere, **options)         # a named file is read where it is
+    assert maps.monthly_path(tables / "out").exists()
 
 
 def test_seed_month_spans_run_from_the_chain_start_to_the_seeds_own_month_and_never_start_early() -> None:
@@ -834,3 +977,104 @@ def test_seed_month_spans_run_from_the_chain_start_to_the_seeds_own_month_and_ne
     start, last, months = maps.seed_month_spans(rows)
     assert months == ["2024-03", "2024-04", "2024-05"]
     assert start.tolist() == [0, 0, 1] and last.tolist() == [0, 2, 1]               # a seed of the month before is shown from the start
+
+
+# --- the havens are baked in their shadow-period colours ---------------------------------------------------------------
+
+WHITE, YELLOW, CYAN, VIOLET = ((*RGB(c), 255) for c in ("#ffffff", "#f2c94c", "#38b6c8", "#7a5cd6"))
+# seed id -> shadow period (hours): none, 6 h, 20 h, 40 h, 12 h, none, 30 h, 60 h; classes 0, 1, 2, 3, 1, 0, 3, 3
+HOURS = {1: 0.0, 2: 6.0, 3: 20.0, 4: 40.0, 5: 12.0, 6: 0.0, 7: 30.0, 8: 60.0}
+EXPECTED = {1: WHITE, 2: YELLOW, 3: CYAN, 4: VIOLET, 5: YELLOW, 6: WHITE, 7: VIOLET, 8: VIOLET}
+
+
+def set_hours(tables, hours) -> Path:
+    """Rewrite ``hibernation_hours`` of the fixture's table: seed id -> hours."""
+    import csv
+
+    path = tables / "chains.csv"
+    with open(path, newline="") as handle:
+        reader = csv.DictReader(handle)
+        names, rows = reader.fieldnames, list(reader)
+    for row in rows:
+        row["hibernation_hours"] = hours[int(row["seed_id"])]
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=names)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+CLASSES = {1: 0, 2: 1, 3: 2, 4: 3, 5: 1, 6: 0, 7: 3, 8: 3}          # the class of each seed's shadow period
+COLOURS = [WHITE, YELLOW, CYAN, VIOLET]
+
+
+def test_the_images_draw_each_haven_in_the_colour_of_its_shadow_period(tables) -> None:
+    set_hours(tables, HOURS)
+    run(tables)
+    out = maps.output_paths(tables / "out")
+    for name in ("predecessor_edges", "longest_chain_per_root"):
+        image, _ = read_image(out[name]["raster"])
+        for seed, colour in EXPECTED.items():                       # seed k is at pixel (k - 1, 3 (k - 1))
+            assert tuple(image[:, seed - 1, 3 * (seed - 1)]) == colour, (name, seed)
+        havens = {(s - 1, 3 * (s - 1)) for s in EXPECTED}
+        for r, c in np.argwhere(image[3] > 0):
+            if (int(r), int(c)) not in havens:                       # a route pixel is never a haven's colour
+                assert tuple(image[:, r, c]) not in (YELLOW, CYAN, VIOLET)
+
+
+def test_overlapping_havens_show_the_brightest_class_on_top_in_the_dilated_image(tables) -> None:
+    set_hours(tables, HOURS)
+    run(tables)
+    image, _ = read_image(maps.output_paths(tables / "out")["longest_chain_per_root"]["dilated"])
+    covered = 0
+    for r in range(HEIGHT):
+        for c in range(WIDTH):
+            covering = [s for s in CLASSES if abs(r - (s - 1)) <= 3 and abs(c - 3 * (s - 1)) <= 3]     # radius 2: squares of 7
+            if covering:
+                covered += 1
+                assert tuple(image[:, r, c]) == COLOURS[min(CLASSES[s] for s in covering)], (r, c, covering)
+    assert covered > 50
+    assert tuple(image[:, 1, 3]) == WHITE                          # the centre of seed 2 (6 h) lies in seed 1's square (none)
+
+
+def test_the_render_orders_havens_so_the_brightest_class_is_on_top_whatever_the_input_order() -> None:
+    intervals = maps.build_intervals(np.array([2, 2]))
+    chain = SimpleNamespace(segments=maps.Segments(*(np.zeros(0, dtype=np.int64) for _ in range(5))),
+                            segment_seeds=np.zeros((0, 2), dtype=np.int64))
+    for rows, classes in (([2, 2, 2], [3, 0, 1]), ([2, 2, 2], [0, 3, 1]), ([2, 2, 2], [1, 1, 3])):
+        planes = maps.render(chain, (np.array(rows), np.array([5, 5, 5]), np.array(classes)), intervals, 8, 8, 0, compiled=False)
+        assert planes[2, 2, 5] == min(classes) + 1                  # the lowest class number is the brightest
+    planes = maps.render(chain, (np.array([1]), np.array([1])), intervals, 4, 4, 0, compiled=False)       # no classes: none
+    assert planes[2, 1, 1] == 1
+    image = maps.colour_image(maps.render(chain, (np.array([1, 2, 3]), np.array([1, 1, 1]), np.array([1, 2, 3])),
+                                          intervals, 5, 5, 0, compiled=False), intervals)
+    assert [tuple(image[:, r, 1]) for r in (1, 2, 3)] == [YELLOW, CYAN, VIOLET]
+
+
+def test_the_yearly_images_and_the_monthly_pixels_carry_the_shadow_colours(tables) -> None:
+    # chain 1-2-3-4 has seeds of 2024-03 (none), 04 (6 h), 05 (20 h) and 06 (40 h): the start of the chain in each month, then D alone
+    start_in_months(tables, {1: "2024-03", 6: "2024-03", 8: "2024-03"}, seed_months={2: "2024-04", 3: "2024-05", 4: "2024-06"})
+    set_hours(tables, HOURS)
+    run_yearly(tables, years=[2024])
+    run_monthly(tables, overwrite=True)
+    yearly, _ = read_image(maps.yearly_path(tables / "out", 2024))
+    for seed, colour in EXPECTED.items():
+        assert tuple(yearly[:, seed - 1, 3 * (seed - 1)]) == colour, seed
+    path = maps.monthly_path(tables / "out")
+    for month, seed in (("2024-03", 1), ("2024-04", 2), ("2024-05", 3), ("2024-06", 4)):
+        image, _codes = month_image(path, month)
+        assert tuple(image[:, seed - 1, 3 * (seed - 1)]) == EXPECTED[seed], (month, seed)
+    with np.load(path) as data:
+        table = data["table"]
+        haven_codes = {int(c) for c in data["code"]} & {int(maps.haven_code(2, s)) for s in range(4)}
+    assert len(haven_codes) == 4                                       # all four classes occur
+    assert {tuple(table[k]) for k in haven_codes} == {WHITE, YELLOW, CYAN, VIOLET}
+
+
+def test_the_isolated_seeds_layer_has_the_shadow_period_and_the_images_say_what_the_colours_mean(tables) -> None:
+    set_hours(tables, HOURS)
+    run(tables)
+    connection = sqlite3.connect(tables / "out" / "safe_haven_stage_4_longest_chain_per_root.gpkg")
+    assert connection.execute('SELECT seed_id, hibernation_hours FROM "isolated_seeds"').fetchall() == [(8, 60.0)]
+    _image, info = read_image(maps.output_paths(tables / "out")["longest_chain_per_root"]["raster"])
+    assert "havens by shadow period: 0 h #ffffff; up to 12 h #f2c94c; 12 to 24 h #38b6c8; 24 to 48 h #7a5cd6" in info.tags["COLOURS"]

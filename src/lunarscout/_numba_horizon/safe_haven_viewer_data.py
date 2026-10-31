@@ -6,13 +6,19 @@ everything it draws, with no user interface in it:
 * ``viewer.json`` in the viewer directory: the months of the dataset, the DEM grid, and for every month the bounding
   box of each cluster of connected havens whose chain starts in the month (``[row_min, row_max, column_min, column_max,
   havens]`` in DEM pixels, as in ``safe_haven_stage_4_cluster_boxes.csv``), plus the yearly chain images;
-* ``havens.npz`` in the same directory: the DEM pixel of every seed in each month it is shown in (from the month its
-  chain starts to its own month, as in the monthly chain pixels), ordered by month with the start of each month's slice
-  in ``offsets``;
+* ``havens.npz`` in the same directory: the DEM pixels of the seed haven areas, month by month, copied from
+  ``safe_haven_stage_4_seed_haven_areas.npz`` beside the chain table (driver step ``seed-haven-areas``; see
+  ``safe_haven_seed_areas.py``: the first seed of each chain of 2 or more seeds that starts in the month and the havens of
+  the month within the step's radius of one), or the chain starts alone when that file is missing; ordered by month with
+  the start of each month's slice in ``offsets``;
 * a cache directory (by default under ``/tmp``) with image pyramids: the dark hillshade at every zoom level and, for
   each year, the chain image at every zoom level but the first (the first is read from the GeoTIFF itself). A pyramid
   is built once; the next run finds it and starts at once. A pyramid is a set of raw files read through ``numpy.memmap``,
-  so a tile of the picture is a slice.
+  so a tile of the picture is a slice;
+* the monthly haven images (``safe_haven_stage_1_haven_months/``, ``scripts/threshold_safe_havens.py``) when they are
+  beside the chain table: every pixel that is a haven in a month, one GeoTIFF per month. They are not copied: a tile is
+  read from the month's file, from its own overview at the coarser levels (each overview pixel is the minimum of its
+  block, so a haven is never lost), and coloured by its shadow period.
 
 A level ``k`` of a pyramid is the full-size grid reduced by ``2**k`` in both directions (mean for the hillshade, the
 largest value of each block for the chain images, which keeps their thin lines), cut into tiles of ``TILE`` pixels.
@@ -37,21 +43,42 @@ import numpy as np
 import numpy.typing as npt
 
 from ..errors import InputError, ProductStorageError
+from ..safe_haven_areas import areas_path, chain_starts, read_seed_areas
 from .pixel_coordinates import dem_header
 from .safe_haven_chain_maps import monthly_path, seed_month_spans
 from .safe_haven_chains import read_chain_table
 from .safe_haven_cluster_maps import COUNT_LABELS, cluster_classes, cluster_colours, find_clusters
 from .safe_haven_floods import read_edge_table
+from .chain_map_styles import HAVEN_SHADOW_CLASSES as _SHADOW_CLASSES
+from .chain_map_styles import haven_shadow_classes, haven_shadow_labels
 from .safe_haven_overview import SURFACE, _rgb, raw_shade
 
 TILE = 512
 STRIP = 1024                                  # DEM rows per strip while building; a multiple of 2 ** the top level
-PRODUCT = "safe-haven-viewer-v2"
+PRODUCT = "safe-haven-viewer-v6"
 CHAIN_IMAGE = re.compile(r"^safe_haven_stage_4_longest_chain_per_root_(\d{4})\.tif$")
-HAVEN_COLOUR = (238, 143, 102, 255)           # one orange for the havens, bright against the dark terrain
+HAVEN_MONTHS_DIRECTORY = "safe_haven_stage_1_haven_months"      # beside the chain table: scripts/threshold_safe_havens.py
+HAVEN_MONTH_IMAGE = re.compile(r"^safe_haven_stage_1_haven_months_(\d{4}-\d{2})\.tif$")
+# Every layer that draws havens colours each by its shadow period (its hibernation; a chain's start keeps its own colour):
+# the classes are those of the chain images (``chain_map_styles.HAVEN_SHADOW_CLASSES``), which carry them baked in. The seed
+# layers and the all-havens layer draw them here.
+HAVEN_SHADOW_CLASSES = tuple((bound, _rgb(colour)) for bound, colour in _SHADOW_CLASSES)
+SHADOW_RGBA = np.array([(*colour, 255) for _bound, colour in HAVEN_SHADOW_CLASSES], dtype=np.uint8)
 _LOW, _HIGH = 0.07, 0.24                      # the hillshade's grey range, as in the overview maps
 
 Progress = Callable[[str], None]
+
+
+def haven_shadow_class(hours: float) -> int:
+    """The index in ``HAVEN_SHADOW_CLASSES`` of one shadow period (see ``haven_shadow_classes``)."""
+    return int(haven_shadow_classes(hours))
+
+
+def haven_shadow_legend(limit_hours: float | None) -> list[tuple[tuple[int, int, int], str]]:
+    """``(colour, label)`` for each class that can occur under ``limit_hours`` (None: the last bound), the last class
+    running to the limit."""
+    labels = haven_shadow_labels(limit_hours)
+    return [(HAVEN_SHADOW_CLASSES[k][1], label) for k, label in enumerate(labels)]
 
 
 def _quiet(_message: str) -> None:
@@ -104,17 +131,42 @@ def _monthly_chain_name(chains_path: str | Path) -> str | None:
     return path.name if path.is_file() else None
 
 
+def _haven_month_images(chains_path: str | Path) -> dict[str, str]:
+    """The monthly haven images beside the chain table (scripts/threshold_safe_havens.py), as ``{"YYYY-MM": path relative to
+    the chain table's directory}``; empty when there are none."""
+    directory = Path(chains_path).parent / HAVEN_MONTHS_DIRECTORY
+    if not directory.is_dir():
+        return {}
+    found = {}
+    for path in sorted(directory.iterdir()):
+        match = HAVEN_MONTH_IMAGE.match(path.name)
+        if match:
+            found[match.group(1)] = f"{HAVEN_MONTHS_DIRECTORY}/{path.name}"
+    return found
+
+
 def viewer_paths(viewer_directory: str | Path) -> dict:
     directory = Path(viewer_directory)
     return {"json": directory / "viewer.json", "havens": directory / "havens.npz"}
+
+
+def _seed_areas_signature(chains_path: Path) -> dict | None:
+    """Name, size and time of the seed haven area pixel file beside the chain table, or None when there is none."""
+    path = areas_path(chains_path.parent)
+    if not path.is_file():
+        return None
+    stat = path.stat()
+    return {"name": path.name, "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
 
 
 def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path, dem_path: str | Path,
                        connect: str = "chains", edges_path: str | Path | None = None,
                        progress: Progress = _quiet) -> ViewerReport:
     """Write ``viewer.json`` and ``havens.npz`` into ``viewer_directory`` (through staging files). A cluster belongs to the
-    month its chain starts in (its lowest seed's ``root_start_utc``); a seed is shown from the month its chain starts in
-    to its own month (``seed_month_spans``), as in the monthly chain pixels."""
+    month its chain starts in (its lowest seed's ``root_start_utc``). The havens drawn in a month are its seed haven
+    area, read from the pixel file ``safe_haven_stage_4_seed_haven_areas.npz`` beside the chain table (driver step
+    ``seed-haven-areas``): the first seed of each chain of 2 or more seeds that starts in the month and the havens of the
+    month near it. Without that file a month has its chain starts alone. The other seeds are not drawn."""
     started = clock.monotonic()
     chains_path = Path(chains_path)
     progress("Reading the chain table")
@@ -125,22 +177,44 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
         raise InputError("a seed lies outside the DEM", code="viewer_table_invalid")
     progress("Clustering the connected havens")
     clusters = find_clusters(rows, connect=connect, edges=edges)
-    start_index, last_index, months = seed_month_spans(rows)
+    _start_index, _last_index, months = seed_month_spans(rows)
     cluster_month = [rows[int(first) - 1]["root_start_utc"][:7] for first in clusters.first_seed]
     boxes = {name: [] for name in months}
     order = np.argsort(clusters.havens, kind="stable")                # more havens last: drawn on top
     for k in order:
         boxes[cluster_month[k]].append([int(clusters.row_min[k]), int(clusters.row_max[k]), int(clusters.column_min[k]),
                                         int(clusters.column_max[k]), int(clusters.havens[k])])
-    pixel_rows = np.array([r["row"] for r in rows], dtype=np.int32)
-    pixel_columns = np.array([r["column"] for r in rows], dtype=np.int32)
-    seed_rows, seed_columns, offsets = [], [], [0]
-    for index in range(len(months)):                                   # a seed is shown from its chain's start to its own month
-        shown = np.flatnonzero((start_index <= index) & (last_index >= index))
-        seed_rows.append(pixel_rows[shown])
-        seed_columns.append(pixel_columns[shown])
-        offsets.append(offsets[-1] + len(shown))
-    seed_rows, seed_columns, offsets = np.concatenate(seed_rows), np.concatenate(seed_columns), np.array(offsets, dtype=np.int64)
+    progress("Seed haven areas")
+    signature = _seed_areas_signature(chains_path)
+    seed_rows, seed_columns, seed_hours, offsets, chain_starts_by_month = [], [], [], [0], {}
+    if signature is not None:
+        areas = read_seed_areas(areas_path(chains_path.parent))
+        where = {name: k for k, name in enumerate(areas["months"])}
+        for name in months:
+            k = where.get(name)
+            low, high = (int(areas["offsets"][k]), int(areas["offsets"][k + 1])) if k is not None else (0, 0)
+            seed_rows.append(areas["row"][low:high])
+            seed_columns.append(areas["column"][low:high])
+            seed_hours.append(areas["hours"][low:high])
+            offsets.append(offsets[-1] + high - low)
+            chain_starts_by_month[name] = int(areas["starts"][k]) if k is not None else 0
+        radius = areas["radius_meters"]
+    else:
+        hours = np.array([r["hibernation_hours"] or 0.0 for r in rows], dtype=np.float32)
+        start_seed, start_month, lone_seed, lone_month, table_months = chain_starts(rows)
+        pixel_rows = np.array([r["row"] for r in rows], dtype=np.int32)
+        pixel_columns = np.array([r["column"] for r in rows], dtype=np.int32)
+        for index, name in enumerate(months):
+            roots = start_seed[start_month == index]
+            shown = np.unique(np.concatenate([roots, lone_seed[lone_month == index]]))   # the starts and lone seeds
+            seed_rows.append(pixel_rows[shown])
+            seed_columns.append(pixel_columns[shown])
+            seed_hours.append(hours[shown])
+            offsets.append(offsets[-1] + len(shown))
+            chain_starts_by_month[name] = int(len(roots))
+        radius = None
+    seed_rows, seed_columns = np.concatenate(seed_rows), np.concatenate(seed_columns)
+    offsets, seed_hours = np.array(offsets, dtype=np.int64), np.concatenate(seed_hours)
     directory = Path(viewer_directory)
     directory.mkdir(parents=True, exist_ok=True)
     chain_images = {}
@@ -152,7 +226,9 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
         "product": PRODUCT, "connect": connect, "months": months, "tile": TILE,
         "dem": {"path": str(dem_path), "width": width, "height": height, "transform": list(transform)},
         "chain_directory": str(chains_path.parent), "chain_images": chain_images,
-        "monthly_chains": _monthly_chain_name(chains_path),
+        "hours_max": float(seed_hours.max()) if len(seed_hours) else 0.0,
+        "seed_areas": signature, "area_radius_meters": radius, "chain_starts": chain_starts_by_month,
+        "monthly_chains": _monthly_chain_name(chains_path), "haven_months": _haven_month_images(chains_path),
         "source": {"chains": chains_path.name, "size": chains_path.stat().st_size,
                    "mtime_ns": chains_path.stat().st_mtime_ns},
         "box_columns": ["row_min", "row_max", "column_min", "column_max", "havens"],
@@ -163,7 +239,7 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
     try:
         staging_json.write_text(json.dumps(meta, separators=(",", ":")) + "\n", encoding="utf-8")
         with staging_npz.open("wb") as handle:
-            np.savez_compressed(handle, row=seed_rows, column=seed_columns, offsets=offsets)
+            np.savez_compressed(handle, row=seed_rows, column=seed_columns, hours=seed_hours, offsets=offsets)
         os.replace(staging_json, paths["json"])
         os.replace(staging_npz, paths["havens"])
     finally:
@@ -176,7 +252,8 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
 
 def lists_current(viewer_directory: str | Path, *, chains_path: str | Path, dem_path: str | Path,
                   connect: str) -> bool:
-    """Whether ``viewer.json`` and ``havens.npz`` exist and were made from this chain table, DEM and connection rule."""
+    """Whether ``viewer.json`` and ``havens.npz`` exist and were made from this chain table, DEM, connection rule and
+    seed haven area file."""
     paths = viewer_paths(viewer_directory)
     if not (paths["json"].is_file() and paths["havens"].is_file()):
         return False
@@ -184,8 +261,10 @@ def lists_current(viewer_directory: str | Path, *, chains_path: str | Path, dem_
         meta = json.loads(paths["json"].read_text(encoding="utf-8"))
         stat = Path(chains_path).stat()
         return (meta.get("product") == PRODUCT and meta["connect"] == connect
+                and meta.get("seed_areas") == _seed_areas_signature(Path(chains_path))
                 and meta["source"] == {"chains": Path(chains_path).name, "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
-                and meta["dem"]["path"] == str(dem_path) and meta.get("monthly_chains") == _monthly_chain_name(chains_path))
+                and meta["dem"]["path"] == str(dem_path) and meta.get("monthly_chains") == _monthly_chain_name(chains_path)
+                and meta.get("haven_months", {}) == _haven_month_images(chains_path))
     except (OSError, ValueError, KeyError):
         return False
 
@@ -392,6 +471,8 @@ class ViewerData:
         self.boxes = [np.array(meta["boxes"][m], dtype=np.int64).reshape(-1, 5) for m in self.months]
         with np.load(paths["havens"]) as arrays:
             self._rows, self._columns, self._offsets = arrays["row"], arrays["column"], arrays["offsets"]
+            self._hours = arrays["hours"]
+        self.hours_max = float(meta.get("hours_max", 0.0))
         self.cache = Path(cache_directory)
         dem = Path(meta["dem"]["path"])
         self._hillshade = [np.load(p, mmap_mode="r") for p in self._sorted_levels(hillshade_directory(self.cache, dem))]
@@ -401,6 +482,11 @@ class ViewerData:
         if name and (Path(meta["chain_directory"]) / name).is_file():
             self._load_monthly_chains(Path(meta["chain_directory"]) / name)
         self.chain_years = {int(y): Path(meta["chain_directory"]) / name for y, name in meta["chain_images"].items()}
+        self.haven_months = {self.months.index(m): Path(meta["chain_directory"]) / name
+                             for m, name in meta.get("haven_months", {}).items()
+                             if m in self.months and (Path(meta["chain_directory"]) / name).is_file()}
+        self._haven_month_info: dict[int, dict] = {}
+        self._haven_luts: dict[tuple, npt.NDArray[np.uint8]] = {}
         self._chain_levels: dict[int, list] = {}
         self._chain_datasets: dict[int, object] = {}
 
@@ -471,13 +557,86 @@ class ViewerData:
             self._chain_levels[year] = [np.load(p, mmap_mode="r") for p in files]
         return self._crop(self._chain_levels[year][level - 1], level, tx, ty, 4)
 
+    def haven_month_info(self, month: int) -> dict:
+        """``{"pixels", "limit_hours", "threshold", "hours_per_count"}`` of the month's haven image (each None when its file
+        does not say; the hours per count default to 2), or an empty dict without an image."""
+        if month not in self.haven_months:
+            return {}
+        if month not in self._haven_month_info:
+            import rasterio
+
+            with rasterio.open(self.haven_months[month]) as dataset:
+                tags = dataset.tags()
+
+            def number(key, kind):
+                try:
+                    return kind(float(tags[key]))
+                except (KeyError, ValueError):
+                    return None
+            self._haven_month_info[month] = {
+                "pixels": number("SAFE_HAVEN_PIXELS", int), "limit_hours": number("SAFE_HAVEN_SURVIVAL_LIMIT_HOURS", float),
+                "threshold": number("SAFE_HAVEN_BYTE_THRESHOLD", int),
+                "hours_per_count": number("SAFE_HAVEN_HOURS_PER_COUNT", float) or 2.0}
+        return self._haven_month_info[month]
+
+    def _haven_lut(self, threshold: int, hours_per_count: float = 2.0) -> npt.NDArray[np.uint8]:
+        """``(256, 4)`` RGBA by stored count: the colour of the shadow-period class of ``count * hours_per_count`` hours for
+        the counts up to ``threshold``; everything above (NODATA 255 among it) is transparent."""
+        key = (threshold, hours_per_count)
+        if key not in self._haven_luts:
+            lut = np.zeros((256, 4), dtype=np.uint8)
+            for count in range(threshold + 1):
+                lut[count] = SHADOW_RGBA[haven_shadow_class(count * hours_per_count)]
+            self._haven_luts[key] = lut
+        return self._haven_luts[key]
+
+    def haven_month_legend(self, month: int) -> list[tuple[tuple[int, int, int], str]]:
+        """``(colour, label)`` of each shadow-period class the month's haven image can show; empty without an image."""
+        info = self.haven_month_info(month)
+        if not info:
+            return []
+        limit = info["limit_hours"]
+        if limit is None and info["threshold"] is not None:
+            limit = info["threshold"] * info["hours_per_count"]
+        return haven_shadow_legend(limit)
+
+    def haven_months_tile(self, month: int, level: int, tx: int, ty: int):
+        """``(512, 512, 4)`` RGBA of every haven pixel of the month, from the month's haven image (the file's own overview
+        at the coarser levels, each pixel the best of its block), coloured by its shadow period (``HAVEN_SHADOW_CLASSES``);
+        None without an image for the month."""
+        info = self.haven_month_info(month)
+        if not info:
+            return None
+        import rasterio
+        from rasterio.errors import RasterioIOError
+        from rasterio.windows import Window
+
+        threshold = info["threshold"] if info["threshold"] is not None else 254
+        try:
+            dataset = rasterio.open(self.haven_months[month], **({"overview_level": level - 1} if level > 0 else {}))
+        except (RasterioIOError, IndexError, ValueError):
+            return None                                                  # the file has no overview this coarse
+        with dataset:
+            width, height = min(TILE, dataset.width - tx * TILE), min(TILE, dataset.height - ty * TILE)
+            if width <= 0 or height <= 0:
+                return None
+            values = dataset.read(1, window=Window(tx * TILE, ty * TILE, width, height))
+        out = np.zeros((TILE, TILE, 4), dtype=np.uint8)
+        out[:height, :width] = self._haven_lut(threshold, info["hours_per_count"])[values]
+        return out
+
     def _in_tile(self, rows, columns, level: int, tx: int, ty: int, margin: int):
         """Mask of the entries whose level pixel lies within ``margin`` pixels of the tile."""
         x, y = columns >> level, rows >> level
         return (x >= tx * TILE - margin) & (x < (tx + 1) * TILE + margin) & (y >= ty * TILE - margin) & (y < (ty + 1) * TILE + margin)
 
     def havens_count(self, month: int) -> int:
+        """The havens of the month's seed haven area (the chain starts and the havens near them)."""
         return int(self._offsets[month + 1] - self._offsets[month])
+
+    def chain_starts_count(self, month: int) -> int:
+        """The chains of 2 or more seeds that start in the month: the centres of its seed haven areas."""
+        return int(self.meta.get("chain_starts", {}).get(self.months[month], 0))
 
     def monthly_chain_count(self, month: int) -> int:
         """The chains of 2 or more seeds drawn in the month (the part of each that is still ahead)."""
@@ -526,19 +685,34 @@ class ViewerData:
         return len(self.boxes[month])
 
     def havens_tile(self, month: int, level: int, tx: int, ty: int) -> npt.NDArray[np.uint8]:
-        """``(512, 512, 4)`` RGBA: one dot per haven of the month (1 pixel at the full size, 2 at the coarser levels)."""
+        """``(512, 512, 4)`` RGBA: one dot per haven of the month in the colour of its shadow period (1 pixel at the full
+        size, 2 at the coarser levels), the brightest class on top where dots overlap."""
         image = np.zeros((TILE, TILE, 4), dtype=np.uint8)
         low, high = int(self._offsets[month]), int(self._offsets[month + 1])
-        rows, columns = self._rows[low:high], self._columns[low:high]
+        rows, columns, hours = self._rows[low:high], self._columns[low:high], self._hours[low:high]
         mask = self._in_tile(rows, columns, level, tx, ty, 1)
         x = (columns[mask] >> level) - tx * TILE
         y = (rows[mask] >> level) - ty * TILE
+        classes = haven_shadow_classes(hours[mask])
         dot = 1 if level == 0 else 2
-        for dy in range(dot):
-            for dx in range(dot):
-                inside = (x + dx >= 0) & (x + dx < TILE) & (y + dy >= 0) & (y + dy < TILE)
-                image[(y + dy)[inside], (x + dx)[inside]] = HAVEN_COLOUR
+        for shadow in range(len(HAVEN_SHADOW_CLASSES) - 1, -1, -1):
+            chosen = classes == shadow
+            for dy in range(dot):
+                for dx in range(dot):
+                    inside = chosen & (x + dx >= 0) & (x + dx < TILE) & (y + dy >= 0) & (y + dy < TILE)
+                    image[(y + dy)[inside], (x + dx)[inside]] = SHADOW_RGBA[shadow]
         return image
+
+    def shadow_legend(self) -> list[tuple[tuple[int, int, int], str]]:
+        """``(colour, label)`` of the shadow-period classes of the seeds: the last runs to the survival limit, 48 hours
+        unless a seed's shadow period is longer."""
+        return haven_shadow_legend(max(HAVEN_SHADOW_CLASSES[-1][0], self.hours_max))
+
+    def chain_start_colour(self):
+        """The colour of the mark of a chain's start in the monthly chain layer, or None without that layer."""
+        if self.monthly_chains is None or self._root_code < 0:
+            return None
+        return tuple(int(v) for v in self.monthly_chains[3][self._root_code][:3])
 
     def boxes_tile(self, month: int, level: int, tx: int, ty: int) -> npt.NDArray[np.uint8]:
         """``(512, 512, 4)`` RGBA: the outline of each cluster's box, one level pixel wide just outside the box and solid when

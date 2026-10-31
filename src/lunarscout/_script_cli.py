@@ -90,7 +90,7 @@ def add_options(parser: argparse.ArgumentParser, options: Sequence[Option], defa
     """Add one flag per option, with ``defaults[option.key]`` as its default (shown in the help)."""
     for option in options:
         default = defaults[option.key]
-        text = f"{option.help} (default: {_show(default)})".strip()
+        text = f"{option.help} (default: {_show(default)})".strip().replace("%", "%%")      # argparse formats help with %
         if option.kind == "bool":
             parser.add_argument(option.flag, dest=option.key, action=argparse.BooleanOptionalAction, default=default,
                                 help=text)
