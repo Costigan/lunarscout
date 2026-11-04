@@ -218,3 +218,31 @@ def test_an_areas_file_made_before_psr_classes_reads_with_zero_levels(products, 
     np.savez_compressed(old, **kept)
     read = ls.read_seed_areas(old)
     assert read["psr_level"].tolist() == [0] * len(read["row"]) and len(read["row"]) == len(result["row"])
+
+
+def test_each_area_pixel_records_the_chains_that_own_it_by_root_seed(products) -> None:
+    tmp_path, dem, chains = products
+    start = "2026-03-05T00:00:00.000000Z"
+    # chain A (seeds 1, 2; root 1) starts at (10, 10), chain B (seeds 3, 4; root 3) at (10, 22): (10, 16) is within 10 pixels of both
+    write_chains(chains, [seed(1, "2026-03", 10, 10, 1, 0, start, 0.0), seed(2, "2026-03", 40, 10, 1, 1, start, 0.0, 2),
+                          seed(3, "2026-03", 10, 22, 3, 0, start, 0.0), seed(4, "2026-03", 40, 22, 3, 3, start, 0.0, 2)])
+    write_haven_months(chains, {"2026-03": {(10, 16): 2, (10, 4): 2, (10, 28): 2, (10, 40): 2}})
+    _report, result = make(products, images=None)
+    owners = {}
+    for k, (r, c) in enumerate(zip(result["row"].tolist(), result["column"].tolist())):
+        owners[(r, c)] = result["owner_root"][result["owner_offsets"][k]:result["owner_offsets"][k + 1]].tolist()
+    assert owners == {(10, 4): [1], (10, 10): [1], (10, 16): [1, 3], (10, 22): [3], (10, 28): [3]}      # (10, 40) is near neither
+    assert len(result["owner_offsets"]) == len(result["row"]) + 1 and result["owner_offsets"][0] == 0
+
+
+def test_a_lone_last_seed_and_a_continuation_are_owned_by_their_chain(products) -> None:
+    tmp_path, dem, chains = products
+    start = "2026-03-05T00:00:00.000000Z"
+    write_chains(chains, [seed(1, "2026-03", 10, 10, 1, 0, start, 0.0), seed(2, "2026-04", 20, 12, 1, 1, start, 6.0, 2),
+                          seed(3, "2026-05", 14, 600, 1, 2, start, 20.0, 3)])
+    _report, result = make(products, images=None)
+    assert result["owner_root"].tolist() == [1, 1, 1] and result["owner_offsets"].tolist() == [0, 1, 2, 3]
+    old = {name: result[name] for name in ("months", "offsets", "row", "column", "hours", "starts", "alone", "with_image", "radius_meters")}
+    np.savez_compressed(tmp_path / "old.npz", **old)
+    older = ls.read_seed_areas(tmp_path / "old.npz")
+    assert older["owner_root"] is None and older["owner_offsets"] is None              # a file made before the owners

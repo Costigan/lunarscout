@@ -284,36 +284,70 @@ def test_a_launch_that_cannot_prepare_says_why_and_exits_with_an_error(tmp_path)
     assert done.returncode == 1 and "missing.csv" in done.stderr and not (tmp_path / "x.png").exists()
 
 
-def test_the_psr_layer_has_a_threshold_drop_down_that_defaults_to_medium_and_applies_to_that_layer_only(app, prepared) -> None:
+def monthly_filter_window(app, prepared, psr_classes):
     viewer = viewer_module()
     folder, dem, chains = prepared
-    data = vd.ViewerData(folder / "viewer", folder / "cache")
-    with pytest.raises(ValueError, match="PSR_SIZES"):
-        viewer.Window(data, "chains_psr", None)
-    write_monthly_chains(folder, {"2026-03": (2, [(5, 6, 1), (5, 7, 2)], 2)})
-    for size, pixels in (("small", [(5, 6, 1), (5, 7, 2)]), ("medium", [(5, 6, 1)])):
-        write_monthly_chains(folder, {"2026-03": (len(pixels), pixels, 1)}, psr_size=size)
+    # chain 0 (a PSR class of psr_classes[0], longest hop 60 m) and chain 1 (psr_classes[1], 300 m) are drawn in 2026-03, chain 2
+    # in 2026-05 (class 0, 900 m); chains 0 and 1 start in the first month
+    write_monthly_chains(folder, {"2026-03": (2, [(5, 6, 1, 0), (5, 7, 2, 1)], 2), "2026-05": (1, [(700, 701, 3, 2)], 1)},
+                         chain_table=([*psr_classes, 0], [60.0, 300.0, 900.0], [0, 0, 1], {"2026-03": [0, 1], "2026-05": [2]}))
     vd.prepare_viewer(folder / "viewer", folder / "cache", chains_path=chains, dem_path=dem)
-    window = viewer.Window(vd.ViewerData(folder / "viewer", folder / "cache"), "chains_psr", None)
+    window = viewer.Window(vd.ViewerData(folder / "viewer", folder / "cache"), "chains_month", None)
     window.resize(900, 700)
     window.show()
     app.processEvents()
-    assert [window.layers.itemText(i) for i in range(5)] == [
-        "Havens and cluster boxes (monthly)", "Seed haven areas (monthly)", "Chains (monthly)",
-        "Chains (monthly, touch PSR)", "Chains (yearly)"]
-    assert [window.psr_choice.itemText(i) for i in range(window.psr_choice.count())] == ["Any PSR", "Medium or large PSR"]
-    assert window.view.layer == "chains_psr" and window.view.psr_size == "medium" and window.psr_choice.isVisible()
-    assert window.caption.text() == "2026-03    1 chains touching a PSR (medium or large psr), 1 starting"
-    window.psr_choice.setCurrentIndex(0)
-    assert window.view.psr_size == "small" and window.caption.text().startswith("2026-03    2 chains touching a PSR (any psr)")
+    return viewer, window
+
+
+def test_the_monthly_chain_layer_has_a_psr_and_a_longest_hop_drop_down_that_filter_its_chains_together(app, prepared) -> None:
+    viewer, window = monthly_filter_window(app, prepared, (2, 1))
+    assert [window.layers.itemText(i) for i in range(window.layers.count())] == [
+        "Havens and cluster boxes (monthly)", "Seed haven areas (monthly)", "Chains (monthly)", "Chains (yearly)"]
+    assert [window.psr_choice.itemText(i) for i in range(window.psr_choice.count())] == [
+        "Any chain", "Small or larger PSR", "Medium or larger PSR", "Large PSR"]
+    assert [window.hop_choice.itemText(i) for i in range(window.hop_choice.count())] == [
+        "Any longest hop", "Longest hop 50 m or more", "Longest hop 100 m or more", "Longest hop 200 m or more",
+        "Longest hop 500 m or more", "Longest hop 1,000 m or more", "Longest hop 2,000 m or more"]
+    assert window.view.layer == "chains_month" and window.psr_choice.isVisible() and window.hop_choice.isVisible()
+    assert (window.view.psr_class, window.view.hop_m) == (0, 0.0)                    # nothing filtered to begin with
+    assert window.caption.text() == "2026-03    2 chains (2 starting)"
+    window.psr_choice.setCurrentIndex(2)                                              # medium or larger: chain 0 only
+    assert window.view.psr_class == 2 and window.caption.text() == "2026-03    1 of 2 chains (1 starting)"
+    window.hop_choice.setCurrentIndex(2)                                              # and a hop of 100 m or more: nothing
+    assert window.view.hop_m == 100.0 and window.caption.text() == "2026-03    0 of 2 chains"
+    window.psr_choice.setCurrentIndex(0)                                              # hop alone: chain 1
+    assert (window.view.psr_class, window.view.hop_m) == (0, 100.0) and window.caption.text() == "2026-03    1 of 2 chains (1 starting)"
+    window.slider.setValue(2)
+    assert window.caption.text() == "2026-05    1 of 1 chains (1 starting)"            # chain 2's hop is 900 m
+    window.hop_choice.setCurrentIndex(0)
     window.layers.setCurrentIndex(0)
-    assert not window.psr_choice.isVisible()                                     # the threshold is for the one layer
+    assert not window.psr_choice.isVisible() and not window.hop_choice.isVisible()    # the filters are for the one layer
     window.layers.setCurrentIndex(2)
-    assert not window.psr_choice.isVisible()                                     # not on Chains (monthly) either
-    window.layers.setCurrentIndex(3)
-    assert window.psr_choice.isVisible()
-    assert window.view.legend()[0] == "Havens: shadow period"                      # the layer names the havens' colours; no background here
-    assert [label for _c, label in window.view.legend()[1]] == ["0 h", "up to 12 h", "12 to 24 h", "24 to 48 h"]
+    assert window.psr_choice.isVisible() and window.hop_choice.isVisible()
+
+
+def test_the_psr_drop_down_is_offered_only_when_the_chain_table_has_psr_counts(app, prepared) -> None:
+    viewer, window = monthly_filter_window(app, prepared, (0, 0))                     # no chain has a PSR class: counts unknown
+    assert window.hop_choice.isVisible() and not window.psr_choice.isVisible()
+    window.hop_choice.setCurrentIndex(3)                                              # 200 m or more: chain 1 only
+    assert window.view.hop_m == 200.0 and window.view.psr_class == 0 and window.caption.text() == "2026-03    1 of 2 chains (1 starting)"
+
+
+def test_the_filtered_chains_are_the_ones_drawn_in_the_window(app, prepared) -> None:
+    viewer, window = monthly_filter_window(app, prepared, (2, 1))
+    window.slider.setValue(0)
+    window.view.centre = QPointF(6.5, 5.5)
+    window.view.scale = 24.0
+    centre = (window.view.width() // 2, window.view.height() // 2)
+
+    def at(dx):
+        window.view.repaint()
+        colour = window.view.grab().toImage().pixelColor(centre[0] + int(dx * 24 * window.view.devicePixelRatioF()),
+                                                         centre[1])
+        return colour.red(), colour.green(), colour.blue()
+    assert at(-0.5)[0] > 200 and at(0.5)[1] > 200                                      # (5, 6) is red, (5, 7) green: both drawn
+    window.psr_choice.setCurrentIndex(2)                                                # only chain 0: red (5, 6)
+    assert at(-0.5)[0] > 200 and at(0.5)[1] < 100
 
 
 def test_the_permanent_shadow_is_drawn_light_blue_behind_every_layer_and_named_in_the_legend(app, tmp_path) -> None:
@@ -359,3 +393,37 @@ def test_a_launch_with_a_permanent_shadow_file_builds_its_pyramid_and_a_missing_
     assert list((tmp_path / "cache").glob("background_*/done.json")) and (tmp_path / "with.png").stat().st_size > 5000
     done = run([*common, "--psr-path", str(tmp_path / "gone.tif"), "--screenshot", str(tmp_path / "without.png")], tmp_path)
     assert done.returncode == 0 and "no permanent shadow is drawn" in done.stderr
+
+
+def test_the_scale_bar_lengths_are_round_and_labelled_in_metres_or_kilometres() -> None:
+    viewer = viewer_module()
+    assert [viewer.nice_length(v) for v in (1.0, 1.9, 2.0, 4.9, 5.0, 9.9, 10.0, 117.0, 2800.0, 56000.0, 0.7)] == [
+        1.0, 1.0, 2.0, 2.0, 5.0, 5.0, 10.0, 100.0, 2000.0, 50000.0, 0.5]
+    assert [viewer.length_label(v) for v in (50.0, 100.0, 500.0, 999.0, 1000.0, 2000.0, 50000.0, 200000.0)] == [
+        "50 m", "100 m", "500 m", "999 m", "1 km", "2 km", "50 km", "200 km"]
+
+
+def test_the_scale_bar_follows_the_zoom_and_is_drawn_in_the_upper_left_corner(app, prepared) -> None:
+    viewer = viewer_module()
+    folder, dem, chains = prepared
+    data = vd.ViewerData(folder / "viewer", folder / "cache")
+    assert data.pixel_metres == 20.0                                                   # the test DEM's 20 m pixels
+    window = viewer.Window(data, "boxes_havens", None)
+    window.resize(900, 700)
+    window.show()
+    app.processEvents()
+    for scale, width, label in ((1.0, 100.0, "2 km"), (0.05, 125.0, "50 km"), (24.0, 120.0, "100 m"),
+                                (0.4, 100.0, "5 km"), (4.0, 100.0, "500 m")):
+        window.view.scale = scale
+        bar, text = window.view.scale_bar()
+        assert text == label and abs(bar - width) < 1e-6, (scale, bar, text)
+        assert 70 <= bar <= 140                                                         # always a usable length
+    window.view.scale = 1.0
+    window.view.repaint()
+    image = window.view.grab().toImage()
+    ratio = window.view.devicePixelRatioF()
+    light = [y for y in range(int(70 * ratio)) if sum(
+        1 for x in range(int(60 * ratio), int(120 * ratio))
+        if min(image.pixelColor(x, y).red(), image.pixelColor(x, y).green(), image.pixelColor(x, y).blue()) > 200) >= 50 * ratio]
+    assert light, "a bar of 100 pixels is drawn in the upper left"                       # a bright horizontal line there
+    assert all(y < 70 * ratio for y in light)

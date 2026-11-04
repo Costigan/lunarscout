@@ -751,26 +751,54 @@ def line_psr_levels(chain_set):
 @dataclass
 class MonthlyChainMapsReport:
     file: str
-    months: dict                     # per month: the chains drawn and the ones that start in it, the pixels and the havens
+    months: dict                     # per month: the chains drawn and the ones that start in it, the records and the havens
     intervals: list
     raster_lines: str
     route_pixels: int
-    pixels: int
+    pixels: int                      # records in all months (a pixel shared by chains has one record each)
     seconds: float = 0.0
-    psr_files: dict | None = None    # per PSR size: the file of the chains that touch a PSR of at least that size, its pixels
+    chains: int = 0                  # the longest chains in the file's chain table
+    psr_classes_known: bool = False  # whether the table's PSR counts were there, so the chains have a PSR class
 
     def as_dict(self) -> dict:
         return asdict(self)
 
 
-def monthly_path(directory: str | Path, prefix: str = "safe_haven_stage_4", psr_size: str | None = None) -> Path:
-    """The monthly chain pixel file; with ``psr_size`` (``"small"``, ``"medium"`` or ``"large"``) the file of the chains that
-    touch a PSR of at least that size."""
-    if psr_size is None:
-        return Path(directory) / f"{prefix}_monthly_chain_pixels.npz"
-    if psr_size not in PSR_SIZES:
-        raise InputError(f"psr_size must be one of {PSR_SIZES}", code="chain_maps_setting_invalid", details={"psr_size": psr_size})
-    return Path(directory) / f"{prefix}_monthly_chain_pixels_psr_{psr_size}.npz"
+def monthly_path(directory: str | Path, prefix: str = "safe_haven_stage_4") -> Path:
+    return Path(directory) / f"{prefix}_monthly_chain_pixels.npz"
+
+
+def _bresenham(row0: int, column0: int, row1: int, column1: int):
+    """The pixels of the straight line between two pixels, ends included (the line ``draw_segments`` draws)."""
+    rows, columns = [], []
+    r, c = int(row0), int(column0)
+    dr, dc = abs(row1 - r), abs(column1 - c)
+    sr = 1 if row1 > r else -1
+    sc = 1 if column1 > c else -1
+    err = dc - dr
+    while True:
+        rows.append(r)
+        columns.append(c)
+        if r == row1 and c == column1:
+            break
+        e2 = 2 * err
+        if e2 > -dr:
+            err -= dr
+            c += sc
+        if e2 < dc:
+            err += dc
+            r += sr
+    return np.array(rows, dtype=np.int32), np.array(columns, dtype=np.int32)
+
+
+def _next_to_psr(psr, rows, columns):
+    """Which of the pixels have a PSR pixel among their eight neighbours (or are one)."""
+    height, width = psr.shape
+    near = np.zeros(len(rows), dtype=bool)
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            near |= psr[np.clip(rows + dr, 0, height - 1), np.clip(columns + dc, 0, width - 1)]
+    return near
 
 
 def run_monthly_chain_maps(
@@ -778,10 +806,9 @@ def run_monthly_chain_maps(
     overwrite: bool = False, compiled: bool = True, light_store_path: str | Path | None = None,
     passable_path: str | Path | None = None, flood_settings=None, workers: int = 1, progress=None,
     psr_ids_path: str | Path | None = None, seed_areas_path: str | Path | None = None,
-    psr_sizes: tuple[str, ...] = (),
 ) -> MonthlyChainMapsReport:
     """Write ``<prefix>_monthly_chain_pixels.npz`` and ``<prefix>_monthly_chain_maps.report.json``: the pixels of the
-    longest-chain image of each month, for the viewer (``scripts/view_safe_haven.py``).
+    longest-chain image of each month, kept chain by chain, for the viewer (``scripts/view_safe_haven.py``).
 
     A chain is drawn from the month its root starts in (``root_start_utc``) to the month of its last seed, each month as
     the part still ahead: its seeds from that month on, so a chain that carries on into later months is shorter in each
@@ -790,22 +817,23 @@ def run_monthly_chain_maps(
     passed once its month is over. The havens drawn in a month are those of the seed haven areas of the month
     (``safe_haven_stage_4_seed_haven_areas.npz``, from ``seed_areas_path`` or beside the chain table): the current start
     of each chain (its first seed not passed), the havens near it and the lone last seeds, in their shadow colours; an
-    ``InputError`` with code ``chain_maps_seed_areas_missing`` is raised when that file does not exist. The routes and
-    PSR marks are those of the yearly images, and the chains and routes of the month a chain starts in are what the
-    yearly image shows when every chain starts in one month. A month is stored as only the pixels drawn: ``row``,
-    ``column`` and the colour class ``code`` (a row of ``table``, RGBA: 0 is transparent, then the length intervals, aqua
-    for a PSR pass, white for a haven and magenta for the start of a chain, one pixel on the current start of each chain
-    drawn in the month, in addition to the haven there), ordered by code so that drawing them in order puts the longer
-    chains, then aqua, then the havens, then the starts on top; ``offsets`` holds the start of each month's slice
-    (``months`` are the names, ``chains`` the chains of 2 or more seeds drawn in each, and ``started`` those that start in
-    it).
+    ``InputError`` with code ``chain_maps_seed_areas_missing`` is raised when that file does not exist, and
+    ``chain_maps_seed_areas_outdated`` when it does not record which chains own each pixel. The routes and PSR marks are
+    those of the yearly images.
 
-    ``psr_sizes`` (some of ``"small"``, ``"medium"`` and ``"large"``) also writes, for each, ``<prefix>_monthly_chain_pixels_psr_
-    <size>.npz``: the same picture of only the chains whose routes pass next to a PSR of at least that size (small: any;
-    medium: a medium or large one; large: a large one), by the whole chain's ``chain_psr_*`` counts in the stage-4 table, so
-    a chain qualifies in every month it is drawn. The havens drawn are those of the areas file whose ``psr_level`` is at
-    least the size (the havens near a qualifying chain's start and its lone last seed). An ``InputError`` with code
-    ``chain_maps_psr_counts_missing`` is raised when the table's counts are blank (stage 4 ran without the routes)."""
+    The file keeps each chain's pixels apart so that the viewer can choose the chains to draw. A month is stored as one
+    record per pixel and chain: ``row``, ``column``, the colour class ``code`` (a row of ``table``, RGBA: 0 is
+    transparent, then the length intervals, aqua for a PSR pass, the shadow classes of a haven and magenta for the start of
+    a chain, one pixel on the current start of each chain drawn in the month, in addition to the haven there) and
+    ``chain``, the index of the owning chain in the chain table (``chain_root``, ``chain_psr_class`` and ``chain_hop_m``:
+    the root seed id, the largest PSR size class of the whole chain, 0 none to 3 large, and its longest hop in metres, the
+    greatest straight-line distance between successive seeds, pixel centre to pixel centre). A haven pixel has a record for
+    every chain that owns it. The records of a month are ordered by code so that drawing them in order puts the longer
+    chains, then aqua, then the havens, then the starts on top, which is the order of the merged picture; ``offsets``
+    holds the start of each month's slice. ``months`` are the names, ``chains`` the chains of 2 or more seeds drawn in each
+    and ``started`` those that start in it (``drawn_offsets`` and ``drawn_chain`` list the chains drawn in each month and
+    ``chain_start_month`` the month each starts in, so that a filter can count them). ``psr_classes_known`` says whether
+    the table had its ``chain_psr_*`` counts (stage 4 run with the routes); the classes are 0 when it did not."""
     started = clock.monotonic()
     directory = Path(output_directory)
     rows = read_chain_table(chains_path)
@@ -815,17 +843,8 @@ def run_monthly_chain_maps(
             or arrays["column"].max() >= width:
         raise InputError("a seed lies outside the DEM's grid", code="chain_maps_grid_mismatch",
                          details={"height": height, "width": width})
-    unknown = [size for size in psr_sizes if size not in PSR_SIZES]
-    if unknown:
-        raise InputError(f"psr_sizes must be among {PSR_SIZES}", code="chain_maps_setting_invalid",
-                         details={"psr_sizes": list(psr_sizes)})
-    line_level, counts_known = line_psr_levels(chain_set)
-    if psr_sizes and not counts_known:
-        raise InputError("the chain table has no PSR counts (stage 4 ran without the routes), so the chains that touch a "
-                         "PSR cannot be told", code="chain_maps_psr_counts_missing")
     target, report_path = monthly_path(directory, prefix), directory / f"{prefix}_monthly_chain_maps.report.json"
-    psr_targets = {size: monthly_path(directory, prefix, size) for size in psr_sizes}
-    for path in (target, report_path, *psr_targets.values()):
+    for path in (target, report_path):
         if path.exists() and not overwrite:
             raise InputError(f"{path} exists; pass overwrite=True to replace it", code="chain_maps_output_exists",
                              details={"path": str(path)})
@@ -841,6 +860,10 @@ def run_monthly_chain_maps(
         raise InputError(f"{areas_file} is for other months than the chain table", code="chain_maps_seed_areas_mismatch",
                          details={"path": str(areas_file), "areas": [areas["months"][0], areas["months"][-1]],
                                   "chains": [months[0], months[-1]]})
+    if areas["owner_root"] is None:
+        raise InputError(f"{areas_file} does not record which chains own each pixel (made by an older version; run "
+                         "generate_seed_haven_areas again)", code="chain_maps_seed_areas_outdated",
+                         details={"path": str(areas_file)})
     if len(areas["row"]) and (areas["row"].max() >= height or areas["column"].max() >= width):
         raise InputError("a seed haven area pixel lies outside the DEM's grid", code="chain_maps_grid_mismatch",
                          details={"height": height, "width": width})
@@ -861,86 +884,100 @@ def run_monthly_chain_maps(
     if lines:
         is_tail[np.cumsum([len(line) for line in lines]) - 1] = False
     segment_last = entry_last[is_tail]
-    planes = np.zeros((_PLANES, height, width), dtype=np.uint8)
+    # What the viewer filters the chains by, whole chain: its PSR class and its longest hop in metres.
+    chain_level, counts_known = line_psr_levels(chain_set)
+    pixel_metres = abs(transform[1])
+    chain_hop = np.array([float(np.hypot(np.diff(arrays["row"][line - 1]), np.diff(arrays["column"][line - 1])).max())
+                          for line in lines], dtype=np.float64) * pixel_metres
+    chain_root = np.array([line[0] for line in lines], dtype=np.int64)
+    chain_of_root = {int(root): k for k, root in enumerate(chain_root.tolist())}
     aqua_code, root_code = len(intervals) + 1, len(intervals) + 2 + len(HAVEN_SHADOW_CLASSES)
     start_seed, start_month, _lone_seed, _lone_month = current_chain_starts(lines, start_index, last_index)
-    level_of_root = dict(zip((int(line[0]) for line in lines), line_level.tolist()))
-    start_level = np.array([level_of_root[int(rows[i]["root_id"])] for i in start_seed], dtype=np.uint8)
-    # The pictures: the one of every chain and, for each PSR size, the one of the chains that touch a PSR of at least that size.
-    variants = {None: 0, **{size: PSR_SIZES.index(size) + 1 for size in psr_sizes}}
-    found = {key: dict(rows=[], columns=[], codes=[], offsets=[0], chains=[], started=[]) for key in variants}
-    result = {}
+    start_chain = np.array([chain_of_root[int(rows[i]["root_id"])] for i in start_seed], dtype=np.int64)
+    owner_chain = np.array([chain_of_root[int(root)] for root in areas["owner_root"]], dtype=np.int64)
+    owner_pixel = np.repeat(np.arange(len(areas["row"])), np.diff(areas["owner_offsets"]))
+    # The pixels of each segment's route (or straight line), and which are next to a PSR, made once when first drawn.
     segments = chain_set.segments
+    if route_set is not None and len(segments.length):
+        route_index = route_set.index(chain_set.segment_seeds[:, 1])
+    pixels_of: dict[int, tuple] = {}
+
+    def segment_pixels(g: int):
+        if g not in pixels_of:
+            if route_set is not None:
+                lo, hi = route_set.offsets[route_index[g]], route_set.offsets[route_index[g] + 1]
+                r, c = route_set.rows[lo:hi].astype(np.int32), route_set.columns[lo:hi].astype(np.int32)
+            else:
+                r, c = _bresenham(segments.row0[g], segments.column0[g], segments.row1[g], segments.column1[g])
+            pixels_of[g] = (r, c, _next_to_psr(psr_mask, r, c) if psr_mask is not None else np.zeros(len(r), dtype=bool))
+        return pixels_of[g]
+
+    found_rows, found_columns, found_codes, found_chains = [], [], [], []
+    offsets, drawn_offsets, drawn_chains, counts, started_counts, result = [0], [0], [], [], [], {}
     for index, month in enumerate(months):
-        window = slice(areas["offsets"][index], areas["offsets"][index + 1])            # the havens of the month
+        active = np.flatnonzero((line_start[segment_line] <= index) & (segment_last >= index))
         remaining = np.bincount(entry_line, weights=(entry_last >= index), minlength=len(lines)).astype(np.int64)
-        for key, minimum in variants.items():
-            line_ok = line_level >= minimum
-            active = (line_start[segment_line] <= index) & (segment_last >= index) & line_ok[segment_line]
-            shown = np.arange(window.start, window.stop)[areas["psr_level"][window] >= minimum]
-            subset = replace(
-                chain_set, segments=Segments(segments.row0[active], segments.column0[active], segments.row1[active],
-                                             segments.column1[active], remaining[segment_line[active]]),
-                segment_seeds=chain_set.segment_seeds[active])
-            month_rows, month_columns, month_codes = [], [], []
-            if active.any() or len(shown):
-                render(subset, (areas["row"][shown], areas["column"][shown], area_class[shown]), intervals, height,
-                       width, 0, paths=route_set, psr=psr_mask, compiled=compiled, out=planes)
-                for first in range(0, height, _STRIP_ROWS):
-                    strip = planes[:, first:first + _STRIP_ROWS]
-                    code = strip[0].copy()
-                    code[strip[1] > 0] = aqua_code
-                    code[strip[2] > 0] = haven_code(len(intervals), strip[2][strip[2] > 0].astype(np.int64) - 1)
-                    found_r, found_c = np.nonzero(code)
-                    month_rows.append((found_r + first).astype(np.int32))
-                    month_columns.append(found_c.astype(np.int32))
-                    month_codes.append(code[found_r, found_c])
-                starting = start_seed[(start_month == index) & (start_level >= minimum)]    # the current start of each chain drawn
-                month_rows.append(arrays["row"][starting].astype(np.int32))
-                month_columns.append(arrays["column"][starting].astype(np.int32))
-                month_codes.append(np.full(len(starting), root_code, dtype=np.uint8))
-            month_r = np.concatenate(month_rows) if month_rows else np.zeros(0, dtype=np.int32)
-            month_c = np.concatenate(month_columns) if month_columns else np.zeros(0, dtype=np.int32)
-            month_k = np.concatenate(month_codes) if month_codes else np.zeros(0, dtype=np.uint8)
-            order = np.argsort(month_k, kind="stable")
-            held = found[key]
-            held["rows"].append(month_r[order])
-            held["columns"].append(month_c[order])
-            held["codes"].append(month_k[order])
-            held["offsets"].append(held["offsets"][-1] + len(order))
-            held["chains"].append(int(np.unique(segment_line[active]).size))
-            held["started"].append(int(((line_start == index) & line_ok).sum()))
-            if key is None:
-                result[month] = {"chains": held["chains"][-1], "started": held["started"][-1], "pixels": len(order),
-                                 "havens": int(len(shown))}
+        classes = class_of(remaining[segment_line[active]], intervals)
+        month_rows, month_columns, month_codes, month_chains = [], [], [], []
+        for g, klass in zip(active.tolist(), classes.tolist()):
+            r, c, near = segment_pixels(g)
+            owner = int(segment_line[g])
+            month_rows += [r, r[near]]
+            month_columns += [c, c[near]]
+            month_codes += [np.full(len(r), klass, dtype=np.uint8), np.full(int(near.sum()), aqua_code, dtype=np.uint8)]
+            month_chains += [np.full(len(r) + int(near.sum()), owner, dtype=np.int32)]
+        window = slice(areas["offsets"][index], areas["offsets"][index + 1])             # the havens of the month
+        first, last = areas["owner_offsets"][window.start], areas["owner_offsets"][window.stop]
+        pairs = np.arange(first, last)
+        pair_pixel = owner_pixel[pairs]
+        month_rows.append(areas["row"][pair_pixel].astype(np.int32))
+        month_columns.append(areas["column"][pair_pixel].astype(np.int32))
+        month_codes.append(haven_code(len(intervals), area_class[pair_pixel]).astype(np.uint8))
+        month_chains.append(owner_chain[pairs].astype(np.int32))
+        starting = np.flatnonzero(start_month == index)                      # the current start of each chain drawn
+        month_rows.append(arrays["row"][start_seed[starting]].astype(np.int32))
+        month_columns.append(arrays["column"][start_seed[starting]].astype(np.int32))
+        month_codes.append(np.full(len(starting), root_code, dtype=np.uint8))
+        month_chains.append(start_chain[starting].astype(np.int32))
+        month_r, month_c = np.concatenate(month_rows), np.concatenate(month_columns)
+        month_k, month_o = np.concatenate(month_codes), np.concatenate(month_chains)
+        order = np.argsort(month_k, kind="stable")
+        found_rows.append(month_r[order])
+        found_columns.append(month_c[order])
+        found_codes.append(month_k[order])
+        found_chains.append(month_o[order])
+        offsets.append(offsets[-1] + len(order))
+        drawn = np.unique(segment_line[active])
+        drawn_chains.append(drawn)
+        drawn_offsets.append(drawn_offsets[-1] + len(drawn))
+        counts.append(len(drawn))
+        started_counts.append(int((line_start == index).sum()))
+        result[month] = {"chains": counts[-1], "started": started_counts[-1], "pixels": len(order),
+                         "havens": int(window.stop - window.start)}
     directory.mkdir(parents=True, exist_ok=True)
     labels = np.array([i.label for i in intervals] + ["next to a PSR"]
                       + [f"haven, shadow {label}" for label in reversed(haven_shadow_labels())] + ["start of a chain"])
-    stagings = {}
+    staging = target.with_name(target.name + ".partial")
     try:
-        for key, held in found.items():
-            path = target if key is None else psr_targets[key]
-            stagings[path] = path.with_name(path.name + ".partial")
-            with stagings[path].open("wb") as handle:
-                extra = {} if key is None else {"psr_size": np.array(key)}
-                np.savez_compressed(
-                    handle, months=np.array(months), offsets=np.array(held["offsets"], dtype=np.int64),
-                    row=np.concatenate(held["rows"]), column=np.concatenate(held["columns"]),
-                    code=np.concatenate(held["codes"]), table=table, chains=np.array(held["chains"], dtype=np.int64),
-                    started=np.array(held["started"], dtype=np.int64), labels=labels, **extra)
-        for path, staging in stagings.items():
-            os.replace(staging, path)
+        with staging.open("wb") as handle:
+            np.savez_compressed(
+                handle, months=np.array(months), offsets=np.array(offsets, dtype=np.int64),
+                row=np.concatenate(found_rows), column=np.concatenate(found_columns), code=np.concatenate(found_codes),
+                chain=np.concatenate(found_chains), table=table, chains=np.array(counts, dtype=np.int64),
+                started=np.array(started_counts, dtype=np.int64), labels=labels, chain_root=chain_root,
+                chain_psr_class=chain_level, chain_hop_m=chain_hop.astype(np.float32),
+                chain_start_month=line_start.astype(np.int32), drawn_offsets=np.array(drawn_offsets, dtype=np.int64),
+                drawn_chain=np.concatenate(drawn_chains).astype(np.int32) if drawn_chains else np.zeros(0, dtype=np.int32),
+                psr_classes_known=np.array(bool(counts_known)))
+        os.replace(staging, target)
     finally:
-        for staging in stagings.values():
-            staging.unlink(missing_ok=True)
+        staging.unlink(missing_ok=True)
     report = MonthlyChainMapsReport(
         file=str(target), months=result,
         intervals=[{"label": i.label, "first": i.first, "last": i.last, "colour": i.colour} for i in intervals],
         raster_lines="routes" if route_set is not None else "straight",
-        route_pixels=int(len(route_set.rows)) if route_set is not None else 0, pixels=int(found[None]["offsets"][-1]),
-        seconds=clock.monotonic() - started,
-        psr_files={size: {"file": str(psr_targets[size]), "pixels": int(found[size]["offsets"][-1]),
-                          "chains": int(sum(found[size]["chains"]))} for size in psr_sizes} or None)
+        route_pixels=int(len(route_set.rows)) if route_set is not None else 0, pixels=int(offsets[-1]),
+        seconds=clock.monotonic() - started, chains=len(lines), psr_classes_known=bool(counts_known))
     report_path.write_text(json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8")
     return report
 

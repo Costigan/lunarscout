@@ -275,28 +275,38 @@ def test_chain_tiles_come_from_the_tif_at_full_size_and_from_the_pyramid_above(p
     assert data.chain_tile(2031, 0, 0, 0) is None and data.chain_tile(2031, 2, 0, 0) is None    # no image for that year
 
 
-def write_monthly_chains(directory: Path, entries, psr_size=None) -> Path:
-    """A monthly chain pixel file with ``entries``: ``month -> (chains, [(row, column, code), ...])``; the table has 3 classes.
-    ``psr_size`` writes the file of the chains that touch a PSR of at least that size."""
+def write_monthly_chains(directory: Path, entries, chain_table=None) -> Path:
+    """A monthly chain pixel file with ``entries``: ``month -> (chains, [(row, column, code[, chain]), ...][, started])``; the
+    table has 3 classes. ``chain_table`` makes the file keep its chains apart, as ``run_monthly_chain_maps`` does:
+    ``(psr_class, hop_m, start_month, drawn)`` with a PSR class, a longest hop in metres and a start month (index) per chain
+    and ``month -> [chain, ...]`` of the chains drawn in each (a pixel's chain is its fourth entry, 0 when there is none)."""
     months = sorted(entries)
-    rows, columns, codes, offsets, chains, started = [], [], [], [0], [], []
+    rows, columns, codes, owners, offsets, chains, started = [], [], [], [], [0], [], []
     for month in months:
         count, pixels, *rest = entries[month]
         pixels = sorted(pixels, key=lambda p: p[2])
         rows += [p[0] for p in pixels]
         columns += [p[1] for p in pixels]
         codes += [p[2] for p in pixels]
+        owners += [p[3] if len(p) > 3 else 0 for p in pixels]
         offsets.append(len(rows))
         chains.append(count)
         started.append(rest[0] if rest else 0)
     table = np.array([[0, 0, 0, 0], [255, 0, 0, 255], [0, 255, 0, 255], [255, 255, 255, 255]], dtype=np.uint8)
-    path = directory / ("safe_haven_stage_4_monthly_chain_pixels.npz" if psr_size is None
-                        else f"safe_haven_stage_4_monthly_chain_pixels_psr_{psr_size}.npz")
+    path = directory / "safe_haven_stage_4_monthly_chain_pixels.npz"
+    extra = {}
+    if chain_table is not None:
+        psr_class, hop_m, start_month, drawn = chain_table
+        extra = dict(chain=np.array(owners, dtype=np.int32), chain_psr_class=np.array(psr_class, dtype=np.uint8),
+                     chain_hop_m=np.array(hop_m, dtype=np.float32), chain_start_month=np.array(start_month, dtype=np.int32),
+                     chain_root=np.arange(1, len(psr_class) + 1), psr_classes_known=np.array(any(psr_class)),
+                     drawn_offsets=np.cumsum([0] + [len(drawn.get(m, [])) for m in months]).astype(np.int64),
+                     drawn_chain=np.array([c for m in months for c in drawn.get(m, [])], dtype=np.int32))
     np.savez_compressed(path, months=np.array(months), offsets=np.array(offsets, dtype=np.int64),
                         row=np.array(rows, dtype=np.int32), column=np.array(columns, dtype=np.int32),
                         code=np.array(codes, dtype=np.uint8), table=table, chains=np.array(chains, dtype=np.int64),
                         started=np.array(started, dtype=np.int64),
-                        labels=np.array(["a", "b", "haven"]))
+                        labels=np.array(["a", "b", "haven"]), **extra)
     return path
 
 
@@ -560,30 +570,43 @@ def write_psr(path: Path, pixels, size: int = SIZE) -> Path:
     return path
 
 
-def test_the_chain_pixel_files_of_each_psr_size_are_listed_loaded_and_drawn_by_size(products) -> None:
+def test_the_filters_choose_the_chains_of_the_monthly_file_by_psr_class_and_longest_hop(products) -> None:
     tmp_path, dem, chains = products
     options = dict(chains_path=chains, dem_path=dem)
-    write_monthly_chains(tmp_path, {"2026-03": (2, [(5, 6, 1), (5, 7, 2)], 1)})
+    # three chains: 0 (class 2, hop 60 m, starts in month 0), 1 (class 1, hop 300 m, month 0) and 2 (class 0, hop 900 m, month 1);
+    # chains 0 and 1 are drawn in 2026-03, chain 2 in 2026-04, and pixel (9, 9) is owned by both 0 and 1
+    write_monthly_chains(tmp_path, {
+        "2026-03": (2, [(5, 6, 1, 0), (5, 7, 2, 1), (9, 9, 3, 0), (9, 9, 3, 1)], 2),
+        "2026-04": (1, [(20, 20, 1, 2)], 1)},
+        chain_table=([2, 1, 0], [60.0, 300.0, 900.0], [0, 0, 1], {"2026-03": [0, 1], "2026-04": [2]}))
     vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", **options)
-    assert vd.ViewerData(tmp_path / "viewer", tmp_path / "cache").psr_sizes() == []
-    assert vd.ViewerData(tmp_path / "viewer", tmp_path / "cache").monthly_chain_tile(0, 0, 0, 0, psr_size="medium") is None
-    write_monthly_chains(tmp_path, {"2026-03": (1, [(5, 6, 1), (9, 9, 3)], 1)}, psr_size="medium")
-    assert not vd.lists_current(tmp_path / "viewer", connect="chains", **options)            # a new file: the lists are made again
-    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", **options)
-    assert vd.lists_current(tmp_path / "viewer", connect="chains", **options)
     data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
-    assert data.psr_sizes() == ["medium"] and json.loads((tmp_path / "viewer" / "viewer.json").read_text())["monthly_chains_psr"] == {
-        "medium": "safe_haven_stage_4_monthly_chain_pixels_psr_medium.npz"}
-    assert (data.monthly_chain_count(0), data.monthly_chain_started(0)) == (2, 1)
-    assert (data.monthly_chain_count(0, "medium"), data.monthly_chain_started(0, "medium")) == (1, 1)
-    assert data.monthly_chain_count(0, "large") == 0
-    every, filtered = data.monthly_chain_tile(0, 0, 0, 0), data.monthly_chain_tile(0, 0, 0, 0, psr_size="medium")
-    assert (every[..., 3] > 0).sum() == 2 and (filtered[..., 3] > 0).sum() == 2
-    assert every[5, 7].tolist() == [0, 255, 0, 255] and filtered[5, 7].tolist() == [0, 0, 0, 0]      # not in the filtered picture
-    assert filtered[9, 9].tolist() == [255, 255, 255, 255] and every[9, 9].tolist() == [0, 0, 0, 0]
-    assert data.monthly_chain_tile(0, 0, 0, 0, psr_size="small") is None                    # no file for that size
-    write_monthly_chains(tmp_path, {"2026-03": (1, [(5, 6, 1)], 1)}, psr_size="large")
-    assert not vd.lists_current(tmp_path / "viewer", connect="chains", **options)
+    assert data.has_chain_filters() and data.psr_classes_known
+    assert [data.monthly_chain_count(m) for m in range(3)] == [2, 1, 0]                       # no filter: the file's own counts
+    assert [data.monthly_chain_started(m) for m in range(3)] == [2, 1, 0]
+
+    def drawn(month, psr_class=0, hop_m=0.0):
+        tile = data.monthly_chain_tile(month, 0, 0, 0, psr_class, hop_m)
+        return {(int(r), int(c)) for r, c in np.argwhere(tile[..., 3] > 0)}
+    assert drawn(0) == {(5, 6), (5, 7), (9, 9)} and drawn(1) == {(20, 20)}
+    assert drawn(0, psr_class=2) == {(5, 6), (9, 9)}                                          # chain 0 only; (9, 9) is its too
+    assert drawn(0, psr_class=1) == {(5, 6), (5, 7), (9, 9)} and drawn(1, psr_class=1) == set()   # chain 2 touches no PSR
+    assert drawn(0, hop_m=100.0) == {(5, 7), (9, 9)} and drawn(1, hop_m=100.0) == {(20, 20)}  # chain 1 (and the shared pixel)
+    assert drawn(0, psr_class=2, hop_m=100.0) == set() and drawn(0, psr_class=3) == set()     # both must pass; none is class 3
+    assert drawn(0, hop_m=1000.0) == set()
+    assert (data.monthly_chain_count(0, 2), data.monthly_chain_count(0, 0, 100.0), data.monthly_chain_count(0, 2, 100.0)) == (1, 1, 0)
+    assert (data.monthly_chain_count(1, 0, 500.0), data.monthly_chain_started(1, 0, 500.0), data.monthly_chain_started(0, 1)) == (1, 1, 2)
+    assert data.monthly_chain_started(1, 2) == 0 and data.monthly_chain_started(0, 2) == 1
+
+
+def test_a_monthly_file_that_does_not_keep_its_chains_apart_still_draws_without_filters(products) -> None:
+    tmp_path, dem, chains = products
+    write_monthly_chains(tmp_path, {"2026-03": (2, [(5, 6, 1), (5, 7, 2)], 1)})                  # an older file
+    vd.prepare_viewer(tmp_path / "viewer", tmp_path / "cache", chains_path=chains, dem_path=dem)
+    data = vd.ViewerData(tmp_path / "viewer", tmp_path / "cache")
+    assert not data.has_chain_filters() and not data.psr_classes_known
+    assert data.monthly_chain_count(0) == 2 and data.monthly_chain_count(0, 3, 1000.0) == 2   # filters are ignored
+    assert (data.monthly_chain_tile(0, 0, 0, 0, 3, 1000.0)[..., 3] > 0).sum() == 2
 
 
 def test_the_background_is_the_hillshade_with_the_permanent_shadow_composited_on_it_then_averaged(products) -> None:

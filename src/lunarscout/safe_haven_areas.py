@@ -110,20 +110,21 @@ def haven_month_images(directory: str | Path) -> dict[str, Path]:
 
 
 def area_havens(image: Path | None, rows, columns, hours, radius: float, width: int, height: int,
-                hours_per_count: float | None = None, alone=None, levels=None):
-    """``(rows, columns, hours, levels)`` of the seed haven area of one month: the chain starts (``rows``, ``columns``, ``hours``)
-    and, from the month's haven image when there is one, every haven pixel whose centre is within ``radius`` pixels of a
-    start, its hours the image's count times the image's hours per count. A start keeps the hours of the chain table.
-    ``alone`` is a ``(rows, columns, hours)`` triple of lone seeds, added as their pixels alone (no haven around them,
-    hours of the chain table). Sorted by pixel. ``levels`` is the PSR size class of each start's chain (0 when not given) and
-    ``alone`` may carry a fourth entry for the lone seeds'; a pixel's level in the result is the largest of the chains whose
-    start or lone seed it is or is within the radius of. ``hours_per_count``, when given, must be the image's."""
+                hours_per_count: float | None = None, alone=None, roots=None):
+    """``(rows, columns, hours, owner_offsets, owner_roots)`` of the seed haven area of one month: the chain starts
+    (``rows``, ``columns``, ``hours``) and, from the month's haven image when there is one, every haven pixel whose centre is
+    within ``radius`` pixels of a start, its hours the image's count times the image's hours per count. A start keeps the
+    hours of the chain table. ``alone`` is a ``(rows, columns, hours, roots)`` tuple of lone seeds (the last entry may be
+    left out), added as their pixels alone (no haven around them, hours of the chain table). ``roots`` is the root seed id
+    of the chain of each start (0 when not given). The pixels are sorted; the owners of pixel ``k`` are
+    ``owner_roots[owner_offsets[k]:owner_offsets[k + 1]]``, sorted: the chains whose start or lone seed the pixel is, or
+    whose start it is within the radius of. ``hours_per_count``, when given, must be the image's."""
     import rasterio
     from rasterio.windows import Window
 
     found: dict[int, float] = {}
-    level: dict[int, int] = {}
-    starts_level = np.zeros(len(rows), dtype=np.uint8) if levels is None else np.asarray(levels)
+    owned: dict[int, set] = {}
+    start_roots = np.zeros(len(rows), dtype=np.int64) if roots is None else np.asarray(roots)
     if image is not None and len(rows):
         reach = int(np.floor(radius))
         with rasterio.open(image) as dataset:
@@ -138,7 +139,7 @@ def area_havens(image: Path | None, rows, columns, hours, radius: float, width: 
                                  code="seed_areas_hours_per_count_mismatch",
                                  details={"path": str(image), "image": per_count, "setting": hours_per_count})
             nodata = dataset.nodata
-            for row, column, start_level in zip(rows.tolist(), columns.tolist(), starts_level.tolist()):
+            for row, column, root in zip(rows.tolist(), columns.tolist(), start_roots.tolist()):
                 top, left = max(row - reach, 0), max(column - reach, 0)
                 bottom, right = min(row + reach + 1, height), min(column + reach + 1, width)
                 block = dataset.read(1, window=Window(left, top, right - left, bottom - top))
@@ -147,21 +148,24 @@ def area_havens(image: Path | None, rows, columns, hours, radius: float, width: 
                 haven = near & (block <= threshold) & ((block != nodata) if nodata is not None else True)
                 for r, c, count in zip(rr[haven].tolist(), cc[haven].tolist(), block[haven].tolist()):
                     found[r * width + c] = count * per_count
-                    level[r * width + c] = max(level.get(r * width + c, 0), start_level)
-    for row, column, hour, start_level in zip(rows.tolist(), columns.tolist(), hours.tolist(), starts_level.tolist()):
+                    owned.setdefault(r * width + c, set()).add(root)
+    for row, column, hour, root in zip(rows.tolist(), columns.tolist(), hours.tolist(), start_roots.tolist()):
         found[row * width + column] = hour
-        level[row * width + column] = max(level.get(row * width + column, 0), start_level)
+        owned.setdefault(row * width + column, set()).add(root)
     if alone is not None:
         singles = [np.asarray(v).tolist() for v in alone]
         if len(singles) < 4:
             singles.append([0] * len(singles[0]))
-        for row, column, hour, single_level in zip(*singles):
+        for row, column, hour, root in zip(*singles):
             found[row * width + column] = hour
-            level[row * width + column] = max(level.get(row * width + column, 0), single_level)
+            owned.setdefault(row * width + column, set()).add(root)
     keys = np.array(sorted(found), dtype=np.int64)
+    lists = [sorted(owned[k]) for k in keys.tolist()]
+    offsets = np.zeros(len(keys) + 1, dtype=np.int64)
+    offsets[1:] = np.cumsum([len(v) for v in lists])
     return ((keys // width).astype(np.int32), (keys % width).astype(np.int32),
-            np.array([found[k] for k in keys.tolist()], dtype=np.float32),
-            np.array([level.get(k, 0) for k in keys.tolist()], dtype=np.uint8))
+            np.array([found[k] for k in keys.tolist()], dtype=np.float32), offsets,
+            np.array([root for v in lists for root in v], dtype=np.int64))
 
 
 def _palette(hours_per_count: float) -> dict[int, tuple[int, int, int, int]]:
@@ -301,6 +305,7 @@ def generate_seed_haven_areas(chains_path: str | Path, dem_path: str | Path, out
     pixel_columns = np.array([r["column"] for r in rows], dtype=np.int64)
     hours = np.array([r["hibernation_hours"] or 0.0 for r in rows], dtype=np.float32)
     start_seed, start_month, lone_seed, lone_month, months, seed_level = chain_starts(rows)
+    seed_root = np.array([r["root_id"] for r in rows], dtype=np.int64)
     radius = radius_meters / abs(geo_transform[1])
     images = haven_month_images(images_directory)
     staging_directory = final_directory.with_name(final_directory.name + ".partial")
@@ -308,16 +313,22 @@ def generate_seed_haven_areas(chains_path: str | Path, dem_path: str | Path, out
     shutil.rmtree(staging_directory, ignore_errors=True)
     directory.mkdir(parents=True, exist_ok=True)
     staging_directory.mkdir()
-    area_rows, area_columns, area_hours, area_levels, offsets, starts, lone, with_image = [], [], [], [], [0], [], [], []
+    area_rows, area_columns, area_hours, area_levels, owner_counts, owner_roots = [], [], [], [], [], []
+    offsets, starts, lone, with_image = [0], [], [], []
     try:
         for index, name in enumerate(months):
             progress(f"Seed haven areas: {name}")
             roots = start_seed[start_month == index]
             singles = lone_seed[lone_month == index]
             image = images.get(name)
-            r, c, h, lv = area_havens(image, pixel_rows[roots], pixel_columns[roots], hours[roots], radius, width, height,
-                                      hours_per_count, alone=(pixel_rows[singles], pixel_columns[singles], hours[singles],
-                                                              seed_level[singles]), levels=seed_level[roots])
+            r, c, h, owner_offsets, owners = area_havens(
+                image, pixel_rows[roots], pixel_columns[roots], hours[roots], radius, width, height, hours_per_count,
+                alone=(pixel_rows[singles], pixel_columns[singles], hours[singles], seed_root[singles]), roots=seed_root[roots])
+            lv = np.zeros(len(r), dtype=np.uint8)                # the largest PSR class among the chains that own a pixel
+            for k in range(len(r)):
+                lv[k] = seed_level[owners[owner_offsets[k]:owner_offsets[k + 1]] - 1].max()
+            owner_counts.append(np.diff(owner_offsets))
+            owner_roots.append(owners)
             area_rows.append(r)
             area_columns.append(c)
             area_hours.append(h)
@@ -338,7 +349,8 @@ def generate_seed_haven_areas(chains_path: str | Path, dem_path: str | Path, out
             np.savez_compressed(
                 handle, months=np.array(months), offsets=np.array(offsets, dtype=np.int64),
                 row=np.concatenate(area_rows), column=np.concatenate(area_columns), hours=np.concatenate(area_hours),
-                psr_level=np.concatenate(area_levels),
+                psr_level=np.concatenate(area_levels), owner_count=np.concatenate(owner_counts),
+                owner_root=np.concatenate(owner_roots),
                 starts=np.array(starts, dtype=np.int64), alone=np.array(lone, dtype=np.int64), with_image=np.array(with_image, dtype=bool),
                 radius_meters=np.array(float(radius_meters)))
         if final_directory.exists():
@@ -360,10 +372,16 @@ def generate_seed_haven_areas(chains_path: str | Path, dem_path: str | Path, out
 def read_seed_areas(path: str | Path) -> dict:
     """The pixel file of the seed haven areas: ``months`` (names), ``offsets``, ``row``, ``column``, ``hours``, ``starts``,
     ``alone`` (the lone seeds per month), ``psr_level`` (per pixel: the largest PSR size class, 0 none to 3 large, of the
-    chains whose area holds it; zeros in a file made before it existed), ``with_image`` and ``radius_meters`` (a float)."""
+    chains whose area holds it; zeros in a file made before it existed), ``owner_offsets`` and ``owner_root`` (the chains,
+    by root seed id, that own each pixel: pixel ``k``'s are ``owner_root[owner_offsets[k]:owner_offsets[k + 1]]``; both None
+    in a file made before they existed), ``with_image`` and ``radius_meters`` (a float)."""
     with np.load(path) as data:
         found = {name: data[name] for name in ("offsets", "row", "column", "hours", "starts", "alone", "with_image")}
         found["psr_level"] = data["psr_level"] if "psr_level" in data.files else np.zeros(len(data["row"]), dtype=np.uint8)
+        # the chains that own each pixel (their root seed ids): ``owner_offsets`` (a pixel's slice of ``owner_root``)
+        found["owner_offsets"] = np.concatenate([[0], np.cumsum(data["owner_count"])]).astype(np.int64) \
+            if "owner_count" in data.files else None
+        found["owner_root"] = data["owner_root"] if "owner_root" in data.files else None
         found["months"] = [str(m) for m in data["months"]]
         found["radius_meters"] = float(data["radius_meters"])
     return found

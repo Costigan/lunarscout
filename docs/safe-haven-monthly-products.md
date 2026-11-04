@@ -37,11 +37,10 @@ Example. A chain of three seeds A (month 1), B (month 2) and C (month 3):
 | Layer | What it shows |
 |-------|---------------|
 | Seed haven areas (monthly) | the havens of the month around the current starts |
-| Chains (monthly) | the routes of the remaining parts, with the same havens as Seed haven areas |
+| Chains (monthly) | the routes of the remaining parts, with the same havens as Seed haven areas; two filters, for touching a PSR and for the longest hop |
 | Havens and cluster boxes (monthly) | the cluster boxes, with the same havens as Seed haven areas drawn over them |
 | All havens (monthly) | every haven of the month |
 | Chains (yearly) | the longest chain of each root in the year it starts, all seeds of the year |
-| Chains (monthly, touch PSR) | Chains (monthly), only the chains that touch a PSR of at least the chosen size |
 
 Every layer is drawn over the permanent-shadow background (below).
 
@@ -75,32 +74,40 @@ The radius is a setting (`radius_meters` of `ls.generate_seed_haven_areas`; `ARE
   marks. A route can therefore end at a seed that is not drawn.
 * No boxes.
 
+**Two filters, chosen in the viewer.** Both are properties of the whole chain (root to last seed), so a chain that passes
+passes in every month it is drawn. They apply together: a chain is shown when it passes both.
+
+* **Touching a PSR**: *Any chain* (the default), *Small or larger*, *Medium or larger*, *Large*. A chain touches a PSR
+  when the chain table says its routes pass next to one (a PSR pixel among the eight neighbours of a route pixel):
+  `chain_psr_small`, `chain_psr_medium` and `chain_psr_large` count the distinct PSRs of each size class (limits
+  `psr_small_max_m2` 400 m2 and `psr_medium_max_m2` 1,000,000 m2). The chain's **PSR class** is 3 if it passes a large PSR,
+  else 2 if a medium one, else 1 if a small one, else 0; a chain passes the filter when its class is at least the choice
+  (*Small or larger* is any PSR, *Medium or larger* a medium or large one).
+* **Longest hop at least**: *Off* (the default), 50, 100, 200, 500, 1,000 or 2,000 m. A chain's **longest hop** is the
+  greatest straight-line distance between successive seeds of its longest chain, measured between the seeds' pixel centres
+  (`hypot(row difference, column difference)` times the DEM's pixel size, metres). For a chain of 2 seeds, the distance
+  between them. A chain passes when its longest hop is at least the choice (equal passes).
+
+**What is drawn for a chain that passes** is what the layer draws for it with no filter: its route, PSR marks, magenta mark
+on its current start, its current start, the havens within the radius of that start and its lone last seed. Nothing is
+drawn for a chain that does not pass. A pixel shared by several chains is drawn when at least one of the chains that
+**own** it passes, with the same precedence as now (aqua over route colours, a haven over aqua, the start mark on top). A
+current start or lone seed is owned by its chain; a haven pixel of the area is owned by every chain whose current start it is
+within the radius of.
+
+**Product.** One file, `safe_haven_stage_4_monthly_chain_pixels.npz`, keeps each chain's pixels separate: for each month the
+pixels (row, column, colour class) with the chain that owns each, and a table of the chains (the root seed, PSR class and
+longest hop in metres). The viewer picks the chains that pass and draws them. The three `..._psr_<size>.npz` files, the
+`PSR_SIZES` option and the layer "Chains (monthly, touch PSR)" of the earlier version are no longer made or offered. When the chain table has no PSR
+counts (stage 4 ran without the routes) the file says the classes are unknown and the viewer offers only *Any chain*. The
+caption gives the chains shown and the chains drawn without a filter. With both filters off the picture is the one made
+today.
+
 The step reads the seed haven areas file, so it runs after `seed-haven-areas` and refuses to run (error code
-`chain_maps_seed_areas_missing`) when that file does not exist. It does not fall back to another set of havens.
-
-### Chains (monthly, touch PSR)
-
-The same picture as Chains (monthly), keeping only the chains that touch a PSR of at least a chosen size.
-
-* **Touching.** A chain touches a PSR when the chain table says its routes pass next to one (a PSR pixel among the eight
-  neighbours of a route pixel): `chain_psr_small`, `chain_psr_medium` and `chain_psr_large` count the distinct PSRs of each
-  size class that the chain's routes, from the root to its last seed, pass. The counts cover the **whole chain**. A chain
-  that qualifies qualifies in every month it is drawn, even when its remaining part no longer passes the PSR.
-* **Size threshold.** One of three, the size classes used when the chains were made (`psr_small_max_m2` 400 m2,
-  `psr_medium_max_m2` 1,000,000 m2): *small* is any PSR (`small + medium + large >= 1`), *medium* is a medium or large PSR
-  (`medium + large >= 1`), *large* is a large PSR (`large >= 1`).
-* **What is drawn** for a qualifying chain is what Chains (monthly) draws for it: its route, the PSR marks, the magenta mark
-  on its current start, its current start, the havens within the radius of its current start, and its lone last seed. A
-  haven that is within the radius of the current starts of several chains is drawn when at least one of them qualifies.
-  Nothing is drawn for a chain that does not qualify.
-* **Products.** Three pixel files, one per threshold, `safe_haven_stage_4_monthly_chain_pixels_psr_small.npz`, `..._medium.npz`
-  and `..._large.npz`, made by the same step as the Chains (monthly) file. The viewer has one layer, "Chains (monthly, touch
-  PSR)", and a second drop-down chooses the threshold (default medium). A threshold whose file is absent is not offered.
-* **Inputs.** The chain table must hold the PSR counts (stage 4 run with the routes); the step refuses to write these files
-  (error code `chain_maps_psr_counts_missing`) when the counts are blank. The seed haven areas file records, for each pixel,
-  the largest PSR size class of the chains whose area contains it, so the same file filters the havens (`psr_level` in the
-  areas file: 0 none, 1 small, 2 medium, 3 large; the level of a pixel is the largest of the chains whose current start or lone
-  seed it is, or is within the radius of).
+`chain_maps_seed_areas_missing`) when that file does not exist. It does not fall back to another set of havens. The areas
+file records, for each area pixel, the chains that own it (their root seed ids; `psr_level` stays, the largest PSR class of
+them). The step builds each chain's pixels from the routes directly, not by drawing 30,336 by 30,336 images, so it should
+be faster than today's.
 
 ### Havens and cluster boxes (monthly)
 
@@ -139,7 +146,7 @@ hillshade alone and prints a note. Every layer is drawn over this ground.
   haven areas. Changing the radius rebuilds both.
 * The viewer rebuilds its lists when the areas file changes.
 * The driver (`scripts/run_safe_haven.py`) runs `haven-months`, then `seed-haven-areas`, then `monthly-chain-maps`.
-* The three touch-PSR files are made by `monthly-chain-maps` in the same run, from the areas file's `psr_level`; each adds about the time of the main picture (the routes are reconstructed once). The areas file must be made again once for `psr_level` (a file made before it reads as level 0).
+* `monthly-chain-maps` makes the one file with every chain's pixels and its chain table; the areas file must carry the owners of its pixels (`chain_maps_seed_areas_outdated` otherwise), so a file made before them is made again.
 
 ## Open
 

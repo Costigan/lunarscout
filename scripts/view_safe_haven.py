@@ -33,13 +33,12 @@ The drop-down chooses the layer:
 * Chains (monthly): the longest chain of each root from the month it starts in until its last seed, each month as the
   part still ahead (a chain that goes on into later months is shorter in each, in the colour of its remaining length),
   as the yearly image draws it (the same routes and colours; the current start of each chain drawn in the month marked in
-  magenta), with the same havens as Seed haven areas (monthly), from safe_haven_stage_4_monthly_chain_pixels.npz
+  magenta), with the same havens as Seed haven areas (monthly). Two drop-downs beside the layer's choose the chains drawn: those
+  that touch a PSR of at least a size (any chain, small, medium or large) and those whose longest hop, the greatest straight-line
+  distance between successive seeds, is at least 50, 100, 200, 500, 1,000 or 2,000 m; both are properties of the whole chain, they
+  apply together, and they are shown only on this layer (the PSR one only when the chain table has its PSR counts). From safe_haven_stage_4_monthly_chain_pixels.npz
   (scripts/run_safe_haven_monthly_chain_maps.py). The entry is in the drop-down only when that file is beside the
   chain table;
-* Chains (monthly, touch PSR): Chains (monthly) with only the chains whose routes pass next to a permanent shadow of at least
-  the size chosen in a second drop-down, shown only for this layer (any PSR, a medium or large one, or a large one; medium to start with), from
-  safe_haven_stage_4_monthly_chain_pixels_psr_<size>.npz (scripts/run_safe_haven_monthly_chain_maps.py with PSR_SIZES). A size
-  without its file is not offered; the layer is offered only when one exists;
 * Chains (yearly): the yearly chain image (safe_haven_stage_4_longest_chain_per_root_<year>.tif) of the slider's year,
   so the picture changes only when the slider crosses into another year.
 
@@ -47,6 +46,9 @@ Every layer that draws havens colours each by its shadow period (its hibernation
 keeps its own colour: white for none, yellow up to 12 hours, cyan 12 to 24 hours and violet 24 hours up to the
 survival limit; a legend in the lower left names the classes (and the chain start in the monthly chain layer). The seed
 layers colour the seeds by their hibernation in the stage-4 table; the all-havens layer colours every pixel.
+
+A scale bar in the upper left corner gives a round length (1, 2 or 5 times a power of ten) that is between about 70 and 140
+screen pixels wide at the current zoom, in metres below a kilometre and kilometres from one up (from the DEM's pixel size).
 
 Every layer is drawn over the permanent shadow: the pixels of PSR_PATH (psr.tif: 255 is PSR, on the DEM's grid) are composited onto
 the hillshade at full resolution in light blue (#8ecbff) at 30% opacity, and the background pyramid is the means of that
@@ -93,13 +95,31 @@ CACHE_DIRECTORY = Path("/tmp/lunarscout_viewer")
 CONNECT = "chains"            # what joins two havens in a cluster: "chains" (stage 4's chains) or "edges" (stage-3 edges)
 
 LAYERS = (("Havens and cluster boxes (monthly)", "boxes_havens"), ("Seed haven areas (monthly)", "havens"),
-          ("All havens (monthly)", "haven_months"), ("Chains (monthly)", "chains_month"),
-          ("Chains (monthly, touch PSR)", "chains_psr"), ("Chains (yearly)", "chains"))
-PSR_CHOICES = (("small", "Any PSR"), ("medium", "Medium or large PSR"), ("large", "Large PSR"))     # the size threshold
+          ("All havens (monthly)", "haven_months"), ("Chains (monthly)", "chains_month"), ("Chains (yearly)", "chains"))
+# The two filters of the monthly chain layer: touching a PSR (the PSR class a chain must have at least) and the longest hop.
+PSR_CHOICES = ((0, "Any chain"), (1, "Small or larger PSR"), (2, "Medium or larger PSR"), (3, "Large PSR"))
+HOP_CHOICES = ((0.0, "Any longest hop"), (50.0, "Longest hop 50 m or more"), (100.0, "Longest hop 100 m or more"),
+               (200.0, "Longest hop 200 m or more"), (500.0, "Longest hop 500 m or more"),
+               (1000.0, "Longest hop 1,000 m or more"), (2000.0, "Longest hop 2,000 m or more"))
 BACKGROUND = "#0d0d0d"
 LEGEND_MARGIN, LEGEND_PAD, LEGEND_SWATCH = 12, 8, 14       # screen pixels: from the window's corner, inside the panel, a swatch
+SCALE_BAR_PIXELS = 140          # the scale bar is the round length that fits in about this many screen pixels
 TILE_BUDGET_BYTES = 512 * 2 ** 20
 MAX_SCALE = 24.0                # screen pixels per DEM pixel when fully zoomed in
+
+
+def nice_length(metres: float) -> float:
+    """The largest of 1, 2 and 5 times a power of ten that is at most ``metres`` (for a scale bar)."""
+    exponent = math.floor(math.log10(metres))
+    for factor in (5, 2, 1):
+        if factor * 10.0 ** exponent <= metres * (1 + 1e-12):
+            return factor * 10.0 ** exponent
+    return 10.0 ** exponent
+
+
+def length_label(metres: float) -> str:
+    """``"500 m"`` or ``"20 km"``: metres below a kilometre, kilometres from one up."""
+    return f"{metres / 1000.0:g} km" if metres >= 1000.0 else f"{metres:g} m"
 
 
 class MapView(QWidget):
@@ -109,7 +129,8 @@ class MapView(QWidget):
         super().__init__()
         self.data = data
         self.layer = "boxes_havens"
-        self.psr_size = "medium"                                   # the threshold of the layer of the chains that touch a PSR
+        self.psr_class = 0                                         # the filters of the monthly chain layer: a PSR class of at least
+        self.hop_m = 0.0                                           # this and a longest hop (metres) of at least this
         self.month = 0
         self.centre = QPointF(data.size / 2, data.size / 2)       # in DEM pixels
         self.scale = 0.05                                          # screen pixels per DEM pixel
@@ -174,12 +195,38 @@ class MapView(QWidget):
 
     # -- what is drawn -----------------------------------------------------------------------------------------
 
+    def scale_bar(self) -> tuple[float, str]:
+        """``(width in screen pixels, label)`` of the scale bar at the current zoom: a round length (1, 2 or 5 times a power of
+        ten, in metres below a kilometre and kilometres above) that is at most about ``SCALE_BAR_PIXELS`` wide."""
+        metres_per_pixel = self.data.pixel_metres / self.scale
+        length = nice_length(SCALE_BAR_PIXELS * metres_per_pixel)
+        return length / metres_per_pixel, length_label(length)
+
+    def _paint_scale_bar(self, painter: QPainter) -> None:
+        """The scale bar in the upper left corner: its length in text over a line with a tick at each end."""
+        bar, label = self.scale_bar()
+        metrics = painter.fontMetrics()
+        inner = max(bar, metrics.horizontalAdvance(label))
+        panel = QRectF(LEGEND_MARGIN, LEGEND_MARGIN, inner + 2 * LEGEND_PAD, metrics.height() + 14 + 2 * LEGEND_PAD)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.setPen(QColor("#4a4a46"))
+        painter.setBrush(QColor(26, 26, 25, 225))
+        painter.drawRect(panel)
+        painter.setPen(QColor("#f0efec"))
+        painter.drawText(QRectF(panel.left() + LEGEND_PAD, panel.top() + LEGEND_PAD, inner, metrics.height()),
+                         Qt.AlignLeft | Qt.AlignVCenter, label)
+        y = panel.top() + LEGEND_PAD + metrics.height() + 10
+        left, right = round(panel.left() + LEGEND_PAD), round(panel.left() + LEGEND_PAD + bar)
+        painter.drawLine(left, y, right, y)
+        painter.drawLine(left, y - 4, left, y + 4)
+        painter.drawLine(right, y - 4, right, y + 4)
+
     def set_layer(self, layer: str) -> None:
         self.layer = layer
         self.update()
 
-    def set_psr_size(self, size: str) -> None:
-        self.psr_size = size
+    def set_filters(self, psr_class: int, hop_m: float) -> None:
+        self.psr_class, self.hop_m = psr_class, hop_m
         self.update()
 
     def set_month(self, month: int) -> None:
@@ -234,11 +281,8 @@ class MapView(QWidget):
             source = ("chains", year)
             tile = lambda: self.data.chain_tile(year, level, tx, ty)             # noqa: E731
         elif self.layer == "chains_month":
-            source = ("chains_month", self.month)
-            tile = lambda: self.data.monthly_chain_tile(self.month, level, tx, ty)  # noqa: E731
-        elif self.layer == "chains_psr":
-            source = ("chains_psr", self.psr_size, self.month)
-            tile = lambda: self.data.monthly_chain_tile(self.month, level, tx, ty, psr_size=self.psr_size)  # noqa: E731
+            source = ("chains_month", self.psr_class, self.hop_m, self.month)
+            tile = lambda: self.data.monthly_chain_tile(self.month, level, tx, ty, self.psr_class, self.hop_m)  # noqa: E731
         elif self.layer == "boxes_havens":
             source = ("boxes_havens", self.month)
             tile = lambda: self.data.boxes_havens_tile(self.month, level, tx, ty)   # noqa: E731
@@ -265,11 +309,11 @@ class MapView(QWidget):
         period (every layer that draws havens), and in the monthly chain layer the mark of a chain's start."""
         if self.layer == "haven_months":
             items = list(self.data.haven_month_legend(self.month))
-        elif self.layer in ("havens", "boxes_havens", "chains_month", "chains_psr", "chains"):
+        elif self.layer in ("havens", "boxes_havens", "chains_month", "chains"):
             items = list(self.data.shadow_legend())
         else:
             items = []
-        if self.layer in ("chains_month", "chains_psr") and self.data.chain_start_colour() is not None:
+        if self.layer == "chains_month" and self.data.chain_start_colour() is not None:
             items.append((self.data.chain_start_colour(), "start of a chain"))
         title = "Havens: shadow period"
         if self.data.psr_colour() is not None:
@@ -343,6 +387,7 @@ class MapView(QWidget):
                 overlay = self._overlay(level, tx, ty)
                 if overlay is not False:
                     painter.drawImage(target, overlay, source)
+        self._paint_scale_bar(painter)
         self._paint_legend(painter)
         painter.end()
 
@@ -353,29 +398,24 @@ class Window(QMainWindow):
         self.data = data
         self.setWindowTitle("Safe havens: the pole")
         self.view = MapView(data)
-        available = {"chains_month": data.monthly_chains is not None, "haven_months": bool(data.haven_months),
-                     "chains_psr": bool(data.monthly_chains_psr)}
+        available = {"chains_month": data.monthly_chains is not None, "haven_months": bool(data.haven_months)}
         self.layer_keys = [key for _title, key in LAYERS if available.get(key, True)]
         if layer not in self.layer_keys:
             raise ValueError(
                 f"the layer {layer!r} is not available: "
                 + ("no monthly haven images beside the chain table (run scripts/threshold_safe_havens.py)"
                    if layer == "haven_months" else
-                   "no monthly chain pixel file for the chains that touch a PSR beside the chain table "
-                   "(run scripts/run_safe_haven_monthly_chain_maps.py with PSR_SIZES)" if layer == "chains_psr" else
                    "no monthly chain pixel file beside the chain table (run scripts/run_safe_haven_monthly_chain_maps.py)"))
         self.layers = QComboBox()
         for title, key in LAYERS:
             if key in self.layer_keys:
                 self.layers.addItem(title)
-        self.psr_choice = QComboBox()                              # the size threshold of the layer that filters by PSR
-        self.psr_keys = [key for key, _title in PSR_CHOICES if key in data.monthly_chains_psr]
-        for key, title in PSR_CHOICES:
-            if key in self.psr_keys:
-                self.psr_choice.addItem(title)
-        if self.psr_keys:
-            self.psr_choice.setCurrentIndex(self.psr_keys.index("medium" if "medium" in self.psr_keys else self.psr_keys[0]))
-            self.view.psr_size = self.psr_keys[self.psr_choice.currentIndex()]
+        self.psr_choice = QComboBox()                              # the filters of the monthly chain layer
+        for _value, title in PSR_CHOICES:
+            self.psr_choice.addItem(title)
+        self.hop_choice = QComboBox()
+        for _value, title in HOP_CHOICES:
+            self.hop_choice.addItem(title)
         reset = QPushButton("Reset view")
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, len(data.months) - 1)
@@ -386,6 +426,7 @@ class Window(QMainWindow):
         top.addWidget(QLabel("Show"))
         top.addWidget(self.layers)
         top.addWidget(self.psr_choice)
+        top.addWidget(self.hop_choice)
         top.addStretch(1)
         top.addWidget(reset)
         bottom = QHBoxLayout()
@@ -399,7 +440,8 @@ class Window(QMainWindow):
         central.setLayout(layout)
         self.setCentralWidget(central)
         self.layers.currentIndexChanged.connect(self._layer_changed)
-        self.psr_choice.currentIndexChanged.connect(self._psr_changed)
+        self.psr_choice.currentIndexChanged.connect(self._filters_changed)
+        self.hop_choice.currentIndexChanged.connect(self._filters_changed)
         self.slider.valueChanged.connect(self._month_changed)
         reset.clicked.connect(self.view.reset_view)
         self.layers.setCurrentIndex(self.layer_keys.index(layer))
@@ -410,12 +452,14 @@ class Window(QMainWindow):
 
     def _layer_changed(self) -> None:
         self.view.set_layer(self.layer_keys[self.layers.currentIndex()])
-        self.psr_choice.setVisible(self.view.layer == "chains_psr")       # the threshold applies to that layer only
+        monthly = self.view.layer == "chains_month"                  # the filters are for the monthly chain layer only, and the
+        self.psr_choice.setVisible(monthly and self.data.psr_classes_known)     # PSR one needs the table's PSR counts
+        self.hop_choice.setVisible(monthly and self.data.has_chain_filters())
         self._caption()
 
-    def _psr_changed(self) -> None:
-        if self.psr_keys:
-            self.view.set_psr_size(self.psr_keys[self.psr_choice.currentIndex()])
+    def _filters_changed(self) -> None:
+        self.view.set_filters(PSR_CHOICES[self.psr_choice.currentIndex()][0] if self.data.psr_classes_known else 0,
+                              HOP_CHOICES[self.hop_choice.currentIndex()][0] if self.data.has_chain_filters() else 0.0)
         self._caption()
 
     def _month_changed(self) -> None:
@@ -439,13 +483,11 @@ class Window(QMainWindow):
                 limit = f" (shadow period at most {info['limit_hours']:g} h)" if info["limit_hours"] is not None else ""
                 detail = pixels + limit
         elif layer == "chains_month":
-            started = self.data.monthly_chain_started(month)
-            detail = f"{self.data.monthly_chain_count(month):,} chains" + (f" ({started:,} starting)" if started else "")
-        elif layer == "chains_psr":
-            size = self.view.psr_size
-            started = self.data.monthly_chain_started(month, size)
-            detail = (f"{self.data.monthly_chain_count(month, size):,} chains touching a PSR ({dict(PSR_CHOICES)[size].lower()})"
-                      + (f", {started:,} starting" if started else ""))
+            psr_class, hop_m = self.view.psr_class, self.view.hop_m
+            total, shown = self.data.monthly_chain_count(month), self.data.monthly_chain_count(month, psr_class, hop_m)
+            started = self.data.monthly_chain_started(month, psr_class, hop_m)
+            detail = (f"{shown:,} of {total:,} chains" if psr_class or hop_m else f"{total:,} chains") \
+                + (f" ({started:,} starting)" if started else "")
         else:
             year = int(name[:4])
             detail = f"chains of {year}" if year in self.data.chain_years else f"no chain image for {year}"

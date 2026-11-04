@@ -3308,7 +3308,7 @@ the stored bits are reduced (the device, or all CPU cores).  See ``docs/safe-hav
 lunarscout.generate_seed_haven_areas(chains_path: 'str | Path', dem_path: 'str | Path', output_directory: 'str | Path', *, haven_months_directory: 'str | Path | None' = None, radius_meters: 'float' = 200.0, hours_per_count: 'float' = 2.0, overwrite: 'bool' = False, progress: 'Progress | None' = None) -> 'SeedHavenAreasReport'
 ```
 
-Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L231).
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L235).
 
 ```text
 Write the seed haven areas of every month.
@@ -3697,12 +3697,14 @@ above the lunar reference sphere.
 lunarscout.read_seed_areas(path: 'str | Path') -> 'dict'
 ```
 
-Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L360).
+Source: [src/lunarscout/safe_haven_areas.py](../src/lunarscout/safe_haven_areas.py#L372).
 
 ```text
 The pixel file of the seed haven areas: ``months`` (names), ``offsets``, ``row``, ``column``, ``hours``, ``starts``,
 ``alone`` (the lone seeds per month), ``psr_level`` (per pixel: the largest PSR size class, 0 none to 3 large, of the
-chains whose area holds it; zeros in a file made before it existed), ``with_image`` and ``radius_meters`` (a float).
+chains whose area holds it; zeros in a file made before it existed), ``owner_offsets`` and ``owner_root`` (the chains,
+by root seed id, that own each pixel: pixel ``k``'s are ``owner_root[owner_offsets[k]:owner_offsets[k + 1]]``; both None
+in a file made before they existed), ``with_image`` and ``radius_meters`` (a float).
 ```
 
 **Parameters without explicit entries in this docstring:** `path`.

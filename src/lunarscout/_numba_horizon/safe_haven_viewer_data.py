@@ -47,7 +47,7 @@ import numpy.typing as npt
 from ..errors import InputError, ProductStorageError
 from ..safe_haven_areas import areas_path, chain_starts, read_seed_areas
 from .pixel_coordinates import dem_header
-from .safe_haven_chain_maps import PSR_SIZES, monthly_path, seed_month_spans
+from .safe_haven_chain_maps import monthly_path, seed_month_spans
 from .safe_haven_chains import read_chain_table
 from .safe_haven_cluster_maps import COUNT_LABELS, cluster_classes, cluster_colours, find_clusters
 from .safe_haven_floods import read_edge_table
@@ -57,7 +57,7 @@ from .safe_haven_overview import SURFACE, _rgb, raw_shade
 
 TILE = 512
 STRIP = 1024                                  # DEM rows per strip while building; a multiple of 2 ** the top level
-PRODUCT = "safe-haven-viewer-v7"
+PRODUCT = "safe-haven-viewer-v8"
 CHAIN_IMAGE = re.compile(r"^safe_haven_stage_4_longest_chain_per_root_(\d{4})\.tif$")
 HAVEN_MONTHS_DIRECTORY = "safe_haven_stage_1_haven_months"      # beside the chain table: scripts/threshold_safe_havens.py
 HAVEN_MONTH_IMAGE = re.compile(r"^safe_haven_stage_1_haven_months_(\d{4}-\d{2})\.tif$")
@@ -132,17 +132,6 @@ def _monthly_chain_name(chains_path: str | Path) -> str | None:
     or None when there is none."""
     path = monthly_path(Path(chains_path).parent)
     return path.name if path.is_file() else None
-
-
-def _monthly_psr_names(chains_path: str | Path) -> dict[str, str]:
-    """The monthly chain pixel files of the chains that touch a PSR, beside the chain table, as ``{size: name}`` (sizes in
-    the order small, medium, large); empty when there are none."""
-    found = {}
-    for size in PSR_SIZES:
-        path = monthly_path(Path(chains_path).parent, psr_size=size)
-        if path.is_file():
-            found[size] = path.name
-    return found
 
 
 def _haven_month_images(chains_path: str | Path) -> dict[str, str]:
@@ -242,8 +231,7 @@ def build_viewer_lists(viewer_directory: str | Path, *, chains_path: str | Path,
         "chain_directory": str(chains_path.parent), "chain_images": chain_images,
         "hours_max": float(seed_hours.max()) if len(seed_hours) else 0.0,
         "seed_areas": signature, "area_radius_meters": radius, "chain_starts": chain_starts_by_month,
-        "monthly_chains": _monthly_chain_name(chains_path), "monthly_chains_psr": _monthly_psr_names(chains_path),
-        "haven_months": _haven_month_images(chains_path),
+        "monthly_chains": _monthly_chain_name(chains_path), "haven_months": _haven_month_images(chains_path),
         "source": {"chains": chains_path.name, "size": chains_path.stat().st_size,
                    "mtime_ns": chains_path.stat().st_mtime_ns},
         "box_columns": ["row_min", "row_max", "column_min", "column_max", "havens"],
@@ -279,7 +267,6 @@ def lists_current(viewer_directory: str | Path, *, chains_path: str | Path, dem_
                 and meta.get("seed_areas") == _seed_areas_signature(Path(chains_path))
                 and meta["source"] == {"chains": Path(chains_path).name, "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
                 and meta["dem"]["path"] == str(dem_path) and meta.get("monthly_chains") == _monthly_chain_name(chains_path)
-                and meta.get("monthly_chains_psr", {}) == _monthly_psr_names(chains_path)
                 and meta.get("haven_months", {}) == _haven_month_images(chains_path))
     except (OSError, ValueError, KeyError):
         return False
@@ -537,6 +524,7 @@ class ViewerData:
         self.meta = meta
         self.months: list[str] = meta["months"]
         self.size = int(meta["dem"]["width"])
+        self.pixel_metres = abs(float(meta["dem"]["transform"][1]))       # the DEM's pixel size in metres, for the scale bar
         self.sizes = level_sizes(self.size)
         self.levels = len(self.sizes)
         self.boxes = [np.array(meta["boxes"][m], dtype=np.int64).reshape(-1, 5) for m in self.months]
@@ -552,14 +540,15 @@ class ViewerData:
             self._background = [np.load(p, mmap_mode="r")
                                 for p in self._sorted_levels(background_directory(self.cache, dem, Path(psr_path)))]
         self._root_code = -1                        # the colour class of a chain's start in the monthly file, if it has one
-        self.monthly_chains = None                  # (rows, columns, codes, table, per-month slices, chains, started) or None
-        self.monthly_chains_psr: dict[str, tuple] = {}      # the same for the chains that touch a PSR of at least each size
+        self.monthly_chains = None                  # (rows, columns, codes, table, per-month slices, chains, started, chain) or None
+        self.chain_table = None                     # when the file keeps its chains apart: (PSR class, longest hop in m, start
+        #                                             month in self.months, per month's slice of the drawn chains, the drawn chains)
+        self._passing_cache: dict = {}
         name = meta.get("monthly_chains")
+        self.psr_classes_known = False              # whether the chains have a PSR class (stage 4 ran with the routes)
         if name and (Path(meta["chain_directory"]) / name).is_file():
             self.monthly_chains = self._load_monthly_chains(Path(meta["chain_directory"]) / name)
-        for size, name in meta.get("monthly_chains_psr", {}).items():
-            if (Path(meta["chain_directory"]) / name).is_file():
-                self.monthly_chains_psr[size] = self._load_monthly_chains(Path(meta["chain_directory"]) / name)
+
         self.chain_years = {int(y): Path(meta["chain_directory"]) / name for y, name in meta["chain_images"].items()}
         self.haven_months = {self.months.index(m): Path(meta["chain_directory"]) / name
                              for m, name in meta.get("haven_months", {}).items()
@@ -576,6 +565,7 @@ class ViewerData:
             slices = np.zeros((len(self.months), 2), dtype=np.int64)
             counts = np.zeros(len(self.months), dtype=np.int64)
             started = np.zeros(len(self.months), dtype=np.int64)
+            view_of_file = [self.months.index(n) if n in self.months else -1 for n in names]
             for k, name in enumerate(names):
                 if name in self.months:
                     index = self.months.index(name)
@@ -584,7 +574,16 @@ class ViewerData:
                     started[index] = data["started"][k] if "started" in data else 0
             labels = [str(x) for x in data["labels"]] if "labels" in data else []
             self._root_code = len(data["table"]) - 1 if labels and labels[-1] == "start of a chain" else -1
-            return (data["row"], data["column"], data["code"], data["table"], slices, counts, started)
+            chain = data["chain"] if "chain" in data.files else None
+            if chain is not None:           # the chain table: what the filters choose chains by
+                drawn = np.zeros((len(self.months), 2), dtype=np.int64)
+                for k, view in enumerate(view_of_file):
+                    if view >= 0:
+                        drawn[view] = (data["drawn_offsets"][k], data["drawn_offsets"][k + 1])
+                start_view = np.array(view_of_file, dtype=np.int64)[data["chain_start_month"]]
+                self.chain_table = (data["chain_psr_class"], data["chain_hop_m"], start_view, drawn, data["drawn_chain"])
+                self.psr_classes_known = bool(data["psr_classes_known"])
+            return (data["row"], data["column"], data["code"], data["table"], slices, counts, started, chain)
 
     @staticmethod
     def _sorted_levels(directory: Path) -> list[Path]:
@@ -717,24 +716,38 @@ class ViewerData:
         """The chains of 2 or more seeds that start in the month: the centres of its seed haven areas."""
         return int(self.meta.get("chain_starts", {}).get(self.months[month], 0))
 
-    def _monthly(self, psr_size: str | None):
-        """The loaded monthly chain pixel file of every chain, or with ``psr_size`` of the chains that touch a PSR of at least
-        that size; None when there is no such file."""
-        return self.monthly_chains if psr_size is None else self.monthly_chains_psr.get(psr_size)
+    def has_chain_filters(self) -> bool:
+        """Whether the monthly chain file keeps its chains apart, so that the two filters can choose chains."""
+        return self.chain_table is not None
 
-    def psr_sizes(self) -> list[str]:
-        """The PSR sizes that have a monthly chain pixel file, in the order small, medium, large."""
-        return [size for size in PSR_SIZES if size in self.monthly_chains_psr]
+    def _passing(self, psr_class: int, hop_m: float):
+        """A boolean per chain of the monthly file: its PSR class is at least ``psr_class`` and its longest hop is at least
+        ``hop_m`` metres (None when the file does not keep its chains apart)."""
+        if self.chain_table is None:
+            return None
+        key = (int(psr_class), float(hop_m))
+        if key not in self._passing_cache:
+            self._passing_cache[key] = (self.chain_table[0] >= psr_class) & (self.chain_table[1] >= hop_m)
+        return self._passing_cache[key]
 
-    def monthly_chain_count(self, month: int, psr_size: str | None = None) -> int:
-        """The chains of 2 or more seeds drawn in the month (the part of each that is still ahead)."""
-        loaded = self._monthly(psr_size)
-        return int(loaded[5][month]) if loaded is not None else 0
+    def monthly_chain_count(self, month: int, psr_class: int = 0, hop_m: float = 0.0) -> int:
+        """The chains of 2 or more seeds drawn in the month (the part of each that is still ahead) that pass the filters."""
+        if self.monthly_chains is None:
+            return 0
+        passing = self._passing(psr_class, hop_m)
+        if passing is None:
+            return int(self.monthly_chains[5][month])
+        low, high = self.chain_table[3][month]
+        return int(passing[self.chain_table[4][low:high]].sum())
 
-    def monthly_chain_started(self, month: int, psr_size: str | None = None) -> int:
+    def monthly_chain_started(self, month: int, psr_class: int = 0, hop_m: float = 0.0) -> int:
         """How many of those start in the month."""
-        loaded = self._monthly(psr_size)
-        return int(loaded[6][month]) if loaded is not None else 0
+        if self.monthly_chains is None:
+            return 0
+        passing = self._passing(psr_class, hop_m)
+        if passing is None:
+            return int(self.monthly_chains[6][month])
+        return int((passing & (self.chain_table[2] == month)).sum())
 
     def has_background(self) -> bool:
         """Whether the ground of every layer is the hillshade with the permanent shadow composited on it."""
@@ -751,18 +764,22 @@ class ViewerData:
         """The colour of the permanent shadow, or None without it."""
         return PSR_RGB if self._background is not None else None
 
-    def monthly_chain_tile(self, month: int, level: int, tx: int, ty: int, psr_size: str | None = None):
+    def monthly_chain_tile(self, month: int, level: int, tx: int, ty: int, psr_class: int = 0, hop_m: float = 0.0):
         """``(512, 512, 4)`` RGBA of the chains of the month, each as the part still ahead (the pixels of the monthly chain
         file, in their colour classes; 1 pixel at the two finest levels, 2 at the coarser ones) with the start of each
-        chain that starts in the month marked by a 3 x 3 square of the start colour, or None without the file. ``psr_size``
-        draws the file of the chains that touch a PSR of at least that size."""
-        loaded = self._monthly(psr_size)
-        if loaded is None:
+        chain that starts in the month marked by a 3 x 3 square of the start colour, or None without the file. Only the chains
+        that pass the filters are drawn: a PSR class of at least ``psr_class`` (0 any, 1 small, 2 medium, 3 large) and a
+        longest hop of at least ``hop_m`` metres; a pixel several chains own is drawn when one of them passes."""
+        if self.monthly_chains is None:
             return None
-        rows, columns, codes, table, slices = loaded[:5]
+        rows, columns, codes, table, slices = self.monthly_chains[:5]
         low, high = int(slices[month][0]), int(slices[month][1])
         image = np.zeros((TILE, TILE, 4), dtype=np.uint8)
         rows, columns, codes = rows[low:high], columns[low:high], codes[low:high]
+        passing = self._passing(psr_class, hop_m)
+        if passing is not None and not passing.all():
+            keep = passing[self.monthly_chains[7][low:high]]
+            rows, columns, codes = rows[keep], columns[keep], codes[keep]
         mask = self._in_tile(rows, columns, level, tx, ty, 2)
         x = (columns[mask] >> level) - tx * TILE
         y = (rows[mask] >> level) - ty * TILE

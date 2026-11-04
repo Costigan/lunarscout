@@ -15,7 +15,7 @@ The safe-haven sequence, one step after another, with the parameters that the st
     yearly-chain-maps  scripts/run_safe_haven_yearly_chain_maps.py  the longest-chain image of each year
     haven-months  scripts/threshold_safe_havens.py         every pixel that is a haven, one GeoTIFF per month (for the viewer)
     seed-haven-areas scripts/make_seed_haven_areas.py      the chain starts and the havens near them, one GeoTIFF per month (for the viewer)
-    monthly-chain-maps scripts/run_safe_haven_monthly_chain_maps.py the pixels of the longest-chain image of each month, and of the chains that touch a PSR (for the viewer)
+    monthly-chain-maps scripts/run_safe_haven_monthly_chain_maps.py the pixels of the longest-chain image of each month, chain by chain (for the viewer)
     overview-maps scripts/run_safe_haven_overview_maps.py  the persistence map of the havens around the pole, per year
     quality-maps  scripts/run_safe_haven_quality_maps.py   the longest mission per 5.12 km cell, per year
     cluster-maps  scripts/run_safe_haven_cluster_maps.py   bounding boxes of the groups of connected havens, per year
@@ -372,10 +372,9 @@ def build_steps(p: dict) -> dict[str, Step]:
     add("monthly-chain-maps", "run_safe_haven_monthly_chain_maps", "make_monthly_chain_maps",
         dict(dem_path=p["dem_path"], chains_path=chains, output_directory=out, overwrite=True,
              light_store_path=store, psr_ids_path=p["psr_ids_path"], passable_path=passable, seed_areas_path=areas,
-             psr_sizes=("small", "medium", "large"), raster_routes=p["raster_routes"], route_workers=p["route_workers"], flood_settings=settings),
+             raster_routes=p["raster_routes"], route_workers=p["route_workers"], flood_settings=settings),
         [p["dem_path"], chains, store, passable, p["psr_ids_path"], areas],
-        [out / "safe_haven_stage_4_monthly_chain_pixels.npz",
-         *(out / f"safe_haven_stage_4_monthly_chain_pixels_psr_{size}.npz" for size in ("small", "medium", "large"))])
+        [out / "safe_haven_stage_4_monthly_chain_pixels.npz"])
     overview = [out / f"safe_haven_stage_2_persistence_{year}{suffix}" for year in years for suffix in (".tif", ".png")]
     add("overview-maps", "run_safe_haven_overview_maps", "make_overview_maps",
         dict(dem_path=p["dem_path"], seeds_path=seeds, psr_ids_path=p["psr_ids_path"], output_directory=out, years=years,

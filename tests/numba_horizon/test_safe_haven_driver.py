@@ -185,10 +185,8 @@ def test_the_steps_share_one_set_of_parameters() -> None:
         f"safe_haven_stage_4_longest_chain_per_root_{year}.tif" for year in range(2024, 2032)]
     assert steps["yearly-chain-maps"].options["years"] == list(range(2024, 2032))
     assert set(map(str, steps["stage4"].outputs)) <= set(map(str, steps["monthly-chain-maps"].inputs))
-    assert [p.name for p in steps["monthly-chain-maps"].outputs] == [
-        "safe_haven_stage_4_monthly_chain_pixels.npz", *(f"safe_haven_stage_4_monthly_chain_pixels_psr_{size}.npz"
-                                                        for size in ("small", "medium", "large"))]
-    assert steps["monthly-chain-maps"].options["psr_sizes"] == ("small", "medium", "large")
+    assert [p.name for p in steps["monthly-chain-maps"].outputs] == ["safe_haven_stage_4_monthly_chain_pixels.npz"]
+    assert "psr_sizes" not in steps["monthly-chain-maps"].options
     assert set(map(str, steps["stage3"].caches)) <= set(map(str, steps["stage4"].inputs))
     # every haven pixel of every month: from the stage-1 hibernation product alone, at the survival limit of the stage-2 seeds
     months = steps["haven-months"]
@@ -332,16 +330,18 @@ def test_the_first_run_makes_every_product_in_order(world, first_run) -> None:
     assert sum(starts) > 0
     image_files = sorted((directory / "safe_havens" / "safe_haven_stage_4_seed_haven_areas").glob("*.tif"))
     assert [f.name[-11:-4] for f in image_files] == areas["months"]
-    # the chains that touch a PSR, by size: the stage-4 table of this world has the PSR counts, and each size is a subset of the one below
-    counts = {}
-    for size in ("small", "medium", "large"):
-        with np.load(directory / "safe_havens" / f"safe_haven_stage_4_monthly_chain_pixels_psr_{size}.npz") as data:
-            assert str(data["psr_size"]) == size
-            counts[size] = (int(data["chains"].sum()), len(data["row"]))
+    # the monthly chain file keeps the chains apart for the viewer's filters: the stage-4 table of this world has the PSR counts
     with np.load(directory / "safe_havens" / "safe_haven_stage_4_monthly_chain_pixels.npz") as data:
-        every = (int(data["chains"].sum()), len(data["row"]))
-    assert every[0] >= counts["small"][0] >= counts["medium"][0] >= counts["large"][0]
-    assert every[1] >= counts["small"][1] >= counts["medium"][1] >= counts["large"][1]
+        assert bool(data["psr_classes_known"]) and len(data["chain_root"]) == len(data["chain_psr_class"]) == len(data["chain_hop_m"])
+        assert set(data["chain_psr_class"].tolist()) <= {0, 1, 2, 3} and (data["chain_hop_m"] > 0).all()
+        assert data["chain"].max() < len(data["chain_root"]) and len(data["chain"]) == len(data["row"])
+        assert data["chains"].sum() > 0 and data["drawn_offsets"][-1] == len(data["drawn_chain"])
+        rows_ = chains.read_chain_table(directory / "safe_havens" / "safe_haven_stage_4_chains.csv")
+        for root, level in zip(data["chain_root"].tolist(), data["chain_psr_class"].tolist()):     # the class is the table's counts
+            ends = [r for r in rows_ if r["root_id"] == root and r["chain_length"] >= 2]
+            best = max(ends, key=lambda r: r["chain_length"])
+            expected = 3 if best["chain_psr_large"] else 2 if best["chain_psr_medium"] else 1 if best["chain_psr_small"] else 0
+            assert level == expected
     state = json.loads((directory / "safe_havens" / "safe_haven_run_state.json").read_text())
     assert set(state) == set(STEPS) and all(state[s]["fingerprint"] for s in STEPS)
     assert state["stage3"]["parameters"]["settings"]["max_slope_deg"] == 15.0
