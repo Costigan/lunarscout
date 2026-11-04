@@ -139,6 +139,15 @@ made once; it is made again when `psr.tif`, the DEM, the colour or the opacity c
 the scenario's `psr.tif`). A legend entry names the colour ("permanent shadow"). Without the file the viewer draws the
 hillshade alone and prints a note. Every layer is drawn over this ground.
 
+## Exporting the pictures
+
+`scripts/export_safe_haven_images.py` writes the viewer's pictures as full-resolution GeoTIFFs on the DEM's grid, tiled and
+DEFLATE compressed: `hillshade_psr_rgb.tif` (the background above as 3-band RGB) and, per month, the Chains (monthly) picture of the
+chains that pass the two filters (`PSR_CLASS`, `HOP_M`; default medium or larger and 500 m) as a 4-band RGBA image without the
+background, named `chains_monthly_<psr>_hop_<metres>m_<month>.tif`. The background is compressed with `--background-compression`: `deflate` (lossless, default), `webp` (lossless, smaller, slower, needs a WebP-enabled reader) or `jpeg` (lossy, `--background-quality`, default 95); the chain images are always lossless. Alpha is 255 where a pixel is drawn and 0 elsewhere. A month with no chain
+passing gets no file (`--write-empty` writes a transparent one). The pixels are those the viewer draws at full zoom. It needs the viewer
+to have been prepared first (the cache holds the background).
+
 ## Regeneration
 
 * `seed-haven-areas` depends on the chain table, the DEM and the haven-months images. A new radius rebuilds it.

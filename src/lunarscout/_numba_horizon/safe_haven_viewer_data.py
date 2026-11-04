@@ -770,16 +770,31 @@ class ViewerData:
         chain that starts in the month marked by a 3 x 3 square of the start colour, or None without the file. Only the chains
         that pass the filters are drawn: a PSR class of at least ``psr_class`` (0 any, 1 small, 2 medium, 3 large) and a
         longest hop of at least ``hop_m`` metres; a pixel several chains own is drawn when one of them passes."""
+        pixels = self.monthly_chain_pixels(month, psr_class, hop_m)
+        if pixels is None:
+            return None
+        return self.paint_chain_tile(pixels, level, tx, ty)
+
+    def monthly_chain_pixels(self, month: int, psr_class: int = 0, hop_m: float = 0.0):
+        """``(rows, columns, codes)`` of the pixels of the chains of the month that pass the filters (see
+        :meth:`monthly_chain_tile`), in colour-class order (the last is drawn on top), or None without the monthly file."""
         if self.monthly_chains is None:
             return None
-        rows, columns, codes, table, slices = self.monthly_chains[:5]
+        rows, columns, codes = self.monthly_chains[:3]
+        slices = self.monthly_chains[4]
         low, high = int(slices[month][0]), int(slices[month][1])
-        image = np.zeros((TILE, TILE, 4), dtype=np.uint8)
         rows, columns, codes = rows[low:high], columns[low:high], codes[low:high]
         passing = self._passing(psr_class, hop_m)
         if passing is not None and not passing.all():
             keep = passing[self.monthly_chains[7][low:high]]
             rows, columns, codes = rows[keep], columns[keep], codes[keep]
+        return rows, columns, codes
+
+    def paint_chain_tile(self, pixels, level: int, tx: int, ty: int):
+        """``(512, 512, 4)`` RGBA of the tile ``(tx, ty)`` of ``level`` from the pixels of :meth:`monthly_chain_pixels`."""
+        rows, columns, codes = pixels
+        table = self.monthly_chains[3]
+        image = np.zeros((TILE, TILE, 4), dtype=np.uint8)
         mask = self._in_tile(rows, columns, level, tx, ty, 2)
         x = (columns[mask] >> level) - tx * TILE
         y = (rows[mask] >> level) - ty * TILE
